@@ -23,7 +23,7 @@ public class Player extends MovingObjects {
 
     private boolean enElSuelo = false;
 
-    private double WaitingTime;
+    private double waitingTime;
     private GameState gameState;
     private WeaponSelected weaponS;
     private ArrayList<EnimyNormal> enemies;
@@ -37,12 +37,8 @@ public void setEnElSuelo(boolean enElSuelo) {
     this.enElSuelo = enElSuelo;
 }
 public void setWait(boolean isShoot){
-    if(isShoot){
-        WaitingTime++;
-    }else{
-        WaitingTime= WaitingTime-1;
-    }
-    if (WaitingTime < 0) WaitingTime = 0;
+    waitingTime= isShoot ? ++waitingTime: --waitingTime;
+    if (waitingTime <= 0) waitingTime = 0;
 }
 public void setEnemies(ArrayList<EnimyNormal> enemies){
     this.enemies = enemies;
@@ -187,11 +183,10 @@ public void update() {
                 position.getY() + texture.getHeight() / 10,
                 mirandoDerecha
             );
-            WaitingTime++;
         } else {
             setWait(isShoot = false);
         }
-        if(WaitingTime==0){
+        if(waitingTime==0){
             weaponS.resetBurst();
         }
 

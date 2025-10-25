@@ -30,9 +30,9 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(5);
+        spawnEnemies(0);
         player.setEnemies(enemies);
-        player.setWeapon(new WeaponSelected(player, 3, 1));
+        player.setWeapon(new WeaponSelected(player, 2, 1));
         objects.add(player);
         
         // crear suelo

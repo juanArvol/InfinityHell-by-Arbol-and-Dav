@@ -19,8 +19,6 @@ public class Bullet extends GameObjects {
 
     private Player p;
     private bulletType type;
-    private double dirX;
-    private double dirY;
     private ArrayList<EnimyNormal> enemies;
     private BulletPhysics bPhysics;
 
@@ -34,7 +32,7 @@ public class Bullet extends GameObjects {
         double gravity= type.tieneGravedad() ? 0.385 : 0;
         double speed= type.getSpeed();
         bPhysics = new BulletPhysics(gravity);
-        bPhysics.setVelocityI(x * speed, y * speed);
+        bPhysics.setBulletVelocity(x * speed, y * speed);
     }
 
     private boolean checkCollision() {

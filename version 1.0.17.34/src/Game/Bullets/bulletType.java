@@ -10,9 +10,9 @@ public class bulletType {
         this.tipo = tipo;
         switch (tipo) {
             case 1 -> { speed = 10; gravedad = false; damage = 10; } // bala normal
-            case 2 -> { speed = 6; gravedad = true; damage = 15; }   // bala saltarina
-            case 3 -> { speed = 2; gravedad = true; damage = 30; }   // bala tierra
-            case 4 -> { speed = 8; gravedad = true; damage = 50; }   // bala meteoro
+            case 2 -> { speed = 0.1; gravedad = true; damage = 15; }   // bala saltarina
+            case 3 -> { speed = 0.1; gravedad = true; damage = 30; }   // bala tierra
+            case 4 -> { speed = 0.1; gravedad = true; damage = 50; }   // bala meteoro
             default -> { speed = 0; gravedad = false; damage = 0; }
         }
     }

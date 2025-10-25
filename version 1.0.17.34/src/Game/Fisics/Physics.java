@@ -51,7 +51,7 @@ public class Physics {
         bonus = onGround ? 1 : 0.8;
         vx=(velocity.getX()+ ((inputX*dir)*accel)*bonus);
 
-        //System.out.println("vx: " + vx + " | inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velY: " + running);
+        //System.out.println("vx: " + vx + " | inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX());
         if(Math.abs(vx)==speedMax){
             count++;
             //System.out.println("Maximo" + count + " alcanzado");

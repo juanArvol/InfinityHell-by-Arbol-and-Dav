@@ -11,7 +11,8 @@ import javax.swing.*;
 
 public class NuevaVercion extends JFrame implements Runnable{
 
-public static final int width = 1200, height = 600;
+public static final int widthMax = 2250, heightMax = 800;
+public static final int width =1200, height = 600;
 private Canvas canvas;
 
 //lo siguiente es un hilo para tener un programa dentro de otro programa
@@ -32,7 +33,7 @@ public NuevaVercion (){
     setTitle("Infinity Hell");
     setSize(width, height);
     setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-    setResizable(false); //esta hace que la ventama se redimencione en tiempo de ejecucion
+    setResizable(true); //esta hace que la ventama se redimencione en tiempo de ejecucion
     setLocationRelativeTo(null); //evitamos que la ventana se despliege en el centro de la pantalla
     setVisible(true);//hace la ventana visible
 
@@ -41,7 +42,7 @@ public NuevaVercion (){
     
     //se limita el canvas y se le pasa un objeto de tipo dimencion
     canvas.setPreferredSize(new Dimension(width,height));
-    canvas.setMaximumSize(new Dimension(width,height));
+    canvas.setMaximumSize(new Dimension(widthMax,heightMax));
     canvas.setMinimumSize(new Dimension(width,height));
     canvas.setFocusable(rootPaneCheckingEnabled); //recibe entradas por parte del teclado
 

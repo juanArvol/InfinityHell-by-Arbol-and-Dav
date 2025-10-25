@@ -45,7 +45,7 @@ public class Weapon {
                 baseCooldown = 1;
                 maxCooldown = 20;
                 burstLimit = 100;
-                bulletsPerShot = 3;
+                bulletsPerShot = 1;
             }
             break;
             case 3:{
@@ -115,21 +115,14 @@ public class Weapon {
 
     Sounds.playSound("Gun.wav");
     for (int i = 0; i < bulletsPerShot; i++) {
-            // pequeña dispersión para escopetas, etc.
-            double spreadX = (Math.random() - 0.5) * 2;
-            double spreadY = (Math.random() - 0.5) * 2;
-
-            Vector2D spawnPos = new Vector2D(spawnX, spawnY);
-            Bullet nuevaBala = new Bullet(
-                spawnPos,
-                Assets.bala,
-                dir + spreadX * 0.05,
-                spreadY * 0.05,
-                bullet,
-                owner,
-                oEnemys
-            );
-            
+        Bullet nuevaBala = BulletFactory.createBullet(
+            spawnX,
+            spawnY,
+            mirandoDerecha,
+            bullet,
+            owner, 
+            oEnemys
+        );
             owner.addBullet(nuevaBala);
         }
     }

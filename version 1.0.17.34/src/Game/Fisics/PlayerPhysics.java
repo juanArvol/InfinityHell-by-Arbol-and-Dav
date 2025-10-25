@@ -9,7 +9,7 @@ public class PlayerPhysics extends Physics {
         setMaxSpeed(onGround);
         slide= onGround ? 0.9 : 0.76;
         speedMaxPiso= running ? 135 : 70;
-        speedMaxAir= running ? 12.5 : 10;
+        speedMaxAir= running ? 14.5 : 10;
         aGround=2.5;
         aAir=1.07;
 
@@ -19,9 +19,11 @@ public class PlayerPhysics extends Physics {
             if(inputX==0){
                 vx *= slide/bonus; //usando algo entero en lugar de decimal 0.algo: todo negativo vortice central, todo positivo vortice hacia afuera xd
             }
+            double vxs;
             if(Math.abs(vx) >speedMaxAir) {
-                vSetX(vx/speedMaxAir);
-                System.out.println("la velocidad setteada fue "+vx);
+                vxs=vx/speedMaxAir;
+                vSetX(vxs);
+                System.out.println("la velocidad setteada fue "+vxs);
             }
             vSetX(vx);
         }
