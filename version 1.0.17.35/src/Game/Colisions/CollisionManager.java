@@ -1,7 +1,8 @@
-package Game;
+package Game.Colisions;
 
-
+import Game.GameObjects;
 import java.util.List;
+
 public class CollisionManager {
     
     public static void checkColicion(List<GameObjects> objects){
@@ -10,8 +11,8 @@ public class CollisionManager {
                     GameObjects a = objects.get(i);
                     GameObjects b = objects.get(j);
                 if (a.getBounds().intersects(b.getBounds())) {
-                    a.onCollision(b);
-                    b.onCollision(a);
+                    a.acceptCollision(b);
+                    b.acceptCollision(a);
                 }
             }
         }

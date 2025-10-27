@@ -1,18 +1,18 @@
 package Game.Bullets;
 
-import graficos.Assets;
-import math.Vector2D;
-import Game.Player;
 import Game.EnimyNormal;
+import Game.Player;
+import graficos.Assets;
 import java.util.ArrayList;
+import math.Vector2D;
 
 public class BulletFactory {
 
     public static Bullet createBullet(
-            double x, double y, 
-            boolean mirandoDerecha, 
-            bulletType type, 
-            Player owner, 
+            double x, double y,
+            boolean mirandoDerecha,
+            bulletType type,
+            Player owner,
             ArrayList<EnimyNormal> enemies) {
 
         double dir = mirandoDerecha ? 1 : -1;

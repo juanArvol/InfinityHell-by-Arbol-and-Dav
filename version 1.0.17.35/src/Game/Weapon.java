@@ -1,10 +1,8 @@
 package Game;
 
-import Source.Sounds;
-import graficos.Assets;
-import java.util.ArrayList;
-import math.Vector2D;
 import Game.Bullets.*;
+import Source.Sounds;
+import java.util.ArrayList;
 public class Weapon {
 
     private int weaponType;
@@ -45,7 +43,7 @@ public class Weapon {
                 baseCooldown = 1;
                 maxCooldown = 20;
                 burstLimit = 100;
-                bulletsPerShot = 1;
+                bulletsPerShot = 2;
             }
             break;
             case 3:{
@@ -89,13 +87,12 @@ public class Weapon {
      */
     public void tryShoot(double x, double y, boolean mirandoDerecha) {
         if(fireWait >0) return;
-
-        double dir = mirandoDerecha ? 1 : -1;
+        
         double spawnX = mirandoDerecha ? x + 8 : x - 8;
         double spawnY = y;
 
         bulletType bullet = new bulletType(typeBullet);
-        owner.setWait(isShooting=true);
+        owner.setWait(true);
 
         
             shoot(spawnX, spawnY, mirandoDerecha,bullet);
@@ -120,7 +117,7 @@ public class Weapon {
             spawnY,
             mirandoDerecha,
             bullet,
-            owner, 
+            owner,
             oEnemys
         );
             owner.addBullet(nuevaBala);

@@ -1,5 +1,6 @@
 package Game;
 
+import Game.Bullets.Bullet;
 import Game.Fisics.PlayerPhysics;
 import States.GameState;
 import entradas.KeyBoard;
@@ -9,15 +10,13 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import math.Vector2D;
-import Game.Bullets.Bullet;
 
 public class Player extends MovingObjects {
     private PlayerPhysics pPhysics;
-    private boolean isShoot;
     private boolean congelado = false;
     private boolean mirandoDerecha = true;
     private boolean agachado= false;
-    private boolean running= false;
+    private boolean running= KeyBoard.shift;
     private int frame = 0;
     private int animTick = 0;
 
@@ -63,17 +62,6 @@ public boolean isDer(){
 }
 public boolean isSuelo(){
     return enElSuelo;
-}
-private boolean checkCollision() {
-    for (GameObjects obj : GameState.instance.getObjects()) {
-        if (obj == this) continue;
-        if (!(obj instanceof Ambiente)) continue; // <- bloquea solo con paredes y suelo
-        if (getBounds().intersects(obj.getBounds())) {
-            onCollision(obj);
-            return true;
-        }
-    }
-    return false;
 }
 public void drawBullets(Graphics g) {
     for (Bullet b : bullets) {
@@ -144,7 +132,7 @@ public void update() {
     if ((KeyBoard.space || (KeyBoard.up && !KeyBoard.ei)) && enElSuelo && !congelado) {
         pPhysics.jump(14.5);  // salto ajustable
         enElSuelo = false;
-    } else{    
+    } else{
         pPhysics.setJumping(false);
     }
 
@@ -164,17 +152,7 @@ public void update() {
 
     for (int i = 0; i < steps; i++) {
         position.setX(position.getX() + stepX);
-        if (checkCollision()) {
-            position.setX(position.getX() - stepX); // rollback
-        break;
-        }
-
         position.setY(position.getY() + stepY);
-        if (checkCollision()) {
-            position.setY(position.getY() - stepY); // rollback
-            enElSuelo = true;
-        break;
-        }
     }
     // balas
         if (KeyBoard.ei) {
@@ -184,7 +162,7 @@ public void update() {
                 mirandoDerecha
             );
         } else {
-            setWait(isShoot = false);
+            setWait(false);
         }
         if(waitingTime==0){
             weaponS.resetBurst();
@@ -200,14 +178,26 @@ public void update() {
         }
     }
 }
-    @Override
+@Override
 public void onCollision(GameObjects other) {
-    if (other instanceof Ambiente) {
-    }
+    other.acceptCollision(this);
+}
+@Override
+public void onCollisionWith(Ambiente ambiente) {
+    enElSuelo = true;
+    pPhysics.getVelocity().setY(0);
 }
 
 @Override
+public void onCollisionWith(Bullet bullet) {
+    System.out.println("Jugador impactado por bala");
+}
 
+@Override
+public void onCollisionWith(EnimyNormal enemy) {
+    System.out.println("Jugador chocó con enemigo");
+}
+@Override
 public void draw(Graphics g) {
     BufferedImage currentFrame;
 

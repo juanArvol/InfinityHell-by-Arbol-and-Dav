@@ -6,6 +6,7 @@ public class Physics {
     protected Vector2D velocity = new Vector2D(0, 0);
     protected double gravity = 0.78;
 
+    protected double mass;             //masa del objeto
     protected double aAir;             //Aceleracion en el aire
     protected double speedMaxAir;      //Velocidad maxima aire
     protected double speedMaxPiso;     //Velocidad maxima suelo
@@ -25,6 +26,12 @@ public class Physics {
     protected boolean running;
     protected  byte count=0;
 
+    public void setMass(double m){
+        this.mass=m;
+    }
+    public double getMass(){
+        return mass;
+    }
     public void vSetX(double vX){
         velocity.setX(vX);
     }
@@ -33,12 +40,11 @@ public class Physics {
         this.salto=jumping;
     }
 
-    public void moveX(double inputX, boolean onGround, boolean direction, boolean running) {
+    public void moveX(double inputX,boolean onGround, boolean direction, boolean running) {
         /* if (Double.isNaN(velocity.getX())) {
             System.out.println("ADVERTENCIA: velocity.getX() es NaN al iniciar moveX. Reiniciando a 0.");
             velocity.setX(0);
         } */
-        
         this.onGround=onGround;
         this.direction=direction;
         this.inputX=inputX;
@@ -46,16 +52,12 @@ public class Physics {
 
         dir = direction ? 1 : -1;
         accel = onGround ? aGround : aAir;
+        double mAccel= (accel/mass);
 
-        // factor bono de velocidad en x
+        // factor reductor de velocidad en x
         bonus = onGround ? 1 : 0.8;
-        vx=(velocity.getX()+ ((inputX*dir)*accel)*bonus);
+        vx=(velocity.getX()+ ((inputX*dir)*mAccel)*bonus);
 
-        //System.out.println("vx: " + vx + " | inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX());
-        if(Math.abs(vx)==speedMax){
-            count++;
-            //System.out.println("Maximo" + count + " alcanzado");
-        }
             // Límite de velocidad
         if(inputX !=0){
             if(Math.abs(vx)>=speedMax){
@@ -71,14 +73,24 @@ public class Physics {
         }
     }
     public void applyGravity(boolean onGround) {
+        // F = m * g → a = g (independiente de masa, pero dejamos abierto a modificaciones)
         if (!onGround) {
-            velocity.setY(velocity.getY() + gravity);
+            velocity.setY(velocity.getY() + (gravity*mass));
         }
     }
-
+    public void showInfo(boolean yes){
+        if(yes){
+            System.out.println("inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX()+" | vx: " + vx+" | masa: " + mass);
+        }
+    }
     public void jump(double force) {
-        velocity.setY(-force);
+        velocity.setY(-force/mass);
         salto = true;
+    }
+    public void addForce(double fx, double fy) {
+        // F = m * a → a = F / m
+        velocity.setX(velocity.getX() + (fx/mass));
+        velocity.setY(velocity.getY() + (fy/mass));
     }
 
     public Vector2D getVelocity() {
@@ -92,11 +104,6 @@ public class Physics {
     public void stopX() {
         velocity.setX(0);
         vx=0;
-    }
-
-    public void addForce(double x, double y) {
-        velocity.setX(velocity.getX() + x);
-        velocity.setY(velocity.getY() + y);
     }
     public double getOposite(double x){
         return -x;

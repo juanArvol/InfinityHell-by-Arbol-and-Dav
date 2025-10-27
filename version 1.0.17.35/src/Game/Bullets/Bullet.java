@@ -1,17 +1,15 @@
 package Game.Bullets;
 
+import Game.EnimyNormal;
+import Game.Fisics.BulletPhysics;
+import Game.GameObjects;
+import Game.Player;
 import States.GameState;
-import entradas.KeyBoard;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import math.Vector2D;
-import Game.GameObjects;
-import Game.Player;
-import Game.Ambiente;
-import Game.EnimyNormal;
-import Game.Fisics.BulletPhysics;
 
 public class Bullet extends GameObjects {
 
@@ -31,8 +29,7 @@ public class Bullet extends GameObjects {
 
         double gravity= type.tieneGravedad() ? 0.385 : 0;
         double speed= type.getSpeed();
-        bPhysics = new BulletPhysics(gravity);
-        bPhysics.setBulletVelocity(x * speed, y * speed);
+        bPhysics = new BulletPhysics(gravity, speed, type.tieneGravedad(),p.isDer());
     }
 
     private boolean checkCollision() {

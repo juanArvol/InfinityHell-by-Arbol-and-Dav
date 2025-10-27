@@ -7,7 +7,7 @@ import math.Vector2D;
 
 public class Ambiente extends GameObjects {
 
-    private int ancho; 
+    private int ancho;
     private int alto;
 
     public Ambiente(Vector2D position, BufferedImage texture, int ancho, int alto){
