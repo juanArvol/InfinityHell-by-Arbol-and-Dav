@@ -19,7 +19,7 @@ public class BulletPhysics extends Physics {
 
         //cosas physics
         this.slide = 1;
-        this.speedMaxAir = 20;
+        this.speedMaxAir = 2;
         this.speedMaxPiso= 999;
         this.aAir=1;
         this.aGround=0.001;
@@ -37,7 +37,7 @@ public class BulletPhysics extends Physics {
             showInfoB(false);
             return; // La bala ha expirado
         }else{
-            showInfoB(true);
+            showInfoB(false);
         }
 
         moveX(speed,false,der,boost);

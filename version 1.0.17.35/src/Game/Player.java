@@ -1,6 +1,7 @@
 package Game;
 
 import Game.Bullets.Bullet;
+import Game.Fisics.PhysicsStepper;
 import Game.Fisics.PlayerPhysics;
 import States.GameState;
 import entradas.KeyBoard;
@@ -143,17 +144,7 @@ public void update() {
     double moveX = pPhysics.getVelocity().getX();
     double moveY = pPhysics.getVelocity().getY();
 
-    int steps = (int)Math.max(Math.abs(moveX), Math.abs(moveY));
-    steps = Math.min(steps, 8); // máximo 8 substeps
-    if (steps < 1) steps = 1;
-
-    double stepX = moveX / steps;
-    double stepY = moveY / steps;
-
-    for (int i = 0; i < steps; i++) {
-        position.setX(position.getX() + stepX);
-        position.setY(position.getY() + stepY);
-    }
+    PhysicsStepper.moveWithCollisions(this, moveX, moveY, gameState.getObjects());
     // balas
         if (KeyBoard.ei) {
             weaponS.tryShoot(
@@ -178,6 +169,7 @@ public void update() {
         }
     }
 }
+
 @Override
 public void onCollision(GameObjects other) {
     other.acceptCollision(this);
@@ -187,10 +179,10 @@ public void onCollisionWith(Ambiente ambiente) {
     enElSuelo = true;
     pPhysics.getVelocity().setY(0);
 }
-
 @Override
 public void onCollisionWith(Bullet bullet) {
-    System.out.println("Jugador impactado por bala");
+    System.out.println("Jugador impactado por bala ");
+    
 }
 
 @Override
@@ -209,13 +201,13 @@ public void draw(Graphics g) {
         }
 
         // reiniciar frame si se pasa del límite
-if (mirandoDerecha) {
-    frame = frame % Assets.walkDere.length;
-    currentFrame = Assets.walkDere[frame];
-} else {
-    frame = frame % Assets.walkHiz.length;
-    currentFrame = Assets.walkHiz[frame];
-}
+        if (mirandoDerecha) {
+            frame = frame % Assets.walkDere.length;
+            currentFrame = Assets.walkDere[frame];
+        } else {
+            frame = frame % Assets.walkHiz.length;
+            currentFrame = Assets.walkHiz[frame];
+        }
     }
     else { currentFrame = Assets.cubo;
         frame = 0;

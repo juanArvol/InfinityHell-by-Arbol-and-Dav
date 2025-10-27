@@ -17,4 +17,13 @@ public class CollisionManager {
             }
         }
     }
+    public static GameObjects findCollision(GameObjects obj, List<GameObjects> all) {
+        for (GameObjects other : all) {
+            if (obj == other) continue;
+            if (obj.getBounds().intersects(other.getBounds())) {
+                return other;
+            }
+        }
+        return null;
+    }
 }
