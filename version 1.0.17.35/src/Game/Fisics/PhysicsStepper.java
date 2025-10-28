@@ -8,7 +8,7 @@ public class PhysicsStepper {
 
     private static final int maxSubSteps = 8;
 
-    public static void moveWithCollisions(GameObjects obj, double moveX, double moveY, List<GameObjects> allObjects) {
+    public static void moveWith(GameObjects obj, double moveX, double moveY, List<GameObjects> allObjects) {
         int steps = (int) Math.max(Math.abs(moveX), Math.abs(moveY));
         steps = Math.min(Math.max(steps, 1), maxSubSteps);
 

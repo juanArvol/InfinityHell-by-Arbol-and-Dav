@@ -104,7 +104,6 @@ public void setWeapon(WeaponSelected weaponS){
 public void update() {
     running= false;
     double inputX = 0;
-
     if(KeyBoard.shift){
         running=true;
         if (KeyBoard.right) {
@@ -131,7 +130,7 @@ public void update() {
 
     // Saltar
     if ((KeyBoard.space || (KeyBoard.up && !KeyBoard.ei)) && enElSuelo && !congelado) {
-        pPhysics.jump(14.5);  // salto ajustable
+        pPhysics.jump(17.5);  // salto ajustable
         enElSuelo = false;
     } else{
         pPhysics.setJumping(false);
@@ -144,7 +143,7 @@ public void update() {
     double moveX = pPhysics.getVelocity().getX();
     double moveY = pPhysics.getVelocity().getY();
 
-    PhysicsStepper.moveWithCollisions(this, moveX, moveY, gameState.getObjects());
+    PhysicsStepper.moveWith(this, moveX, moveY, gameState.getObjects());
     // balas
         if (KeyBoard.ei) {
             weaponS.tryShoot(
@@ -181,13 +180,13 @@ public void onCollisionWith(Ambiente ambiente) {
 }
 @Override
 public void onCollisionWith(Bullet bullet) {
-    System.out.println("Jugador impactado por bala ");
     
 }
 
 @Override
 public void onCollisionWith(EnimyNormal enemy) {
-    System.out.println("Jugador chocó con enemigo");
+    enElSuelo = true;
+    pPhysics.getVelocity().setY(0);
 }
 @Override
 public void draw(Graphics g) {

@@ -5,6 +5,8 @@ import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
+
+import Game.Bullets.Bullet;
 import math.Vector2D;
 
 public class EnimyNormal extends MovingObjects {
@@ -86,20 +88,18 @@ public class EnimyNormal extends MovingObjects {
         g.drawImage(Assets.enimy1[0], (int) position.getX(), (int) position.getY(), null);
         drawHitbox(g);
     }
-
     @Override
-    public void onCollision(GameObjects other) {
-        if (other instanceof Player) {
-            int offset=0;
-            if(derecha){
-                player.position.setX(position.getX() + player.getBounds().width+offset);
-            }else{
-                player.position.setX(position.getX() - player.getBounds().width-offset);
-            }
-        }
-        if (other instanceof Ambiente) {
-            Rectangle suelo = other.getBounds();
-            position.setY(443);
-        }
+public void onCollision(GameObjects other) {
+    other.acceptCollision(this);
+}
+@Override
+public void onCollisionWith(Ambiente ambiente) {
+}
+    @Override
+        public void onCollisionWith(Bullet bullet) {
+    }
+
+        @Override
+    public void onCollisionWith(Player player) {
     }
 }

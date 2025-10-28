@@ -3,6 +3,7 @@ package graficos;
 import java.awt.image.BufferedImage;
 
 public class Assets {
+    public static BufferedImage mondongo;
     public static BufferedImage cubo;
     public static BufferedImage suelo;
     public static BufferedImage bala;
@@ -12,6 +13,7 @@ public class Assets {
     public static BufferedImage[] enimy1;
 
     public static void init() {
+        mondongo= Loader.imageLoader("/Source/mondongo.png");
         cubo = Loader.imageLoader("/Source/player/eee.png");
         suelo = Loader.imageLoader("/Source/ambiente/pasto.png");
         

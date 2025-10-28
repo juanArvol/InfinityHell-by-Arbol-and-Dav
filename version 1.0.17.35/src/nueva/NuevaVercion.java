@@ -11,8 +11,8 @@ import javax.swing.*;
 
 public class NuevaVercion extends JFrame implements Runnable{
 
-public static final int widthMax = 2250, heightMax = 800;
-public static final int width =1200, height = 600;
+public static final int widthMax = 3250, heightMax = 1800;
+public static final int width =1200, height = 800;
 private Canvas canvas;
 
 //lo siguiente es un hilo para tener un programa dentro de otro programa
@@ -24,7 +24,7 @@ private Graphics g;
 private final int FPS = 30;
 private double objetivo =  1000000000.0 / FPS; //tiempo requerido para pasar fotograma
 private double delta = 0; //almacena el tiempo temporal al tiempo-- deltarepresenta el tiempo respecto al cambio
-private  int fpsPorSegundo = FPS; //nos permite sabe a cuanto esta correiendo un juegp
+private  int fpsPorSegundo = (int)delta; //nos permite sabe a cuanto esta correiendo un juegp
 
 private GameState gameState;
 public KeyBoard  Keyboard;
@@ -84,7 +84,6 @@ public NuevaVercion (){
     // Dibuja el texto de FPS
     g.setColor(Color.BLACK);
     g.drawString("" + fpsPorSegundo, 10, 10);
-
         g.dispose();
         bs.show();
     }
@@ -136,7 +135,7 @@ try {
     thread.join();
     runner = false;
 } catch (InterruptedException e) {
-    e.printStackTrace();/// esto simplemente no c que hace pero supongo que toca profundizar en try catch 
+    e.printStackTrace();    //// esto simplemente no c que hace pero supongo que toca profundizar en try catch 
 }
 }
 }

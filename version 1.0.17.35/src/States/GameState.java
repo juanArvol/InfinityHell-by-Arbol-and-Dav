@@ -15,6 +15,7 @@ import math.Vector2D;
 
 public class GameState extends JPanel {
 
+    private Cut cut;
     private Player player;
     private Ambiente ambiente;
     public static GameState instance;
@@ -30,11 +31,11 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(0);
+        spawnEnemies(2);
         player.setEnemies(enemies);
         player.setWeapon(new WeaponSelected(player, 1,3));
         objects.add(player);
-        
+        cut = new Cut( new Vector2D(), Assets.mondongo);
         // crear suelo
         BufferedImage texturaSuelo = Assets.suelo;
         int anchoPantalla = 1200;
@@ -42,6 +43,7 @@ public class GameState extends JPanel {
 
         ambiente = new Ambiente(new Vector2D(0, ySuelo), texturaSuelo, anchoPantalla, 75);
         objects.add(ambiente);
+        objects.add(cut);
     }
 
     // Método seguro para agregar objetos (por ejemplo, balas)
@@ -69,7 +71,7 @@ public class GameState extends JPanel {
             }
 
             BufferedImage texture = Assets.enimy1[(int) (Math.random() * Assets.enimy1.length)];
-            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, false, player);
+            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, true, player);
             enemies.add(enemy);
             objects.add(enemy);
         }

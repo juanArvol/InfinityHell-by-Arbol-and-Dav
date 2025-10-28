@@ -80,7 +80,7 @@ public class Physics {
     }
     public void showInfo(boolean yes){
         if(yes){
-            System.out.println("inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX()+" | vx: " + vx+" | masa: " + mass);
+            System.out.println("inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX()+" | velY: " + velocity.getY()+" | vx: " + vx+" | masa: " + mass);
         }
     }
     public void jump(double force) {
