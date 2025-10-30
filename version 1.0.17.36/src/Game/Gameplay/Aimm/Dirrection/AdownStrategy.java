@@ -4,9 +4,10 @@ import Game.Gameplay.Aimm.AimDirection;
 import Game.Gameplay.Aimm.AimStrategy;
 import Game.Player;
 
-public class ArightStrategy extends AimStrategy {
+public class AdownStrategy extends AimStrategy {
     @Override
     protected AimDirection calculateDirection(Player player) {
-        return new AimDirection(25, 0); // Dispara hacia la derecha
+        setDir(player.isDer());
+        return new AimDirection(0, 1); // Dispara hacia abajo
     }
 }

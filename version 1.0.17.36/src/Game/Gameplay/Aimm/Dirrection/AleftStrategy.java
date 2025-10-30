@@ -5,8 +5,11 @@ import Game.Gameplay.Aimm.AimStrategy;
 import Game.Player;
 
 public class AleftStrategy extends AimStrategy {
+
+    
     @Override
     protected AimDirection calculateDirection(Player player) {
-        return new AimDirection(-25, 0); // Dispara hacia la izquierda
+        setDir(false);
+        return new AimDirection(-1, 0); // Dispara hacia la izquierda
     }
 }

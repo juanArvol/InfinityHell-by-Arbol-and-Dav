@@ -1,12 +1,10 @@
 package States;
 
+import Game.GameObjects;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
-import graficos.Assets;
-import Game.GameObjects;
-import Game.Colisions.SystemColisions.Collidable;
 import math.Vector2D;
 
 public class Cut extends GameObjects {
@@ -24,7 +22,7 @@ public class Cut extends GameObjects {
     public void draw(Graphics g) {
 
         g.setColor(Color.BLACK);
-        g.drawImage(Assets.mondongo,10,10,null);
+        //g.drawImage(Assets.mondongo,10,10,null);
         g.dispose();
     }
 

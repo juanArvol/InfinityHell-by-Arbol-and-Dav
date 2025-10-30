@@ -7,6 +7,7 @@ import Game.Player;
 public class AupStrategy extends AimStrategy {
     @Override
     protected AimDirection calculateDirection(Player player) {
-        return new AimDirection(0, -45); // Dispara hacia arriba
+        setDir(player.isDer());
+        return new AimDirection(0, -1); // Dispara hacia arriba
     }
 }

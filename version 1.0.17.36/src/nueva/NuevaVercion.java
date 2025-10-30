@@ -12,7 +12,7 @@ import javax.swing.*;
 public class NuevaVercion extends JFrame implements Runnable{
 
 public static final int widthMax = 3250, heightMax = 1800;
-public static final int width =1200, height = 800;
+public static final int width =1200, height = 600;
 private Canvas canvas;
 
 //lo siguiente es un hilo para tener un programa dentro de otro programa
@@ -135,7 +135,7 @@ try {
     thread.join();
     runner = false;
 } catch (InterruptedException e) {
-    e.printStackTrace();    //// esto simplemente no c que hace pero supongo que toca profundizar en try catch 
+    e.printStackTrace();    //// esto simplemente no c que hace pero supongo que toca profundizar en try catch
 }
 }
 }

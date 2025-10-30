@@ -10,6 +10,7 @@ public abstract class AimStrategy {
     protected boolean left;
     protected boolean right;
     protected boolean c;
+    private boolean dir;
 
     public AimDirection aim(Player player) {
         // Leer teclas aquí y guardarlas como estado solo durante este frame
@@ -22,7 +23,12 @@ public abstract class AimStrategy {
         // Delegamos la lógica a cada estrategia concreta
         return calculateDirection(player);
     }
-
+    protected void setDir(boolean dir){
+        this.dir=dir;
+    }
+    public boolean getDir(){
+        return dir;
+    }
     // Método que cada estrategia concreta debe implementar
     protected abstract AimDirection calculateDirection(Player player);
 }

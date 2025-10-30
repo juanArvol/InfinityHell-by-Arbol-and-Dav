@@ -17,6 +17,7 @@ public class Physics {
 
     protected double inputX;
     protected double vx;
+    protected double vy;
     protected double dir;
     protected double accel;
 
@@ -36,6 +37,9 @@ public class Physics {
         velocity.setX(vX);
     }
 
+    public void vSetY(double vY){
+        velocity.setY(vY);
+    }
     public void setJumping(boolean jumping){
         this.salto=jumping;
     }
@@ -65,6 +69,14 @@ public class Physics {
             }
         }
         vSetX(vx);
+    }
+    public void moveY(double inputY){
+        vy=velocity.getY()+inputY;
+        vSetY(vy);
+    }
+    public void updateMoves(Vector2D algo){
+        algo.setX(algo.getX() + velocity.getX());
+        algo.setY(algo.getY() + velocity.getY());
     }
     public void setMaxSpeed(boolean onGround){
         speedMax= onGround ? speedMaxPiso : speedMaxAir;

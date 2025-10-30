@@ -1,12 +1,10 @@
 package Game;
 
+import Game.Bullets.Bullet;
 import graficos.Assets;
 import java.awt.Graphics;
-import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
-
-import Game.Bullets.Bullet;
 import math.Vector2D;
 
 public class EnimyNormal extends MovingObjects {
@@ -25,7 +23,7 @@ public class EnimyNormal extends MovingObjects {
         super(position, texture);
         this.path = path;
         this.index = startIndex;
-        this.following = following; 
+        this.following = following;
         this.velocity = new Vector2D(0.1, 0); // velocidad inicial
         this.player = player;
     }
@@ -38,7 +36,7 @@ public class EnimyNormal extends MovingObjects {
     private Vector2D pathFollowing() {
         node = path.get(index);
 
-        double distanceNode = node.subtract(getCenter()).magnitude();
+        double distanceNode = node.subtract(getCenter()).length();
 
         if (distanceNode < 10) { // umbral de llegada, antes ponías 160 (demasiado grande)
             index++;

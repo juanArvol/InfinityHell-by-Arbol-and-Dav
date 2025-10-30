@@ -7,6 +7,11 @@ import Game.Player;
 public class AidleStrategy extends AimStrategy {
     @Override
     protected AimDirection calculateDirection(Player player) {
-        return new AimDirection(25, 0); // Dispara hacia la derecha
+        setDir(player.isDer());
+        if(player.isDer()){
+            return new AimDirection(1, 0); // Dispara hacia la derecha
+        }else{
+            return new AimDirection(-1, 0); // Dispara hacia la izquierda
+        }
     }
 }

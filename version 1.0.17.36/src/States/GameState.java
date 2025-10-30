@@ -31,9 +31,9 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(2);
+        spawnEnemies(0);
         player.setEnemies(enemies);
-        player.setWeapon(new WeaponSelected(player, 1,3));
+        player.setWeapon(new WeaponSelected(player, 2,1));
         objects.add(player);
         cut = new Cut( new Vector2D(), Assets.mondongo);
         // crear suelo
@@ -71,7 +71,7 @@ public class GameState extends JPanel {
             }
 
             BufferedImage texture = Assets.enimy1[(int) (Math.random() * Assets.enimy1.length)];
-            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, true, player);
+            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, false, player);
             enemies.add(enemy);
             objects.add(enemy);
         }

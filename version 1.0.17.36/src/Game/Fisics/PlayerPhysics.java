@@ -6,7 +6,7 @@ public class PlayerPhysics extends Physics {
     public void moveX(double inputX, boolean onGround, boolean direction, boolean running) {
         setMass(1);
         setMaxSpeed(onGround);
-        slide= onGround ? 0.9 : 0.76;
+        slide= onGround ? 0.9 : 0.74;
         speedMaxPiso= running ? 135 : 70;
         speedMaxAir= running ? 14.5 : 10;
         aGround=2.5;

@@ -105,17 +105,16 @@ public class Weapon {
             }
     }
     private void shoot(double x, double y, boolean mirandoDerecha, bulletType bullet) {
-    double dir = mirandoDerecha ? 1 : -1;
-    
+        
     double spawnX = mirandoDerecha ? x + 8 : x - 8;
     double spawnY = y;
 
     Sounds.playSound("Gun.wav");
     for (int i = 0; i < bulletsPerShot; i++) {
         Bullet nuevaBala = BulletFactory.createBullet(
+            bulletsPerShot,
             spawnX,
             spawnY,
-            mirandoDerecha,
             bullet,
             owner,
             oEnemys
