@@ -33,7 +33,7 @@ public class GameState extends JPanel {
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
         spawnEnemies(0);
         player.setEnemies(enemies);
-        player.setWeapon(new WeaponSelected(player, 2,1));
+        player.setWeapon(new WeaponSelected(player, 3,4));
         objects.add(player);
         cut = new Cut( new Vector2D(), Assets.mondongo);
         // crear suelo

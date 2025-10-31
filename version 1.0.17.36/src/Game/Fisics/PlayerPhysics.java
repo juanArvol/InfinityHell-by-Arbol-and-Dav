@@ -27,6 +27,6 @@ public class PlayerPhysics extends Physics {
             if (Math.abs(vx) < 0.05) vx = 0;
             vSetX(vx);
         }
-        showInfo(false);
+        showInfo(true);
     }
 }

@@ -88,7 +88,7 @@ public class Weapon {
     public void tryShoot(double x, double y, boolean mirandoDerecha) {
         if(fireWait >0) return;
         
-        double spawnX = mirandoDerecha ? x + 8 : x - 8;
+        double spawnX = mirandoDerecha ? x -11.5 : x - 29;
         double spawnY = y;
 
         bulletType bullet = new bulletType(typeBullet);

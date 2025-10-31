@@ -3,6 +3,7 @@ package Game;
 import Game.Bullets.Bullet;
 import Game.Fisics.PhysicsStepper;
 import Game.Fisics.PlayerPhysics;
+import Game.Gameplay.Mechanics;
 import States.GameState;
 import entradas.KeyBoard;
 import graficos.Assets;
@@ -14,7 +15,7 @@ import math.Vector2D;
 
 public class Player extends MovingObjects {
     private PlayerPhysics pPhysics;
-    private boolean congelado = false;
+    private boolean congelado;
     private boolean mirandoDerecha = true;
     private boolean agachado= false;
     private boolean running= KeyBoard.shift;
@@ -24,6 +25,7 @@ public class Player extends MovingObjects {
     private boolean enElSuelo = false;
 
     private double waitingTime;
+    private Mechanics m;
     private GameState gameState;
     private WeaponSelected weaponS;
     private ArrayList<EnimyNormal> enemies;
@@ -104,30 +106,31 @@ public void setWeapon(WeaponSelected weaponS){
 public void update() {
     running= false;
     double inputX = 0;
-    if(KeyBoard.shift){
-        running=true;
-        if (KeyBoard.right) {
-            inputX = 25;
-            mirandoDerecha = true;
-        }
-        if (KeyBoard.left) {
-            inputX = 25;
-        mirandoDerecha = false;
-        }
-    }else{
-        if (KeyBoard.right) {
-            inputX = 1;
-            mirandoDerecha = true;
-        }
-        if (KeyBoard.left) {
-            inputX = 1;
-        mirandoDerecha = false;
-        }
-    }
-    if (congelado){
-        inputX = 0;
-    }
+    
+    m.updateMechanics(this);
 
+    if (!congelado){
+        if(KeyBoard.shift){
+            running=true;
+            if (KeyBoard.right) {
+                inputX = 25;
+                mirandoDerecha = true;
+            }
+            if (KeyBoard.left) {
+                inputX = 25;
+            mirandoDerecha = false;
+            }
+        }else{
+            if (KeyBoard.right) {
+                inputX = 1;
+                mirandoDerecha = true;
+            }
+            if (KeyBoard.left) {
+                inputX = 1;
+            mirandoDerecha = false;
+            }
+        }
+    }
     // Saltar
     if ((KeyBoard.space || (KeyBoard.up && !KeyBoard.ei)) && enElSuelo && !congelado) {
         pPhysics.jump(17.5);  // salto ajustable

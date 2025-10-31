@@ -19,9 +19,9 @@ public class BulletPhysics extends Physics {
 
         //cosas physics
         this.slide = 0.1;
-        this.speedMaxAir = 20;
+        this.speedMaxAir = 999;
         this.speedMaxPiso= 999;
-        this.aAir=1;
+        this.aAir=0.1;
         this.aGround=0.001;
     }
     @Override
@@ -32,15 +32,15 @@ public class BulletPhysics extends Physics {
         super.showInfo(false);
     }
     public void update(Vector2D position) {
-        if (lifeTime-- <= 0) {
+        /* if (lifeTime-- <= 0) {
             stopX();
             showInfoB(false);
             return; // La bala ha expirado
         }else{
             showInfoB(false);
-        }
+        } */
         moveX(Math.abs(direction.getX()),false,der,boost);
-        moveY(direction.getY());
+        moveY(direction.getY()/2.25);
         updateMoves(position);
     }
     public void showInfoB(boolean yes){
