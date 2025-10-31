@@ -31,11 +31,12 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(0);
+        spawnEnemies(1);
         player.setEnemies(enemies);
         player.setWeapon(new WeaponSelected(player, 3,4));
         objects.add(player);
-        cut = new Cut( new Vector2D(), Assets.mondongo);
+        cut = new Cut(new Vector2D(-6,1), null, 100, 100, player);
+
         // crear suelo
         BufferedImage texturaSuelo = Assets.suelo;
         int anchoPantalla = 1200;
