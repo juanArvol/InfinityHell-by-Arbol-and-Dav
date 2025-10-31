@@ -30,6 +30,21 @@ public class Player extends MovingObjects {
     private WeaponSelected weaponS;
     private ArrayList<EnimyNormal> enemies;
     private ArrayList<Bullet> bullets = new ArrayList<>();
+    private int life = 100;
+    private int lifeMax = 200;
+public int getLife(){
+    return life;
+}
+public int getLifeMax(){
+    return lifeMax;
+}
+public void recibedDaimage(int value){
+    this.life -= value;
+    if (this.life < 0 ) {
+        this.life = 0;
+        
+    }
+}
     
 @Override
 public Vector2D getPosition() {

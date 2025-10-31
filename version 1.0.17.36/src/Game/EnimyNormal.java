@@ -18,6 +18,9 @@ public class EnimyNormal extends MovingObjects {
     private double dir;
     private boolean piso;
     private double dirY;
+     private int lifeEnemyNormalNormal = 1000000 ;
+     private int lifeMaxEnimyNormal = 1000000;
+    // se me ocurrio que un enemigo le pueda robar a uno aun potenciador, jajaj seria epico, se imagina a ese hp teniendo mas vida o creciendo, o obteniendo un abazooca
 
     public EnimyNormal(Vector2D position, BufferedImage texture, ArrayList<Vector2D> path, int startIndex, boolean following, Player player) {
         super(position, texture);
@@ -27,6 +30,22 @@ public class EnimyNormal extends MovingObjects {
         this.velocity = new Vector2D(0.1, 0); // velocidad inicial
         this.player = player;
     }
+    public int getLifeEnemyNormal(){
+    return lifeEnemyNormalNormal;
+}
+public int getLifeMaxEnemyNormal(){
+    return lifeMaxEnimyNormal;
+}
+
+public void daemonEnemyBullet(int value){
+    this.lifeEnemyNormalNormal -= value;
+    if (this.lifeEnemyNormalNormal < 0 ) {
+        this.lifeEnemyNormalNormal = 0;
+            System.out.println("li enemifo: " + this.lifeEnemyNormalNormal + "/" + this.lifeMaxEnimyNormal);
+}
+        
+    }
+
     private Vector2D followingPlayer(){
         Vector2D playerPos = player.getCenter();
         return seekForce(playerPos);
@@ -89,15 +108,37 @@ public class EnimyNormal extends MovingObjects {
     @Override
 public void onCollision(GameObjects other) {
     other.acceptCollision(this);
+    if (other instanceof Player) {
+ 
+}
 }
 @Override
 public void onCollisionWith(Ambiente ambiente) {
 }
     @Override
         public void onCollisionWith(Bullet bullet) {
+    
+    System.out.println("muerto");
+    System.out.println("vida enemigo: " + lifeEnemyNormalNormal + "/" + lifeMaxEnimyNormal);
+
+    if (lifeEnemyNormalNormal <= 0) {
+        System.out.println(" se supone que se tiene que morir");
+    }
+    //arvoloco si algun dia llega a leer esto, yo me encargo de los sprites y eso pero tambien quiero encargarme de la destruccion del enemynormal, yo lo cree yo lo destruire.
+            
     }
 
         @Override
-    public void onCollisionWith(Player player) {
+    public void onCollisionWith(Player p) {
+        
+            p.recibedDaimage(10);
+            int offset=0;
+            if(derecha){
+                player.position.setX((position.getX()) + player.getBounds().width+offset);
+            }else{
+                player.position.setX((position.getX()) - player.getBounds().width-offset);
+            }
+            velocity.setX(dir*10);
+            velocity.setY(dirY*10); // lo "apega" al suelo
     }
 }
