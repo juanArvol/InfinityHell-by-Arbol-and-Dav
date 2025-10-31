@@ -3,7 +3,7 @@ package Game.Fisics;
 import math.Vector2D;
 
 public class BulletPhysics extends Physics {
-    private int lifeTime = 90; // Duración de la bala en frames
+    private int lifeTime = 150; // Duración de la bala en frames
     private double gravity;
     private boolean tieneG;
     private boolean der;
@@ -32,15 +32,15 @@ public class BulletPhysics extends Physics {
         super.showInfo(false);
     }
     public void update(Vector2D position) {
-        /* if (lifeTime-- <= 0) {
+        if (lifeTime-- <= 0) {
             stopX();
             showInfoB(false);
             return; // La bala ha expirado
         }else{
             showInfoB(false);
-        } */
+        }
         moveX(Math.abs(direction.getX()),false,der,boost);
-        moveY(direction.getY()/2.25);
+        moveY(direction.getY()/2.75);
         updateMoves(position);
     }
     public void showInfoB(boolean yes){
