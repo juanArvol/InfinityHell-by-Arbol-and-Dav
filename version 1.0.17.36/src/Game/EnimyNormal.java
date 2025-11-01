@@ -18,7 +18,10 @@ public class EnimyNormal extends MovingObjects {
     private double dir;
     private boolean piso;
     private double dirY;
-
+    
+    private int lifeEnemyNormalNormal = 1000000 ;
+    private int lifeMaxEnimyNormal = 1000000;
+    // se me ocurrio que un enemigo le pueda robar a uno aun potenciador, jajaj seria epico, se imagina a ese hp teniendo mas vida o creciendo, o obteniendo un abazooca
     public EnimyNormal(Vector2D position, BufferedImage texture, ArrayList<Vector2D> path, int startIndex, boolean following, Player player) {
         super(position, texture);
         this.path = path;
@@ -31,7 +34,19 @@ public class EnimyNormal extends MovingObjects {
         Vector2D playerPos = player.getCenter();
         return seekForce(playerPos);
     }
-
+    public int getLifeEnemyNormal(){
+        return lifeEnemyNormalNormal;
+    }
+    public int getLifeMaxEnemyNormal(){
+        return lifeMaxEnimyNormal;
+    }
+    public void daemonEnemyBullet(int value){
+    this.lifeEnemyNormalNormal -= value;
+        if (this.lifeEnemyNormalNormal < 0 ) {
+            this.lifeEnemyNormalNormal = 0;
+                System.out.println("li enemifo: " + this.lifeEnemyNormalNormal + "/" + this.lifeMaxEnimyNormal);
+        }
+    }
     // seguir el camino
     private Vector2D pathFollowing() {
         node = path.get(index);
@@ -87,17 +102,34 @@ public class EnimyNormal extends MovingObjects {
         drawHitbox(g);
     }
     @Override
-public void onCollision(GameObjects other) {
-    other.acceptCollision(this);
-}
-@Override
-public void onCollisionWith(Ambiente ambiente) {
-}
+    public void onCollision(GameObjects other) {
+        other.acceptCollision(this);
+    }
     @Override
-        public void onCollisionWith(Bullet bullet) {
+    public void onCollisionWith(Ambiente ambiente) {
+    }
+
+    @Override
+    public void onCollisionWith(Bullet bullet) {
+        System.out.println("muerto");
+        System.out.println("vida enemigo: " + lifeEnemyNormalNormal + "/" + lifeMaxEnimyNormal);
+
+        if (lifeEnemyNormalNormal <= 0) {
+            System.out.println(" se supone que se tiene que morir");
+    }
+    //arvoloco si algun dia llega a leer esto, yo me encargo de los sprites y eso pero tambien quiero encargarme de la destruccion del enemynormal, yo lo cree yo lo destruire.
     }
 
         @Override
     public void onCollisionWith(Player player) {
+        player.recibedDaimage(10);
+            int offset=0;
+            if(derecha){
+                player.position.setX((position.getX()) + player.getBounds().width+offset);
+            }else{
+                player.position.setX((position.getX()) - player.getBounds().width-offset);
+            }
+            velocity.setX(dir*10);
+            velocity.setY(dirY*10); // lo "apega" al suelo
     }
 }

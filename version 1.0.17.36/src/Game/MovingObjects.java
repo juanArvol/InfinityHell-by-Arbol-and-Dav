@@ -25,5 +25,4 @@ public abstract class MovingObjects extends GameObjects {
     return new Vector2D(centerX, centerY);
 }
 
-    public abstract void onCollision(GameObjects other);
 }

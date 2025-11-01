@@ -53,7 +53,7 @@ public class BulletFactory {
         }else{
             finalDir=direction;
         }
-        System.out.println(finalDir);
+        //System.out.println(finalDir);
         // Crea y devuelve la bala con sus físicas
         return new Bullet(
             spawnPos,

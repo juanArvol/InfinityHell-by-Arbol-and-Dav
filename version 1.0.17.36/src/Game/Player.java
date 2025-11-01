@@ -21,6 +21,8 @@ public class Player extends MovingObjects {
     private boolean running= KeyBoard.shift;
     private int frame = 0;
     private int animTick = 0;
+    private int life = 100;
+    private int lifeMax = 200;
 
     private boolean enElSuelo = false;
 
@@ -66,6 +68,9 @@ public boolean isDer(){
 public boolean isSuelo(){
     return enElSuelo;
 }
+public GameState getGameState(){
+    return gameState;
+}
 public void drawBullets(Graphics g) {
     for (Bullet b : bullets) {
         b.draw(g);
@@ -101,7 +106,19 @@ public void updateBullets(){
 public void setWeapon(WeaponSelected weaponS){
     this.weaponS = weaponS;
 }
-
+public int getLife(){
+    return life;
+}
+public int getLifeMax(){
+    return lifeMax;
+}
+public void recibedDaimage(int value){
+    this.life -= value;
+    if (this.life < 0 ) {
+        this.life = 0;
+        
+    }
+}
 @Override
 public void update() {
     running= false;
@@ -130,7 +147,14 @@ public void update() {
             mirandoDerecha = false;
             }
         }
-    }
+    }else{
+            if (KeyBoard.right) {
+                mirandoDerecha = true;
+            }
+            if (KeyBoard.left) {
+                mirandoDerecha = false;
+            }
+        }
     // Saltar
     if ((KeyBoard.space || (KeyBoard.up && !KeyBoard.ei)) && enElSuelo && !congelado) {
         pPhysics.jump(17.5);  // salto ajustable
@@ -171,11 +195,6 @@ public void update() {
         }
     }
 }
-
-@Override
-public void onCollision(GameObjects other) {
-    other.acceptCollision(this);
-}
 @Override
 public void onCollisionWith(Ambiente ambiente) {
     enElSuelo = true;
@@ -183,14 +202,12 @@ public void onCollisionWith(Ambiente ambiente) {
 }
 @Override
 public void onCollisionWith(Bullet bullet) {
-    
-}
 
+}
 @Override
 public void onCollisionWith(EnimyNormal enemy) {
-    enElSuelo = true;
-    pPhysics.getVelocity().setY(0);
 }
+
 @Override
 public void draw(Graphics g) {
     BufferedImage currentFrame;
