@@ -20,9 +20,8 @@ public abstract class MovingObjects extends GameObjects {
         return createBounds(0, 0, texture.getWidth(), texture.getHeight());
     }
     public Vector2D getCenter() {
-    double centerX = position.getX() + texture.getWidth() / 2.0;
-    double centerY = position.getY() + texture.getHeight() / 2.0;
-    return new Vector2D(centerX, centerY);
-}
-
+        double centerX = (position.getX() + texture.getWidth()) / 2.0;
+        double centerY = (position.getY() + texture.getHeight()) / 2.0;
+        return new Vector2D(centerX, centerY);
+    }
 }

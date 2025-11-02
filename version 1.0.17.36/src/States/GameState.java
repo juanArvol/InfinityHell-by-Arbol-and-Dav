@@ -31,7 +31,7 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(0);
+        spawnEnemies(1);
         player.setEnemies(enemies);
         player.setWeapon(new WeaponSelected(player, 2,2));
         objects.add(player);
@@ -73,7 +73,7 @@ public class GameState extends JPanel {
             }
 
             BufferedImage texture = Assets.enimy1[(int) (Math.random() * Assets.enimy1.length)];
-            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, false, player);
+            EnimyNormal enemy = new EnimyNormal(new Vector2D(x, y), texture, path, 0, true, player);
             enemies.add(enemy);
             objects.add(enemy);
         }

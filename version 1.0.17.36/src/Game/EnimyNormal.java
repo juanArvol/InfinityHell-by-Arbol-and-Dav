@@ -74,7 +74,7 @@ public class EnimyNormal extends MovingObjects {
     public void update() {
         Vector2D steering;
 
-        if (following) {
+        if (!following) {
         // si quieres que solo siga al path
         steering = pathFollowing();
     } else {
