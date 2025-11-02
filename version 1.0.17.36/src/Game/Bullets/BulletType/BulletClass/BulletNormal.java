@@ -2,7 +2,6 @@ package Game.Bullets.BulletType.BulletClass;
 
 import Game.Bullets.Bullet;
 import Game.Bullets.BulletType.BulletComport;
-import Game.GameObjects;
 import Game.Player;
 
 public class BulletNormal implements BulletComport {
@@ -21,8 +20,10 @@ public class BulletNormal implements BulletComport {
         System.out.println(ownerp); */
     }
     @Override
-    public void onCollision(Bullet bullet, GameObjects other, Player owner) {
-        System.out.println("colisionaste con jugador");
+    public void onCollision(Bullet bullet, Player owner) {
+        
+            System.out.println("bala colisiono con jugador");
+        
     }
 }
 /* private void explode() {

@@ -17,6 +17,8 @@ public class Player extends MovingObjects {
     private PlayerPhysics pPhysics;
     private boolean congelado;
     private boolean mirandoDerecha = true;
+    private boolean mArriba=false;
+    private boolean mAbajo=false;
     private boolean agachado= false;
     private boolean running= KeyBoard.shift;
     private int frame = 0;
@@ -27,7 +29,6 @@ public class Player extends MovingObjects {
     private boolean enElSuelo = false;
 
     private double waitingTime;
-    private Mechanics m;
     private GameState gameState;
     private WeaponSelected weaponS;
     private ArrayList<EnimyNormal> enemies;
@@ -68,8 +69,18 @@ public boolean isDer(){
 public boolean isSuelo(){
     return enElSuelo;
 }
-public GameState getGameState(){
-    return gameState;
+public boolean isMarriva(){
+    return mArriba;
+}
+public boolean isMabajo(){
+    return mAbajo;
+}
+public boolean isMirandoAorA(){
+    if(mArriba || mAbajo){
+        return true;
+    }else{
+        return false;
+    }
 }
 public void drawBullets(Graphics g) {
     for (Bullet b : bullets) {
@@ -122,9 +133,12 @@ public void recibedDaimage(int value){
 @Override
 public void update() {
     running= false;
+
     double inputX = 0;
     
-    m.updateMechanics(this);
+    //System.out.println("arriba: "+mArriba+" abajo: "+mAbajo);
+    
+    Mechanics.updateMechanics(this);
 
     if (!congelado){
         if(KeyBoard.shift){
@@ -154,7 +168,20 @@ public void update() {
             if (KeyBoard.left) {
                 mirandoDerecha = false;
             }
+            if (KeyBoard.up) {
+                mArriba = true;
+                mAbajo = false;
+            }else{
+                mArriba = false;
+            }
+            if (KeyBoard.down) {
+                mAbajo = true;
+                mArriba = false;
+            }else{
+                mAbajo = false;
+            }
         }
+
     // Saltar
     if ((KeyBoard.space || (KeyBoard.up && !KeyBoard.ei)) && enElSuelo && !congelado) {
         pPhysics.jump(17.5);  // salto ajustable
@@ -241,8 +268,8 @@ public void draw(Graphics g) {
 public Rectangle getBounds() {
     return createBounds(5, 5, 27, 38);
 }
-    public Player(Vector2D position, BufferedImage texture, GameState gameState) {
-        super(position, texture);
+    public Player(Vector2D spawn, BufferedImage texture, GameState gameState) {
+        super(spawn, texture);
         this.gameState = gameState;
         this.pPhysics = new PlayerPhysics();
     }

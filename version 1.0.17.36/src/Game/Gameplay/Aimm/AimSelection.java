@@ -33,6 +33,9 @@ public class AimSelection {
                 if(fdx !=0){
                     setDir(fdx>0);
                 }
+                if(fdy !=0){
+                    setAorA(true);
+                }
                 return new AimDirection(fdx, fdy);
             }
         };

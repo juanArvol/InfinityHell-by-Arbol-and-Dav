@@ -43,7 +43,22 @@ public class Physics {
     public void setJumping(boolean jumping){
         this.salto=jumping;
     }
+    public void stopY() {
+        velocity.setY(velocity.getY()*0);
+    }
 
+    public void stopX() {
+        velocity.setX(velocity.getX()*0);
+        vx=0;
+    }
+    public void stopVelocity(){
+        stopX();
+        stopY();
+    }
+    public void jump(double force) {
+        velocity.setY(-force/mass);
+        salto = true;
+    }
     public void moveX(double inputX,boolean onGround, boolean direction, boolean running) {
         /* if (Double.isNaN(velocity.getX())) {
             System.out.println("ADVERTENCIA: velocity.getX() es NaN al iniciar moveX. Reiniciando a 0.");
@@ -71,12 +86,15 @@ public class Physics {
         vSetX(vx);
     }
     public void moveY(double inputY){
-        vy=velocity.getY()+inputY;
-        vSetY(vy);
+        //vy=velocity.getY()+inputY;
+        vSetY(inputY);
     }
     public void updateMoves(Vector2D algo){
         algo.setX(algo.getX() + velocity.getX());
         algo.setY(algo.getY() + velocity.getY());
+    }
+    public Vector2D getVelocity() {
+        return velocity;
     }
     public void setMaxSpeed(boolean onGround){
         speedMax= onGround ? speedMaxPiso : speedMaxAir;
@@ -95,28 +113,13 @@ public class Physics {
             System.out.println("inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX()+" | velY: " + velocity.getY()+" | vx: " + vx+" | masa: " + mass);
         }
     }
-    public void jump(double force) {
-        velocity.setY(-force/mass);
-        salto = true;
-    }
+    
     public void addForce(double fx, double fy) {
         // F = m * a → a = F / m
         velocity.setX(velocity.getX() + (fx/mass));
         velocity.setY(velocity.getY() + (fy/mass));
     }
 
-    public Vector2D getVelocity() {
-        return velocity;
-    }
-
-    public void stopY() {
-        velocity.setY(0);
-    }
-
-    public void stopX() {
-        velocity.setX(0);
-        vx=0;
-    }
     public double getOposite(double x){
         return -x;
     }

@@ -3,22 +3,21 @@ package Game.Fisics;
 import math.Vector2D;
 
 public class BulletPhysics extends Physics {
-    private int lifeTime = 90; // Duración de la bala en frames
+    private int lifeTime=120; // Duración de la bala en frames
     private double gravity;
     private boolean tieneG;
     private boolean der;
     private boolean boost;
-    private Vector2D direction;
+    private Vector2D moveBullet;
 
-    public BulletPhysics(double gravity, Vector2D direction, boolean tieneGravedad, boolean der) {
+    public BulletPhysics(double gravity, Vector2D movement, boolean tieneGravedad, boolean der) {
         //cosas bala
         this.gravity = gravity;
-        this.direction=direction;
+        this.moveBullet=movement;
         this.tieneG= tieneGravedad;
         this.der=der;
-
         //cosas physics
-        this.slide = 0.1;
+        this.slide = 1;
         this.speedMaxAir = 1;
         this.speedMaxPiso= 999;
         this.aAir=0.1;
@@ -40,13 +39,16 @@ public class BulletPhysics extends Physics {
         }else{
             showInfoB(false);
         }
-        moveX(Math.abs(direction.getX()),false,der,boost);
-        moveY(direction.getY()/2.75);
-        updateMoves(position);
+        moveX(Math.abs(moveBullet.getX()),false,der,boost);
+        moveY(moveBullet.normalize().getY());
+        updateMoves(moveBullet);
     }
     public void showInfoB(boolean yes){
         if(yes){
             System.out.println(" | velocity: " + velocity + " | velocityX: " + velocity.getX()+" | velocityY: " + velocity.getY());
         }
+    }
+    public Vector2D getBphysicsVector2d(){
+        return moveBullet;
     }
 }

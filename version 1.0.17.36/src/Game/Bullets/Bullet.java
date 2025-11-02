@@ -1,10 +1,12 @@
 package Game.Bullets;
 
+import Game.Ambiente;
 import Game.EnimyNormal;
 import Game.Fisics.BulletPhysics;
 import Game.Fisics.PhysicsStepper;
 import Game.GameObjects;
 import Game.Player;
+import States.GameState;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -19,6 +21,7 @@ public class Bullet extends GameObjects {
     private double bulletY;
     private Player p;
     private bulletType type;
+    private GameState gs;
     private ArrayList<EnimyNormal> enemies;
     private BulletPhysics bPhysics;
 
@@ -31,9 +34,9 @@ public class Bullet extends GameObjects {
         this.bulletX=x;
         this.bulletY=y;
         this.dir=isDer;
-
-        double gravity= type.tieneGravedad() ? 0.385 : 0;
-        bPhysics = new BulletPhysics(gravity, new Vector2D(bulletX,bulletY), type.tieneGravedad(),dir);
+        this.gs= new GameState();
+        double bulletGravity= type.tieneGravedad() ? 0.385 : 0;
+        bPhysics = new BulletPhysics(bulletGravity, new Vector2D(bulletX,bulletY), type.tieneGravedad(),dir);
     }
 
     public bulletType getTipo(){
@@ -57,16 +60,21 @@ public class Bullet extends GameObjects {
     public void update() {
         bPhysics.update(position);
         type.getBulletClass().onUpdate(this,p);
+        
+        double moveX = bPhysics.getVelocity().normalize().getX();
+        double moveY = bPhysics.getVelocity().normalize().getY();
 
-        double moveX = bPhysics.getVelocity().getX();
-        double moveY = bPhysics.getVelocity().getY();
-
-        PhysicsStepper.moveWith(this, moveX, moveY, p.getGameState().getObjects());
+        PhysicsStepper.moveWith(this, moveX, moveY, gs.getObjects());
     }
-    
     @Override
-    public void onCollisionWith(GameObjects Player) {
-        type.getBulletClass().onCollision(this, Player, p);
+    public void onCollisionWith(Ambiente ambiente) {
+        bPhysics.stopVelocity();
+        System.out.println(bPhysics.getVelocity());
+        //System.out.println("su pta madreeee");
+    }
+    @Override
+    public void onCollisionWith(Player Player) {
+        type.getBulletClass().onCollision(this, p);
     }
     @Override
     public void draw(Graphics g) {

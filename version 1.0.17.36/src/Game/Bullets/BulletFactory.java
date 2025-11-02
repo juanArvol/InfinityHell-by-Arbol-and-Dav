@@ -34,26 +34,28 @@ public class BulletFactory {
         Vector2D dir = direction.normalize();
 
         // Vector perpendicular (para dispersión lateral)
-        Vector2D perp = new Vector2D(dir.getY(), -dir.getX());
+        Vector2D perp = new Vector2D(dir.getY(), dir.getX());
 
         // Factor de dispersion apartir de las balas disparadas por disparo
-        double spreadFactor =  Math.sqrt(bulletPershot); // suaviza crecimiento
+        double spreadFactor =  Math.sqrt(bulletPershot);
         double random1=rand.nextDouble();
         double random2=rand.nextDouble();
-
-        // Factor de dispersion relativo
-        double lateral = ((random1 - 0.5) * 0.025 * spreadFactor)*0.45;  // hacia los lados
-        double forward = ((random2 - 0.5) * 0.5 * spreadFactor)*0.25;  // ligeramente hacia adelante/atrás
-
-        //System.out.println("forward: "+forward+"lateral: "+lateral);
+        byte sign = rand.nextBoolean() ? (byte)1 : -1;
         
+        // Factor de dispersion relativo
+        double spreadYonX =(((random1/spreadFactor)*(bulletPershot/spreadFactor))*sign)*0.25;
+        double frenadoY=((random2*sign) / spreadFactor)*0  ;
+
+        //System.out.println("spread: "+spreadFactor);
+        //System.out.println(random1 + " " +random2);
+        //System.out.println("forward: "+frenadoY+" lateral: "+spreadYonX);
+        //System.out.println("X: "+finalDir.getX()+" y: "+finalDir.getY());
         Vector2D finalDir;
         if (bulletPershot>1) {
-            finalDir= dir.add(perp.scale(lateral)).add(dir.scale(forward)).normalize().scale(type.getSpeed());
+            finalDir=(dir.add(perp.scale(spreadYonX)).add(dir.scale(frenadoY)).scale(type.getSpeed()));
         }else{
             finalDir=direction;
         }
-        //System.out.println(finalDir);
         // Crea y devuelve la bala con sus físicas
         return new Bullet(
             spawnPos,

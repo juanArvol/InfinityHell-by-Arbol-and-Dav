@@ -2,7 +2,6 @@ package Game.Bullets.BulletType.BulletClass;
 
 import Game.Bullets.Bullet;
 import Game.Bullets.BulletType.BulletComport;
-import Game.GameObjects;
 import Game.Player;
 
 public class BulletJump implements BulletComport {
@@ -11,7 +10,7 @@ public class BulletJump implements BulletComport {
     public double getSpeed() { return 1; }
 
     @Override
-    public boolean hasGravity() { return true; }
+    public boolean hasGravity() { return false; }
 
     @Override
     public int getDamage() { return 15; }
@@ -23,6 +22,7 @@ public class BulletJump implements BulletComport {
     }
 
     @Override
-    public void onCollision(Bullet bullet, GameObjects other, Player owner) {
+    public void onCollision(Bullet bullet, Player owner) {
+        System.out.println("q rico ya sirviooooo");
     }
 }

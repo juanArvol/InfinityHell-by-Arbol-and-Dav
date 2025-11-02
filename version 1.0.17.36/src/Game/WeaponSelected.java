@@ -8,11 +8,12 @@ public class WeaponSelected {
     private Weapon weapon;
     private ArrayList<EnimyNormal> enemies;
     public WeaponSelected(Player owner, int selectedWeapon, int typeBullet){
+        this.owner=owner;
         this.selectedWeapon = selectedWeapon;
         this.weapon = new Weapon(owner, selectedWeapon, typeBullet, owner.getEnemies());
     }
     public void tryShoot(double x, double y, boolean mirandoDerecha){
-        weapon.tryShoot(x, y, mirandoDerecha);
+        weapon.tryShoot(x, y, mirandoDerecha, owner.isMirandoAorA());
     }
 
     public void resetBurst(){

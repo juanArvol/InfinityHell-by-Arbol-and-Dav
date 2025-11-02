@@ -85,33 +85,29 @@ public class Weapon {
      * @param y posición inicial Y
      * @param mirandoDerecha true si el personaje mira a la derecha
      */
-    public void tryShoot(double x, double y, boolean mirandoDerecha) {
+    public void tryShoot(double x, double y, boolean mirandoDerecha, boolean mirandoAoA) {
         if(fireWait >0) return;
-        
-        double spawnX = mirandoDerecha ? x -11.5 : x - 29;
-        double spawnY = y;
 
         bulletType bullet = new bulletType(typeBullet);
         owner.setWait(true);
 
-        
-            shoot(spawnX, spawnY, mirandoDerecha,bullet);
-            burstCount++;
-            if(burstCount < burstLimit){
-                fireWait = baseCooldown;
-            } else{
-                bulletCount+= (maxCooldown/10)+5;
-                fireWait = Math.min(maxCooldown, baseCooldown + ((burstCount+bulletCount)/burstLimit)*2);
-            }
+        shoot(x, y, mirandoDerecha,bullet,mirandoAoA);
+        burstCount++;
+        if(burstCount < burstLimit){
+            fireWait = baseCooldown;
+        } else{
+            bulletCount+= (maxCooldown/10)+5;
+            fireWait = Math.min(maxCooldown, baseCooldown + ((burstCount+bulletCount)/burstLimit)*2);
+        }
     }
-    private void shoot(double x, double y, boolean mirandoDerecha, bulletType bullet) {
+    private void shoot(double x, double y, boolean mirandoDerecha, bulletType bullet, boolean abajorriva) {
         
-    double spawnX = mirandoDerecha ? x + 8 : x - 8;
+    double spawnX = mirandoDerecha ? x + 4 + (abajorriva ? 1.5 : 0): (x - 45.5 + (abajorriva ? -1 : 0));
     double spawnY = y;
 
     Sounds.playSound("Gun.wav");
     for (int i = 0; i < bulletsPerShot; i++) {
-        Bullet nuevaBala = BulletFactory.createBullet(
+        Bullet newBullet = BulletFactory.createBullet(
             bulletsPerShot,
             spawnX,
             spawnY,
@@ -119,7 +115,7 @@ public class Weapon {
             owner,
             oEnemys
         );
-            owner.addBullet(nuevaBala);
+            owner.addBullet(newBullet);
         }
     }
 }
