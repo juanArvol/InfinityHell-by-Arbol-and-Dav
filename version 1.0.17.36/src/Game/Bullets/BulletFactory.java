@@ -44,12 +44,11 @@ public class BulletFactory {
         
         // Factor de dispersion relativo
         double spreadYonX =(((random1/spreadFactor)*(bulletPershot/spreadFactor))*sign)*0.25;
-        double frenadoY=((random2*sign) / spreadFactor)*0  ;
+        double frenadoY=((random2*sign) / spreadFactor)*1  ;
 
         //System.out.println("spread: "+spreadFactor);
         //System.out.println(random1 + " " +random2);
         //System.out.println("forward: "+frenadoY+" lateral: "+spreadYonX);
-        //System.out.println("X: "+finalDir.getX()+" y: "+finalDir.getY());
 
         Vector2D finalDir; //vector final de la direccion (wtf un comentario influyendo XD)
         if (bulletPershot>1) {
@@ -57,13 +56,15 @@ public class BulletFactory {
         }else{
             finalDir=direction;
         }
+        //System.out.println("X: "+finalDir.getX()+" y: "+finalDir.getY());
+        
         // Crea y devuelve la bala con sus físicas
         return new Bullet(
             spawnPos,
             Assets.bala,
             strategy.getDir(),
-            (direction.getX() + finalDir.getX()), //velocidad inicial X
-            (direction.getY() + finalDir.getY()), //velocidad inicial Y
+            (direction.getX() + finalDir.getX()), //movimiento inicial X
+            (direction.getY() + finalDir.getY()), //movimiento inicial Y
             type,
             owner,
             enemies

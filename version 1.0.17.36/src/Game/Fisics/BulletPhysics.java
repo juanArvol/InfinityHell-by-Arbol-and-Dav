@@ -6,22 +6,27 @@ public class BulletPhysics extends Physics {
     private int lifeTime=120; // Duración de la bala en frames
     private double gravity;
     private boolean tieneG;
+    private boolean onGround=false;
     private boolean der;
     private boolean boost;
     private Vector2D moveBullet;
 
-    public BulletPhysics(double gravity, Vector2D bulletVelocity, boolean tieneGravedad, boolean der) {
+    public BulletPhysics(double gravity, Vector2D bulletVelocity, boolean tieneGravedad, boolean derecha) {
         //cosas bala
         this.gravity = gravity;
         this.moveBullet=bulletVelocity;
         this.tieneG= tieneGravedad;
-        this.der=der;
+        this.der=derecha;
         //cosas physics
         this.slide = 1;
         this.speedMaxAir = 1;
         this.speedMaxPiso= 999;
         this.aAir=0.1;
         this.aGround=0.001;
+    }
+    public void setOnground(boolean yes){
+        this.onGround=yes;
+        System.out.println("la bala choca contra el piso papi");
     }
     @Override
     public void moveX(double inputX, boolean onGround, boolean direction, boolean running){
@@ -39,8 +44,8 @@ public class BulletPhysics extends Physics {
         }else{
             showInfoB(false);
         }
-        moveX(Math.abs(moveBullet.getX()),false,der,boost);
-        moveY(moveBullet.normalize().getY());
+        moveX(Math.abs(moveBullet.getX()),onGround,der,boost);
+        moveY(moveBullet.normalize().getY(),tieneG);
         updateMoves(moveBullet);
     }
     public void showInfoB(boolean yes){

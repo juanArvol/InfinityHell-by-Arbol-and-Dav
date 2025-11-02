@@ -25,7 +25,7 @@ public class Physics {
     protected boolean direction;
     protected boolean salto;
     protected boolean running;
-    protected  byte count=0;
+    protected byte count=0;
 
     public void setMass(double m){
         this.mass=m;
@@ -85,8 +85,8 @@ public class Physics {
         }
         vSetX(vx);
     }
-    public void moveY(double inputY){
-        //vy=velocity.getY()+inputY;
+    public void moveY(double inputY, boolean hasGravity){
+        if(hasGravity) applyGravity(onGround);
         vSetY(inputY);
     }
     public void updateMoves(Vector2D algo){
@@ -104,7 +104,7 @@ public class Physics {
     }
     public void applyGravity(boolean onGround) {
         // F = m * g → a = g (independiente de masa, pero dejamos abierto a modificaciones)
-        if (!onGround) {
+        if (onGround==false) {
             velocity.setY(velocity.getY() + (gravity*mass));
         }
     }

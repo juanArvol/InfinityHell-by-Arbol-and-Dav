@@ -15,10 +15,10 @@ import math.Vector2D;
 
 public class Bullet extends GameObjects {
 
-    private boolean dir;
+    private boolean isDerecha;
     private boolean alive;
-    private double bulletX;
-    private double bulletY;
+    private double bulletSpeedX;
+    private double bulletSpeedY;
     private Player p;
     private bulletType type;
     private GameState gs;
@@ -31,12 +31,13 @@ public class Bullet extends GameObjects {
         this.p=p;
         this.alive=true;
         this.enemies=enemies;
-        this.bulletX=xSpeed;
-        this.bulletY=ySpeed;
-        this.dir=isDer;
+        this.bulletSpeedX=xSpeed;
+        this.bulletSpeedY=ySpeed;
+        this.isDerecha=isDer;
         this.gs= new GameState();
+
         double bulletGravity= type.tieneGravedad() ? 0.385 : 0;
-        bPhysics = new BulletPhysics(bulletGravity, new Vector2D(bulletX,bulletY), type.tieneGravedad(),dir);
+        bPhysics = new BulletPhysics(bulletGravity, new Vector2D(bulletSpeedX,bulletSpeedY), type.tieneGravedad(),isDerecha);
     }
 
     public bulletType getTipo(){
@@ -69,8 +70,7 @@ public class Bullet extends GameObjects {
     @Override
     public void onCollisionWith(Ambiente ambiente) {
         bPhysics.stopVelocity();
-        System.out.println(bPhysics.getVelocity());
-        //System.out.println("su pta madreeee");
+        bPhysics.setOnground(true);
     }
     @Override
     public void onCollisionWith(Player Player) {

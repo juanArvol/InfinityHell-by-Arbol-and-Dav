@@ -31,7 +31,7 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(1);
+        spawnEnemies(0);
         player.setEnemies(enemies);
         player.setWeapon(new WeaponSelected(player, 2,2));
         objects.add(player);
