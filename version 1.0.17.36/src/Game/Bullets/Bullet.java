@@ -55,7 +55,6 @@ public class Bullet extends GameObjects {
     public void setAlive(){
         alive=true;
     }
-    
 
     @Override
     public void update() {

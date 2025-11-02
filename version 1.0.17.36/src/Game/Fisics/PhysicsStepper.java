@@ -22,7 +22,8 @@ public class PhysicsStepper {
             if (collided != null) {
                 // Notifica la colisión
                 obj.acceptCollision(collided);
-
+                collided.acceptCollision(obj);
+                
                 // Rompe el bucle o ajusta posición según lógica del objeto
                 break;
             }

@@ -26,7 +26,7 @@ public class BulletPhysics extends Physics {
     }
     public void setOnground(boolean yes){
         this.onGround=yes;
-        System.out.println("la bala choca contra el piso papi");
+        //System.out.println("la bala choca contra el piso papi");
     }
     @Override
     public void moveX(double inputX, boolean onGround, boolean direction, boolean running){
@@ -46,7 +46,7 @@ public class BulletPhysics extends Physics {
         }
         moveX(Math.abs(moveBullet.getX()),onGround,der,boost);
         moveY(moveBullet.normalize().getY(),tieneG);
-        updateMoves(moveBullet);
+        updateMoves(position);
     }
     public void showInfoB(boolean yes){
         if(yes){

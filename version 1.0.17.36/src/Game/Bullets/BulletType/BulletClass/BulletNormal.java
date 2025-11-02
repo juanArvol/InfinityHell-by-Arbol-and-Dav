@@ -19,7 +19,7 @@ public class BulletNormal implements BulletComport {
         /* Vector2D ownerp= owner.getPosition();
         System.out.println(ownerp); */
     }
-    @Override
+    
     public void onCollision(Bullet bullet, Player owner) {
         
             System.out.println("bala colisiono con jugador");

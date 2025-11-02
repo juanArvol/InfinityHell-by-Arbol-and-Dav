@@ -88,10 +88,10 @@ public class Weapon {
     public void tryShoot(double spawnx, double spawny, boolean mirandoDerecha, boolean mirandoAoA) {
         if(fireWait >0) return;
 
-        bulletType bullet = new bulletType(typeBullet);
+        bulletType bType = new bulletType(typeBullet);
         owner.setWait(true);
 
-        shoot(spawnx, spawny, mirandoDerecha,bullet,mirandoAoA);
+        shoot(spawnx, spawny, mirandoDerecha,bType,mirandoAoA);
         burstCount++;
         if(burstCount < burstLimit){
             fireWait = baseCooldown;
@@ -100,7 +100,7 @@ public class Weapon {
             fireWait = Math.min(maxCooldown, baseCooldown + ((burstCount+bulletCount)/burstLimit)*2);
         }
     }
-    private void shoot(double bSpawnX, double bSpawnY, boolean mirandoDerecha, bulletType bullet, boolean abajorriva) {
+    private void shoot(double bSpawnX, double bSpawnY, boolean mirandoDerecha, bulletType typeBullet, boolean abajorriva) {
     //logica del spawn de las ballas
     double spawnX = mirandoDerecha ? bSpawnX + 4 + (abajorriva ? 1.5 : 0): (bSpawnX - 45.5 + (abajorriva ? -1 : 0));
     double spawnY = bSpawnY;
@@ -111,7 +111,7 @@ public class Weapon {
             bulletsPerShot,
             spawnX,
             spawnY,
-            bullet,
+            typeBullet,
             owner,
             oEnemys
         );

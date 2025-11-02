@@ -1,9 +1,10 @@
 package Game.Bullets.BulletType;
 
 import Game.Bullets.Bullet;
+import Game.Bullets.BulletType.BulletClass.BulletCollidable;
 import Game.Player;
 
-public interface BulletComport {
+public interface BulletComport extends BulletCollidable{
     double getSpeed();
     boolean hasGravity();
     int getDamage();

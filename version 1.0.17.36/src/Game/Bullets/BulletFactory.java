@@ -43,8 +43,9 @@ public class BulletFactory {
         byte sign = rand.nextBoolean() ? (byte)1 : -1;
         
         // Factor de dispersion relativo
-        double spreadYonX =(((random1/spreadFactor)*(bulletPershot/spreadFactor))*sign)*0.25;
-        double frenadoY=((random2*sign) / spreadFactor)*1  ;
+
+        double frenadoY=((random2*sign) / spreadFactor)*0  ;
+        double spreadYonX =(((random1/spreadFactor)*(bulletPershot/spreadFactor))*sign)*0;
 
         //System.out.println("spread: "+spreadFactor);
         //System.out.println(random1 + " " +random2);
