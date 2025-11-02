@@ -12,13 +12,15 @@ public abstract class MovingObjects extends GameObjects {
         this.velocity = new Vector2D();
     }
 
-    public void updatePosition() {
+    public void updatePosition() { //esto actualmente no hace ni mrd
         position = position.add(velocity);
     }
 
-    public Rectangle getBounds() {
+    @Override
+    public Rectangle getBounds() { //conseguir limites / hitbox
         return createBounds(0, 0, texture.getWidth(), texture.getHeight());
     }
+
     public Vector2D getCenter() {
         double centerX = (position.getX() + texture.getWidth()) / 2.0;
         double centerY = (position.getY() + texture.getHeight()) / 2.0;

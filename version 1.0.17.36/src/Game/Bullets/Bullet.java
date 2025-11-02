@@ -25,14 +25,14 @@ public class Bullet extends GameObjects {
     private ArrayList<EnimyNormal> enemies;
     private BulletPhysics bPhysics;
 
-    public Bullet(Vector2D position, BufferedImage texture, boolean isDer, double x, double y, bulletType tipo, Player p, ArrayList<EnimyNormal> enemies) {
+    public Bullet(Vector2D position, BufferedImage texture, boolean isDer, double xSpeed, double ySpeed, bulletType tipo, Player p, ArrayList<EnimyNormal> enemies) {
         super(position, texture);
         this.type=tipo;
         this.p=p;
         this.alive=true;
         this.enemies=enemies;
-        this.bulletX=x;
-        this.bulletY=y;
+        this.bulletX=xSpeed;
+        this.bulletY=ySpeed;
         this.dir=isDer;
         this.gs= new GameState();
         double bulletGravity= type.tieneGravedad() ? 0.385 : 0;

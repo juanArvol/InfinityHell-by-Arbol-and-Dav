@@ -85,13 +85,13 @@ public class Weapon {
      * @param y posición inicial Y
      * @param mirandoDerecha true si el personaje mira a la derecha
      */
-    public void tryShoot(double x, double y, boolean mirandoDerecha, boolean mirandoAoA) {
+    public void tryShoot(double spawnx, double spawny, boolean mirandoDerecha, boolean mirandoAoA) {
         if(fireWait >0) return;
 
         bulletType bullet = new bulletType(typeBullet);
         owner.setWait(true);
 
-        shoot(x, y, mirandoDerecha,bullet,mirandoAoA);
+        shoot(spawnx, spawny, mirandoDerecha,bullet,mirandoAoA);
         burstCount++;
         if(burstCount < burstLimit){
             fireWait = baseCooldown;
@@ -100,10 +100,10 @@ public class Weapon {
             fireWait = Math.min(maxCooldown, baseCooldown + ((burstCount+bulletCount)/burstLimit)*2);
         }
     }
-    private void shoot(double x, double y, boolean mirandoDerecha, bulletType bullet, boolean abajorriva) {
-        
-    double spawnX = mirandoDerecha ? x + 4 + (abajorriva ? 1.5 : 0): (x - 45.5 + (abajorriva ? -1 : 0));
-    double spawnY = y;
+    private void shoot(double bSpawnX, double bSpawnY, boolean mirandoDerecha, bulletType bullet, boolean abajorriva) {
+    //logica del spawn de las ballas
+    double spawnX = mirandoDerecha ? bSpawnX + 4 + (abajorriva ? 1.5 : 0): (bSpawnX - 45.5 + (abajorriva ? -1 : 0));
+    double spawnY = bSpawnY;
 
     Sounds.playSound("Gun.wav");
     for (int i = 0; i < bulletsPerShot; i++) {

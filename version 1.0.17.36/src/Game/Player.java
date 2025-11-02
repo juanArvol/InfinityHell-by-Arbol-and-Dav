@@ -124,7 +124,7 @@ public int getLifeMax(){
     return lifeMax;
 }
 public void recibedDaimage(int value){
-    this.life -= value;
+    this.life -= value*0;
     if (this.life < 0 ) {
         this.life = 0;
         
@@ -269,7 +269,7 @@ public Rectangle getBounds() {
     return createBounds(5, 5, 27, 38);
 }
     public Player(Vector2D spawn, BufferedImage texture, GameState gameState) {
-        super(spawn, texture);
+        super(spawn, texture); //esto carga el spawn al Game Objects
         this.gameState = gameState;
         this.pPhysics = new PlayerPhysics();
     }

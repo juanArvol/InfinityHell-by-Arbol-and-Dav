@@ -10,10 +10,10 @@ public class BulletPhysics extends Physics {
     private boolean boost;
     private Vector2D moveBullet;
 
-    public BulletPhysics(double gravity, Vector2D movement, boolean tieneGravedad, boolean der) {
+    public BulletPhysics(double gravity, Vector2D bulletVelocity, boolean tieneGravedad, boolean der) {
         //cosas bala
         this.gravity = gravity;
-        this.moveBullet=movement;
+        this.moveBullet=bulletVelocity;
         this.tieneG= tieneGravedad;
         this.der=der;
         //cosas physics

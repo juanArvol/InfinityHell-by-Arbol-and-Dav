@@ -12,8 +12,8 @@ public class WeaponSelected {
         this.selectedWeapon = selectedWeapon;
         this.weapon = new Weapon(owner, selectedWeapon, typeBullet, owner.getEnemies());
     }
-    public void tryShoot(double x, double y, boolean mirandoDerecha){
-        weapon.tryShoot(x, y, mirandoDerecha, owner.isMirandoAorA());
+    public void tryShoot(double spawnx, double spawny, boolean mirandoDerecha){
+        weapon.tryShoot(spawnx, spawny, mirandoDerecha, owner.isMirandoAorA());
     }
 
     public void resetBurst(){
