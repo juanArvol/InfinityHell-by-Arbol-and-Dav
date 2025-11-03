@@ -1,5 +1,16 @@
 package Game.Bullets.BulletType.BulletClass;
 
-public interface BulletCollidable {
-    
+import Game.Ambiente;
+import Game.Bullets.Bullet;
+import Game.Colisions.SystemColisions.Collidable;
+import Game.EnimyNormal;
+import Game.GameObjects;
+import Game.Player;
+
+public interface BulletCollidable extends Collidable {
+    void bulletAcceptCollisionWith(Bullet b, Collidable other);
+    void bulletOnCollisionWith(Bullet b ,Player player);
+    void bulletOnCollisionWith(Bullet b, EnimyNormal enemy);
+    void bulletOnCollisionWith(Bullet b, Ambiente ambiente);
+    void bulletOnCollisionWith(Bullet b, GameObjects other);
 }

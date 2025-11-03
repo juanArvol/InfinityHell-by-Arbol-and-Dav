@@ -39,7 +39,9 @@ public class Bullet extends GameObjects {
         double bulletGravity= type.tieneGravedad() ? 0.385 : 0;
         bPhysics = new BulletPhysics(bulletGravity, new Vector2D(bulletSpeedX,bulletSpeedY), type.tieneGravedad(),isDerecha);
     }
-
+    public BulletPhysics getBphysics(){
+        return bPhysics;
+    }
     public bulletType getTipo(){
         return type;
     }
@@ -55,25 +57,30 @@ public class Bullet extends GameObjects {
     public void setAlive(){
         alive=true;
     }
-
     @Override
     public void update() {
         bPhysics.update(position);
-        type.getBulletClass().onUpdate(this,p);
         
+        type.getBulletClass().onUpdate(this,p);
+        type.getBulletClass().onUpdate(this,gs.getAmbiente());
+        /* type.getBulletClass().onUpdate(this,p); */
+
         double moveX = bPhysics.getVelocity().normalize().getX();
         double moveY = bPhysics.getVelocity().normalize().getY();
 
         PhysicsStepper.moveWith(this, moveX, moveY, gs.getObjects());
     }
     @Override
-    public void onCollisionWith(Ambiente ambiente) {
-        bPhysics.stopVelocity();
-        bPhysics.setOnground(true);
+    public void onCollisionWith(Player player) {
+        type.getBulletClass().onCollision(this, player);
     }
     @Override
-    public void onCollisionWith(Player Player) {
-        type.getBulletClass().onCollision(this, p);
+    public void onCollisionWith(Ambiente ambiente) {
+        type.getBulletClass().onCollision(this, ambiente);
+    }
+    @Override
+    public void onCollisionWith(EnimyNormal enemy){
+        type.getBulletClass().onCollision(this, enemy);
     }
     @Override
     public void draw(Graphics g) {

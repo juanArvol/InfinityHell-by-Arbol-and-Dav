@@ -1,12 +1,16 @@
 package Game.Bullets.BulletType.BulletClass;
 
+import Game.Ambiente;
 import Game.Bullets.Bullet;
 import Game.Bullets.BulletType.BulletComport;
+import Game.Colisions.SystemColisions.Collidable;
+import Game.EnimyNormal;
+import Game.GameObjects;
 import Game.Player;
 
-public class BulletNormal implements BulletComport {
+public class BulletNormal extends BulletComport {
     @Override
-    public double getSpeed() { return 10; }
+    public double getBspeed() { return 10; }
 
     @Override
     public boolean hasGravity() { return true; }
@@ -15,15 +19,66 @@ public class BulletNormal implements BulletComport {
     public int getDamage() { return 10; }
 
     @Override
-    public void onUpdate(Bullet bullet, Player owner) {
-        /* Vector2D ownerp= owner.getPosition();
-        System.out.println(ownerp); */
+    public void onUpdate(Bullet bullet, GameObjects algo) { // esto por ahora no hara nada en lo q descubro como pasarle una instancia de
+        /* switch (algo) {
+            case Player p -> System.out.println();
+            case EnimyNormal e -> System.out.println("e");
+            case Bullet b -> System.out.println("i");
+            case Ambiente a -> System.out.println();
+            default -> System.out.println("u");
+        }*/
+    }
+    //Recibe el tipo de colision
+    @Override
+    public void onCollision(Bullet bullet, GameObjects algo) {
+        acceptCollision(algo);                      //colision unitaria
+        bulletAcceptCollisionWith(bullet, algo);    //colision doble
     }
     
-    public void onCollision(Bullet bullet, Player owner) {
-        
-            System.out.println("bala colisiono con jugador");
-        
+    //aceptacion de la colision
+    @Override
+    public void acceptCollision(Collidable other) {
+        super.acceptCollision(other);               //envia y define la colision con el other
+    }
+    @Override
+    public void bulletAcceptCollisionWith(Bullet b, Collidable other) {
+        super.bulletAcceptCollisionWith(b, other);  //envia y define la colision doble entre bala y other (que pasa con ambos)
+    }
+
+    //COLISION UNITARIA
+    @Override
+    public void onCollisionWith(Player player) {
+        //System.out.println("bala colisiono con jugador");
+    }
+    @Override
+    public void onCollisionWith(EnimyNormal enemy) {
+    }
+
+    @Override
+    public void onCollisionWith(Bullet bullet) {
+    }
+    @Override
+    public void onCollisionWith(Ambiente ambiente) {
+        //System.out.println("aAaaaAAaaaa");
+    }
+    @Override
+    public void onCollisionWith(GameObjects other) {
+    }
+    
+    //COLISION DOBLE
+    @Override
+    public void bulletOnCollisionWith(Bullet b, Player player) {
+        //System.out.println("david e puto");
+    }
+    @Override
+    public void bulletOnCollisionWith(Bullet b, EnimyNormal enemy) {
+    }
+    @Override
+    public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
+        //System.out.println("ptm esto no debe pasar");
+    }
+    @Override
+    public void bulletOnCollisionWith(Bullet b, GameObjects other) {
     }
 }
 /* private void explode() {

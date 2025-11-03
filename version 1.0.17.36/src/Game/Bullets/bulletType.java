@@ -12,7 +12,7 @@ public class bulletType {
     }
 
     public int getNumberTipo() { return numberType; }
-    public double getSpeed() { return comport.getSpeed(); }
+    public double getSpeed() { return comport.getBspeed(); }
     public boolean tieneGravedad() { return comport.hasGravity(); }
     public int getDamage() { return comport.getDamage(); }
     public BulletComport getBulletClass() { return comport; }

@@ -8,9 +8,9 @@ import Game.Player;
 
 public interface Collidable {
     void acceptCollision(Collidable other);
-    void onCollisionWith(GameObjects other);
     void onCollisionWith(Player player);
     void onCollisionWith(EnimyNormal enemy);
     void onCollisionWith(Bullet bullet);
     void onCollisionWith(Ambiente ambiente);
+    void onCollisionWith(GameObjects other);
 }
