@@ -2,6 +2,7 @@ package Game;
 
 import Game.Bullets.Bullet;
 import Game.Colisions.SystemColisions.Collidable;
+import Game.Colisions.SystemColisions.CollisionVisitorInstance;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -45,25 +46,13 @@ public abstract class GameObjects implements Collidable {
         g.setColor(java.awt.Color.RED);
         g.drawRect(r.x, r.y, r.width, r.height);
     }
-
-    // --- Colisiones generales ---
-    public void onCollision(GameObjects other) {
-        // por defecto no hace nada
-    }
-
+    
     // --- Implementación base del double dispatch ---
         @Override
     public void acceptCollision(Collidable other) {
-        switch (other) {
-            case Player p -> onCollisionWith(p);
-            case EnimyNormal e -> onCollisionWith(e);
-            case Bullet b -> onCollisionWith(b);
-            case Ambiente a -> onCollisionWith(a);
-            default -> onCollisionWith((GameObjects) other);
-        }
+        other.acceptVisitor(new CollisionVisitorInstance(this));
     }
     // Por defecto, no hacer nada si no se sobreescriben en las subclases
-    @Override public void onCollisionWith(GameObjects other) {}
     @Override public void onCollisionWith(Player player) {}
     @Override public void onCollisionWith(EnimyNormal enemy) {}
     @Override public void onCollisionWith(Bullet bullet) {}

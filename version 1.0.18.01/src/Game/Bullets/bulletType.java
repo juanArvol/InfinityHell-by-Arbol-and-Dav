@@ -1,6 +1,6 @@
 package Game.Bullets;
 
-import Game.Bullets.BulletType.*;
+import Game.Bullets.BulletCharger.*;
 
 public class bulletType {
     private int numberType;
@@ -12,7 +12,10 @@ public class bulletType {
     }
 
     public int getNumberTipo() { return numberType; }
+    public double getSpeedMaxAir() { return comport.getMaxSpeedAir(); }
+    public double getSpeedMaxPiso() { return comport.getMaxSpeedPiso(); }
     public double getSpeed() { return comport.getBspeed(); }
+    public double getAcceleration(boolean selection){ return comport.getAcceleration(selection); }
     public boolean tieneGravedad() { return comport.hasGravity(); }
     public int getDamage() { return comport.getDamage(); }
     public BulletComport getBulletClass() { return comport; }

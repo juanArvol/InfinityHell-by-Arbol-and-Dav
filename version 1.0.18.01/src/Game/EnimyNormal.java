@@ -1,6 +1,7 @@
 package Game;
 
 import Game.Bullets.Bullet;
+import Game.Colisions.SystemColisions.CollisionVisitor;
 import graficos.Assets;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
@@ -29,6 +30,13 @@ public class EnimyNormal extends MovingObjects {
         this.following = following;
         this.velocity = new Vector2D(0.1, 0); // velocidad inicial
         this.player = player;
+    }
+    @Override
+    public void acceptVisitor(CollisionVisitor visitor){
+        visitor.visit(this);
+    }
+    public Vector2D getEnemyPosition(){
+        return position;
     }
     private Vector2D followingPlayer(){
         Vector2D playerPos = player.getCenter();
@@ -102,18 +110,13 @@ public class EnimyNormal extends MovingObjects {
         drawHitbox(g);
     }
     @Override
-    public void onCollision(GameObjects other) {
-        other.acceptCollision(this);
-    }
-    @Override
     public void onCollisionWith(Ambiente ambiente) {
     }
 
     @Override
     public void onCollisionWith(Bullet bullet) {
-        System.out.println("muerto");
         System.out.println("vida enemigo: " + lifeEnemyNormalNormal + "/" + lifeMaxEnimyNormal);
-
+        
         if (lifeEnemyNormalNormal <= 0) {
             System.out.println(" se supone que se tiene que morir");
     }

@@ -1,10 +1,9 @@
-package Game.Bullets.BulletType.BulletClass;
+package Game.Bullets.BulletCharger;
 
 import Game.Ambiente;
 import Game.Bullets.Bullet;
 import Game.Colisions.SystemColisions.Collidable;
 import Game.EnimyNormal;
-import Game.GameObjects;
 import Game.Player;
 
 public interface BulletCollidable extends Collidable {
@@ -12,5 +11,4 @@ public interface BulletCollidable extends Collidable {
     void bulletOnCollisionWith(Bullet b ,Player player);
     void bulletOnCollisionWith(Bullet b, EnimyNormal enemy);
     void bulletOnCollisionWith(Bullet b, Ambiente ambiente);
-    void bulletOnCollisionWith(Bullet b, GameObjects other);
 }

@@ -1,16 +1,20 @@
-package Game.Bullets.BulletType.BulletClass;
+package Game.Bullets.BulletCharger.BulletClass;
 
 import Game.Ambiente;
 import Game.Bullets.Bullet;
-import Game.Bullets.BulletType.BulletComport;
+import Game.Bullets.BulletCharger.BulletClass.BulletClassUpdater.BulletOnUpdate;
+import Game.Bullets.BulletCharger.BulletComport;
 import Game.Colisions.SystemColisions.Collidable;
 import Game.EnimyNormal;
 import Game.GameObjects;
 import Game.Player;
 
-public class BulletNormal extends BulletComport {
+public class MetheorBullet extends BulletComport {
+    private EnimyNormal enemy;
+    private Player player;
+    private Ambiente ambiente;
     @Override
-    public double getBspeed() { return 10; }
+    public double getBspeed() { return 100; }
 
     @Override
     public boolean hasGravity() { return true; }
@@ -19,14 +23,17 @@ public class BulletNormal extends BulletComport {
     public int getDamage() { return 10; }
 
     @Override
-    public void onUpdate(Bullet bullet, GameObjects algo) { // esto por ahora no hara nada en lo q descubro como pasarle una instancia de
-        /* switch (algo) {
-            case Player p -> System.out.println();
-            case EnimyNormal e -> System.out.println("e");
-            case Bullet b -> System.out.println("i");
-            case Ambiente a -> System.out.println();
-            default -> System.out.println("u");
-        }*/
+    public void onUpdate(Bullet bullet, GameObjects algo) {
+        switch (algo) {
+            case Player p -> onUpdateWith(bullet, p);
+            case EnimyNormal e -> onUpdateWith(bullet,e);
+            case Bullet b -> onUpdateWith(bullet,b);
+            case Ambiente a -> onUpdateWith(bullet,a);
+            default -> onUpdateWith((Bullet)bullet, (Bullet) bullet);
+        }
+    }
+    public void onUpdateWith(Bullet bullet, GameObjects algo){
+        BulletOnUpdate.bulletOnUpdate(bullet, algo);
     }
     //Recibe el tipo de colision
     @Override
@@ -61,9 +68,6 @@ public class BulletNormal extends BulletComport {
     public void onCollisionWith(Ambiente ambiente) {
         //System.out.println("aAaaaAAaaaa");
     }
-    @Override
-    public void onCollisionWith(GameObjects other) {
-    }
     
     //COLISION DOBLE
     @Override
@@ -72,86 +76,68 @@ public class BulletNormal extends BulletComport {
     }
     @Override
     public void bulletOnCollisionWith(Bullet b, EnimyNormal enemy) {
+        explode(b);
+        //System.out.println("posicion del enemy: "+ enemy.getEnemyPosition());
     }
     @Override
     public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
-        //System.out.println("ptm esto no debe pasar");
+        explode(b);
     }
     @Override
-    public void bulletOnCollisionWith(Bullet b, GameObjects other) {
+    public void setGameObject(GameObjects algo){
+        if(algo instanceof EnimyNormal e){
+            this.enemy=e;
+        }
+        if(algo instanceof Player p){
+            this.player=p;
+        }
+        if(algo instanceof Ambiente a){
+            this.ambiente=a;
+        }
     }
-}
-/* private void explode() {
-
+    private void explode(Bullet b){
         double baseDamage = 35; // daño base
-        double explosionPower = Math.abs(1)*2.3 ; // mientras más caiga, más rompe
+        double explosionPower = Math.abs(b.getBphysics().getVelocity().getY())*2.3 ; // mientras más caiga, más rompe
         double maxRadius = 250 + (explosionPower*1.5); // el rango depende de la velocidad
-        double centerX = position.getX();
-        double centerY = position.getY();
+        double centerX = b.getPosition().getX();
+        double centerY = b.getPosition().getY();
+        double force=1;
 
-        for (EnimyNormal e : enemies) {
+        for (EnimyNormal e : player.getEnemies()) {
             double dx = e.getPosition().getX() - centerX;
             double dy = e.getPosition().getY() - centerY;
             double distance = Math.sqrt(dx*dx + dy*dy);
+        
+        // Evitamos operar entre 0 por si el enemigo está exactamente en el centro
+        if (distance == 0) distance = 1;
 
         if (distance <= maxRadius) {
-            double force = (maxRadius - distance) * 0.1; // más cerca = más empuje
-
-            // Evitamos dividir por cero si el enemigo está exactamente en el centro
-        if (distance == 0) distance = 1;
+            force = (maxRadius - distance) * 0.1; // más cerca = más empuje
+        }
 
         // Calculamos fuerza SOLO en los ejes necesarios
             double pushX = 0;
             double pushY = 0;
-
-        // Si hay distancia real en X, empujamos en X
+        
+            // Si hay distancia real en X, empujamos en X
             if (Math.abs(dx) > 1) {
                 pushX = (dx / distance) * force;
             }
 
-        // Si hay distancia real en Y, empujamos en Y
+            // Si hay distancia real en Y, empujamos en Y
             if (Math.abs(dy) > 1) {
                 pushY = (dy / distance) * force;
             }
 
-            e.position.setX(e.position.getX() + pushX);
-            e.position.setY(e.position.getY() + pushY);
+            e.getEnemyPosition().setX(e.getEnemyPosition().getX() + pushX);
+            e.getEnemyPosition().setY(e.getEnemyPosition().getY() + pushY);
 
-            p.position.setX(p.position.getX() + pushX);
-            p.position.setY(p.position.getY() + pushY);
+            player.getPosition().setX(player.getPosition().getX() + pushX);
+            player.getPosition().setY(player.getPosition().getY() + pushY);
+
             double damage = baseDamage + (explosionPower * (1 - distance / maxRadius));
             System.out.println("Enemy recibió " + (int)damage + " daño por explosión");
             System.out.println("Enemy empujado con fuerza: " + force);
         }
-        }
-    } */
-
-    /* @Override
-    public void onCollision(GameObjects other) {
-        Player p= this.p;
-        if(other instanceof Player && tipo==3) {
-                p.position.setY(position.getY() - p.getBounds().height);
-                p.setEnElSuelo(true);
-            if(KeyBoard.space||(KeyBoard.up && KeyBoard.c==false)) {
-                p.setEnElSuelo(false);
-            }
-            if(KeyBoard.down && KeyBoard.c && other instanceof Player) {
-                p.position.setY(position.getY() + p.getBounds().height);
-                p.setEnElSuelo(false);
-            }else{
-                p.setEnElSuelo(false);
-            }
-        }
-        if(other instanceof EnimyNormal) {
-            EnimyNormal e = (EnimyNormal) other;
-            e.position.setX(e.position.getX()+(number));
-            e.position.setY(e.position.getY()+(number));
-        }
-        if(other instanceof Ambiente) {
-            Ambiente a = (Ambiente) other;
-            if(tipo ==4){
-                explode();
-            }
-            p.removeBullet(this);
-        }
-    } */
+    }
+}

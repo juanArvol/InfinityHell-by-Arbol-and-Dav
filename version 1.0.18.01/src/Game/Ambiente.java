@@ -1,5 +1,6 @@
 package Game;
 
+import Game.Colisions.SystemColisions.CollisionVisitor;
 import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -15,7 +16,10 @@ public class Ambiente extends GameObjects {
         this.ancho = ancho;
         this.alto = alto;
     }
-
+    @Override
+    public void acceptVisitor(CollisionVisitor visitor){
+        visitor.visit(this);
+    }
     @Override
     public void update() { }
 

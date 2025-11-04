@@ -1,6 +1,8 @@
 package Game.Bullets;
 
 import Game.Ambiente;
+import Game.Bullets.BulletCharger.BulletUpdaterVisitor;
+import Game.Colisions.SystemColisions.CollisionVisitor;
 import Game.EnimyNormal;
 import Game.Fisics.BulletPhysics;
 import Game.Fisics.PhysicsStepper;
@@ -37,7 +39,14 @@ public class Bullet extends GameObjects {
         this.gs= new GameState();
 
         double bulletGravity= type.tieneGravedad() ? 0.385 : 0;
-        bPhysics = new BulletPhysics(bulletGravity, new Vector2D(bulletSpeedX,bulletSpeedY), type.tieneGravedad(),isDerecha);
+        bPhysics = new BulletPhysics(bulletGravity, type.getSpeedMaxAir(), type.getSpeedMaxPiso(), type.getAcceleration(true), type.getAcceleration(false), new Vector2D(bulletSpeedX,bulletSpeedY), type.tieneGravedad(),isDerecha);
+    }
+    public Vector2D getPosition(){
+        return position;
+    }
+    @Override
+    public void acceptVisitor(CollisionVisitor visitor){
+        visitor.visit(this);
     }
     public BulletPhysics getBphysics(){
         return bPhysics;
@@ -60,10 +69,12 @@ public class Bullet extends GameObjects {
     @Override
     public void update() {
         bPhysics.update(position);
-        
-        type.getBulletClass().onUpdate(this,p);
-        type.getBulletClass().onUpdate(this,gs.getAmbiente());
-        /* type.getBulletClass().onUpdate(this,p); */
+
+        BulletUpdaterVisitor updater = new BulletUpdaterVisitor(this);
+
+        for (GameObjects obj : gs.getObjects()) {
+            obj.acceptVisitor(updater);
+        }
 
         double moveX = bPhysics.getVelocity().normalize().getX();
         double moveY = bPhysics.getVelocity().normalize().getY();

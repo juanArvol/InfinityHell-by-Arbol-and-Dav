@@ -87,7 +87,7 @@ public class Physics {
     }
     public void moveY(double inputY, boolean hasGravity){
         if(hasGravity) applyGravity(onGround);
-        vSetY(inputY);
+        vSetY(inputY*aAir);
     }
     public void updateMoves(Vector2D algo){
         algo.setX(algo.getX() + velocity.getX());

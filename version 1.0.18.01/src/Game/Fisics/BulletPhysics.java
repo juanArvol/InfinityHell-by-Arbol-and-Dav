@@ -3,7 +3,7 @@ package Game.Fisics;
 import math.Vector2D;
 
 public class BulletPhysics extends Physics {
-    private int lifeTime=120; // Duración de la bala en frames
+    private int lifeTime=180; // Duración de la bala en frames
     private double gravity;
     private boolean tieneG;
     private boolean onGround=false;
@@ -11,7 +11,7 @@ public class BulletPhysics extends Physics {
     private boolean boost;
     private Vector2D moveBullet;
 
-    public BulletPhysics(double gravity, Vector2D bulletVelocity, boolean tieneGravedad, boolean derecha) {
+    public BulletPhysics(double gravity, double speedMaxAir, double speedMaxPiso, double airAcceleration, double pisoAcceleration,  Vector2D bulletVelocity, boolean tieneGravedad, boolean derecha) {
         //cosas bala
         this.gravity = gravity;
         this.moveBullet=bulletVelocity;
@@ -19,10 +19,10 @@ public class BulletPhysics extends Physics {
         this.der=derecha;
         //cosas physics
         this.slide = 1;
-        this.speedMaxAir = 1;
-        this.speedMaxPiso= 999;
-        this.aAir=0.1;
-        this.aGround=0.001;
+        this.speedMaxAir = speedMaxAir;
+        this.speedMaxPiso= speedMaxPiso;
+        this.aAir=airAcceleration;
+        this.aGround=pisoAcceleration;
     }
     public void setOnground(boolean yes){
         this.onGround=yes;

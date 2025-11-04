@@ -33,7 +33,7 @@ public class GameState extends JPanel {
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
         spawnEnemies(0);
         player.setEnemies(enemies);
-        player.setWeapon(new WeaponSelected(player, 2,1));
+        player.setWeapon(new WeaponSelected(player, 2,2));
         objects.add(player);
         cut = new Cut(new Vector2D(-6,1), null, 100, 100, player);
         // crear suelo
@@ -78,15 +78,6 @@ public class GameState extends JPanel {
             objects.add(enemy);
         }
     }
-    public Player getPlayer(){
-        return player;
-    }
-    public Ambiente getAmbiente(){
-        return ambiente;
-    }
-    /* public EnimyNormal getEnemyNormal(){
-        return enemy;
-    } */
     public void update() {
         // Actualiza todos los objetos activos
         for (GameObjects obj : objects) {

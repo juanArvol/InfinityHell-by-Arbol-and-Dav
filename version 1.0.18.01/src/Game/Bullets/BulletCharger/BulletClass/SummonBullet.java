@@ -1,28 +1,37 @@
-package Game.Bullets.BulletType.BulletClass;
+package Game.Bullets.BulletCharger.BulletClass;
 
 import Game.Ambiente;
 import Game.Bullets.Bullet;
-import Game.Bullets.BulletType.BulletComport;
+import Game.Bullets.BulletCharger.BulletComport;
 import Game.Colisions.SystemColisions.Collidable;
 import Game.EnimyNormal;
 import Game.GameObjects;
 import Game.Player;
 
-public class BulletJump extends BulletComport {
-    private Bullet b;
+public class SummonBullet extends BulletComport {
     @Override
-    public double getBspeed() { return 1; }
+    public double getBspeed() { return 10; }
 
     @Override
-    public boolean hasGravity() { return false; }
+    public boolean hasGravity() { return true; }
 
     @Override
-    public int getDamage() { return 15; }
+    public int getDamage() { return 10; }
 
     @Override
     public void onUpdate(Bullet bullet, GameObjects algo) {
+        switch (algo) {
+            case Player p -> onUpdateWith(bullet, p);
+            case EnimyNormal e -> onUpdateWith(bullet,e);
+            case Bullet b -> onUpdateWith(bullet,b);
+            case Ambiente a -> onUpdateWith(bullet,a);
+            default -> onUpdateWith((Bullet)bullet, (Bullet) bullet);
+        }
     }
-
+    public void onUpdateWith(Bullet bullet, GameObjects algo){
+        //BulletOnUpdate.bulletOnUpdate(bullet, algo);
+    }
+    //Recibe el tipo de colision
     @Override
     public void onCollision(Bullet bullet, GameObjects algo) {
         acceptCollision(algo);                      //colision unitaria
@@ -55,9 +64,6 @@ public class BulletJump extends BulletComport {
     public void onCollisionWith(Ambiente ambiente) {
         //System.out.println("aAaaaAAaaaa");
     }
-    @Override
-    public void onCollisionWith(GameObjects other) {
-    }
     
     //COLISION DOBLE
     @Override
@@ -70,8 +76,5 @@ public class BulletJump extends BulletComport {
     @Override
     public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
         //System.out.println("ptm esto no debe pasar");
-    }
-    @Override
-    public void bulletOnCollisionWith(Bullet b, GameObjects other) {
     }
 }
