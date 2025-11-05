@@ -25,8 +25,10 @@ public class BulletNormal extends BulletComport {
     @Override
     public double getAcceleration(boolean option){
         if(option){
+        System.out.println("tas en lo cierto");
             return 0.1;
         }else{
+        System.out.println("tas en lo cierto2");
             return 0.0001;
         }
     }

@@ -39,6 +39,9 @@ public abstract class BulletComport implements BulletCollidable{
     public int getDamage(){
         return damage;
     };
+    public void setAnotherThing(){
+        // n a d a :D
+    }
     public void onUpdate(Bullet bullet, GameObjects algo){
         //por defecto non hhace nada
     };

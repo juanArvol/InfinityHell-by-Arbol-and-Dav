@@ -13,6 +13,24 @@ public class BulletJump extends BulletComport {
     public double getBspeed() { return 1; }
 
     @Override
+    public double getMaxSpeedAir(){
+        return 1;
+    }
+
+    @Override
+    public double getMaxSpeedPiso(){
+        return 999;
+    }
+
+    @Override
+    public double getAcceleration(boolean option){
+        if(option){
+            return 0.1;
+        }else{
+            return 0.0001;
+        }
+    }
+    @Override
     public boolean hasGravity() { return false; }
 
     @Override
@@ -62,6 +80,7 @@ public class BulletJump extends BulletComport {
     @Override
     public void onCollisionWith(Ambiente ambiente) {
         //System.out.println("aAaaaAAaaaa");
+
     }
     
     //COLISION DOBLE
@@ -75,4 +94,9 @@ public class BulletJump extends BulletComport {
     public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
         b.getBphysics().stopX();
     }
+    @Override
+    public void setAnotherThing(){
+
+    }
+    public void setAlgo(){}
 }
