@@ -11,65 +11,54 @@ import java.util.Random;
 import math.Vector2D;
 
 public class BulletFactory {
-    private static final Random rand = new Random(); // instancia clase nativa de java q randomiza valores de los tipos de datos
+    private static final Random rand = new Random();
 
     public static Bullet createBullet(
             int bulletPershot,
-            double x, double y, //spawn en ejes X/Y
+            double x, double y,
             bulletType type,
             Player owner,
             ArrayList<EnimyNormal> enemies) {
 
-        // Obtener direccion de apuntado
+        // Dirección base del disparo
         AimStrategy strategy = AimSelection.getStrategy();
         AimDirection aimDir = strategy.aim(owner);
+        Vector2D baseDir = aimDir.getScaledDirection(type.getSpeed()).normalize();
 
-        // Escala esa dirección a la velocidad de la bala
-        Vector2D direction = aimDir.getScaledDirection(type.getSpeed());
-
-        // Vector de spawn de las balas
+        // Posición inicial de la bala
         Vector2D spawnPos = new Vector2D(x, y);
 
-        // Vector modificador de la direccion
-        Vector2D dir = direction.normalize();
+        // Parámetros de dispersión
+        double maxSpreadDegrees = 5.0 + bulletPershot; // puedes ajustar este valor o hacerlo depender del tipo
+        double spreadRadians = Math.toRadians(maxSpreadDegrees);
 
-        // Vector perpendicular (para dispersión lateral)
-        Vector2D perp = new Vector2D(dir.getY(), dir.getX());
+        // Generar un ángulo aleatorio dentro del cono de dispersión
+        double randomAngle = ((rand.nextDouble() * 2) - 1) * spreadRadians / 2.0;
 
-        // Factor de dispersion apartir de la cantidad de balas por disparo
-        double spreadFactor =  Math.sqrt(bulletPershot);
-        double random1=rand.nextDouble();
-        double random2=rand.nextDouble();
-        byte sign = rand.nextBoolean() ? (byte)1 : -1;
-        
-        // Factor de dispersion relativo
+        // Rotar la dirección base por ese ángulo
+        Vector2D finalDir = rotateVector(baseDir, randomAngle).scale(type.getSpeed());
 
-        double frenadoY=((random2*sign) / spreadFactor)*0  ;
-        double spreadYonX =(((random1/spreadFactor)*(bulletPershot/spreadFactor))*sign)*0;
-
-        //System.out.println("spread: "+spreadFactor);
-        //System.out.println(random1 + " " +random2);
-        //System.out.println("forward: "+frenadoY+" lateral: "+spreadYonX);
-
-        Vector2D finalDir; //vector final de la direccion (wtf un comentario influyendo XD)
-        if (bulletPershot>1) {
-            finalDir=(dir.add(perp.scale(spreadYonX)).add(dir.scale(frenadoY)).scale(type.getSpeed()));
-        }else{
-            finalDir=direction;
-        }
-        //System.out.println("X: "+finalDir.getX()+" y: "+finalDir.getY());
-        
-        // Crea y devuelve la bala con sus físicas
+        // Crear y devolver la bala
         return new Bullet(
-            spawnPos,
-            Assets.bala,
-            strategy.getDir(),
-            (direction.getX() + finalDir.getX()), //movimiento inicial X
-            (direction.getY() + finalDir.getY()), //movimiento inicial Y
-            type,
-            owner,
-            enemies
+                spawnPos,
+                Assets.bala,
+                strategy.getDir(),
+                finalDir.getX(),
+                finalDir.getY(),
+                type,
+                owner,
+                enemies
         );
     }
-}
 
+    /**
+     * Rota un vector en un ángulo (en radianes)
+     */
+    private static Vector2D rotateVector(Vector2D v, double angle) {
+        double cos = Math.cos(angle);
+        double sin = Math.sin(angle);
+        double x = v.getX() * cos - v.getY() * sin;
+        double y = v.getX() * sin + v.getY() * cos;
+        return new Vector2D(x, y);
+    }
+}

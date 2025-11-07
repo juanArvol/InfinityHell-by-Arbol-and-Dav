@@ -47,6 +47,7 @@ public class BulletOnUpdate {
             }
         }
     }
+    
     public static void onUpdateWith(Bullet b, GameObjects obj){
         if (obj instanceof Player) {
             b.getTipo().getBulletClass().setGameObject(obj);

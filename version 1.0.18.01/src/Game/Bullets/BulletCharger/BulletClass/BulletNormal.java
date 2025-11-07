@@ -25,10 +25,8 @@ public class BulletNormal extends BulletComport {
     @Override
     public double getAcceleration(boolean option){
         if(option){
-        System.out.println("tas en lo cierto");
             return 0.1;
         }else{
-        System.out.println("tas en lo cierto2");
             return 0.0001;
         }
     }
@@ -89,13 +87,15 @@ public class BulletNormal extends BulletComport {
     //COLISION DOBLE
     @Override
     public void bulletOnCollisionWith(Bullet b, Player player) {
-        //System.out.println("david e puto");
+
     }
     @Override
     public void bulletOnCollisionWith(Bullet b, EnimyNormal enemy) {
+
     }
     @Override
     public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
+
         //System.out.println("ptm esto no debe pasar");
     }
 }
