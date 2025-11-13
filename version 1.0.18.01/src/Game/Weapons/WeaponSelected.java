@@ -1,6 +1,9 @@
-package Game;
+package Game.Weapons;
 
 import java.util.ArrayList;
+
+import Game.EnimyNormal;
+import Game.Player;
 
 public class WeaponSelected {
     private int selectedWeapon;

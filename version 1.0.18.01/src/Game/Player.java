@@ -13,6 +13,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import math.Vector2D;
+import Game.Weapons.WeaponSelected;
 
 public class Player extends MovingObjects {
     private PlayerPhysics pPhysics;

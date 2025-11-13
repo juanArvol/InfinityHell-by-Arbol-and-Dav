@@ -10,7 +10,8 @@ public class bulletType {
         this.numberType = tipo;
         this.comport = BulletComportFactory.getComportamiento(tipo);
     }
-
+    
+    public BulletComport getBulletClass() { return comport; }
     public int getNumberTipo() { return numberType; }
     public double getSpeedMaxAir() { return comport.getMaxSpeedAir(); }
     public double getSpeedMaxPiso() { return comport.getMaxSpeedPiso(); }
@@ -18,5 +19,4 @@ public class bulletType {
     public double getAcceleration(boolean selection){ return comport.getAcceleration(selection); }
     public boolean tieneGravedad() { return comport.hasGravity(); }
     public int getDamage() { return comport.getDamage(); }
-    public BulletComport getBulletClass() { return comport; }
 }

@@ -1,5 +1,8 @@
-package Game;
+package Game.Weapons;
 
+import Game.EnimyNormal;
+import Game.GameObjects;
+import Game.Player;
 import Game.Bullets.*;
 import Source.Sounds;
 import java.util.ArrayList;
@@ -8,7 +11,7 @@ public class Weapon {
     private int weaponType;
     private int typeBullet;
     private boolean isShooting = false;
-    // parámetros de disparo
+    // parámetros del arma
     private int bulletCount;
     private int fireReset;      // ticks restantes para disparar de nuevo
     private int fireRate;        // disparos por segundo
@@ -60,6 +63,9 @@ public class Weapon {
                 maxCooldown = 20;
                 burstLimit = 50;
                 bulletsPerShot = 1;
+            }
+            case 5:{
+                // arma random 
             }
         }
     }

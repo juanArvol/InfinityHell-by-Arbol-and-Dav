@@ -5,7 +5,7 @@ import Game.Colisions.CollisionManager;
 import Game.EnimyNormal;
 import Game.GameObjects;
 import Game.Player;
-import Game.WeaponSelected;
+import Game.Weapons.WeaponSelected;
 import graficos.Assets;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
@@ -31,7 +31,7 @@ public class GameState extends JPanel {
         pendingRemovals = new ArrayList<>();
         enemies = new ArrayList<>();
         player = new Player(new Vector2D(50.0, 190), Assets.cubo, this);
-        spawnEnemies(0);
+        spawnEnemies(3);
         player.setEnemies(enemies);
         player.setWeapon(new WeaponSelected(player, 3,1));
         objects.add(player);
