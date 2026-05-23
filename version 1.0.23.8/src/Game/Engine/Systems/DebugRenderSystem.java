@@ -9,20 +9,19 @@ import Game.Settings.GameSettings;
 
 import java.util.List;
 
+/**
+ * Renderiza los hitboxes y helpers de debug.
+ * Solo activo cuando GameSettings.isDebugEnabled() == true.
+ */
 public class DebugRenderSystem {
 
-    public void render(List<GameObjects> objects,
-                       RenderContext ctx,
-                       Camera camera) {
-
+    public void render(List<GameObjects> objects, RenderContext ctx, Camera camera) {
         if (!GameSettings.getInstance().isDebugEnabled()) return;
 
         for (GameObjects obj : objects) {
-
-            for (Component component : obj.getComponents()) {
-
-                if (component instanceof DebugRenderable debugRenderable) {
-                    debugRenderable.debugRender(ctx, camera);
+            for (Component c : obj.getComponents()) {
+                if (c instanceof DebugRenderable d) {
+                    d.debugRender(ctx, camera);
                 }
             }
         }

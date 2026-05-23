@@ -2,52 +2,77 @@ package Game.Bullets;
 
 import Game.Bullets.BulletComport.BulletBehavior;
 import Game.Engine.GameObjects;
-import Game.Engine.Colisions.CollisionVisitor;
 import Game.Engine.Components.PhysicsComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
-import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Filter.CollisionProfile;
 import Game.Fisics.BulletPhysics;
 import Game.Fisics.PhysicsStepper;
+import Game.World.WorldObjects.BlockWorld;
+import Game.Enemys.Enemy;
 import GameMath.Vector2D;
 
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 public class Bullet extends GameObjects {
 
-    private final BulletBehavior comport;
+    private final BulletBehavior behavior;
     private final double damage;
 
     private final BulletLife bulletLife;
     private final PhysicsComponent physicsComponent;
 
-    public Bullet(Vector2D position, BufferedImage texture, BulletBehavior comport, double xSpeed, double ySpeed, int lifeTime, double damage) {
+    public Bullet(
+            Vector2D position,
+            BufferedImage texture,
+            BulletBehavior behavior,
+            double xSpeed,
+            double ySpeed,
+            int lifeTime,
+            double damage
+    ) {
+
         getTransform().setPosition(position);
 
-        this.comport = comport;
+        this.behavior = behavior;
         this.damage = damage;
         this.bulletLife = new BulletLife(lifeTime);
 
-        SpriteRenderer renderer = new SpriteRenderer(texture);
-        renderer.setSyncMode(SizeSyncMode.NONE);
-        addComponent(renderer);
+        // ================= RENDER =================
 
         if (texture != null) {
-            HitBoxComponent hitBox = new HitBoxComponent(17,9,7,11);
-            addComponent(hitBox);
+            addComponent(new SpriteRenderer(texture));
         }
 
-        addComponent(new ColliderComponent());
+        // ================= COLLIDER =================
+
+        ColliderComponent collider =
+                new ColliderComponent(
+                        8,
+                        8,
+                        CollisionProfile.BULLET
+                );
+
+        collider.setType(ColliderComponent.Type.TRIGGER);
+
+        addComponent(collider);
+
+        // Debug visual opcional
+        addComponent(new HitBoxComponent(Color.YELLOW));
+
+        // ================= PHYSICS =================
 
         BulletPhysics physics = new BulletPhysics(
                 xSpeed,
                 ySpeed,
-                comport.hasGravity(),
-                comport.getGravityValue()
+                behavior.hasGravity(),
+                behavior.getGravityValue()
         );
 
         physicsComponent = new PhysicsComponent(physics);
+
         addComponent(physicsComponent);
     }
 
@@ -57,13 +82,15 @@ public class Bullet extends GameObjects {
         if (!bulletLife.isAlive())
             return;
 
-        comport.update(this);
+        behavior.update(this);
 
-        if (comport.hasGravity()) {
+        if (behavior.hasGravity()) {
             getPhysics().applyGravity(false);
         }
 
         moveByPhysics();
+
+        super.update();
     }
 
     public BulletLife getBulletLife() {
@@ -83,8 +110,15 @@ public class Bullet extends GameObjects {
         PhysicsStepper.moveWith(this, vel.getX(), vel.getY());
     }
 
+    // ================= COLLISIONS =================
+
     @Override
-    public void acceptVisitor(CollisionVisitor visitor) {
-        visitor.visit(this);
+    public void onCollisionWith(Enemy enemy) {
+        enemy.damage((int) damage);
+        bulletLife.setDead();
+    }
+
+    @Override
+    public void onCollisionWith(BlockWorld block) {
     }
 }

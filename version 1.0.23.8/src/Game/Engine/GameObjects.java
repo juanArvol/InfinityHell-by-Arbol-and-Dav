@@ -2,26 +2,42 @@ package Game.Engine;
 
 import Game.Bullets.Bullet;
 import Game.Enemys.Enemy;
-import Game.Engine.Colisions.Collidable;
-import Game.Engine.Colisions.CollisionVisitorInstance;
-import Game.Engine.Events.CollisionListener;
 import Game.Player.Player;
 import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
-public class GameObjects implements Collidable {
+/**
+ * Clase base de todos los objetos del juego.
+ *
+ * ── Qué hace ────────────────────────────────────────────────────────────
+ * - Tiene un Transform (posición, rotación).
+ * - Tiene una lista de Component (renderer, collider, physics, etc.).
+ * - Tiene métodos onCollisionWith() vacíos por defecto que las subclases
+ *   sobreescriben solo cuando les importa esa colisión.
+ *
+ * ── Qué se eliminó respecto a la versión anterior ───────────────────────
+ * - La interfaz Collidable: era redundante, GameObjects ya es la base.
+ * - La interfaz VisitorsAcepts con su "default vacío con :D".
+ * - handleCollision() / resolveExits(): el estado enter/stay/exit se
+ *   trasladó a CollisionListener en Component. Si tu componente necesita
+ *   saber cuándo entra o sale una colisión, implementa CollisionListener.
+ *   La mayoría de objetos (balas, enemigos) solo necesita onCollisionWith().
+ * - acceptCollision() / acceptVisitor(): reemplazado por CollisionDispatcher.
+ * - scale(): causaba bugs (BUG-007), eliminado.
+ */
+public class GameObjects {
 
     private final Transform transform = new Transform();
     private final List<Component> components = new ArrayList<>();
 
-    private final Set<GameObjects> currentCollisions = new HashSet<>();
-    private final Set<GameObjects> currentTriggers   = new HashSet<>();
+    // ── Transform ─────────────────────────────────────────────────────────
 
-    public Transform getTransform() {
-        return transform;
-    }
+    public Transform getTransform() { return transform; }
+
+    // ── Components ────────────────────────────────────────────────────────
 
     public void addComponent(Component c) {
         c.setGameObject(this);
@@ -29,16 +45,9 @@ public class GameObjects implements Collidable {
         c.start();
     }
 
-    public void update() {
-        for (Component c : components) {
-            c.update();
-        }
-    }
-
     public <T> T getComponent(Class<T> type) {
         for (Component c : components) {
-            if (type.isInstance(c))
-                return type.cast(c);
+            if (type.isInstance(c)) return type.cast(c);
         }
         return null;
     }
@@ -47,98 +56,18 @@ public class GameObjects implements Collidable {
         return components;
     }
 
-    // =============================
-    // COLLISION STATE HANDLING
-    // =============================
-
-    public void handleCollision(GameObjects other, boolean isTrigger) {
-
-        Set<GameObjects> set = isTrigger ? currentTriggers : currentCollisions;
-
-        if (!set.contains(other)) {
-
-            set.add(other);
-            this.acceptCollision(other);
-
-            for (Component c : components) {
-                if (c instanceof CollisionListener listener) {
-                    if (isTrigger)
-                        listener.onTriggerEnter(other);
-                    else
-                        listener.onCollisionEnter(other);
-                }
-            }
-
-        } else {
-
-            for (Component c : components) {
-                if (c instanceof CollisionListener listener) {
-                    if (isTrigger)
-                        listener.onTriggerStay(other);
-                    else
-                        listener.onCollisionStay(other);
-                }
-            }
-        }
-    }
-
-    public void resolveExits(Set<GameObjects> detected, boolean isTrigger) {
-
-        Set<GameObjects> set = isTrigger ? currentTriggers : currentCollisions;
-
-        Iterator<GameObjects> it = set.iterator();
-
-        while (it.hasNext()) {
-
-            GameObjects obj = it.next();
-
-            if (!detected.contains(obj)) {
-
-                for (Component c : components) {
-                    if (c instanceof CollisionListener listener) {
-                        if (isTrigger)
-                            listener.onTriggerExit(obj);
-                        else
-                            listener.onCollisionExit(obj);
-                    }
-                }
-
-                it.remove();
-            }
-        }
-    }
-
-    public void scale(double scaleX, double scaleY) {
-        transform.setX(transform.getX() * scaleX);
-        transform.setY(transform.getY() * scaleY);
-        // Si tienes componentes que dependen de tamaño, redimensiónalos aquí
+    public void update() {
         for (Component c : components) {
-            c.scale(scaleX, scaleY);
+            c.update();
         }
     }
 
-    @Override
-    public void acceptCollision(GameObjects other) {
-        other.acceptVisitor(new CollisionVisitorInstance(this));
-    }
+    // ── Colisiones ────────────────────────────────────────────────────────
+    // Sobreescribir solo los que te importen. Los demás no hacen nada.
 
-    @Override
-    public void onCollisionWith(Player player) {
-    }
-
-    @Override
-    public void onCollisionWith(Enemy enemy) {
-    }
-
-    @Override
-    public void onCollisionWith(Bullet bullet) {
-    }
-
-    @Override
-    public void onCollisionWith(BlockWorld block) {
-    }
-
-    @Override
-    public void onCollisionWith(Obstacle obstacle) {
-    }
+    public void onCollisionWith(Player player)     {}
+    public void onCollisionWith(Enemy enemy)       {}
+    public void onCollisionWith(Bullet bullet)     {}
+    public void onCollisionWith(BlockWorld block)  {}
+    public void onCollisionWith(Obstacle obstacle) {}
 }

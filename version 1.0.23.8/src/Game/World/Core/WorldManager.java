@@ -7,24 +7,34 @@ import java.awt.Graphics;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Gestiona los mundos del juego, su caché y las transiciones entre ellos.
+ *
+ * FIX BUG-007: en el original, update() comparaba el tamaño del mundo con
+ * el tamaño de la pantalla y llamaba world.resize() si diferían, escalando
+ * las posiciones de TODOS los objetos cada frame. Esto hacía que el jugador
+ * y enemigos se teleportaran continuamente.
+ *
+ * Solución: el WorldManager ya NO escala posiciones de objetos.
+ * El mundo tiene coordenadas lógicas fijas. La cámara y el render
+ * se adaptan al tamaño de pantalla, no los objetos.
+ */
 public class WorldManager {
 
     private static WorldManager instance;
 
-    private final WorldCache cache = new WorldCache();
+    private final WorldCache    cache     = new WorldCache();
     private final WorldGenerator generator = new WorldGenerator();
 
     private WorldCoordinator currentCoord;
 
-    private int width;
-    private int height;
+    private int logicalWidth;
+    private int logicalHeight;
 
     private WorldManager(int width, int height) {
-        this.width = width;
-        this.height = height;
-
+        this.logicalWidth  = width;
+        this.logicalHeight = height;
         currentCoord = new WorldCoordinator(0, 0);
-
         regenerateAll();
     }
 
@@ -40,25 +50,19 @@ public class WorldManager {
 
     public World getCurrentWorld() {
         if (!cache.contains(currentCoord)) {
-            World world = generator.generate(width, height, currentCoord);
+            World world = generator.generate(logicalWidth, logicalHeight, currentCoord);
             cache.put(world);
         }
         return cache.get(currentCoord);
     }
 
+    /**
+     * FIX BUG-007: ya NO escala posiciones de objetos al actualizar.
+     * El tamaño de pantalla solo se usa para centrar la cámara.
+     */
     public void update(int screenWidth, int screenHeight) {
-
         World world = getCurrentWorld();
-
-        // Escalado
-        if (world.getWidth() != screenWidth || world.getHeight() != screenHeight) {
-            double scaleX = (double) screenWidth / world.getWidth();
-            double scaleY = (double) screenHeight / world.getHeight();
-            world.resize(screenWidth, screenHeight, scaleX, scaleY);
-        }
-
         world.update();
-        
         handleTransfers(world);
     }
 
@@ -66,65 +70,52 @@ public class WorldManager {
         getCurrentWorld().draw(g);
     }
 
+    /**
+     * Resize del mundo lógico (solo para regenerar mundos futuros).
+     * NO mueve objetos existentes.
+     */
     public void resize(int newWidth, int newHeight) {
         if (newWidth <= 0 || newHeight <= 0) return;
-
-        double scaleX = (double) newWidth / width;
-        double scaleY = (double) newHeight / height;
-
-        this.width = newWidth;
-        this.height = newHeight;
-
-        for (World w : cache.getAllWorlds()) {
-            w.resize(newWidth, newHeight, scaleX, scaleY);
-        }
+        this.logicalWidth  = newWidth;
+        this.logicalHeight = newHeight;
+        // No escalar objetos existentes — FIX BUG-007
     }
 
     private void handleTransfers(World world) {
-
         List<GameObjects> toTransfer = new ArrayList<>();
 
         for (var obj : world.getObjectsContainer().getObjects()) {
             var pos = obj.getTransform().getPosition();
-
-            if (pos.getX() < 0 || pos.getX() > width ||
-                pos.getY() < 0 || pos.getY() > height) {
+            if (pos.getX() < 0 || pos.getX() > logicalWidth ||
+                pos.getY() < 0 || pos.getY() > logicalHeight) {
                 toTransfer.add(obj);
             }
         }
 
         for (var obj : toTransfer) {
-
             var pos = obj.getTransform().getPosition();
 
             int dx = 0, dy = 0;
+            if (pos.getX() < 0)             dx = -1;
+            else if (pos.getX() >= logicalWidth)  dx = 1;
+            if (pos.getY() < 0)             dy = -1;
+            else if (pos.getY() >= logicalHeight) dy = 1;
 
-            if (pos.getX() < 0) dx = -1;
-            else if (pos.getX() >= width) dx = 1;
-
-            if (pos.getY() < 0) dy = -1;
-            else if (pos.getY() >= height) dy = 1;
-
-            WorldCoordinator nextCoord =
-                    new WorldCoordinator(
-                            currentCoord.x() + dx,
-                            currentCoord.y() + dy
-                    );
+            WorldCoordinator nextCoord = new WorldCoordinator(
+                    currentCoord.x() + dx,
+                    currentCoord.y() + dy
+            );
 
             if (!cache.contains(nextCoord)) {
-                cache.put(generator.generate(width, height, nextCoord));
+                cache.put(generator.generate(logicalWidth, logicalHeight, nextCoord));
             }
 
             World nextWorld = cache.get(nextCoord);
 
             double newX = pos.getX();
             double newY = pos.getY();
-
-            if (dx != 0)
-                newX = (dx > 0) ? newX - width : newX + width;
-
-            if (dy != 0)
-                newY = (dy > 0) ? newY - height : newY + height;
+            if (dx != 0) newX = (dx > 0) ? newX - logicalWidth  : newX + logicalWidth;
+            if (dy != 0) newY = (dy > 0) ? newY - logicalHeight : newY + logicalHeight;
 
             pos.setX(newX);
             pos.setY(newY);
@@ -136,13 +127,13 @@ public class WorldManager {
                 currentCoord = nextCoord;
             }
         }
+
         world.getObjectsContainer().flush();
         getCurrentWorld().getObjectsContainer().flush();
     }
 
     private void regenerateAll() {
         cache.clear();
-        World first = generator.generate(width, height, currentCoord);
-        cache.put(first);
+        cache.put(generator.generate(logicalWidth, logicalHeight, currentCoord));
     }
 }

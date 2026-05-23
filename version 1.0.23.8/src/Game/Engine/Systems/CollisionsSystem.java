@@ -1,194 +1,139 @@
 package Game.Engine.Systems;
 
 import Game.Engine.GameObjects;
-import Game.Engine.Components.PhysicsComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Colisions.CollisionManager;
-import Game.Engine.Colisions.CollisionsPair;
 import Game.Engine.Components.Collisions.SweptAABB;
+import Game.Engine.Components.PhysicsComponent;
+import Game.Engine.Colisions.CollisionDetector;
+import Game.Engine.Colisions.CollisionDispatcher;
+import Game.Engine.Colisions.CollisionResult;
 import Game.Fisics.PhysicsStepper;
 
 import java.awt.Rectangle;
 import java.util.*;
 
+/**
+ * Sistema de colisiones. Se ejecuta una vez por frame en WorldObjectsContainer.
+ *
+ * ── Las 3 fases, claramente separadas ────────────────────────────────────
+ *
+ *  FASE 1 — MOVIMIENTO CONTINUO (SweptAABB)
+ *    Solo para objetos SOLID con física (jugador, enemigos).
+ *    Mueve cada objeto hasta el primer obstáculo que encuentre.
+ *    Cancela la velocidad en el eje del impacto.
+ *    Marca onGround si el impacto fue desde arriba.
+ *
+ *  FASE 2 — DETECCIÓN (AABB)
+ *    Detecta todos los pares que se solapan con spatial hash.
+ *    Incluye triggers y pares bullet/enemy que no pasaron por SweptAABB.
+ *
+ *  FASE 3 — DESPACHO DE EVENTOS
+ *    Para cada par detectado, llama onCollisionWith() en ambos objetos.
+ *
+ * ── Por qué ya no hay gravedad aquí ─────────────────────────────────────
+ * La gravedad se aplica en la física de cada objeto (Physics.applyGravity),
+ * no aquí. El CollisionsSystem no toca la física — solo resuelve colisiones.
+ * Antes se aplicaba gravedad en el loop de SweptAABB, mezclando dos
+ * responsabilidades en el mismo lugar.
+ *
+ * ── Qué objetos pasan por SweptAABB ─────────────────────────────────────
+ * Solo objetos SOLID con PhysicsComponent. Los TRIGGER y los estáticos
+ * (sin física, como BlockWorld) solo participan como targets.
+ */
 public class CollisionsSystem {
 
     public void update(List<GameObjects> objects) {
 
-        Set<CollisionsPair> sweptPairs = new HashSet<>();
-
-        // ==========================================
-        // 1️⃣ MOVIMIENTO CONTINUO (SweptAABB)
-        // ==========================================
+        // ──────────────────────────────────────────────────────────────────
+        // FASE 1: Movimiento continuo (SweptAABB) para objetos con física
+        // ──────────────────────────────────────────────────────────────────
 
         for (GameObjects obj : objects) {
 
-            PhysicsComponent physics =
-                    obj.getComponent(PhysicsComponent.class);
+            PhysicsComponent physComp = obj.getComponent(PhysicsComponent.class);
+            ColliderComponent colA    = obj.getComponent(ColliderComponent.class);
 
-            ColliderComponent colA =
-                    obj.getComponent(ColliderComponent.class);
+            // Solo objetos con física y collider sólido
+            if (physComp == null || colA == null || colA.isTrigger()) continue;
 
-            if (physics == null || colA == null) continue;
+            var physics = physComp.getPhysics();
+            double vx   = physics.getVelocity().getX();
+            double vy   = physics.getVelocity().getY();
 
-            if (colA.getType() == ColliderComponent.ColliderType.TRIGGER)
-                continue;
+            // Sin movimiento → nada que resolver
+            if (vx == 0.0 && vy == 0.0) continue;
 
-            var body = physics.getPhysics();
+            physics.setOnGround(false);
 
-            body.applyGravity(body.getOnGround());
+            Rectangle myBounds = colA.getBounds();
 
-            body.setOnGround(false);
-
-            double velX = body.getVelocity().getX();
-            double velY = body.getVelocity().getY();
-
-            Rectangle movingBounds = colA.getBounds();
-
+            // Broadphase: caja que cubre el movimiento completo del frame
             Rectangle broadphase = new Rectangle(
-                    (int) (velX > 0 ? movingBounds.x : movingBounds.x + velX),
-                    (int) (velY > 0 ? movingBounds.y : movingBounds.y + velY),
-                    (int) (movingBounds.width + Math.abs(velX)),
-                    (int) (movingBounds.height + Math.abs(velY))
+                    (int)(vx < 0 ? myBounds.x + vx : myBounds.x),
+                    (int)(vy < 0 ? myBounds.y + vy : myBounds.y),
+                    (int)(myBounds.width  + Math.abs(vx)),
+                    (int)(myBounds.height + Math.abs(vy))
             );
 
-            double earliestTime = 1.0;
-            int hitNormalX = 0;
-            int hitNormalY = 0;
-
-            GameObjects hitObject = null;
+            // Buscar el obstáculo más cercano en la trayectoria
+            double   nearestTime    = 1.0;
+            int      hitNormalX     = 0;
+            int      hitNormalY     = 0;
+            GameObjects hitTarget   = null;
 
             for (GameObjects other : objects) {
+                if (other == obj) continue;
 
-                if (obj == other) continue;
+                ColliderComponent colB = other.getComponent(ColliderComponent.class);
+                if (colB == null || colB.isTrigger()) continue;
 
-                ColliderComponent colB =
-                        other.getComponent(ColliderComponent.class);
+                // Filtro de capas: ¿pueden estos dos chocar?
+                if (!colA.canCollideWith(colB)) continue;
 
-                if (colB == null) continue;
+                Rectangle otherBounds = colB.getBounds();
 
-                if (colB.getType() == ColliderComponent.ColliderType.TRIGGER)
-                    continue;
+                // Broadphase descarta la mayoría sin SweptAABB
+                if (!broadphase.intersects(otherBounds)) continue;
 
-                if ((colA.getMask() & colB.getLayer()) == 0 ||
-                        (colB.getMask() & colA.getLayer()) == 0)
-                    continue;
+                SweptAABB.Result result = SweptAABB.calculate(myBounds, otherBounds, vx, vy);
 
-                Rectangle targetBounds = colB.getBounds();
-
-                if (!broadphase.intersects(targetBounds))
-                    continue;
-
-                SweptAABB.Result result =
-                        SweptAABB.calculate(
-                                movingBounds,
-                                targetBounds,
-                                velX,
-                                velY
-                        );
-
-                if (result.hasCollision() && result.time < earliestTime) {
-
-                    earliestTime = result.time;
-                    hitNormalX = result.normalX;
-                    hitNormalY = result.normalY;
-                    hitObject = other;
+                if (result.hasCollision() && result.time < nearestTime) {
+                    nearestTime = result.time;
+                    hitNormalX  = result.normalX;
+                    hitNormalY  = result.normalY;
+                    hitTarget   = other;
                 }
             }
 
-            double moveX = velX * earliestTime;
-            double moveY = velY * earliestTime;
+            // Mover hasta el punto de contacto
+            PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
 
-            PhysicsStepper.moveWith(obj, moveX, moveY);
-
-            if (earliestTime < 1.0 && hitObject != null) {
-
-                sweptPairs.add(new CollisionsPair(obj, hitObject, false));
-
-                double remainingTime = 1.0 - earliestTime;
-
-                double remainingX = velX * remainingTime;
-                double remainingY = velY * remainingTime;
-
-                if (hitNormalX != 0) {
-
-                    remainingX = 0;
-                    body.getVelocity().setX(0);
-                }
-
+            // Si hubo impacto: cancelar velocidad en el eje golpeado
+            if (hitTarget != null) {
+                if (hitNormalX != 0) physics.getVelocity().setX(0);
                 if (hitNormalY != 0) {
-
-                    remainingY = 0;
-                    body.getVelocity().setY(0);
-
-                    if (hitNormalY == -1) {
-                        body.setOnGround(true);
-                    }
+                    physics.getVelocity().setY(0);
+                    // Normal Y = -1 significa que el impacto fue desde arriba → suelo
+                    if (hitNormalY == -1) physics.setOnGround(true);
                 }
-
-                PhysicsStepper.moveWith(obj, remainingX, remainingY);
+                // Notificar la colisión física (bala mata enemigo, jugador recibe daño, etc.)
+                CollisionDispatcher.dispatch(obj, hitTarget);
             }
         }
 
-        // ==========================================
-        // 2️⃣ DETECCIÓN FINAL (AABB NORMAL)
-        // ==========================================
+        // ──────────────────────────────────────────────────────────────────
+        // FASE 2: Detección AABB de todos los pares restantes
+        // (triggers, balas, objetos sin física que igual se tocan)
+        // ──────────────────────────────────────────────────────────────────
 
-        List<CollisionsPair> pairs =
-                CollisionManager.detect(objects);
+        List<CollisionResult> pairs = CollisionDetector.detect(objects);
 
-        pairs.addAll(sweptPairs);
+        // ──────────────────────────────────────────────────────────────────
+        // FASE 3: Despacho de eventos a los objetos
+        // ──────────────────────────────────────────────────────────────────
 
-        Map<GameObjects, Set<GameObjects>> collisionMap =
-                new HashMap<>();
-
-        Map<GameObjects, Set<GameObjects>> triggerMap =
-                new HashMap<>();
-
-        for (CollisionsPair pair : pairs) {
-
-            if (pair.trigger()) {
-
-                triggerMap
-                        .computeIfAbsent(pair.a(), k -> new HashSet<>())
-                        .add(pair.b());
-
-                triggerMap
-                        .computeIfAbsent(pair.b(), k -> new HashSet<>())
-                        .add(pair.a());
-
-            } else {
-
-                collisionMap
-                        .computeIfAbsent(pair.a(), k -> new HashSet<>())
-                        .add(pair.b());
-
-                collisionMap
-                        .computeIfAbsent(pair.b(), k -> new HashSet<>())
-                        .add(pair.a());
-            }
-        }
-
-        // ==========================================
-        // 3️⃣ EVENTOS ENTER/STAY/EXIT
-        // ==========================================
-
-        for (GameObjects obj : objects) {
-
-            Set<GameObjects> col =
-                    collisionMap.getOrDefault(obj, Set.of());
-
-            Set<GameObjects> trg =
-                    triggerMap.getOrDefault(obj, Set.of());
-
-            for (GameObjects other : col)
-                obj.handleCollision(other, false);
-
-            for (GameObjects other : trg)
-                obj.handleCollision(other, true);
-
-            obj.resolveExits(col, false);
-            obj.resolveExits(trg, true);
+        for (CollisionResult pair : pairs) {
+            CollisionDispatcher.dispatch(pair.a, pair.b);
         }
     }
 }

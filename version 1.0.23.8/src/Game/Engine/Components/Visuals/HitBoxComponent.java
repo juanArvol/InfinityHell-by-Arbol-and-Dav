@@ -1,6 +1,7 @@
 package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
+import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Render.Camera;
 import Game.Render.DebugRenderable;
 import Game.Render.RenderContext;
@@ -8,93 +9,51 @@ import Game.Render.RenderContext;
 import java.awt.Color;
 import java.awt.Rectangle;
 
+/**
+ * Componente visual que dibuja el área de colisión en modo debug.
+ *
+ * ── Rol clarificado ──────────────────────────────────────────────────────
+ * Antes HitBoxComponent definía el tamaño del colisionador Y lo dibujaba.
+ * Eso creaba una dependencia confusa: ColliderComponent leía a HitBoxComponent
+ * cada frame para saber su tamaño, y HitBoxComponent a veces leía a
+ * SpriteRenderer para saber el suyo.
+ *
+ * Ahora:
+ *   ColliderComponent → define el área real de colisión (física)
+ *   HitBoxComponent   → solo dibuja esa área en debug mode (visual)
+ *
+ * HitBoxComponent lee los bounds del ColliderComponent del mismo objeto
+ * para dibujarlos. Sin lógica de colisión propia.
+ *
+ * Si no usás debug mode, no necesitás este componente en producción.
+ */
 public class HitBoxComponent extends Component implements DebugRenderable {
 
-    private int width;
-    private int height;
-    private int offsetX;
-    private int offsetY;
+    private boolean visible   = true;
+    private Color debugColor  = Color.RED;
 
-    private boolean visible = true;
-    private Color debugColor = Color.RED;
+    public HitBoxComponent() {}
 
-    public HitBoxComponent(int width, int height) {
-        this(width, height, 0, 0);
+    public HitBoxComponent(Color color) {
+        this.debugColor = color;
     }
-
-    public HitBoxComponent(int width, int height, int offsetX, int offsetY) {
-        this.width = width;
-        this.height = height;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-    }
-
-    @Override
-    public void start() {
-        syncWithSprite();
-    }
-
-    public void syncWithSprite() {
-
-        SpriteRenderer sprite = gameObject.getComponent(SpriteRenderer.class);
-        if (sprite == null || sprite.getSprite() == null) return;
-
-        SizeSyncMode mode = sprite.getSyncMode();
-
-        if (mode == SizeSyncMode.HITBOX_TO_SPRITE) {
-            width = sprite.getSprite().getWidth();
-            height = sprite.getSprite().getHeight();
-        }
-    }
-
-    public Rectangle getBounds() {
-        var pos = gameObject.getTransform().getPosition();
-        return new Rectangle(
-                (int) pos.getX() + offsetX,
-                (int) pos.getY() + offsetY,
-                width,
-                height
-        );
-    }
-
-    public void setSize(int w, int h) {
-        this.width = w;
-        this.height = h;
-        notifySprite();
-    }
-
-    public void setOffset(int x, int y) {
-        this.offsetX = x;
-        this.offsetY = y;
-    }
-
-    private void notifySprite() {
-        SpriteRenderer sprite = gameObject.getComponent(SpriteRenderer.class);
-        if (sprite != null) {
-            sprite.syncWithHitbox();
-        }
-    }
-
-    public int getWidth() { return width; }
-    public int getHeight() { return height; }
-    public int getOffsetX() { return offsetX; }
-    public int getOffsetY() { return offsetY; }
-
-    public void setVisible(boolean visible) { this.visible = visible; }
-    public boolean isVisible() { return visible; }
-
-    public void setDebugColor(Color color) { this.debugColor = color; }
-    public Color getDebugColor() { return debugColor; }
 
     @Override
     public void debugRender(RenderContext ctx, Camera camera) {
         if (!visible) return;
 
-        Rectangle rect = getBounds();
+        ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
+        if (col == null) return;
 
-        int x = (int)(rect.x - camera.getX());
-        int y = (int)(rect.y - camera.getY());
+        Rectangle bounds = col.getBounds();
+        int x = (int)(bounds.x - camera.getX());
+        int y = (int)(bounds.y - camera.getY());
 
-        ctx.drawHitbox(new Rectangle(x, y, rect.width, rect.height), debugColor);
+        ctx.drawHitbox(new Rectangle(x, y, bounds.width, bounds.height), debugColor);
     }
+
+    public void setVisible(boolean v)    { this.visible = v; }
+    public boolean isVisible()           { return visible; }
+    public void setDebugColor(Color c)   { this.debugColor = c; }
+    public Color getDebugColor()         { return debugColor; }
 }

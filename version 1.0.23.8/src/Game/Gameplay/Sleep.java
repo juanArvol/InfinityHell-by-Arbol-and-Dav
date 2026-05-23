@@ -1,5 +1,2 @@
 package Game.Gameplay;
-
-public class Sleep {
-    //el diavlo anda suelto va pisando el mismo pavimento
-}
+// REMOVED: archivo vacío con código muerto. Eliminado en refactor v1.0.23.8+

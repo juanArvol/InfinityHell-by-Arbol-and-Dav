@@ -3,7 +3,7 @@ package Game.Enemys;
 import Game.Engine.MovingObjects;
 import Game.Engine.Components.PhysicsComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Colisions.CollisionVisitor;
+import Game.Engine.Filter.CollisionProfile;
 import Game.Player.Player;
 import GameMath.Vector2D;
 import Game.Enemys.AI.EnemyAI;
@@ -29,18 +29,26 @@ public abstract class Enemy extends MovingObjects {
             EnemyComport comport,
             Player player,
             EnemyPhysics physics
-            
     ) {
-        super(position,texture, 10, 30, physics);
-        getTransform().setPosition(position);
+
+        super(position, texture, physics);
 
         this.player = player;
+
         this.health = new HealthComponent(maxHealth);
         this.state = new EnemyState();
+
         this.ai = new EnemyAI(comport);
 
-        addComponent(new PhysicsComponent(physics));
-        addComponent(new ColliderComponent());
+        // ================= COLLIDER =================
+
+        ColliderComponent collider =
+                getComponent(ColliderComponent.class);
+
+        if (collider != null) {
+            collider.setProfile(CollisionProfile.ENEMY);
+            collider.setSize(24, 30);
+        }
     }
 
     @Override
@@ -57,8 +65,10 @@ public abstract class Enemy extends MovingObjects {
         ai.update(this, player);
 
         updateTypePhysics();
+
         moveByPhysics();
 
+        super.update();
     }
 
     protected abstract void updateTypePhysics();
@@ -71,16 +81,18 @@ public abstract class Enemy extends MovingObjects {
         return state;
     }
 
+    public HealthComponent getHealthComponent() {
+        return health;
+    }
+
     public void damage(int amount) {
         health.damage(amount);
     }
 
     protected void onDeath() {
-        System.out.println("enemigo morido");
-    }
-
-    @Override
-    public void acceptVisitor(CollisionVisitor visitor) {
-        visitor.visit(this);
+        System.out.println(
+                "[Enemy] Murió un enemigo en "
+                        + getTransform().getPosition()
+        );
     }
 }

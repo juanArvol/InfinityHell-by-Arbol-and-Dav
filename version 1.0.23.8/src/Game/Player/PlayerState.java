@@ -2,8 +2,12 @@ package Game.Player;
 
 import GameMath.Vector2D;
 
+/**
+ * Estado lógico del jugador.
+ * FIX BUG-012: método setReloaging() renombrado a setReloading() (typo corregido).
+ */
 public class PlayerState {
-    
+
     private boolean congelado;
     private boolean enElSuelo;
     private boolean mirandoDerecha = true;
@@ -15,8 +19,18 @@ public class PlayerState {
 
     private Vector2D aimDirection = new Vector2D(1, 0);
 
-    public boolean isReloading(){ return reloading; }
-    public void setReloaging(boolean v) { reloading = v; }
+    // ==================== RECARGA ====================
+
+    public boolean isReloading() { return reloading; }
+
+    /**
+     * FIX BUG-012: en el original era "setReloaging" (typo).
+     * Ahora es "setReloading" para consistencia con el getter.
+     */
+    public void setReloading(boolean v) { reloading = v; }
+
+    // ==================== ESTADOS ====================
+
     public boolean isCongelado() { return congelado; }
     public void setCongelado(boolean v) { congelado = v; }
 
@@ -41,10 +55,7 @@ public class PlayerState {
     public boolean isMirandoArribaOAbajo() {
         return mirandoArriba || mirandoAbajo;
     }
-    public Vector2D getAimDirection() {
-        return aimDirection;
-    }
-    public void setAimDirection(Vector2D dir) {
-        this.aimDirection = dir;
-    }
-} 
+
+    public Vector2D getAimDirection() { return aimDirection; }
+    public void setAimDirection(Vector2D dir) { this.aimDirection = dir; }
+}

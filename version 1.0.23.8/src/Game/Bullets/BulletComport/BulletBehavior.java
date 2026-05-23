@@ -2,6 +2,7 @@ package Game.Bullets.BulletComport;
 
 import Game.Enemys.Enemy;
 import Game.Player.Player;
+import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;
 import Game.World.WorldObjects.Visuals.BackGround;
 import Game.Bullets.Bullet;
@@ -40,4 +41,5 @@ public abstract class BulletBehavior {
     public void onCollision(Bullet bullet, BackGround ambiente) {}
     public void onCollision(Bullet bullet, Bullet other) {}
     public void onCollision(Bullet bullet, Obstacle obstacle) {}
+    public void onCollision(Bullet bullet, BlockWorld block) {}
 } 

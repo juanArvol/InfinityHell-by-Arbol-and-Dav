@@ -7,115 +7,69 @@ import Graficos.Renderable;
 
 import java.awt.image.BufferedImage;
 
+/**
+ * Dibuja un sprite en la posición del objeto.
+ *
+ * ── Qué se simplificó ────────────────────────────────────────────────────
+ * Se eliminó SizeSyncMode y la sincronización bidireccional con HitBoxComponent.
+ * Esa lógica causaba que cambiar el sprite cambiara el collider, y viceversa,
+ * creando dependencias invisibles difíciles de rastrear.
+ *
+ * Ahora SpriteRenderer solo dibuja. El tamaño del collider se define
+ * explícitamente en el constructor del objeto (Player, Enemy, BlockWorld...).
+ *
+ * Para animar: llamar setSprite() con el frame actual desde el componente
+ * de animación (PlayerRenderer, EnemyRenderer, etc.).
+ */
 public class SpriteRenderer extends Component implements Renderable {
 
-    protected BufferedImage sprite;
-
+    private BufferedImage sprite;
     private int renderWidth;
     private int renderHeight;
-
     private int offsetX = 0;
     private int offsetY = 0;
 
-    private SizeSyncMode syncMode = SizeSyncMode.NONE;
-
     public SpriteRenderer(BufferedImage sprite) {
         this.sprite = sprite;
-
         if (sprite != null) {
-            renderWidth = sprite.getWidth();
+            renderWidth  = sprite.getWidth();
             renderHeight = sprite.getHeight();
         }
-    }
-
-    @Override
-    public void start() {
-        applyInitialSync();
-    }
-
-    @Override
-    public void update() {
-        if (syncMode == SizeSyncMode.BIDIRECTIONAL) {
-            syncWithHitbox();
-        }
-    }
-
-    private void applyInitialSync() {
-
-        HitBoxComponent hitbox = gameObject.getComponent(HitBoxComponent.class);
-        if (hitbox == null || sprite == null) return;
-
-        switch (syncMode) {
-            case SPRITE_TO_HITBOX:
-            case BIDIRECTIONAL:
-                renderWidth = hitbox.getWidth();
-                renderHeight = hitbox.getHeight();
-                break;
-
-            case HITBOX_TO_SPRITE:
-                hitbox.setSize(sprite.getWidth(), sprite.getHeight());
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    public void syncWithHitbox() {
-
-        HitBoxComponent hitbox = gameObject.getComponent(HitBoxComponent.class);
-        if (hitbox == null) return;
-
-        if (syncMode == SizeSyncMode.SPRITE_TO_HITBOX ||
-            syncMode == SizeSyncMode.BIDIRECTIONAL) {
-
-            renderWidth = hitbox.getWidth();
-            renderHeight = hitbox.getHeight();
-        }
-    }
-
-    public void setSyncMode(SizeSyncMode mode) {
-        this.syncMode = mode;
-        if (gameObject != null) {
-            applyInitialSync();
-        }
-    }
-
-    public SizeSyncMode getSyncMode() {
-        return syncMode;
-    }
-
-    public void setSize(int width, int height) {
-        renderWidth = width;
-        renderHeight = height;
-        syncMode = SizeSyncMode.NONE;
     }
 
     @Override
     public void render(RenderContext ctx, Camera camera) {
-
         if (sprite == null) return;
 
         var pos = gameObject.getTransform().getPosition();
-
-        int x = (int)(pos.getX() - camera.getX() + offsetX);
-        int y = (int)(pos.getY() - camera.getY() + offsetY);
+        int x = (int)(pos.getX() - camera.getX()) + offsetX;
+        int y = (int)(pos.getY() - camera.getY()) + offsetY;
 
         ctx.drawImage(sprite, x, y, renderWidth, renderHeight);
     }
 
+    /** Cambia el sprite (para animaciones). El tamaño se actualiza automáticamente. */
     public void setSprite(BufferedImage sprite) {
         this.sprite = sprite;
-
-        if (syncMode == SizeSyncMode.NONE && sprite != null) {
-            renderWidth = sprite.getWidth();
+        if (sprite != null) {
+            renderWidth  = sprite.getWidth();
             renderHeight = sprite.getHeight();
         }
-
-        applyInitialSync();
     }
 
-    public BufferedImage getSprite() {
-        return sprite;
+    /** Fuerza un tamaño de render distinto al del sprite (escalado). */
+    public void setRenderSize(int w, int h) {
+        this.renderWidth  = w;
+        this.renderHeight = h;
     }
+
+    /** Offset visual respecto a la posición del objeto (sin afectar el collider). */
+    public void setOffset(int ox, int oy) {
+        this.offsetX = ox;
+        this.offsetY = oy;
+    }
+
+    public BufferedImage getSprite() { return sprite; }
+    public int getRenderWidth()      { return renderWidth; }
+    public int getRenderHeight()     { return renderHeight; }
 }

@@ -1,5 +1,2 @@
 package States;
-
-public class Jpanel {
-    
-}
+// REMOVED: clase vacía sin propósito. Eliminada en refactor v1.0.23.8+
