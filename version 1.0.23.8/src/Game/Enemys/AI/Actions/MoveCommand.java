@@ -1,0 +1,26 @@
+package Game.Enemys.AI.Actions;
+
+import Game.Enemys.AI.EnemyAction;
+import Game.Enemys.Enemy;
+
+public class MoveCommand implements EnemyAction {
+
+    private final double speed;
+    private final boolean right;
+
+    public MoveCommand(double speed, boolean right){
+        this.speed = speed;
+        this.right = right;
+    }
+    @Override
+    public void execute(Enemy enemy){
+        enemy.getState().setMoving(true);
+        enemy.getPhysics().moveX(
+                speed,
+                enemy.getState().isEnElSuelo(),
+                right,
+                false
+
+        );
+    }
+}

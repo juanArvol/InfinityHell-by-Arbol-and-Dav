@@ -1,0 +1,140 @@
+package Game.Fisics;
+
+import GameMath.Vector2D;
+
+public class Physics {
+    protected Vector2D velocity = new Vector2D(0, 0);
+    protected double gravity;
+
+    protected double mass;             //masa del objeto
+    protected double aAir;             //Aceleracion en el aire
+    protected double speedMaxAir;      //Velocidad maxima aire
+    protected double speedMaxPiso;     //Velocidad maxima suelo
+    protected double aGround;          //Aceleracion en el suelo
+    protected double slide;            //Deslizamiento al frenar
+    protected double speedMax;         //velocidad maxima
+    protected double bonus;            //bono en la velocidad segun entorno
+
+    protected double inputX;
+    protected double vx;
+    protected double vy;
+    protected double dir;
+    protected double accel;
+
+    protected boolean onGround;
+    protected boolean direction;
+    protected boolean salto;
+    protected boolean running;
+    protected byte count=0;
+
+    public Physics(double gravity) {
+        this.gravity = gravity;
+    }
+
+    public void setMass(double m){
+        this.mass=m;
+    }
+    public double getMass(){
+        return mass;
+    }
+    public void vSetX(double vX){
+        velocity.setX(vX);
+    }
+
+    public void vSetY(double vY){
+        velocity.setY(vY);
+    }
+    public void setJumping(boolean jumping){
+        this.salto=jumping;
+    }
+    public void stopY() {
+        velocity.setY(velocity.getY()*0);
+    }
+
+    public void stopX() {
+        velocity.setX(velocity.getX()*0);
+        vx=0;
+    }
+    public void stopVelocity(){
+        stopX();
+        stopY();
+    }
+    public void jump(double force) {
+        velocity.setY(-force/mass);
+        salto = true;
+    }
+    public void moveX(double inputX,boolean onGround, boolean direction, boolean running) {
+        this.onGround=onGround;
+        this.direction=direction;
+        this.inputX=inputX;
+        this.running=running;
+
+        setMaxSpeed(onGround);
+        
+        dir = direction ? 1 : -1;
+        accel = onGround ? aGround : aAir;
+        double mAccel= (accel/mass);
+
+        // factor reductor de velocidad en x
+        bonus = onGround ? 1 : 0.8;
+        vx=(velocity.getX()+ ((inputX*dir)*mAccel)*bonus);
+
+            // Límite de velocidad
+        if(inputX !=0){
+            if(Math.abs(vx)>=speedMax){
+                vx=dir* speedMax;
+            }
+        }
+        vSetX(vx);
+    }
+    public void moveY(double inputY, boolean hasGravity){
+        if(hasGravity) applyGravity(onGround);
+        vSetY(inputY*aAir);
+    }
+    public void updateMoves(Vector2D algo){
+        algo.setX(algo.getX() + velocity.getX());
+        algo.setY(algo.getY() + velocity.getY());
+    }
+    public Vector2D getVelocity() {
+        return velocity;
+    }
+    public void setMaxSpeed(boolean onGround){
+        speedMax= onGround ? speedMaxPiso : speedMaxAir;
+        if(Math.abs(vx)>speedMax-accel){
+            speedMax=speedMax-accel;
+        }
+    }
+    public void applyGravity(boolean onGround) {
+        // F = m * g → a = g (independiente de masa, pero dejamos abierto a modificaciones)
+        if (onGround==false) {
+            velocity.setY(velocity.getY() + (gravity*mass));
+        }
+    }
+    public double getGravity(){
+        return gravity;
+    }
+    public void setGravity(double g){
+        gravity = g;
+    }
+    public void showInfo(boolean yes){
+        if(yes){
+            System.out.println("inputX: " + inputX + " | dir: " + dir + " | accel: " + accel + " | bonus: " + bonus + " | velX: " + velocity.getX()+" | velY: " + velocity.getY()+" | vx: " + vx+" | masa: " + mass);
+        }
+    }
+    
+    public void addForce(double fx, double fy) {
+        // F = m * a → a = F / m
+        velocity.setX(velocity.getX() + (fx/mass));
+        velocity.setY(velocity.getY() + (fy/mass));
+    }
+
+    public double getOposite(double x){
+        return -x;
+    }
+    public boolean getOnGround(){
+        return onGround;
+    }
+    public void setOnGround(boolean onGround){
+        this.onGround = onGround;
+    }
+}
