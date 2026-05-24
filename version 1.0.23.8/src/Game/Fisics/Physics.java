@@ -4,13 +4,6 @@ import GameMath.Vector2D;
 
 /**
  * Clase base de física.
- *
- * FIX BUG-005: agregado isGravityManagedExternally() para que CollisionsSystem
- * no aplique gravedad a objetos (como Bullet) que ya gestionan su propia gravedad.
- *
- * REFACTOR: limpieza de nombres de variables crípticos.
- * Los campos 'salto', 'count', 'dir', 'bonus', 'vx', 'vy' internos
- * se mantienen por compatibilidad pero se documenta su propósito.
  */
 public class Physics {
 
@@ -26,29 +19,20 @@ public class Physics {
     protected double speedMax;      // Velocidad máxima actual (calculada)
     protected double bonus;         // Multiplicador de aceleración según entorno
 
-    protected double inputX;        // Input horizontal del frame actual
+    protected double inputX;        // Input horizontal del frame actual (-1, 0, +1)
     protected double vx;            // Velocidad X de trabajo (cálculo interno)
     protected double vy;            // Velocidad Y de trabajo (cálculo interno)
-    protected double dir;           // Dirección: +1 derecha, -1 izquierda
     protected double accel;         // Aceleración aplicada en este frame
 
     protected boolean onGround;
-    protected boolean direction;    // true = derecha
     protected boolean salto;        // true = está en salto
     protected boolean running;
-    protected byte count = 0;       // uso: no usado actualmente (deuda técnica)
+    protected byte count = 0;
 
     public Physics(double gravity) {
         this.gravity = gravity;
     }
 
-    /**
-     * FIX BUG-005: indica si este objeto gestiona su propia gravedad externamente.
-     * Si retorna true, CollisionsSystem NO aplicará gravedad a este objeto,
-     * evitando doble aplicación.
-     *
-     * Sobreescribir en BulletPhysics para retornar true.
-     */
     public boolean isGravityManagedExternally() {
         return false;
     }
@@ -70,24 +54,40 @@ public class Physics {
         salto = true;
     }
 
+    /**
+     * Calcula la velocidad horizontal para este frame.
+     *
+     * @param inputX  Dirección con signo: -1 izquierda, +1 derecha, 0 quieto.
+     * @param onGround Si el objeto está en el suelo.
+     * @param running  Si está corriendo.
+     *
+     * FIX oscilación: la versión anterior tenía un campo 'dir' que debía
+     * calcularse como Math.signum(inputX), pero nunca se asignaba aquí.
+     * Cuando inputX != 0 y vx >= speedMax, se hacía vx = dir * speedMax
+     * con dir = 0 → vx = 0. Al frame siguiente volvía a acelerar → oscilación.
+     *
+     * Solución: inputX ya viene con signo propio. El clamp de velocidad
+     * usa Math.copySign para preservar la dirección correctamente.
+     */
     public void moveX(double inputX, boolean onGround, boolean running) {
-        this.onGround  = onGround;
-        this.inputX    = inputX;
-        this.running   = running;
+        this.onGround = onGround;
+        this.inputX   = inputX;
+        this.running  = running;
 
         setMaxSpeed(onGround);
 
-        accel = onGround ? aGround : aAir;
+        accel         = onGround ? aGround : aAir;
         double mAccel = accel / mass;
-        bonus = onGround ? 1 : 0.8;
+        bonus         = onGround ? 1.0 : 0.8;
 
         vx = velocity.getX() + (inputX * mAccel) * bonus;
 
-        if (inputX != 0) {
-            if (Math.abs(vx) >= speedMax) {
-                vx = dir * speedMax;
-            }
+        // Clamp: si se supera la velocidad máxima, recortar preservando la dirección.
+        // FIX: usar Math.copySign(speedMax, vx) en lugar del 'dir' que nunca se asignaba.
+        if (inputX != 0 && Math.abs(vx) >= speedMax) {
+            vx = Math.copySign(speedMax, vx);
         }
+
         vSetX(vx);
     }
 
@@ -105,8 +105,9 @@ public class Physics {
 
     public void setMaxSpeed(boolean onGround) {
         speedMax = onGround ? speedMaxPiso : speedMaxAir;
+        // Reducción suave al acercarse al máximo (evita clipping brusco)
         if (Math.abs(vx) > speedMax - accel) {
-            speedMax = speedMax - accel;
+            speedMax = Math.max(0, speedMax - accel);
         }
     }
 
@@ -130,8 +131,8 @@ public class Physics {
 
     public void showInfo(boolean yes) {
         if (yes) {
-            System.out.printf("inputX:%.2f dir:%.0f accel:%.2f velX:%.2f velY:%.2f%n",
-                inputX, dir, accel, velocity.getX(), velocity.getY());
+            System.out.printf("inputX:%.2f accel:%.2f velX:%.2f velY:%.2f%n",
+                inputX, accel, velocity.getX(), velocity.getY());
         }
     }
 }

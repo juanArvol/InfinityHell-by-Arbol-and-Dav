@@ -3,6 +3,7 @@ package Game.World.WorldObjects;
 import Game.Engine.GameObjects;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
+import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.Filter.CollisionProfile;
 import GameMath.Vector2D;
@@ -39,7 +40,10 @@ public class BlockWorld extends GameObjects {
         // ================= RENDER =================
 
         if (texture != null) {
-            addComponent(new SpriteRenderer(texture));
+            // COLLIDER_TO_SPRITE: el sprite se dibuja estirado al tamaño del bloque (width x height).
+            // Sin esto, el sprite se dibuja a su tamaño natural (ej: 64x64)
+            // pero el bloque puede ser 1280x200 → sprite se repite o queda cortado visualmente.
+            addComponent(new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
         }
     }
 

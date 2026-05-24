@@ -3,6 +3,7 @@ package Game.World.WorldObjects;
 import Game.Engine.GameObjects;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
+import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.Filter.CollisionProfile;
 import GameMath.Vector2D;
@@ -35,15 +36,13 @@ public class Obstacle extends GameObjects {
 
         // ================= DEBUG =================
 
-        HitBoxComponent hitBox =
-                new HitBoxComponent(Color.RED);
-
-        addComponent(hitBox);
+        addComponent(new HitBoxComponent(Color.RED));
 
         // ================= RENDER =================
 
         if (texture != null) {
-            addComponent(new SpriteRenderer(texture));
+            // COLLIDER_TO_SPRITE: el sprite se escala al tamaño del obstáculo.
+            addComponent(new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
         }
     }
 
