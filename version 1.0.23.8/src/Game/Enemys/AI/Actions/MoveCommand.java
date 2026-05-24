@@ -18,7 +18,6 @@ public class MoveCommand implements EnemyAction {
         enemy.getPhysics().moveX(
                 speed,
                 enemy.getState().isEnElSuelo(),
-                right,
                 false
 
         );

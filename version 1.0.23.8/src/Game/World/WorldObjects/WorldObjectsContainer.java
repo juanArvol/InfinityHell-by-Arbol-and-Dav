@@ -1,5 +1,7 @@
 package Game.World.WorldObjects;
 
+import Game.Bullets.Bullet;
+import Game.Bullets.BulletLife;
 import Game.Engine.GameObjects;
 import Game.Engine.Systems.CollisionsSystem;
 
@@ -21,6 +23,14 @@ public class WorldObjectsContainer {
         }
         collisionsSystem.update(objects);
 
+        // FIX ARCH-09: limpiar balas muertas cada frame para evitar memory leak
+        for (GameObjects obj : objects) {
+            if (obj instanceof Bullet bullet) {
+                if (!bullet.getBulletLife().isAlive()) {
+                    pendingRemove.add(obj);
+                }
+            }
+        }
     }
 
     public void flush() {

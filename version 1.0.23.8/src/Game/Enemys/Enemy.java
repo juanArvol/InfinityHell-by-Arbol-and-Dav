@@ -64,9 +64,11 @@ public abstract class Enemy extends MovingObjects {
 
         ai.update(this, player);
 
+        // updateTypePhysics: aplica gravedad (GroundTypeEnemy) o lógica de vuelo (FlyingTypeEnemy)
         updateTypePhysics();
 
-        moveByPhysics();
+        // FIX DOUBLE-MOVE: CollisionsSystem (SweptAABB) ya mueve el objeto cada frame.
+        // moveByPhysics() aquí causaba doble movimiento — eliminado.
 
         super.update();
     }

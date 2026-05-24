@@ -82,11 +82,10 @@ public class Bullet extends GameObjects {
         if (!bulletLife.isAlive())
             return;
 
+        // FIX BUG-06: behavior.update() delega en BulletPhysics.update() que ya
+        // aplica gravedad internamente (si hasGravity=true). NO aplicar gravedad
+        // de nuevo aqui — causaria que las balas caigan al doble de velocidad.
         behavior.update(this);
-
-        if (behavior.hasGravity()) {
-            getPhysics().applyGravity(false);
-        }
 
         moveByPhysics();
 

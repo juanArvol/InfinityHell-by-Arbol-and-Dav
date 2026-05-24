@@ -30,13 +30,11 @@ public class Player extends MovingObjects {
             BufferedImage texture,
             World world
     ) {
-
         super(
                 spawn,
                 texture,
                 new PlayerPhysics(0.78)
         );
-
         state = new PlayerState();
 
         stats = new PlayerStats();

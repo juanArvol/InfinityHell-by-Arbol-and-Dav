@@ -44,7 +44,7 @@ public class GameState {
 
         Vector2D spawnPos = new Vector2D(
                 world.getWidth() / 2.0,
-                world.getHeight() / 2.0
+                world.getHeight() / 2.0 - 200   // spawn por encima del suelo
         );
 
         player = new Player(
@@ -56,8 +56,9 @@ public class GameState {
         world.add(player);
         world.centerCameraOn(player, width, height);
 
+        // FIX BUG-13: usar count > 0 para que haya enemigos
         spawner = new EnemySpawner(player);
-        spawner.spawn(world, 0);
+        spawner.spawn(world, 3);
 
         uiManager.add(new LifeHUD(player.getStats(), width, height));
         uiManager.add(new AmmoHUD(player.getCombat().getInventory(), width, height));
@@ -86,6 +87,10 @@ public class GameState {
 
         worldManager.update(width, height);
         uiManager.update();
+
+        // FIX BUG-04: la camara debe seguir al player CADA FRAME, no solo en init().
+        // Llamar DESPUES de worldManager.update() para usar la posicion ya actualizada.
+        worldManager.getCurrentWorld().centerCameraOn(player, screenWidth, screenHeight);
     }
 
     public void draw(Graphics g) {

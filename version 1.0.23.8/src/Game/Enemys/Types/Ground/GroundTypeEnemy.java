@@ -27,8 +27,12 @@ public abstract class GroundTypeEnemy extends Enemy {
         var pc = getPhysicsComponent();
         if (pc == null) return;
 
-        pc.getPhysics().applyGravity(
-                getState().isEnElSuelo()
-        );
+        // Sincronizar enElSuelo desde la fisica (CollisionsSystem lo actualiza via setOnGround).
+        // Sin esta sincronizacion, applyGravity siempre recibe false y el enemigo cae infinitamente
+        // incluso cuando esta parado sobre el suelo.
+        getState().setEnElSuelo(pc.getPhysics().getOnGround());
+
+        // Aplicar gravedad (modifica velocidad Y). CollisionsSystem luego resuelve el movimiento.
+        pc.getPhysics().applyGravity(getState().isEnElSuelo());
     }
 }

@@ -24,6 +24,11 @@ public class World {
     private final WorldObjectsContainer objects = new WorldObjectsContainer();
     private final Camera camera = new Camera();
 
+    // FIX BUG-04: cámara sigue al player cada frame
+    private Game.Engine.GameObjects cameraTarget;
+    private int lastScreenW;
+    private int lastScreenH;
+
     // NUEVO 2.5D: sistema de render con depth sorting
     private static final boolean USE_DEPTH_SORT = true;
 
@@ -39,6 +44,11 @@ public class World {
 
     public void update() {
         objects.update();
+
+        // FIX BUG-04: actualizar cámara cada frame si hay un target definido
+        if (cameraTarget != null) {
+            centerCameraOn(cameraTarget, lastScreenW, lastScreenH);
+        }
     }
 
     public void draw(Graphics g) {
@@ -69,7 +79,15 @@ public class World {
      * Centra la cámara en un objeto, con clamp al área del mundo.
      * FIX DESIGN-009: usa la versión con límites para no mostrar área fuera del mundo.
      */
+    /**
+     * Centra la cámara en un objeto y configura ese objeto como target de seguimiento.
+     * FIX BUG-04: llamar esto una vez en init() configura el follow permanente.
+     */
     public void centerCameraOn(GameObjects obj, int screenWidth, int screenHeight) {
+        this.cameraTarget = obj;
+        this.lastScreenW  = screenWidth;
+        this.lastScreenH  = screenHeight;
+
         var pos = obj.getTransform().getPosition();
         camera.centerOn(
             pos.getX(), pos.getY(),

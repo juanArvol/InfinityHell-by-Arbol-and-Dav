@@ -24,10 +24,14 @@ public class PlayerController {
 
     private void handleMovementInput() {
 
+        // FIX BUG-11: inputX era siempre 1 tanto para left como right.
+        // Ahora se usa +1 para derecha y -1 para izquierda.
+        // physics.moveX() usa state.isDer() para la direccion visual,
+        // e inputX para la magnitud con signo.
         double inputX = 0;
 
         if (KeyBoard.left) {
-            inputX = 1;
+            inputX = -1;
             state.setDer(false);
         }
 
@@ -42,7 +46,6 @@ public class PlayerController {
         physics.moveX(
             inputX,
             state.isEnElSuelo(),
-            state.isDer(),
             running
         );
     }

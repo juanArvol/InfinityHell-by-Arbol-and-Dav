@@ -70,20 +70,18 @@ public class Physics {
         salto = true;
     }
 
-    public void moveX(double inputX, boolean onGround, boolean direction, boolean running) {
+    public void moveX(double inputX, boolean onGround, boolean running) {
         this.onGround  = onGround;
-        this.direction = direction;
         this.inputX    = inputX;
         this.running   = running;
 
         setMaxSpeed(onGround);
 
-        dir   = direction ? 1 : -1;
         accel = onGround ? aGround : aAir;
         double mAccel = accel / mass;
         bonus = onGround ? 1 : 0.8;
 
-        vx = velocity.getX() + ((inputX * dir) * mAccel) * bonus;
+        vx = velocity.getX() + (inputX * mAccel) * bonus;
 
         if (inputX != 0) {
             if (Math.abs(vx) >= speedMax) {
