@@ -6,48 +6,39 @@ import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.Filter.CollisionProfile;
+import Game.World.Surface.SurfaceMaterial;
 import GameMath.Vector2D;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
-public class Obstacle extends GameObjects {
+public class Obstacle extends GameObjects implements SurfaceMaterial {
 
-    public Obstacle(
-            int x,
-            int y,
-            int width,
-            int height,
-            BufferedImage texture
-    ) {
+    private final SurfaceMaterial material;
 
+    public Obstacle(int x, int y, int width, int height, BufferedImage texture) {
+        this(x, y, width, height, texture, SurfaceMaterial.DEFAULT);
+    }
+
+    public Obstacle(int x, int y, int width, int height,
+                    BufferedImage texture, SurfaceMaterial material) {
+
+        this.material = material;
         getTransform().setPosition(new Vector2D(x, y));
 
-        // ================= COLLIDER =================
-
-        ColliderComponent collider =
-                new ColliderComponent(
-                        width,
-                        height,
-                        CollisionProfile.WORLD
-                );
-
+        ColliderComponent collider = new ColliderComponent(width, height, CollisionProfile.WORLD);
         addComponent(collider);
-
-        // ================= DEBUG =================
 
         addComponent(new HitBoxComponent(Color.RED));
 
-        // ================= RENDER =================
-
         if (texture != null) {
-            // COLLIDER_TO_SPRITE: el sprite se escala al tamaño del obstáculo.
             addComponent(new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
         }
     }
 
+    @Override public double getFriction() { return material.getFriction(); }
+    @Override public double getDrag()     { return material.getDrag(); }
+
     @Override
-    public void update() {
-        super.update();
-    }
+    public void update() { super.update(); }
 }

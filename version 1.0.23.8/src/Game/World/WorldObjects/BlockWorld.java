@@ -6,31 +6,46 @@ import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.Filter.CollisionProfile;
+import Game.World.Surface.SurfaceMaterial;
 import GameMath.Vector2D;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
-public class BlockWorld extends GameObjects {
+/**
+ * Bloque estático del mundo.
+ *
+ * Implementa SurfaceMaterial para que CollisionsSystem pueda leer
+ * la fricción/drag de este bloque cuando un objeto aterriza sobre él.
+ *
+ * Para crear un bloque de hielo:
+ *   new BlockWorld(pos, texture, w, h, SurfaceMaterial.ICE)
+ *
+ * Para crear un bloque custom:
+ *   new BlockWorld(pos, texture, w, h, new SurfaceMaterial() {
+ *       public double getFriction() { return 0.3; }
+ *       public double getDrag()     { return 0.95; }
+ *   });
+ */
+public class BlockWorld extends GameObjects implements SurfaceMaterial {
 
-    public BlockWorld(
-            Vector2D position,
-            BufferedImage texture,
-            int width,
-            int height
-    ) {
+    private final SurfaceMaterial material;
 
+    // Constructor con material por defecto (suelo normal)
+    public BlockWorld(Vector2D position, BufferedImage texture, int width, int height) {
+        this(position, texture, width, height, SurfaceMaterial.DEFAULT);
+    }
+
+    // Constructor con material explícito
+    public BlockWorld(Vector2D position, BufferedImage texture,
+                      int width, int height, SurfaceMaterial material) {
+
+        this.material = material;
         getTransform().setPosition(position);
 
         // ================= COLLIDER =================
 
-        ColliderComponent collider =
-                new ColliderComponent(
-                        width,
-                        height,
-                        CollisionProfile.WORLD
-                );
-
+        ColliderComponent collider = new ColliderComponent(width, height, CollisionProfile.WORLD);
         addComponent(collider);
 
         // ================= DEBUG =================
@@ -40,12 +55,17 @@ public class BlockWorld extends GameObjects {
         // ================= RENDER =================
 
         if (texture != null) {
-            // COLLIDER_TO_SPRITE: el sprite se dibuja estirado al tamaño del bloque (width x height).
-            // Sin esto, el sprite se dibuja a su tamaño natural (ej: 64x64)
-            // pero el bloque puede ser 1280x200 → sprite se repite o queda cortado visualmente.
             addComponent(new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
         }
     }
+
+    // ── SurfaceMaterial ───────────────────────────────────────────────────
+
+    @Override
+    public double getFriction() { return material.getFriction(); }
+
+    @Override
+    public double getDrag()     { return material.getDrag(); }
 
     @Override
     public void update() {

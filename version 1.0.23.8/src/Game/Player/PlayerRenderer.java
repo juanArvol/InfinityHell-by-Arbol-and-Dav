@@ -38,7 +38,7 @@ public class PlayerRenderer extends Component {
                         .getVelocity()
                         .getX();
 
-        boolean isMoving = Math.abs(velocityX) > 1.5;
+        boolean isMoving = Math.abs(velocityX) > 0.5;
 
         BufferedImage spriteToUse;
 
