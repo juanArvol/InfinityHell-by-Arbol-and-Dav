@@ -16,16 +16,17 @@ import java.awt.image.BufferedImage;
  * Bloque estático del mundo.
  *
  * Implementa SurfaceMaterial para que CollisionsSystem pueda leer
- * la fricción/drag de este bloque cuando un objeto aterriza sobre él.
+ * las propiedades físicas de este bloque cuando un objeto aterriza sobre él.
+ *
+ * FIX: Se agregaron getAirControl() y getAccelScale() que faltaban tras la
+ * refactorización de SurfaceMaterial de clase a interface con 4 métodos.
+ * Su ausencia causaba AbstractMethodError/crash al colisionar con el suelo.
  *
  * Para crear un bloque de hielo:
  *   new BlockWorld(pos, texture, w, h, SurfaceMaterial.ICE)
  *
  * Para crear un bloque custom:
- *   new BlockWorld(pos, texture, w, h, new SurfaceMaterial() {
- *       public double getFriction() { return 0.3; }
- *       public double getDrag()     { return 0.95; }
- *   });
+ *   new BlockWorld(pos, texture, w, h, SurfaceMaterial.of(0.3, 0.95, 0.8, 1.0));
  */
 public class BlockWorld extends GameObjects implements SurfaceMaterial {
 
@@ -61,11 +62,10 @@ public class BlockWorld extends GameObjects implements SurfaceMaterial {
 
     // ── SurfaceMaterial ───────────────────────────────────────────────────
 
-    @Override
-    public double getFriction() { return material.getFriction(); }
-
-    @Override
-    public double getDrag()     { return material.getDrag(); }
+    @Override public double getFriction()   { return material.getFriction();   }
+    @Override public double getDrag()       { return material.getDrag();       }
+    @Override public double getAirControl() { return material.getAirControl(); }  // FIX: faltaba
+    @Override public double getAccelScale() { return material.getAccelScale(); }  // FIX: faltaba
 
     @Override
     public void update() {

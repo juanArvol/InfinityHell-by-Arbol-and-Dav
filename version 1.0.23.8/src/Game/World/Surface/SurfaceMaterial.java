@@ -1,69 +1,84 @@
 package Game.World.Surface;
 
 /**
- * Define las propiedades físicas de la superficie de un objeto del mundo.
+ * Define las propiedades físicas completas de una superficie.
  *
- * Implementada por BlockWorld, Obstacle, y cualquier objeto pisable.
- * CollisionsSystem la lee en Fase 0 y la asigna a physics.setCurrentSurface().
- * Physics.moveX() la usa en el frame siguiente.
+ * Cada superficie declara sus propios modificadores; Physics los lee
+ * directamente, eliminando todos los valores hardcodeados del código de
+ * movimiento.
  *
- * ── friction vs drag ────────────────────────────────────────────────────
+ * ── Propiedades ──────────────────────────────────────────────────────────
  *
- *   friction  Escala la aceleración cuando hay INPUT activo.
- *             Controla la tracción: qué tan rápido el objeto puede acelerar.
- *             1.0 = normal. 0.05 = hielo (casi sin tracción). >1 = adherente.
+ *   friction     Escala la aceleración cuando hay INPUT activo.
+ *                1.0 = normal. 0.05 = hielo (casi sin tracción). >1 = pegajoso.
  *
- *   drag      Amortiguación PASIVA de vx cuando NO hay input.
- *             Se aplica multiplicativamente: vx *= drag por frame.
- *             1.0 = sin amortiguación (se desliza para siempre).
- *             0.85 = freno normal de suelo. 0.4 = para casi instantáneo.
+ *   drag         Amortiguación PASIVA de vx cuando NO hay input.
+ *                Se aplica multiplicativamente: vx *= drag por frame.
+ *                1.0 = sin amortiguación. 0.4 = para casi instantáneo.
  *
- * ── Valores de referencia ────────────────────────────────────────────────
+ *   airControl   Modificador del bonus de control aéreo [0..1].
+ *                1.0 = control aéreo completo.
+ *                0.8 = valor clásico "en el aire hay menos control".
+ *                Permite que superficies especiales (trampolín, viento)
+ *                otorguen más o menos control al saltar desde ellas.
  *
- *   suelo normal  friction=1.0,  drag=0.82   freno limpio, control normal
- *   hielo         friction=0.05, drag=0.99   resbala, casi no para
- *   barro         friction=2.5,  drag=0.55   cuesta arrancar, para rápido
- *   miel          friction=4.0,  drag=0.35   muy viscoso, movimiento lento
- *   aire          friction=0.55, drag=0.96   control reducido, poca resistencia
+ *   accelScale   Escala adicional sobre la aceleración base del objeto.
+ *                Permite superficies que den más aceleración (hierba con
+ *                agarre = 1.2) o menos (barro = 0.7) sin tocar aGround.
  *
- * AIR se usa cuando el objeto no tiene suelo debajo.
- * friction<1 en AIR = menos control aéreo que en suelo (realista).
- * drag alto en AIR = poca resistencia del aire (no frena tan rápido al soltar).
+ * ── Referencia de materiales ─────────────────────────────────────────────
+ *
+ *   Material    friction  drag   airControl  accelScale
+ *   DEFAULT     1.00      0.82   0.80        1.00   → suelo normal
+ *   AIR         0.55      0.96   1.00        1.00   → sin suelo
+ *   ICE         0.05      0.99   0.80        1.00   → resbala, no para
+ *   MUD         2.50      0.55   0.80        0.70   → cuesta arrancar, para rápido
+ *   HONEY       4.00      0.35   0.80        0.50   → muy viscoso
+ *   BOUNCY      1.00      0.82   1.20        1.00   → trampolín: más control aéreo
+ *
+ * Para crear un material ad-hoc:
+ *   SurfaceMaterial custom = SurfaceMaterial.of(0.3, 0.90, 0.8, 1.0);
  */
 public interface SurfaceMaterial {
 
+    /** Tracción activa (con input). */
     double getFriction();
+
+    /** Amortiguación pasiva (sin input). */
     double getDrag();
+
+    /**
+     * Modificador de control en el aire.
+     * Physics usa esto en lugar del "bonus" hardcodeado (onGround ? 1.0 : 0.8).
+     */
+    double getAirControl();
+
+    /**
+     * Escala adicional sobre aGround/aAir base del objeto.
+     * Permite que la superficie module la aceleración sin cambiar los
+     * parámetros propios del objeto físico.
+     */
+    double getAccelScale();
+
+    // ── Factory ───────────────────────────────────────────────────────────
+
+    /** Crea un material personalizado con los cuatro parámetros. */
+    static SurfaceMaterial of(double friction, double drag,
+                               double airControl, double accelScale) {
+        return new SurfaceMaterial() {
+            public double getFriction()   { return friction;   }
+            public double getDrag()       { return drag;       }
+            public double getAirControl() { return airControl; }
+            public double getAccelScale() { return accelScale; }
+        };
+    }
 
     // ── Materiales predefinidos ───────────────────────────────────────────
 
-    SurfaceMaterial DEFAULT = new SurfaceMaterial() {
-        public double getFriction() { return 1.0;  }
-        public double getDrag()     { return 0.82; }
-        public String toString()    { return "DEFAULT"; }
-    };
-
-    SurfaceMaterial AIR = new SurfaceMaterial() {
-        public double getFriction() { return 0.55; }
-        public double getDrag()     { return 0.96; }
-        public String toString()    { return "AIR"; }
-    };
-
-    SurfaceMaterial ICE = new SurfaceMaterial() {
-        public double getFriction() { return 0.05; }
-        public double getDrag()     { return 0.99; }
-        public String toString()    { return "ICE"; }
-    };
-
-    SurfaceMaterial MUD = new SurfaceMaterial() {
-        public double getFriction() { return 2.5;  }
-        public double getDrag()     { return 0.55; }
-        public String toString()    { return "MUD"; }
-    };
-
-    SurfaceMaterial HONEY = new SurfaceMaterial() {
-        public double getFriction() { return 4.0;  }
-        public double getDrag()     { return 0.35; }
-        public String toString()    { return "HONEY"; }
-    };
+    SurfaceMaterial DEFAULT = of(1.00, 0.82, 0.80, 1.00);
+    SurfaceMaterial AIR     = of(0.55, 0.96, 1.00, 1.00);
+    SurfaceMaterial ICE     = of(0.05, 0.99, 0.80, 1.00);
+    SurfaceMaterial MUD     = of(2.50, 0.55, 0.80, 0.70);
+    SurfaceMaterial HONEY   = of(4.00, 0.35, 0.80, 0.50);
+    SurfaceMaterial BOUNCY  = of(1.00, 0.82, 1.20, 1.00);
 }

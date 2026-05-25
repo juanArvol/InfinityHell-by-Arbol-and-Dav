@@ -12,6 +12,11 @@ import GameMath.Vector2D;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
+/**
+ * FIX: Se agregaron getAirControl() y getAccelScale() que faltaban tras la
+ * refactorización de SurfaceMaterial de clase a interface con 4 métodos.
+ * Su ausencia causaba AbstractMethodError/crash al colisionar con obstáculos.
+ */
 public class Obstacle extends GameObjects implements SurfaceMaterial {
 
     private final SurfaceMaterial material;
@@ -36,8 +41,10 @@ public class Obstacle extends GameObjects implements SurfaceMaterial {
         }
     }
 
-    @Override public double getFriction() { return material.getFriction(); }
-    @Override public double getDrag()     { return material.getDrag(); }
+    @Override public double getFriction()   { return material.getFriction();   }
+    @Override public double getDrag()       { return material.getDrag();       }
+    @Override public double getAirControl() { return material.getAirControl(); }  // FIX: faltaba
+    @Override public double getAccelScale() { return material.getAccelScale(); }  // FIX: faltaba
 
     @Override
     public void update() { super.update(); }

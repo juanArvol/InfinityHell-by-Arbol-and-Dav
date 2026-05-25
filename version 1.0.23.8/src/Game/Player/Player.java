@@ -24,25 +24,15 @@ public class Player extends MovingObjects {
     private final PlayerStats stats;
     private final PlayerState state;
 
-    // FIX BUG-15: cacheado en constructor para evitar O(n) lookup cada frame.
     private final PhysicsComponent pc;
 
-    public Player(
-            Vector2D spawn,
-            BufferedImage texture,
-            World world
-    ) {
-        // SizeSyncMode.NONE: el sprite del jugador se dibuja a su tamaño natural.
-        // Si querés que el sprite se escale a la hitbox (15x24), cambiá a NONE
-        // y llamá syncRendererToCollider() después de setSize(). Ver comentario abajo.
+    public Player(Vector2D spawn, BufferedImage texture, World world) {
         super(spawn, texture, new PlayerPhysics(0.78), SizeSyncMode.NONE);
 
-        state  = new PlayerState();
-        stats  = new PlayerStats();
+        state      = new PlayerState();
+        stats      = new PlayerStats();
         controller = new PlayerController(this, state);
         combat     = new PlayerCombat(this, state);
-
-        // ================= COLLIDER =================
 
         ColliderComponent collider = getComponent(ColliderComponent.class);
         if (collider != null) {
@@ -51,48 +41,36 @@ public class Player extends MovingObjects {
             collider.setOffset(4, 0);
         }
 
-        // ── Opción de sincronización ──────────────────────────────────────
-        // Descomentá UNA de las líneas según lo que quieras:
-        //
-        // A) Sprite se escala para coincidir con la hitbox (15×24, offset 4,0):
-        //    syncRendererToCollider();
-        //
-        // B) Control manual: ajustá el tamaño y offset del sprite a mano:
-        //    getComponent(SpriteRenderer.class).setRenderSize(20, 32);
-        //    getComponent(SpriteRenderer.class).setOffset(-2, -4);
-        //
-        // C) Sprite a tamaño natural (default actual con SizeSyncMode.NONE):
-        //    No hacer nada. El sprite se ve a su resolución original.
-        // ─────────────────────────────────────────────────────────────────
-
-        // ================= DEBUG =================
-
         addComponent(new HitBoxComponent(Color.RED));
-
-        // ================= RENDER =================
-
         addComponent(new PlayerRenderer(state));
 
-        // FIX BUG-15: cachear aquí
         pc = physicsComponent;
     }
 
     @Override
     public void update() {
+        // ── FIX SALTO ────────────────────────────────────────────────────
+        //
+        // ORDEN CORRECTO:
+        //   1. controller.update() → procesa input, puede llamar jump() y
+        //      setOnGround(false) en la misma instrucción.
+        //   2. Leer onGround DESPUÉS del input, no antes.
+        //   3. applyGravity() con el onGround ya actualizado.
+        //
+        // ─────────────────────────────────────────────────────────────────
 
-        // Sincronizar enElSuelo desde la física.
-        if (pc != null) {
-            state.setEnElSuelo(pc.getPhysics().getOnGround());
-            // Aplicar gravedad: modifica vy para que CollisionsSystem (SweptAABB) la use.
-            pc.getPhysics().applyGravity(state.isEnElSuelo());
-        }
-
+        // 1. Input primero
         controller.update();
         combat.update();
 
-        // NO llamar moveByPhysics() aquí: el Player es SOLID.
-        // CollisionsSystem (Fase 1, SweptAABB) es responsable de moverlo.
+        // 2. Sincronizar estado desde física (ya actualizado por el controller)
+        if (pc != null) {
+            state.setEnElSuelo(pc.getPhysics().getOnGround());
+            // 3. Gravedad con el onGround correcto
+            pc.getPhysics().applyGravity(state.isEnElSuelo());
+        }
 
+        // CollisionsSystem (SweptAABB) mueve el objeto; no llamar moveByPhysics() aquí.
         super.update();
         stats.update();
     }
@@ -103,16 +81,33 @@ public class Player extends MovingObjects {
     public PlayerCombat getCombat()         { return combat; }
     public PlayerStats getStats()           { return stats; }
 
-    // ================= COLLISIONS =================
+    // ── Colisiones ────────────────────────────────────────────────────────
 
+    /**
+     * FIX: onCollisionWith(BlockWorld/Obstacle) ahora sincroniza TANTO el
+     * PlayerState como la física interna (setOnGround + setCurrentSurface).
+     *
+     * Antes solo se hacía state.setEnElSuelo(true), dejando la física
+     * desacoplada: pc.getPhysics().getOnGround() seguía siendo false, lo que
+     * hacía que applyGravity() acumulara vy aunque el jugador estuviera parado
+     * sobre el suelo, y causaba comportamiento erróneo / crashes al siguiente frame.
+     */
     @Override
     public void onCollisionWith(BlockWorld block) {
         state.setEnElSuelo(true);
+        if (pc != null) {
+            pc.getPhysics().setOnGround(true);
+            pc.getPhysics().setCurrentSurface(block);
+        }
     }
 
     @Override
     public void onCollisionWith(Obstacle obstacle) {
         state.setEnElSuelo(true);
+        if (pc != null) {
+            pc.getPhysics().setOnGround(true);
+            pc.getPhysics().setCurrentSurface(obstacle);
+        }
     }
 
     @Override public void onCollisionWith(Enemy enemy)   {}

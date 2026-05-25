@@ -58,7 +58,7 @@ public class GameState {
 
         // FIX BUG-13: usar count > 0 para que haya enemigos
         spawner = new EnemySpawner(player);
-        spawner.spawn(world, 3);
+        spawner.spawn(world, 0);
 
         uiManager.add(new LifeHUD(player.getStats(), width, height));
         uiManager.add(new AmmoHUD(player.getCombat().getInventory(), width, height));
