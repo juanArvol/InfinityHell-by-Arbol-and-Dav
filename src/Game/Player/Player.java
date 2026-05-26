@@ -49,24 +49,41 @@ public class Player extends MovingObjects {
 
     @Override
     public void update() {
-        // ── FIX SALTO ────────────────────────────────────────────────────
+        // ── ORDEN DE UPDATE ───────────────────────────────────────────────
         //
-        // ORDEN CORRECTO:
-        //   1. controller.update() → procesa input, puede llamar jump() y
-        //      setOnGround(false) en la misma instrucción.
-        //   2. Leer onGround DESPUÉS del input, no antes.
-        //   3. applyGravity() con el onGround ya actualizado.
+        // CORRECTO (este orden):
+        //   1. Sincronizar state desde physics: CollisionsSystem FASE 0
+        //      ya seteó physics.onGround este frame; hay que leerlo ANTES
+        //      de pasárselo a moveX() y applyGravity().
+        //   2. controller.update() → moveX() recibe el onGround real.
+        //      Si hay salto: jump() + setOnGround(false) actualiza la física
+        //      directamente; applyGravity() lo verá en el paso 3.
+        //   3. applyGravity() con el onGround ya correcto.
         //
+        // BUG anterior (doble problema):
+        //   A) Physics.moveX() sobreescribía this.onGround con el parámetro,
+        //      pisando el valor correcto que puso la FASE 0. Al caminar fuera
+        //      de un bloque en X, onGround quedaba true hasta que vy != 0
+        //      volvía a ejecutar el eje Y (fix: moveX() ya no toca onGround).
+        //   B) state se sincronizaba DESPUÉS de controller.update(), así que
+        //      moveX() y applyGravity() usaban el valor del frame anterior.
         // ─────────────────────────────────────────────────────────────────
 
-        // 1. Input primero
+        // 1. Sincronizar estado PRIMERO desde la física.
+        //    CollisionsSystem ya corrió su FASE 0 y seteó physics.onGround
+        //    correctamente. Leer aquí garantiza que controller.update() →
+        //    moveX() y applyGravity() usen el valor real del frame,
+        //    no el del frame anterior.
+        if (pc != null) {
+            state.setEnElSuelo(pc.getPhysics().getOnGround());
+        }
+
+        // 2. Input con onGround ya correcto
         controller.update();
         combat.update();
 
-        // 2. Sincronizar estado desde física (ya actualizado por el controller)
+        // 3. Gravedad con el onGround correcto
         if (pc != null) {
-            state.setEnElSuelo(pc.getPhysics().getOnGround());
-            // 3. Gravedad con el onGround correcto
             pc.getPhysics().applyGravity(state.isEnElSuelo());
         }
 
@@ -83,31 +100,14 @@ public class Player extends MovingObjects {
 
     // ── Colisiones ────────────────────────────────────────────────────────
 
-    /**
-     * FIX: onCollisionWith(BlockWorld/Obstacle) ahora sincroniza TANTO el
-     * PlayerState como la física interna (setOnGround + setCurrentSurface).
-     *
-     * Antes solo se hacía state.setEnElSuelo(true), dejando la física
-     * desacoplada: pc.getPhysics().getOnGround() seguía siendo false, lo que
-     * hacía que applyGravity() acumulara vy aunque el jugador estuviera parado
-     * sobre el suelo, y causaba comportamiento erróneo / crashes al siguiente frame.
-     */
     @Override
     public void onCollisionWith(BlockWorld block) {
         state.setEnElSuelo(true);
-        if (pc != null) {
-            pc.getPhysics().setOnGround(true);
-            pc.getPhysics().setCurrentSurface(block);
-        }
     }
 
     @Override
     public void onCollisionWith(Obstacle obstacle) {
         state.setEnElSuelo(true);
-        if (pc != null) {
-            pc.getPhysics().setOnGround(true);
-            pc.getPhysics().setCurrentSurface(obstacle);
-        }
     }
 
     @Override public void onCollisionWith(Enemy enemy)   {}

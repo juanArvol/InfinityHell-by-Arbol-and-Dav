@@ -137,7 +137,10 @@ public class Physics {
      * o sobreescriben computeEntityModifier().
      */
     public void moveX(double inputX, boolean onGround, boolean running) {
-        this.onGround = onGround;
+        // NOTA: this.onGround NO se toca aquí.
+        // Es responsabilidad exclusiva de CollisionsSystem (FASE 0) via setOnGround().
+        // Sobreescribirlo acá causaba que el groundCheck correcto de FASE 0 quedara
+        // pisado por el valor del frame anterior antes de que applyGravity() lo viera.
         this.inputX   = inputX;
         this.running  = running;
 
