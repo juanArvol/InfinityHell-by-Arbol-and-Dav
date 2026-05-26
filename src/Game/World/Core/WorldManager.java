@@ -3,7 +3,7 @@ package Game.World.Core;
 import Game.World.Generator.WorldGenerator;
 import Game.Engine.GameObjects;
 
-import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,6 +18,11 @@ import java.util.List;
  * Solución: el WorldManager ya NO escala posiciones de objetos.
  * El mundo tiene coordenadas lógicas fijas. La cámara y el render
  * se adaptan al tamaño de pantalla, no los objetos.
+ *
+ * FIX REFACTOR DISPLAY:
+ *  - draw() recibe Graphics2D (framebuffer virtual) en lugar de Graphics.
+ *    Necesario porque World.draw() ahora requiere Graphics2D para
+ *    construir RenderContext correctamente.
  */
 public class WorldManager {
 
@@ -66,7 +71,13 @@ public class WorldManager {
         handleTransfers(world);
     }
 
-    public void draw(Graphics g) {
+    /**
+     * FIX REFACTOR DISPLAY: recibe Graphics2D en lugar de Graphics.
+     * Delega a World.draw(Graphics2D) que construye RenderContext correctamente.
+     *
+     * @param g Graphics2D del framebuffer virtual (de DisplayManager.beginFrame())
+     */
+    public void draw(Graphics2D g) {
         getCurrentWorld().draw(g);
     }
 

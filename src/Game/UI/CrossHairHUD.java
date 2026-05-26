@@ -1,7 +1,7 @@
 package Game.UI;
 
 import java.awt.Color;
-import java.awt.Graphics;
+import java.awt.Graphics2D;
 
 import Entradas.MouseInput;
 import Game.Player.Player;
@@ -13,67 +13,75 @@ import GameMath.Vector2D;
 /**
  * HUD del crosshair y preview de trayectoria.
  *
- * REFACTOR BUG-011: en el original se creaba un Bullet completo (con SpriteRenderer,
- * ColliderComponent, HitBoxComponent, BulletPhysics) CADA FRAME para simular
- * la trayectoria. Eso generaba garbage collection pressure masiva a 30 FPS.
+ * FIX REFACTOR DISPLAY:
+ *  1. draw() recibe Graphics2D (framebuffer virtual), no Graphics.
  *
- * Solución: calcular la trayectoria matemáticamente usando solo vectores,
- * sin instanciar ningún objeto de juego.
+ *  2. Ya NO usa ratios (0.5 * screenWidth/screenHeight) para calcular la
+ *     posición del crosshair. El crosshair se dibuja en el CENTRO VIRTUAL
+ *     (virtualWidth/2, virtualHeight/2) — que es donde siempre debe estar
+ *     en un shooter con cámara centrada en el player.
+ *
+ *  3. onResize() recibe virtualWidth/virtualHeight y recalcula correctamente.
+ *
+ *  4. La simulación de trayectoria sigue siendo matemática (sin instanciar
+ *     Bullet — REFACTOR BUG-011 conservado).
+ *
+ * NOTA sobre coordenadas de trayectoria:
+ * La posición del player (spawnX, spawnY) y la dirección de aim están en
+ * coordenadas de MUNDO. La simulación dibuja sobre el framebuffer virtual
+ * que tiene la transformación de cámara aplicada por el RenderContext,
+ * por lo que el resultado queda alineado con el mundo correctamente.
  */
 public class CrossHairHUD implements UIElement {
 
     private final Player player;
-    private int x;
-    private int y;
-    private final double originalXRatio;
-    private final double originalYRatio;
 
-    public CrossHairHUD(Player player, int screenWidth, int screenHeight) {
+    // Centro virtual — donde el player aparece en pantalla
+    private int centerX;
+    private int centerY;
+
+    public CrossHairHUD(Player player, int virtualWidth, int virtualHeight) {
         this.player = player;
-        this.originalXRatio = 0.5;
-        this.originalYRatio = 0.5;
-        this.x = (int)(screenWidth * originalXRatio);
-        this.y = (int)(screenHeight * originalYRatio);
+        recalcPosition(virtualWidth, virtualHeight);
     }
 
     @Override
     public void update() {}
 
     @Override
-    public void onResize(int screenWidth, int screenHeight) {
-        x = (int)(screenWidth * originalXRatio);
-        y = (int)(screenHeight * originalYRatio);
+    public void onResize(int virtualWidth, int virtualHeight) {
+        recalcPosition(virtualWidth, virtualHeight);
     }
 
     @Override
-    public void draw(Graphics g) {
+    public void draw(Graphics2D g) {
         if (!MouseInput.rightPressed) return;
 
         WeaponSelected weapon = player.getCombat().getInventory().getCurrentWeapon();
         if (weapon == null) return;
 
         // Color según estado del arma
-        if (weapon.isReloading())       g.setColor(Color.YELLOW);
+        if (weapon.isReloading())           g.setColor(Color.YELLOW);
         else if (weapon.getFireWait() == 0) g.setColor(Color.GREEN);
-        else                            g.setColor(Color.RED);
+        else                                g.setColor(Color.RED);
 
-        // REFACTOR BUG-011: en lugar de instanciar un Bullet y simular física,
-        // calculamos la trayectoria directamente con matemáticas.
+        // REFACTOR BUG-011: trayectoria matemática, sin instanciar Bullet
         BulletStats stats = BulletFactory.getStats(
             weapon.getBulletType(),
             weapon.getStats().getBulletSpeedBase(),
             weapon.getStats().getDamageBonusByWeapon()
         );
 
+        // Spawn del proyectil en coordenadas de MUNDO
         double spawnX = player.getPosition().getX() + 20;
         double spawnY = player.getPosition().getY() + 20;
 
-        Vector2D aim  = player.getState().getAimDirection();
-        double velX   = aim.getX() * stats.getSpeed();
-        double velY   = aim.getY() * stats.getSpeed();
+        Vector2D aim = player.getState().getAimDirection();
+        double velX  = aim.getX() * stats.getSpeed();
+        double velY  = aim.getY() * stats.getSpeed();
 
-        double gravity = stats.hasGravity() ? 0.4 : 0.0; // valor estándar de BulletPhysics
-        int steps = stats.getLifeTime();
+        double gravity = stats.hasGravity() ? 0.4 : 0.0;
+        int    steps   = stats.getLifeTime();
 
         double px = spawnX;
         double py = spawnY;
@@ -84,7 +92,15 @@ public class CrossHairHUD implements UIElement {
             px += velX;
             py += vy;
             if (stats.hasGravity()) vy += gravity;
-            g.fillOval((int)px, (int)py, 4, 4);
+            g.fillOval((int) px, (int) py, 4, 4);
         }
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    private void recalcPosition(int virtualWidth, int virtualHeight) {
+        // El crosshair siempre está en el centro virtual
+        centerX = virtualWidth  / 2;
+        centerY = virtualHeight / 2;
     }
 }

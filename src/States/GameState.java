@@ -1,5 +1,7 @@
 package States;
 
+import Display.Managers.DisplayManager;
+import Display.ViewportInfo;
 import Game.Player.Player;
 import Game.UI.AmmoHUD;
 import Game.UI.CrossHairHUD;
@@ -12,7 +14,7 @@ import GameMath.Vector2D;
 import Game.Spawner.EnemySpawner;
 import Graficos.Player.PlayerAssets;
 
-import java.awt.Graphics;
+import java.awt.Graphics2D;
 
 public class GameState {
 
@@ -22,22 +24,25 @@ public class GameState {
     private Player player;
     private EnemySpawner spawner;
 
-    private int screenWidth;
-    private int screenHeight;
+    private final DisplayManager display;
 
     private boolean initialized = false;
 
-    public GameState() {
-        uiManager = new UIManager();
+    /**
+     * Constructor adaptado al nuevo pipeline.
+     * Recibe DisplayManager para acceder a virtualWidth/virtualHeight
+     * y al viewport para transformación de coordenadas de input.
+     */
+    public GameState(DisplayManager display) {
+        this.display = display;
+        // UIManager se inicializa con la resolución virtual fija desde el inicio
+        uiManager = new UIManager(display.getVirtualWidth(), display.getVirtualHeight());
         GameSettings.getInstance().setDebugEnabled(true);
     }
 
-    private void init(int width, int height) {
+    private void init(int virtualWidth, int virtualHeight) {
 
-        this.screenWidth = width;
-        this.screenHeight = height;
-
-        WorldManager.init(width, height);
+        WorldManager.init(virtualWidth, virtualHeight);
         worldManager = WorldManager.getInstance();
 
         World world = worldManager.getCurrentWorld();
@@ -54,46 +59,53 @@ public class GameState {
         );
 
         world.add(player);
-        world.centerCameraOn(player, width, height);
+        // FIX: centerCameraOn ahora recibe dimensiones virtuales, no de pantalla real
+        world.centerCameraOn(player, virtualWidth, virtualHeight);
 
         // FIX BUG-13: usar count > 0 para que haya enemigos
         spawner = new EnemySpawner(player);
         spawner.spawn(world, 0);
 
-        uiManager.add(new LifeHUD(player.getStats(), width, height));
-        uiManager.add(new AmmoHUD(player.getCombat().getInventory(), width, height));
-        uiManager.add(new CrossHairHUD(player, width, height));
+        // HUDs ahora reciben virtualWidth/virtualHeight en lugar de screen reales
+        uiManager.add(new LifeHUD(player.getStats(), virtualWidth, virtualHeight));
+        uiManager.add(new AmmoHUD(player.getCombat().getInventory(), virtualWidth, virtualHeight));
+        uiManager.add(new CrossHairHUD(player, virtualWidth, virtualHeight));
 
         initialized = true;
     }
 
-    public void update(int width, int height) {
+    /**
+     * Update en coordenadas virtuales.
+     * GameLoop llama: gameState.update(display.getVirtualWidth(), display.getVirtualHeight())
+     */
+    public void update(int virtualWidth, int virtualHeight) {
 
         if (!initialized) {
-            if (width > 0 && height > 0) {
-                init(width, height);
+            if (virtualWidth > 0 && virtualHeight > 0) {
+                init(virtualWidth, virtualHeight);
             } else {
                 return;
             }
         }
 
-        if (width != screenWidth || height != screenHeight) {
-            screenWidth = width;
-            screenHeight = height;
-
-            worldManager.resize(width, height);
-            uiManager.updateUI(width, height);
-        }
-
-        worldManager.update(width, height);
+        // En el sistema virtual las dimensiones son constantes,
+        // pero se mantiene la notificación por compatibilidad futura.
+        worldManager.update(virtualWidth, virtualHeight);
         uiManager.update();
 
-        // FIX BUG-04: la camara debe seguir al player CADA FRAME, no solo en init().
-        // Llamar DESPUES de worldManager.update() para usar la posicion ya actualizada.
-        worldManager.getCurrentWorld().centerCameraOn(player, screenWidth, screenHeight);
+        // FIX BUG-04: la cámara debe seguir al player CADA FRAME.
+        // Llamar DESPUÉS de worldManager.update() para usar posición ya actualizada.
+        worldManager.getCurrentWorld().centerCameraOn(player, virtualWidth, virtualHeight);
     }
 
-    public void draw(Graphics g) {
+    /**
+     * Draw adaptado al nuevo pipeline de framebuffer virtual.
+     *
+     * @param g        Graphics2D del framebuffer virtual (de DisplayManager.beginFrame())
+     * @param viewport ViewportInfo actual — disponible para HUDs que necesiten
+     *                 transformar coordenadas de input (p.ej. crosshair de mouse)
+     */
+    public void draw(Graphics2D g, ViewportInfo viewport) {
         if (!initialized) return;
 
         worldManager.draw(g);

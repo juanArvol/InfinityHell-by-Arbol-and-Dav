@@ -1,75 +1,80 @@
 package Main;
 
-import States.GameState;
+import Display.Managers.DisplayManager;
 import Entradas.KeyBoard;
+import Entradas.MouseInput;
+import States.GameState;
 
-import java.awt.*;
-import java.awt.image.BufferStrategy;
+import java.awt.Graphics2D;
 
+/**
+ * Game loop — actualizado para el sistema de listeners de input.
+ *
+ * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ *
+ *  1. Recibe MouseInput para llamar mouse.flushEvents() al inicio de cada
+ *     frame. Esto despacha todos los eventos acumulados en el EDT
+ *     (clicks, scroll, movimiento) a los listeners suscritos.
+ *
+ *  2. Ya NO lee KeyBoard.f11 directamente. El toggle fullscreen está
+ *     registrado como KeyActionListener en GameOrquester, de forma que
+ *     el GameLoop no conoce nada de fullscreen.
+ *
+ *  3. keyboard.update() sigue siendo la primera llamada en update():
+ *     sincroniza los campos estáticos y dispara los KeyActionListeners.
+ *     mouse.flushEvents() va justo después.
+ *
+ * ORDEN DE UPDATE POR FRAME:
+ *   1. keyboard.update()        — estado continuo + edge listeners teclado
+ *   2. mouse.flushEvents()      — edge listeners ratón (clicks, scroll)
+ *   3. gameState.update(vw, vh) — lógica del juego en coordenadas virtuales
+ */
 public class GameLoop implements Runnable {
 
-    private final Canvas canvas;
-    private final GameState gameState;
-    private final GameWindow window;
-    private final KeyBoard keyboard;
+    private final DisplayManager display;
+    private final GameState      gameState;
+    private final KeyBoard       keyboard;
+    private final MouseInput     mouse;
 
-    private double targetTime;
-
-    private Thread thread;
+    private final double targetTime;
+    private Thread  thread;
     private boolean running = false;
+    private int     fpsPorSegundo = 0;
 
-    private int lastWidth;
-    private int lastHeight;
-
-    private int fpsPorSegundo = 0;
-
-    public GameLoop(Canvas canvas,
+    public GameLoop(DisplayManager display,
                     GameState gameState,
                     KeyBoard keyboard,
-                    GameWindow window,
+                    MouseInput mouse,
                     int fps) {
-
-        this.canvas = canvas;
+        this.display   = display;
         this.gameState = gameState;
-        this.keyboard = keyboard;
-        this.window = window;
-
-        this.lastWidth = 0;
-        this.lastHeight = 0;
+        this.keyboard  = keyboard;
+        this.mouse     = mouse;
         this.targetTime = 1_000_000_000.0 / fps;
     }
 
     public void start() {
         if (running) return;
-
         running = true;
-        thread = new Thread(this);
+        thread = new Thread(this, "GameLoop");
         thread.start();
     }
 
     public void stop() {
         running = false;
-
-        try {
-            thread.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        try { thread.join(); } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
     @Override
     public void run() {
-
-        canvas.createBufferStrategy(3);
-        BufferStrategy bs = canvas.getBufferStrategy();
-
-        long lastTime = System.nanoTime();
-        long timer = 0;
-        double delta = 0;
-        int frames = 0;
+        long   lastTime = System.nanoTime();
+        long   timer    = 0;
+        double delta    = 0;
+        int    frames   = 0;
 
         while (running) {
-
             long now = System.nanoTime();
             delta += (now - lastTime) / targetTime;
             timer += (now - lastTime);
@@ -77,68 +82,58 @@ public class GameLoop implements Runnable {
 
             if (delta >= 1) {
                 update();
-                render(bs);
+                render();
                 delta--;
                 frames++;
             }
 
             long frameTime = System.nanoTime() - now;
-            long sleepTime = (long) (targetTime - frameTime) / 1_000_000;
-
-            if (sleepTime > 0) {
-                try {
-                    Thread.sleep(sleepTime);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+            long sleepMs   = (long)(targetTime - frameTime) / 1_000_000;
+            if (sleepMs > 0) {
+                try { Thread.sleep(sleepMs); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             }
 
-            if (timer >= 1_000_000_000) {
+            if (timer >= 1_000_000_000L) {
                 fpsPorSegundo = frames;
                 frames = 0;
-                timer = 0;
+                timer  = 0;
             }
         }
     }
 
+    // ─── Update ───────────────────────────────────────────────────────────────
+
     private void update() {
+        // 1. Teclado: sincroniza estado estático + dispara KeyActionListeners
         keyboard.update();
 
-        if (KeyBoard.f11) window.toggleFullscreen();
+        // 2. Ratón: despacha eventos acumulados en EDT → MouseActionListeners
+        //    (clicks, releases, scroll, movimiento)
+        mouse.flushEvents();
 
-        int screenWidth = canvas.getWidth();
-        int screenHeight = canvas.getHeight();
-
-        if (screenWidth != lastWidth || screenHeight != lastHeight) {
-            lastWidth = screenWidth;
-            lastHeight = screenHeight;
-        }
-
-        gameState.update(screenWidth, screenHeight);
+        // 3. Lógica del juego en coordenadas virtuales
+        //    (KeyBoard.f11 / fullscreen ya no se lee aquí — ver GameOrquester)
+        gameState.update(
+            display.getVirtualWidth(),
+            display.getVirtualHeight()
+        );
     }
 
-    private void render(BufferStrategy bs) {
+    // ─── Render ───────────────────────────────────────────────────────────────
 
-        if (bs == null) {
-            canvas.createBufferStrategy(3);
-            return;
-        }
-
-        Graphics g = bs.getDrawGraphics();
+    private void render() {
+        Graphics2D virtualG = display.beginFrame();
+        if (virtualG == null) return;
 
         try {
-            g.setColor(Color.WHITE);
-            g.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gameState.draw(virtualG, display.getViewport());
 
-            gameState.draw(g);
-
-            g.setColor(Color.BLACK);
-            g.drawString("FPS: " + fpsPorSegundo, 10, 15);
+            virtualG.setColor(java.awt.Color.WHITE);
+            virtualG.drawString("FPS: " + fpsPorSegundo, 6, 14);
 
         } finally {
-            g.dispose();
+            display.endFrame(virtualG);
         }
-
-        bs.show();
     }
 }
