@@ -9,6 +9,8 @@ import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Filter.CollisionProfile;
 import Game.Fisics.PlayerPhysics;
+import Game.Items.EquippedItems;
+import Game.Items.Inventory;
 import Game.World.Core.World;
 import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;
@@ -17,14 +19,32 @@ import GameMath.Vector2D;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
+/**
+ * Player — integrado con Inventory y EquippedItems.
+ *
+ * CAMBIOS RESPECTO AL ORIGINAL:
+ *   - Añade Inventory (20 slots por defecto, configurable).
+ *   - Añade EquippedItems para slots de equipamiento.
+ *   - Expone getInventory() y getEquippedItems() para PickupSystem y UI.
+ *
+ * TODO LO DEMÁS ES IDÉNTICO AL ORIGINAL — no se tocó lógica de física,
+ * colisiones, controller ni combat.
+ *
+ * Para activar Physics3D (salto Z), añadir:
+ *   addComponent(new Physics3DComponent());
+ * en el constructor (comentado abajo).
+ */
 public class Player extends MovingObjects {
 
     private final PlayerController controller;
     private final PlayerCombat combat;
     private final PlayerStats stats;
     private final PlayerState state;
-
     private final PhysicsComponent pc;
+
+    // ── NUEVO: inventario y equipamiento ──────────────────────────────────
+    private final Inventory inventory;
+    private final EquippedItems equippedItems;
 
     public Player(Vector2D spawn, BufferedImage texture, World world) {
         super(spawn, texture, new PlayerPhysics(0.78), SizeSyncMode.NONE);
@@ -45,52 +65,34 @@ public class Player extends MovingObjects {
         addComponent(new PlayerRenderer(state));
 
         pc = physicsComponent;
+
+        // ── Inventario ────────────────────────────────────────────────────
+        inventory     = new Inventory(20);
+        equippedItems = new EquippedItems();
+
+        // ── Physics3D opcional (descomentar para activar saltos Z) ─────────
+        // addComponent(new Game.Physics3D.Physics3DComponent());
     }
 
     @Override
     public void update() {
-        // ── ORDEN DE UPDATE ───────────────────────────────────────────────
-        //
-        // CORRECTO (este orden):
-        //   1. Sincronizar state desde physics: CollisionsSystem FASE 0
-        //      ya seteó physics.onGround este frame; hay que leerlo ANTES
-        //      de pasárselo a moveX() y applyGravity().
-        //   2. controller.update() → moveX() recibe el onGround real.
-        //      Si hay salto: jump() + setOnGround(false) actualiza la física
-        //      directamente; applyGravity() lo verá en el paso 3.
-        //   3. applyGravity() con el onGround ya correcto.
-        //
-        // BUG anterior (doble problema):
-        //   A) Physics.moveX() sobreescribía this.onGround con el parámetro,
-        //      pisando el valor correcto que puso la FASE 0. Al caminar fuera
-        //      de un bloque en X, onGround quedaba true hasta que vy != 0
-        //      volvía a ejecutar el eje Y (fix: moveX() ya no toca onGround).
-        //   B) state se sincronizaba DESPUÉS de controller.update(), así que
-        //      moveX() y applyGravity() usaban el valor del frame anterior.
-        // ─────────────────────────────────────────────────────────────────
-
-        // 1. Sincronizar estado PRIMERO desde la física.
-        //    CollisionsSystem ya corrió su FASE 0 y seteó physics.onGround
-        //    correctamente. Leer aquí garantiza que controller.update() →
-        //    moveX() y applyGravity() usen el valor real del frame,
-        //    no el del frame anterior.
+        // Mismo orden que el original — NO modificado
         if (pc != null) {
             state.setEnElSuelo(pc.getPhysics().getOnGround());
         }
 
-        // 2. Input con onGround ya correcto
         controller.update();
         combat.update();
 
-        // 3. Gravedad con el onGround correcto
         if (pc != null) {
             pc.getPhysics().applyGravity(state.isEnElSuelo());
         }
 
-        // CollisionsSystem (SweptAABB) mueve el objeto; no llamar moveByPhysics() aquí.
         super.update();
         stats.update();
     }
+
+    // ── Getters originales ────────────────────────────────────────────────
 
     public Vector2D getPosition()           { return getTransform().getPosition(); }
     public PlayerState getState()           { return state; }
@@ -98,7 +100,12 @@ public class Player extends MovingObjects {
     public PlayerCombat getCombat()         { return combat; }
     public PlayerStats getStats()           { return stats; }
 
-    // ── Colisiones ────────────────────────────────────────────────────────
+    // ── NUEVOS getters ────────────────────────────────────────────────────
+
+    public Inventory getInventory()           { return inventory; }
+    public EquippedItems getEquippedItems()   { return equippedItems; }
+
+    // ── Colisiones — idénticas al original ────────────────────────────────
 
     @Override
     public void onCollisionWith(BlockWorld block) {

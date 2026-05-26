@@ -42,7 +42,7 @@ public class RenderSurfaceManager {
         applyRenderHints(g);
 
         // Limpiar el framebuffer al inicio de cada frame
-        g.setBackground(java.awt.Color.BLACK);
+        g.setBackground(java.awt.Color.WHITE);
         g.clearRect(0, 0, settings.virtualWidth, settings.virtualHeight);
 
         return g;

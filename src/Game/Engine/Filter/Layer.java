@@ -15,6 +15,7 @@ public final class Layer {
     public static final int PLAYER = 2;   // 0010  jugador
     public static final int ENEMY  = 4;   // 0100  enemigos
     public static final int BULLET = 8;   // 1000  balas
+    public static final int ITEM = 16;    // 10000 objetos
 
     private Layer() {}
 }

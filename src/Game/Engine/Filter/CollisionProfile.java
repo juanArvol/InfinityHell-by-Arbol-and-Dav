@@ -52,6 +52,10 @@ public final class CollisionProfile {
             Layer.WORLD | Layer.PLAYER
     );
 
+    public static final CollisionProfile WORLD_ITEM = new CollisionProfile(
+            Layer.ITEM,
+            Layer.WORLD | Layer.PLAYER
+    );
     // ── Utilidad ──────────────────────────────────────────────────────────
 
     /** @return true si este perfil puede chocar con el otro según las masks. */

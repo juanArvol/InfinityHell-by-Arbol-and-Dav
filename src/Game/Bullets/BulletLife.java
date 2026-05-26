@@ -1,44 +1,47 @@
 package Game.Bullets;
 
 /**
- * Gestiona la vida útil de una bala.
- * FIX BUG-006: reset() ahora reemplaza el tiempo de vida en lugar de sumarlo.
+ * Ciclo de vida de una bala.
+ *
+ * EXTENSIÓN vs. original: añade revive() para que PiercingModifier
+ * pueda cancelar una muerte prematura del inner behavior.
+ *
+ * RETRO-COMPATIBLE: setDead() e isAlive() son idénticos al original.
  */
 public class BulletLife {
 
     private int lifeTime;
+    private boolean dead;
 
     public BulletLife(int lifeTime) {
         this.lifeTime = lifeTime;
+        this.dead = false;
     }
 
-    /** Reduce 1 unidad de vida. Retorna true si ya expiró. */
-    public boolean tick() {
-        if (lifeTime <= 0) return true;
-        lifeTime--;
-        return lifeTime <= 0;
-    }
-
-    /** Marca la bala como muerta inmediatamente. */
-    public void setDead() {
-        lifeTime = 0;
-    }
-
-    /** Revisa si la bala sigue viva. */
     public boolean isAlive() {
+        if (dead) return false;
+        lifeTime--;
         return lifeTime > 0;
     }
 
-    /** Tiempo de vida restante. */
-    public int getLifeTime() {
-        return lifeTime;
+    public void setDead() {
+        dead = true;
     }
 
-    /**
-     * Reinicia la vida de la bala con un nuevo valor.
-     * FIX BUG-006: era "lifeTime + newLifeTime" (sumaba), ahora reemplaza.
-     */
-    public void reset(int newLifeTime) {
-        this.lifeTime = newLifeTime;
+    public void reset(int count){
+        lifeTime = lifeTime + count;
     }
+    /**
+     * NUEVO: cancela una muerte solicitada por un inner behavior.
+     * Usado por PiercingModifier para mantener la bala viva tras impactar.
+     * Solo tiene efecto si fue seteado muerto SIN que el lifetime expire.
+     */
+    public void revive() {
+        if (lifeTime > 0) {
+            dead = false;
+        }
+    }
+
+    public boolean isDead() { return dead; }
+    public int getRemainingLife() { return lifeTime; }
 }

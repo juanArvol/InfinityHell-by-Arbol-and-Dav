@@ -1,5 +1,7 @@
 package Game.Player;
 
+import java.security.Key;
+
 import Entradas.KeyBoard;
 import Game.Fisics.PlayerPhysics;
 
@@ -52,6 +54,13 @@ public class PlayerController {
             physics.setOnGround(false);
             physics.clearSurface();
             state.setEnElSuelo(false);
+        }
+    }
+    private void handleActionsInput(){
+        if(KeyBoard.r){             //boton/tecla destinada para la recarga de armas
+        }
+
+        if(KeyBoard.c){             //boton/tecla destinada para permitir el "modo apuntado" tipo cuphead (de ahi me base en la tecla)
         }
     }
 

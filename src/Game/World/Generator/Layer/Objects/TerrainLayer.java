@@ -2,33 +2,60 @@ package Game.World.Generator.Layer.Objects;
 
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
-import Game.World.WorldObjects.BlockWorld;
-import GameMath.Vector2D;
+import Game.World.WorldObjects.WorldObjectFactory;
 import Graficos.Around.Blocks.BlocksAssets;
 
 import java.util.Random;
 
+/**
+ * Capa de terreno — genera el suelo base del mundo.
+ *
+ * MEJORAS vs. versión original:
+ *
+ * 1. USA WorldObjectFactory: ya no crea BlockWorld con new directamente.
+ *    Esto desacopla la generación de la construcción concreta.
+ *
+ * 2. RELACIÓN ALTURA CONFIGURABLE: el groundRatio (por defecto 0.25 = 25% del mundo)
+ *    se puede ajustar al construir la capa.
+ *    Ejemplo: new TerrainLayer(0.15) → suelo más delgado.
+ *
+ * 3. El bug del groundHeight*4 ya estaba corregido en la versión anterior.
+ *    Se mantiene el fix: el bloque tiene height=groundHeight, no groundHeight*4.
+ */
 public class TerrainLayer implements WorldLayer {
+
+    private final double groundRatio;
+
+    /** Constructor por defecto: suelo = 25% de la altura del mundo (igual que antes). */
+    public TerrainLayer() {
+        this(0.25);
+    }
+
+    /**
+     * Constructor con ratio configurable.
+     *
+     * @param groundRatio fracción de la altura del mundo que ocupa el suelo (0.0–1.0)
+     */
+    public TerrainLayer(double groundRatio) {
+        if (groundRatio <= 0 || groundRatio >= 1) {
+            throw new IllegalArgumentException("groundRatio debe estar en (0, 1). Recibido: " + groundRatio);
+        }
+        this.groundRatio = groundRatio;
+    }
 
     @Override
     public void generate(World world, Random random) {
-
         int width  = world.getWidth();
         int height = world.getHeight();
 
-        int groundHeight = height / 4;
+        int groundHeight = (int)(height * groundRatio);
         int groundY      = height - groundHeight;
 
-        // FIX: el bloque del suelo tiene height=groundHeight (150px), NO groundHeight*4 (600px).
-        // El bloque gigante bloqueaba el movimiento horizontal del jugador:
-        // su collider de 600px de alto hacía que el SweptAABB eje-X lo detectara
-        // como obstáculo lateral aunque el jugador estuviera parado encima.
-        BlockWorld ground = new BlockWorld(
-                new Vector2D(0, groundY),
-                BlocksAssets.suelo.getSprite(),
-                width,
-                groundHeight   // ← era groundHeight*4, bug del generador
-        );
-        world.add(ground);
+        world.add(WorldObjectFactory.groundBlock(
+            width,
+            groundY,
+            groundHeight,
+            BlocksAssets.suelo.getSprite()
+        ));
     }
 }
