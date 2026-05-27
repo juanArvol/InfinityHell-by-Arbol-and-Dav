@@ -1,4 +1,4 @@
-package Game.Spawner;
+package Game.Enemys.Spawner;
 
 import Game.Enemys.*;
 import Game.Enemys.Types.EnemyType;

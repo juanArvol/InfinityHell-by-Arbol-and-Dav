@@ -9,23 +9,28 @@ import GameMath.Vector2D;
 import java.awt.image.BufferedImage;
 
 /**
- * Enemigo híbrido tierra/vuelo.
+ * Base para enemigos híbridos tierra/vuelo.
  *
- * FIX 1: Se reemplazó getPhysics() (método inexistente en Enemy) por
- *         getPhysicsComponent().getPhysics(), alineándolo con la API
- *         real de MovingObjects / Enemy.
- *
- * FIX 2: En modo terrestre se sincroniza enElSuelo desde la física
- *         (igual que GroundTypeEnemy) para que applyGravity() reciba
- *         el valor correcto y no acumule vy infinitamente en el suelo.
- *
- * FIX 3: Null-check en getPhysicsComponent() para evitar NPE si el
- *         componente no está inicializado aún.
+ * FIX 1-3 del original conservados:
+ *   - getPhysicsComponent() en lugar de getPhysics() inexistente.
+ *   - Sincronización de enElSuelo antes de applyGravity en modo terrestre.
+ *   - Null-check en getPhysicsComponent().
  */
 public abstract class HybridFlyGroundTypeEnemy extends Enemy {
 
-    protected boolean flyingMode;
+    protected boolean flyingMode = false;
 
+    public HybridFlyGroundTypeEnemy(
+            Vector2D position,
+            BufferedImage texture,
+            int hp,
+            EnemyComport comport,
+            EnemyPhysics physics
+    ) {
+        super(position, texture, hp, comport, physics);
+    }
+
+    @Deprecated
     public HybridFlyGroundTypeEnemy(
             Vector2D position,
             BufferedImage texture,
@@ -34,31 +39,24 @@ public abstract class HybridFlyGroundTypeEnemy extends Enemy {
             Player player,
             EnemyPhysics physics
     ) {
-        super(
-            position,
-            texture,
-            hp,
-            comport,
-            player,
-            physics
-        );
+        super(position, texture, hp, comport, player, physics);
     }
 
     @Override
     protected void updateTypePhysics() {
-        if (!flyingMode) {
-            var pc = getPhysicsComponent();      // FIX 1: era getPhysics() — no existe en Enemy
-            if (pc == null) return;
+        if (flyingMode) return; // Volando: steering puro, sin gravedad
 
-            // FIX 2: sincronizar enElSuelo desde la física antes de applyGravity
-            // (igual que GroundTypeEnemy), para evitar acumulación infinita de vy.
-            getState().setEnElSuelo(pc.getPhysics().getOnGround());
+        var pc = getPhysicsComponent();
+        if (pc == null) return;
 
-            pc.getPhysics().applyGravity(getState().isEnElSuelo());
-        }
+        getState().setEnElSuelo(pc.getPhysics().getOnGround());
+        pc.getPhysics().applyGravity(getState().isEnElSuelo());
     }
 
-    public void setFlyingMode(boolean f) {
-        flyingMode = f;
+    public void setFlyingMode(boolean flying) {
+        this.flyingMode = flying;
+        getState().setFlying(flying);
     }
+
+    public boolean isFlyingMode() { return flyingMode; }
 }

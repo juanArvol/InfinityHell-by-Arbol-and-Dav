@@ -3,7 +3,6 @@ package Game.Enemys.Types.Flying.Class;
 import Game.Enemys.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Types.Flying.FlyingTypeEnemy;
 import Game.Engine.Components.Visuals.ShadowComponent;
-import Game.Engine.Transform3D;
 import Game.Fisics.EnemyPhysics;
 import Game.Player.Player;
 import GameMath.Vector2D;
@@ -11,14 +10,17 @@ import GameMath.Vector2D;
 import java.awt.image.BufferedImage;
 
 /**
- * Enemigo volador concreto.
+ * Enemigo volador concreto — persigue al jugador con steering suave.
  *
- * NUEVO 2.5D: usa Transform3D para estar elevado en el eje Z.
- * La sombra proyectada (ShadowComponent) se dibuja en el suelo.
+ * CAMBIO vs. original:
+ *   - FlyingBehavior ya no recibe Player en el constructor.
+ *     El contexto llega via EnemyContext en cada update().
+ *   - Sombra (ShadowComponent) conservada tal como estaba.
+ *
+ * El bloque comentado de Transform3D se conserva como referencia futura.
  */
 public class EnemyFlying extends FlyingTypeEnemy {
 
-    /** Altura de vuelo en unidades de Z. */
     private static final double FLIGHT_Z = 80.0;
 
     public EnemyFlying(
@@ -31,21 +33,16 @@ public class EnemyFlying extends FlyingTypeEnemy {
             position,
             texture,
             80,
-            new FlyingBehavior(player),
-            player,
+            new FlyingBehavior(),   // Sin Player — recibe EnemyContext en update()
+            player,                  // Legacy path en Enemy base
             physics
         );
 
-        // NUEVO 2.5D: si queremos soporte visual de altura, reemplazamos el Transform
-        // por Transform3D y lo elevamos. (Requiere que GameObjects use Transform3D)
-        // Por ahora lo mantenemos como preparación futura con comentario claro:
-        //
+        // Preparación futura 2.5D (ver EnemyFlying original para contexto):
         // Transform3D t3d = new Transform3D();
         // t3d.setPosition(position);
         // t3d.setZ(FLIGHT_Z);
-        // → requiere que getTransform() retorne Transform3D (cambio en GameObjects)
 
-        // Sombra proyectada al suelo (visible cuando Z > 0 en futuro)
         addComponent(new ShadowComponent(18, 7));
     }
 }

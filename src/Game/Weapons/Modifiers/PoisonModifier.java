@@ -2,19 +2,18 @@ package Game.Weapons.Modifiers;
 
 import Game.Bullets.Bullet;
 import Game.Bullets.BulletComport.BulletBehavior;
+import Game.Enemys.Components.StatusEffectComponent;
 import Game.Enemys.Enemy;
 
 /**
- * Modificador de veneno — las balas aplican daño continuo (DoT) al impactar.
+ * Modificador de veneno — las balas aplican DoT al impactar.
  *
- * Efecto:
- *   - El enemigo recibe `tickDamage` cada `tickInterval` ticks durante `duration` ticks.
- *   - No modifica WeaponStats (el arma dispara igual).
- *   - Solo wrappea el BulletBehavior para añadir el efecto de veneno on-hit.
+ * ACTUALIZADO: PoisonEffect ahora implementa StatusEffectComponent.StatusEffect
+ * directamente, lo que permite que se registre en el componente sin conversión.
  *
  * Uso:
- *   new PoisonModifier()           // 3 daño, cada 20 ticks, por 120 ticks
- *   new PoisonModifier(5, 15, 90)  // configurable
+ *   new PoisonModifier()           // 3 daño, cada 20 ticks, 120 duración
+ *   new PoisonModifier(5, 15, 90)
  */
 public class PoisonModifier extends WeaponModifier {
 
@@ -32,8 +31,7 @@ public class PoisonModifier extends WeaponModifier {
         this.duration     = duration;
     }
 
-    @Override
-    public String getId() { return "poison"; }
+    @Override public String getId() { return "poison"; }
 
     @Override
     public BulletBehavior wrapBehavior(BulletBehavior base) {
@@ -43,33 +41,28 @@ public class PoisonModifier extends WeaponModifier {
     // ── Wrapper ───────────────────────────────────────────────────────────
 
     private static class PoisonBulletWrapper extends BulletBehaviorWrapper {
-
-        private final int dmg;
-        private final int interval;
-        private final int totalDuration;
+        private final int dmg, interval, totalDuration;
 
         PoisonBulletWrapper(BulletBehavior inner, int dmg, int interval, int totalDuration) {
             super(inner);
-            this.dmg           = dmg;
-            this.interval      = interval;
-            this.totalDuration = totalDuration;
+            this.dmg = dmg; this.interval = interval; this.totalDuration = totalDuration;
         }
 
         @Override
         protected void onHitEnemy(Bullet bullet, Enemy enemy) {
-            // Aplicar efecto de veneno al enemigo via PoisonEffect
-            enemy.addEffect(new PoisonEffect(dmg, interval, totalDuration));
+            StatusEffectComponent fx = enemy.getComponent(StatusEffectComponent.class);
+            if (fx != null) {
+                fx.add(new PoisonEffect(dmg, interval, totalDuration));
+            } else {
+                // Fallback: daño directo si el componente no está (compatibilidad)
+                enemy.damage(dmg * (totalDuration / interval));
+            }
         }
     }
 
-    // ── Efecto de veneno (aplicado al Enemy) ──────────────────────────────
+    // ── Efecto — implementa StatusEffectComponent.StatusEffect ────────────
 
-    /**
-     * Efecto DoT que se aplica a un Enemy.
-     * Se procesa desde Enemy.update() si el sistema de efectos está activo.
-     * Compatible con cualquier subclase de Enemy sin modificarlas.
-     */
-    public static class PoisonEffect {
+    public static class PoisonEffect implements StatusEffectComponent.StatusEffect {
 
         private final int dmgPerTick;
         private final int interval;
@@ -83,14 +76,11 @@ public class PoisonModifier extends WeaponModifier {
             this.timer      = interval;
         }
 
-        /**
-         * Llamado cada tick desde Enemy.
-         * @return true si el efecto sigue activo, false si expiró.
-         */
+        @Override
         public boolean tick(Enemy enemy) {
             if (remaining <= 0) return false;
-            timer--;
             remaining--;
+            timer--;
             if (timer <= 0) {
                 enemy.damage(dmgPerTick);
                 timer = interval;
@@ -98,6 +88,7 @@ public class PoisonModifier extends WeaponModifier {
             return remaining > 0;
         }
 
-        public boolean isExpired() { return remaining <= 0; }
+        @Override
+        public String effectId() { return "poison"; }
     }
 }

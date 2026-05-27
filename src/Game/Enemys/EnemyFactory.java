@@ -11,14 +11,21 @@ import Graficos.Enemys.EnemyAssets;
 import java.awt.image.BufferedImage;
 
 /**
- * Factory de enemigos.
- * REFACTOR: usa los métodos estáticos de EnemyPhysicsConfig en lugar de
- * construir la config inline con muchos parámetros sin nombre.
+ * Fábrica de enemigos.
+ *
+ * CAMBIO vs. original:
+ *   - Los behaviors ya no reciben Player — se eliminó esa dependencia de los constructors.
+ *   - EnemyFactory sigue recibiendo Player para el constructor legacy de Enemy base,
+ *     que lo almacena temporalmente durante la transición.
+ *   - Sin cambios en la lógica de physics/textura.
+ *
+ * Una vez que World.update() pase EnemyContext.of(player) a todos los enemies,
+ * se puede eliminar el parámetro Player de aquí también.
  */
 public class EnemyFactory {
 
     public static Enemy createEnemy(EnemyType type, Vector2D position, Player player) {
-        EnemyPhysics physics = createPhysics(type);
+        EnemyPhysics  physics = createPhysics(type);
         BufferedImage texture = getRandomTexture(type);
 
         return switch (type) {

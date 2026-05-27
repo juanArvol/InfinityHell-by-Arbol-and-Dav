@@ -1,5 +1,7 @@
 package Game.Weapons.Modifiers;
 
+import Game.Ammulets.AmuletRegistry;
+import Game.Ammulets.PlayerAmulets;
 import Game.Bullets.Bullet;
 import Game.Bullets.BulletComport.BulletBehavior;
 import Game.Bullets.BulletFactory;
@@ -10,78 +12,51 @@ import Game.Weapons.WeaponType.Shoot.ShootResult;
 import GameMath.Vector2D;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
- * Arma con modificadores activos — composición runtime sin herencia.
+ * Arma con efectos de amuletos aplicados — composición runtime sin herencia.
  *
- * ── CÓMO FUNCIONA ────────────────────────────────────────────────────────
- * ModifiedWeapon envuelve un WeaponComport existente y aplica un pipeline
- * de WeaponModifiers en dos etapas:
+ * ── CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR ───────────────────────────────
+ * La versión anterior tenía una lista de WeaponModifiers para propiedades
+ * como piercing, explosive, poison. Esos modificadores eran únicos (no
+ * repetibles) y tenían deduplicación hardcodeada.
  *
- *   1. applyToStats():   los modificadores ajustan una COPIA de WeaponStats
- *                        (cooldown, spread, damage, speed). El original no cambia.
+ * Ahora esas propiedades son AMULETOS (PlayerAmulets), que:
+ *   • Son acumulables (múltiples copias suman su efecto)
+ *   • Se gestionan externamente por el jugador
+ *   • Aparecen de forma aleatoria e infinita en el loot
  *
- *   2. wrapBehavior():   los modificadores envuelven el BulletBehavior en cadena,
- *                        añadiendo efectos on-hit (poison, explosive, piercing…).
+ * ModifiedWeapon ya no gestiona una lista de modificadores: recibe la
+ * referencia a PlayerAmulets y delega en AmuletRegistry.applyAll().
  *
- * ── NO ROMPE NADA ────────────────────────────────────────────────────────
- * - WeaponComport, WeaponSelected, PlayerCombat funcionan igual.
- * - Solo cambia cómo se construye la bala en tryShoot().
- * - Si no hay modificadores, el comportamiento es idéntico al original.
+ * ── LO QUE NO CAMBIA ─────────────────────────────────────────────────────
+ * - La firma de handleInput() es idéntica.
+ * - WeaponComport, WeaponInventory, PlayerCombat funcionan igual.
+ * - BulletFactory.createBulletWithBehavior() no se toca.
  *
  * ── USO ──────────────────────────────────────────────────────────────────
- *   // En PlayerCombat o en un sistema de equipamiento:
- *   WeaponComport base = new WeaponEscopeta();
- *   ModifiedWeapon mw = new ModifiedWeapon(base, BulletType.NORMAL);
- *   mw.addModifier(new ExplosiveModifier());
- *   mw.addModifier(new PoisonModifier());
- *
- *   // Después de esto, cada disparo produce balas explosivas + envenenadas.
- *   List<Bullet> bullets = mw.handleInput(held, pressed, x, y, right, dir);
+ *   // En PlayerCombat, al crear el arma equipada:
+ *   ModifiedWeapon weapon = new ModifiedWeapon(
+ *       comport, player.getEquippedBulletType(), player.getAmulets()
+ *   );
+ *   List<Bullet> bullets = weapon.handleInput(held, pressed, x, y, right, dir);
  */
 public class ModifiedWeapon {
 
     private final WeaponComport comport;
     private final BulletType bulletType;
-    private final List<WeaponModifier> modifiers = new ArrayList<>();
+    private final PlayerAmulets amulets;
 
-    public ModifiedWeapon(WeaponComport comport, BulletType bulletType) {
+    public ModifiedWeapon(WeaponComport comport,
+                          BulletType bulletType,
+                          PlayerAmulets amulets) {
         this.comport    = comport;
         this.bulletType = bulletType;
+        this.amulets    = amulets;
     }
 
-    // ── Gestión de modificadores ──────────────────────────────────────────
-
-    public ModifiedWeapon addModifier(WeaponModifier modifier) {
-        // Verificar compatibilidad con los ya instalados
-        for (WeaponModifier existing : modifiers) {
-            if (!existing.isCompatibleWith(modifier) || !modifier.isCompatibleWith(existing)) {
-                throw new IllegalArgumentException(
-                    "Modificador " + modifier.getId() + " no compatible con " + existing.getId()
-                );
-            }
-        }
-        modifiers.add(modifier);
-        modifiers.sort(Comparator.comparingInt(WeaponModifier::priority));
-        return this;
-    }
-
-    public ModifiedWeapon removeModifier(String id) {
-        modifiers.removeIf(m -> m.getId().equals(id));
-        return this;
-    }
-
-    public boolean hasModifier(String id) {
-        return modifiers.stream().anyMatch(m -> m.getId().equals(id));
-    }
-
-    public List<WeaponModifier> getModifiers() {
-        return List.copyOf(modifiers);
-    }
-
-    // ── Disparo con modificadores aplicados ───────────────────────────────
+    // ── Disparo ───────────────────────────────────────────────────────────
 
     public List<Bullet> handleInput(
             boolean held,
@@ -112,33 +87,30 @@ public class ModifiedWeapon {
             return List.of();
         }
 
-        // 1. Copia mutable de stats para que los modificadores la alteren
+        // 1. Copia mutable de stats para que los amuletos la alteren
         WeaponStats effectiveStats = copyStats(comport.getStats());
-        for (WeaponModifier mod : modifiers) {
-            mod.applyToStats(effectiveStats);
-        }
 
-        // 2. Construir bullets con el behavior modificado
+        // 2. Behavior base desde el BulletType
+        BulletBehavior behavior = bulletType.create();
+
+        // 3. Aplicar todos los amuletos del jugador (acumulativos):
+        //    - applyToStats() modifica la copia de WeaponStats
+        //    - wrapBehavior() envuelve el behavior con efectos on-hit
+        behavior = AmuletRegistry.applyAll(amulets.getIds(), effectiveStats, behavior);
+
+        // 4. Construir balas con el behavior compuesto
         List<Bullet> bullets = new ArrayList<>();
         for (int i = 0; i < effectiveStats.getBulletsPerShot(); i++) {
+
             Vector2D spreadDir = direction
                 .applySpread(direction, effectiveStats.getSpread())
                 .normalize();
-
-            // Behavior base desde el BulletType
-            BulletBehavior behavior = bulletType.create();
-
-            // Pipeline de wrappers
-            for (WeaponModifier mod : modifiers) {
-                behavior = mod.wrapBehavior(behavior);
-            }
 
             double finalSpeed  = effectiveStats.getBulletSpeedBase() * speedMult
                                  * behavior.getSpeedFactor();
             double finalDamage = effectiveStats.getDamageBonusByWeapon() * damageMult
                                  + behavior.getBulletBaseDamage();
 
-            // Reutilizar BulletFactory pero con el behavior ya compuesto
             bullets.add(BulletFactory.createBulletWithBehavior(
                 x, y, spreadDir, behavior, finalSpeed, finalDamage
             ));
@@ -151,23 +123,18 @@ public class ModifiedWeapon {
         return bullets;
     }
 
-    public void update() {
-        comport.update();
-    }
+    // ── Delegados ─────────────────────────────────────────────────────────
 
-    public void reload() {
-        comport.startReload();
-    }
+    public void update() { comport.update(); }
+    public void reload()  { comport.startReload(); }
+    public void resetBurst() { comport.resetBurst(); }
 
-    public WeaponComport getComport() { return comport; }
-    public BulletType getBulletType() { return bulletType; }
+    public WeaponComport getComport()  { return comport; }
+    public BulletType    getBulletType() { return bulletType; }
+    public PlayerAmulets getAmulets()   { return amulets; }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // ── Helper ────────────────────────────────────────────────────────────
 
-    /**
-     * Crea una copia mutable de WeaponStats para que los modificadores
-     * no toquen el original del WeaponComport.
-     */
     private static WeaponStats copyStats(WeaponStats src) {
         return new WeaponStats(
             src.getCooldown(),

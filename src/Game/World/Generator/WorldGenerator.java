@@ -3,13 +3,7 @@ package Game.World.Generator;
 import Game.World.Core.World;
 import Game.World.Core.WorldCoordinator;
 import Game.World.Generator.Layer.WorldLayer;
-import Game.World.Generator.Layer.Objects.BackGroundLayer;
-import Game.World.Generator.Layer.Objects.ObstacleLayer;
-import Game.World.Generator.Layer.Objects.TerrainLayer;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Random;
 
 /**
@@ -82,57 +76,4 @@ public class WorldGenerator {
         return world;
     }
 
-    // ── Configuración ─────────────────────────────────────────────────────
-
-    /**
-     * Configuración inmutable de capas para el generador.
-     *
-     * Se construye mediante el patrón builder fluido:
-     *   WorldGeneratorConfig cfg = WorldGeneratorConfig.empty()
-     *       .addLayer(new BackGroundLayer())
-     *       .addLayer(new TerrainLayer())
-     *       .addLayer(new MyBuildingLayer());
-     */
-    public static final class WorldGeneratorConfig {
-
-        private final List<WorldLayer> layers;
-
-        private WorldGeneratorConfig(List<WorldLayer> layers) {
-            this.layers = Collections.unmodifiableList(new ArrayList<>(layers));
-        }
-
-        /** Configuración vacía — sin capas. Punto de partida para builders. */
-        public static WorldGeneratorConfig empty() {
-            return new WorldGeneratorConfig(new ArrayList<>());
-        }
-
-        /**
-         * Configuración por defecto — reproduce exactamente el comportamiento
-         * del WorldGenerator original: fondo → terreno → obstáculos.
-         */
-        public static WorldGeneratorConfig defaults() {
-            return empty()
-                .addLayer(new BackGroundLayer())
-                .addLayer(new TerrainLayer())
-                .addLayer(new ObstacleLayer());
-        }
-
-        /** Devuelve una nueva configuración con la capa añadida al final. */
-        public WorldGeneratorConfig addLayer(WorldLayer layer) {
-            List<WorldLayer> next = new ArrayList<>(layers);
-            next.add(layer);
-            return new WorldGeneratorConfig(next);
-        }
-
-        /** Devuelve una nueva configuración con la capa insertada en la posición dada. */
-        public WorldGeneratorConfig insertLayer(int index, WorldLayer layer) {
-            List<WorldLayer> next = new ArrayList<>(layers);
-            next.add(index, layer);
-            return new WorldGeneratorConfig(next);
-        }
-
-        public List<WorldLayer> getLayers() {
-            return layers;
-        }
-    }
 }

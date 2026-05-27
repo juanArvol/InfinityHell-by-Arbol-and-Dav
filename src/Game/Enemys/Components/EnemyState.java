@@ -1,79 +1,40 @@
 package Game.Enemys.Components;
 
+/**
+ * Estado observable del enemigo — flags de animación y física.
+ * Sin cambios funcionales respecto al original.
+ * Limpieza: comentarios agrupados, sin separadores innecesarios.
+ */
 public class EnemyState {
 
     private boolean enElSuelo;
     private boolean mirandoDerecha = true;
-
     private boolean moving;
     private boolean attacking;
     private boolean jumping;
     private boolean flying;
 
-    //-----------------
-    // SUELO
-    //-----------------
+    // ── Suelo ─────────────────────────────────────────────────────────────
+    public boolean isEnElSuelo()             { return enElSuelo; }
+    public void    setEnElSuelo(boolean v)   { enElSuelo = v; }
 
-    public boolean isEnElSuelo() {
-        return enElSuelo;
-    }
+    // ── Dirección ────────────────────────────────────────────────────────
+    public boolean isMirandoDerecha()           { return mirandoDerecha; }
+    public void    setMirandoDerecha(boolean v) { mirandoDerecha = v; }
 
-    public void setEnElSuelo(boolean enElSuelo) {
-        this.enElSuelo = enElSuelo;
-    }
+    // ── Movimiento ───────────────────────────────────────────────────────
+    public boolean isMoving()           { return moving; }
+    public void    setMoving(boolean v) { moving = v; }
 
-    //-----------------
-    // DIRECCION
-    //-----------------
+    // ── Ataque ───────────────────────────────────────────────────────────
+    public boolean isAttacking()           { return attacking; }
+    public void    setAttacking(boolean v) { attacking = v; }
 
-    public boolean isMirandoDerecha() {
-        return mirandoDerecha;
-    }
+    // ── Salto ────────────────────────────────────────────────────────────
+    public boolean isJumping()           { return jumping; }
+    public void    setJumping(boolean v) { jumping = v; }
 
-    public void setMirandoDerecha(boolean mirandoDerecha) {
-        this.mirandoDerecha = mirandoDerecha;
-    }
-
-    //-----------------
-    // MOVIMIENTO
-    //-----------------
-
-    public boolean isMoving() {
-        return moving;
-    }
-
-    public void setMoving(boolean moving) {
-        this.moving = moving;
-    }
-
-    //-----------------
-    // ATAQUE
-    //-----------------
-
-    public boolean isAttacking() {
-        return attacking;
-    }
-
-    public void setAttacking(boolean attacking) {
-        this.attacking = attacking;
-    }
-
-    //-----------------
-    // SALTO
-    //-----------------
-
-    public boolean isJumping() {
-        return jumping;
-    }
-
-    public void setJumping(boolean jumping) {
-        this.jumping = jumping;
-    }
-    public boolean isFlying(){
-        return flying;
-    }
-
-    public void setFlying(boolean f){
-        flying = f;
-    }
+    // ── Vuelo ────────────────────────────────────────────────────────────
+    public boolean isFlying()           { return flying; }
+    public void    setFlying(boolean v) { flying = v; }
 }

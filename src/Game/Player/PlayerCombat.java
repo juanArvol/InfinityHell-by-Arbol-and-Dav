@@ -25,7 +25,7 @@ public class PlayerCombat {
         inventory.addWeapon(
             new WeaponSelected(
                 new Game.Weapons.WeaponType.WeaponClass.WeaponEscopeta(),
-                Game.Bullets.BulletType.JUMP
+                Game.Bullets.BulletType.SPRINGBULLET
             )
         );
     }
