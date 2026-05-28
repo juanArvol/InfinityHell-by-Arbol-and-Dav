@@ -18,6 +18,10 @@ package Entradas.Listeners;
  * CUÁNDO USAR LISTENER vs CONSULTA DIRECTA:
  *  - Listener   → acciones puntuales: recargar, saltar, abrir menú, toggle fullscreen.
  *  - Consulta   → estado continuo: moverse izquierda/derecha, correr, agacharse.
+ *
+ * AÑADIDO:
+ *  - onToggleFps() — F3: activa/desactiva el contador de FPS en pantalla.
+ *    Controlado por GameSettings.isFpsEnabled(); el GameLoop lo lee cada frame.
  */
 public interface KeyActionListener {
 
@@ -44,4 +48,7 @@ public interface KeyActionListener {
 
     /** Escape pulsado (edge) — pausa / menú. */
     default void onPause() {}
+
+    /** F3 pulsado (edge) — toggle contador de FPS en pantalla. */
+    default void onToggleFps() {}
 }

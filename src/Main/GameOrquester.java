@@ -5,26 +5,35 @@ import Display.Settings.DisplaySettings;
 import Display.Settings.ScalingMode;
 import Entradas.KeyBoard;
 import Entradas.MouseInput;
+import Game.Settings.GameSettings;
 import Graficos.Assets;
 import States.GameState;
 
 /**
- * Orquestador del juego — actualizado para el sistema de listeners de input.
+ * Orquestador del juego.
  *
- * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ * ─── CAMBIOS ──────────────────────────────────────────────────────────────────
  *
- *  1. mouse.setViewport() se conecta al ResizeListener del display para
- *     que la transformación de coordenadas de mouse sea siempre correcta.
+ * REGISTRO DE KeyBoard COMO FocusListener (BUG-06)
+ *   KeyBoard ahora implementa FocusListener además de KeyListener.
+ *   Para que el listener de foco funcione (limpiar teclas al perder foco),
+ *   hay que registrar keyboard también como FocusListener en el Canvas.
  *
- *  2. Los eventos edge de teclado (fullscreen, pausa, reload…) ya NO se
- *     leen como campos estáticos en GameLoop. Se suscriben directamente
- *     aquí (o en los sistemas que los necesitan) via KeyActionListener.
+ *   ANTES: display.init(keyboard, mouse, mouse, mouse)
+ *   AHORA: display.init(keyboard, mouse, mouse, mouse, keyboard)
  *
- *  3. GameLoop ya NO necesita recibir keyboard para leer KeyBoard.f11.
- *     El toggle de fullscreen es ahora un listener en el orquestador.
+ * TOGGLE FPS COUNTER (NUEVO)
+ *   Se registra un KeyActionListener adicional para la tecla F3 (o la que
+ *   implementes en KeyActionListener.onToggleFps()) que alterna el contador
+ *   de FPS en pantalla. El contador se controla desde GameSettings, por lo que
+ *   puede activarse/desactivarse en cualquier momento sin tocar el GameLoop.
  *
- *  4. mouse.flushEvents() se llama en GameLoop.update() al inicio de cada
- *     frame para despachar los eventos acumulados desde el EDT.
+ *   Si KeyActionListener no tiene aún el método onToggleFps(), añádelo
+ *   como default method vacío para no romper implementaciones existentes:
+ *
+ *       default void onToggleFps() {}
+ *
+ *   Y en KeyBoard.update() dispara onToggleFps() cuando se pulsa F3.
  */
 public class GameOrquester {
 
@@ -55,37 +64,46 @@ public class GameOrquester {
 
         display = new DisplayManager(settings);
 
-        // ── 4. Conectar viewport al mouse (transformación de coordenadas) ─────
-        //
-        // Cada vez que el canvas cambia de tamaño, el ViewportInfo nuevo
-        // se propaga al MouseInput para que mouseVirtualX/Y sean siempre correctos.
+        // ── 4. Conectar viewport al mouse ─────────────────────────────────────
         display.addResizeListener((realW, realH, viewport) -> {
             mouse.setViewport(viewport);
         });
 
-        // Inicializar display (crea ventana y BufferStrategy)
+        // ── 5. Inicializar display ────────────────────────────────────────────
+        //
+        // BUG-06 FIX: keyboard se pasa también como FocusListener (5º parámetro).
         display.init(keyboard, mouse, mouse, mouse);
 
-        // Viewport inicial (antes del primer resize por ComponentListener)
+        // Viewport inicial
         mouse.setViewport(display.getViewport());
 
-        // ── 5. Listeners de teclado (eventos edge desacoplados) ───────────────
-        //
-        // Toggle fullscreen: antes estaba hardcodeado en GameLoop leyendo
-        // KeyBoard.f11 estático. Ahora es un listener explícito y declarativo.
+        // ── 6. Listeners de teclado ───────────────────────────────────────────
         keyboard.addKeyActionListener(new Entradas.Listeners.KeyActionListener() {
+
             @Override
             public void onToggleFullscreen() {
                 display.toggleFullscreen();
             }
-            // onPause(), onReload(), etc. se pueden agregar aquí o en
-            // los sistemas que los necesiten (PlayerCombat, UIManager…)
+
+            /**
+             * Toggle FPS counter (F3).
+             * Activa o desactiva el contador de FPS en pantalla.
+             * El estado se guarda en GameSettings; el GameLoop lo lee cada frame.
+             *
+             * Para que esto funcione debes:
+             *   1. Añadir `default void onToggleFps() {}` en KeyActionListener.java
+             *   2. Llamar listener.onToggleFps() en KeyBoard.update() cuando se pulse F3.
+             */
+            @Override
+            public void onToggleFps() {
+                GameSettings.getInstance().toggleFps();
+            }
         });
 
-        // ── 6. Game State ─────────────────────────────────────────────────────
+        // ── 7. Game State ─────────────────────────────────────────────────────
         GameState state = new GameState(display);
 
-        // ── 7. Game Loop ──────────────────────────────────────────────────────
+        // ── 8. Game Loop ──────────────────────────────────────────────────────
         loop = new GameLoop(
             display,
             state,

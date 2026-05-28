@@ -3,9 +3,13 @@ package Main;
 import Display.Managers.DisplayManager;
 import Entradas.KeyBoard;
 import Entradas.MouseInput;
+import Game.Settings.GameSettings;
 import States.GameState;
 
+import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 
 /**
  * Game loop — actualizado para el sistema de listeners de input.
@@ -24,6 +28,12 @@ import java.awt.Graphics2D;
  *     sincroniza los campos estáticos y dispara los KeyActionListeners.
  *     mouse.flushEvents() va justo después.
  *
+ *  4. FPS COUNTER (reintegrado):
+ *     El contador de FPS ya no se dibuja siempre. Ahora se controla desde
+ *     GameSettings.isFpsEnabled(). Para activarlo/desactivarlo en runtime,
+ *     llamar GameSettings.getInstance().toggleFps() (p.ej. desde un
+ *     KeyActionListener registrado en GameOrquester con la tecla deseada).
+ *
  * ORDEN DE UPDATE POR FRAME:
  *   1. keyboard.update()        — estado continuo + edge listeners teclado
  *   2. mouse.flushEvents()      — edge listeners ratón (clicks, scroll)
@@ -41,15 +51,20 @@ public class GameLoop implements Runnable {
     private boolean running = false;
     private int     fpsPorSegundo = 0;
 
+    // Font del contador FPS: cacheada para no recrearla cada frame
+    private static final Font   FPS_FONT   = new Font("Monospaced", Font.BOLD, 12);
+    private static final Color  FPS_COLOR  = new Color(255, 255, 0, 220);   // amarillo semitransparente
+    private static final Color  FPS_SHADOW = new Color(0, 0, 0, 160);
+
     public GameLoop(DisplayManager display,
                     GameState gameState,
                     KeyBoard keyboard,
                     MouseInput mouse,
                     int fps) {
-        this.display   = display;
-        this.gameState = gameState;
-        this.keyboard  = keyboard;
-        this.mouse     = mouse;
+        this.display    = display;
+        this.gameState  = gameState;
+        this.keyboard   = keyboard;
+        this.mouse      = mouse;
         this.targetTime = 1_000_000_000.0 / fps;
     }
 
@@ -109,11 +124,9 @@ public class GameLoop implements Runnable {
         keyboard.update();
 
         // 2. Ratón: despacha eventos acumulados en EDT → MouseActionListeners
-        //    (clicks, releases, scroll, movimiento)
         mouse.flushEvents();
 
         // 3. Lógica del juego en coordenadas virtuales
-        //    (KeyBoard.f11 / fullscreen ya no se lee aquí — ver GameOrquester)
         gameState.update(
             display.getVirtualWidth(),
             display.getVirtualHeight()
@@ -129,11 +142,45 @@ public class GameLoop implements Runnable {
         try {
             gameState.draw(virtualG, display.getViewport());
 
-            virtualG.setColor(java.awt.Color.WHITE);
-            virtualG.drawString("FPS: " + fpsPorSegundo, 6, 14);
+            // FPS counter: solo si está habilitado en GameSettings
+            if (GameSettings.getInstance().isFpsEnabled()) {
+                drawFpsCounter(virtualG);
+            }
 
         } finally {
             display.endFrame(virtualG);
+        }
+    }
+
+    /**
+     * Dibuja el contador de FPS en la esquina superior izquierda.
+     * Usa sombra para legibilidad sobre cualquier fondo.
+     */
+    private void drawFpsCounter(Graphics2D g) {
+        String text = "FPS: " + fpsPorSegundo;
+
+        // Guardar estado gráfico
+        Font   prevFont  = g.getFont();
+        Color  prevColor = g.getColor();
+        Object prevAA    = g.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
+
+        g.setFont(FPS_FONT);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                           RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        // Sombra (offset 1px) para legibilidad
+        g.setColor(FPS_SHADOW);
+        g.drawString(text, 7, 15);
+
+        // Texto principal
+        g.setColor(FPS_COLOR);
+        g.drawString(text, 6, 14);
+
+        // Restaurar estado gráfico
+        g.setFont(prevFont);
+        g.setColor(prevColor);
+        if (prevAA != null) {
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, prevAA);
         }
     }
 }
