@@ -1,16 +1,11 @@
 package Display.Managers;
 
 import Display.ResizeListener;
-import Display.Managers.FullscreenManager;
-import Display.Managers.BufferStrategyManager;
-import Display.Managers.RenderSurfaceManager;
-import Display.Managers.ScalingManager;
 import Display.Settings.DisplaySettings;
 import Display.ViewportInfo;
-import Display.Managers.ViewportManager;
-import Display.Managers.WindowManager;
 
 import java.awt.*;
+import java.awt.event.FocusListener;
 import java.awt.image.BufferedImage;
 import java.util.logging.Logger;
 
@@ -39,18 +34,61 @@ import java.util.logging.Logger;
  *
  * REGLA: el juego NO conoce la resolución real del monitor.
  *        Solo usa VIRTUAL_WIDTH / VIRTUAL_HEIGHT y ViewportInfo para input.
+ *
+ * ─── BUGS CORREGIDOS ──────────────────────────────────────────────────────────
+ *
+ * BUG-INIT-FIRMA · init() no aceptaba FocusListener (5º parámetro)
+ *   CAUSA: GameOrquester llama display.init(keyboard, mouse, mouse, mouse, keyboard)
+ *          con 5 argumentos. El método original solo tenía 4 parámetros,
+ *          por lo que el código no compilaba o el FocusListener de teclado
+ *          (necesario para limpiar teclas al perder foco) nunca se registraba.
+ *   SOLUCIÓN: añadir overload init() con FocusListener como 5º parámetro opcional.
+ *             El overload de 4 params delega al de 5 con null, manteniendo
+ *             compatibilidad total con código existente.
+ *   RIESGO: ninguno. Cambio aditivo.
+ *
+ * BUG-EDT-FULLSCREEN · toggleFullscreen() llamado desde GameLoop thread sin EDT
+ *   CAUSA: el flujo es GameLoop thread → keyboard.update() → KeyActionListener
+ *          → onToggleFullscreen() → display.toggleFullscreen() → fullscreenManager
+ *          que llama setVisible/setUndecorated/setFullScreenWindow. Estas son
+ *          operaciones de Swing/AWT que DEBEN ejecutarse en el EDT.
+ *          Llamarlas desde el GameLoop thread puede causar:
+ *            · DeadLock si el EDT está esperando un lock que el GameLoop tiene
+ *            · Corrupcón del estado de la ventana
+ *            · Crashes al modificar el peer nativo desde el thread equivocado
+ *            · Pantalla negra al salir de fullscreen
+ *   SOLUCIÓN: toggleFullscreen() envuelve la operación en SwingUtilities.invokeLater()
+ *             para despacharla al EDT. La operación es asíncrona (se ejecuta en el
+ *             siguiente ciclo del EDT), pero esto es correcto: el user no nota el
+ *             delay de 1 frame, y las operaciones de ventana son inherentemente
+ *             asíncronas de todas formas.
+ *   RIESGO: mínimo. invokeLater() es el mecanismo estándar y seguro para esto.
+ *           Si toggleFullscreen() ya se llama desde el EDT (caso raro),
+ *           invokeLater() lo encola igualmente — no causa doble ejecución.
+ *   NOTA: isFullscreen() puede devolver el estado "anterior" durante 1 frame
+ *         mientras el EDT procesa el toggle. Esto es aceptable y es el
+ *         comportamiento correcto para UI asíncrona.
+ *
+ * BUG-VIEWPORT-INICIAL · getCanvas().getWidth() puede ser 0 justo tras show()
+ *   CAUSA: frame.setVisible(true) es asíncrono en Swing. El Canvas puede no
+ *          tener sus dimensiones finales en el mismo tick. Si viewportManager
+ *          .onResize(0, 0) se llama, el viewport queda en estado inválido.
+ *   SOLUCIÓN: validar que w > 0 && h > 0 antes de llamar onResize(). Si las
+ *             dimensiones aún no están disponibles, el ComponentListener las
+ *             capturará cuando el Canvas termine de dimensionarse.
+ *   RIESGO: ninguno. La validación es defensiva y no cambia el flujo normal.
  */
 public class DisplayManager {
 
     private static final Logger LOG = Logger.getLogger(DisplayManager.class.getName());
 
     // ─── Subsistemas ──────────────────────────────────────────────────────────
-    private final DisplaySettings      settings;
-    private final ViewportManager      viewportManager;
-    private final WindowManager        windowManager;
-    private final FullscreenManager    fullscreenManager;
-    private final RenderSurfaceManager surfaceManager;
-    private final ScalingManager       scalingManager;
+    private final DisplaySettings       settings;
+    private final ViewportManager       viewportManager;
+    private final WindowManager         windowManager;
+    private final FullscreenManager     fullscreenManager;
+    private final RenderSurfaceManager  surfaceManager;
+    private final ScalingManager        scalingManager;
     private final BufferStrategyManager bsManager;
 
     // ─── Estado ───────────────────────────────────────────────────────────────
@@ -75,8 +113,9 @@ public class DisplayManager {
         bsManager         = new BufferStrategyManager(windowManager.getCanvas());
 
         // 4. Registrar resize listener del bsManager (recrear BS al resize)
+        //    componentResized() se llama en EDT → bsManager.recreate() también
+        //    en EDT → canvas.createBufferStrategy() es correcto en EDT.
         windowManager.addResizeListener((rw, rh, vp) -> {
-            // El BufferStrategy puede quedar inválido tras resize
             bsManager.recreate();
         });
 
@@ -87,36 +126,58 @@ public class DisplayManager {
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     /**
-     * Inicializa la ventana y el BufferStrategy.
-     * Llamar ANTES de iniciar el game loop.
-     *
-     * @param keyListener       listener de teclado (puede ser null)
-     * @param mouseListener     listener de mouse (puede ser null)
-     * @param motionListener    listener de movimiento mouse (puede ser null)
-     * @param wheelListener     listener de rueda mouse (puede ser null)
+     * Overload de compatibilidad sin FocusListener.
      */
     public void init(java.awt.event.KeyListener keyListener,
                      java.awt.event.MouseListener mouseListener,
                      java.awt.event.MouseMotionListener motionListener,
                      java.awt.event.MouseWheelListener wheelListener) {
+        init(keyListener, mouseListener, motionListener, wheelListener, null);
+    }
 
-        windowManager.addInputListeners(keyListener, mouseListener, motionListener, wheelListener);
+    /**
+     * BUG-INIT-FIRMA FIX: overload completo con FocusListener opcional.
+     *
+     * Inicializa la ventana y el BufferStrategy.
+     * Llamar ANTES de iniciar el game loop.
+     *
+     * @param keyListener    listener de teclado (puede ser null)
+     * @param mouseListener  listener de mouse (puede ser null)
+     * @param motionListener listener de movimiento mouse (puede ser null)
+     * @param wheelListener  listener de rueda mouse (puede ser null)
+     * @param focusListener  listener de foco (puede ser null; normalmente KeyBoard)
+     */
+    public void init(java.awt.event.KeyListener keyListener,
+                     java.awt.event.MouseListener mouseListener,
+                     java.awt.event.MouseMotionListener motionListener,
+                     java.awt.event.MouseWheelListener wheelListener,
+                     FocusListener focusListener) {
+
+        windowManager.addInputListeners(keyListener, mouseListener,
+                                        motionListener, wheelListener,
+                                        focusListener);
         windowManager.show();
 
         // DESPUÉS de show() para que el Canvas tenga peer nativo
         bsManager.init();
 
-        // Arrancar en fullscreen si settings lo pide
+        // Arrancar en fullscreen si settings lo pide.
+        // init() se llama desde el hilo principal (pre-GameLoop), antes de que
+        // el EDT tome control exclusivo, así que esta llamada directa es segura.
         if (settings.startFullscreen) {
             fullscreenManager.enterFullscreen(windowManager.getFrame());
         }
 
-        // Trigger inicial de resize para que el viewport se calcule
-        // con las dimensiones reales de la ventana visible
+        // BUG-VIEWPORT-INICIAL FIX: solo llamar onResize si las dimensiones
+        // ya están disponibles. El ComponentListener las capturará de todas formas.
         Canvas c = windowManager.getCanvas();
-        viewportManager.onResize(c.getWidth(), c.getHeight());
+        int w = c.getWidth();
+        int h = c.getHeight();
+        if (w > 0 && h > 0) {
+            viewportManager.onResize(w, h);
+        }
 
-        LOG.info("Display iniciado. Ventana: " + c.getWidth() + "x" + c.getHeight());
+        LOG.info("Display iniciado. Canvas: " + w + "x" + h);
     }
 
     // ─── Frame pipeline ───────────────────────────────────────────────────────
@@ -149,8 +210,6 @@ public class DisplayManager {
         if (screenG == null) return; // Frame saltado, recovery en progreso
 
         try {
-            // Si el buffer fue restaurado, el clear ya se hizo en acquireGraphics
-            // ScalingManager llena letterbox + escala el framebuffer
             scalingManager.present(screenG, surfaceManager.getFramebuffer(),
                                    viewportManager.getViewport());
         } finally {
@@ -162,17 +221,33 @@ public class DisplayManager {
 
     /**
      * Alterna fullscreen ↔ windowed de forma segura.
-     * NO usa dispose(). Puede llamarse desde el game loop.
      *
-     * Internamente notifica onResize() vía ComponentListener del Canvas.
+     * BUG-EDT-FULLSCREEN FIX: la operación se despacha al EDT via invokeLater().
+     *
+     * POR QUÉ ES NECESARIO:
+     *   toggleFullscreen() es llamado desde el GameLoop thread (via KeyActionListener).
+     *   Las operaciones de ventana (setVisible, setUndecorated, setFullScreenWindow)
+     *   son operaciones Swing/AWT que deben ejecutarse en el EDT. Llamarlas desde
+     *   el GameLoop thread puede causar deadlocks, corrupción de estado o crashes.
+     *
+     * POR QUÉ invokeLater() ES SEGURO:
+     *   - invokeLater() encola la operación en el EDT y retorna inmediatamente.
+     *   - El GameLoop continúa sin bloquearse.
+     *   - El EDT ejecuta el toggle en su propio ciclo (1-2ms después).
+     *   - El ComponentListener del Canvas notificará onResize() automáticamente
+     *     tras el toggle, recalculando viewport y recreando BufferStrategy.
+     *
+     * NOTA: isFullscreen() puede devolver el estado anterior durante ≤1 frame.
+     *       Esto es correcto e inocuo.
      */
     public void toggleFullscreen() {
-        fullscreenManager.toggle(
-            windowManager.getFrame(),
-            settings.windowedWidth,
-            settings.windowedHeight
+        javax.swing.SwingUtilities.invokeLater(() ->
+            fullscreenManager.toggle(
+                windowManager.getFrame(),
+                settings.windowedWidth,
+                settings.windowedHeight
+            )
         );
-        // El ComponentListener del Canvas disparará onResize automáticamente
     }
 
     public boolean isFullscreen() {

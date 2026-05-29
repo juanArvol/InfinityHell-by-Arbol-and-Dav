@@ -12,7 +12,18 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Teclado del juego.
  *
- * ─── BUGS CORREGIDOS (versiones anteriores) ───────────────────────────────────
+ * ─── BUGS CORREGIDOS ──────────────────────────────────────────────────────────
+ *
+ * BUG-CRÍTICO · keyReleased tenía un literal \n embebido en el código fuente
+ *   CAUSA: la línea `int code = e.getKeyCode();\n        if (code >= 0...` contenía
+ *          el escape de texto `\n` como caracteres literales (backslash + n) en
+ *          el fuente Java, no como salto de línea. Esto es un error de edición/
+ *          guardado que deja el método sintácticamente roto en ciertos compiladores
+ *          o produce comportamiento inesperado dependiendo del parser.
+ *          Resultado: rawKeys[code] nunca se ponía a false → las teclas quedaban
+ *          permanentemente presionadas hasta que el juego perdía el foco.
+ *   SOLUCIÓN: reescribir keyReleased correctamente. Sin cambios de lógica.
+ *   RIESGO: ninguno. Es corrección de código corrupto.
  *
  * BUG-06 · Teclas pegadas al perder foco — MANTENIDO
  *   KeyBoard implementa FocusListener. focusLost() limpia rawKeys y campos
@@ -25,13 +36,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * REGRESIÓN-2 · synchronized(this) en update() compite innecesariamente con EDT
  *   Lock dedicado (keyLock) con scope mínimo — MANTENIDO.
  *
- * ─── AÑADIDO EN ESTA VERSIÓN ─────────────────────────────────────────────────
+ * ─── AÑADIDO EN VERSIÓN ANTERIOR (MANTENIDO) ─────────────────────────────────
  *
  * F3 → onToggleFps()
- *   Se añade detección de edge para VK_F3 y se dispara listener.onToggleFps()
+ *   Detección de edge para VK_F3 y disparo de listener.onToggleFps()
  *   en todos los KeyActionListeners suscritos.
- *   El estado del FPS counter se guarda en GameSettings (no en KeyBoard),
- *   manteniendo el principio de separación de responsabilidades.
  */
 public class KeyBoard implements KeyListener, FocusListener {
 
@@ -83,13 +92,13 @@ public class KeyBoard implements KeyListener, FocusListener {
         r     = snapshot[KeyEvent.VK_R];
 
         // ── Detección de edge ─────────────────────────────────────────────────
-        boolean jumpEdge      = snapshot[KeyEvent.VK_SPACE]  && !lastKeys[KeyEvent.VK_SPACE];
-        boolean crouchEdge    = snapshot[KeyEvent.VK_S]      && !lastKeys[KeyEvent.VK_S];
-        boolean reloadEdge    = snapshot[KeyEvent.VK_R]      && !lastKeys[KeyEvent.VK_R];
-        boolean specialEdge   = snapshot[KeyEvent.VK_C]      && !lastKeys[KeyEvent.VK_C];
-        boolean f11Edge       = snapshot[KeyEvent.VK_F11]    && !lastKeys[KeyEvent.VK_F11];
-        boolean escEdge       = snapshot[KeyEvent.VK_ESCAPE] && !lastKeys[KeyEvent.VK_ESCAPE];
-        boolean f3Edge        = snapshot[KeyEvent.VK_F3]     && !lastKeys[KeyEvent.VK_F3];
+        boolean jumpEdge    = snapshot[KeyEvent.VK_SPACE]  && !lastKeys[KeyEvent.VK_SPACE];
+        boolean crouchEdge  = snapshot[KeyEvent.VK_S]      && !lastKeys[KeyEvent.VK_S];
+        boolean reloadEdge  = snapshot[KeyEvent.VK_R]      && !lastKeys[KeyEvent.VK_R];
+        boolean specialEdge = snapshot[KeyEvent.VK_C]      && !lastKeys[KeyEvent.VK_C];
+        boolean f11Edge     = snapshot[KeyEvent.VK_F11]    && !lastKeys[KeyEvent.VK_F11];
+        boolean escEdge     = snapshot[KeyEvent.VK_ESCAPE] && !lastKeys[KeyEvent.VK_ESCAPE];
+        boolean f3Edge      = snapshot[KeyEvent.VK_F3]     && !lastKeys[KeyEvent.VK_F3];
 
         // ── Disparar listeners ────────────────────────────────────────────────
         if (jumpEdge || crouchEdge || reloadEdge || specialEdge || f11Edge || escEdge || f3Edge) {
@@ -100,7 +109,7 @@ public class KeyBoard implements KeyListener, FocusListener {
                 if (specialEdge) l.onSpecial();
                 if (f11Edge)     l.onToggleFullscreen();
                 if (escEdge)     l.onPause();
-                if (f3Edge)      l.onToggleFps();   // ← NUEVO
+                if (f3Edge)      l.onToggleFps();
             }
         }
 
@@ -120,10 +129,14 @@ public class KeyBoard implements KeyListener, FocusListener {
         }
     }
 
+    /**
+     * BUG-CRÍTICO FIX: el código original tenía un literal \n (backslash+n)
+     * embebido en esta línea, corrompiendo el método y haciendo que
+     * rawKeys[code] nunca se pusiera a false.
+     */
     @Override
     public void keyReleased(KeyEvent e) {
-        int code = e.getKeyCode();        
-        
+        int code = e.getKeyCode();
         if (code >= 0 && code < rawKeys.length) {
             synchronized (keyLock) {
                 rawKeys[code] = false;

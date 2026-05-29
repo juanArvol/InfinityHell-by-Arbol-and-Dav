@@ -2,12 +2,12 @@ package Display.Managers;
 
 import Display.Settings.DisplaySettings;
 import Display.ResizeListener;
-import Display.Managers.ViewportManager;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.KeyListener;
 import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
@@ -27,6 +27,30 @@ import java.util.List;
  *
  * El Canvas NO cambia de tamaño lógico: el juego siempre es virtual.
  * Cuando el Canvas se redimensiona, solo se recalcula el viewport.
+ *
+ * ─── BUGS CORREGIDOS ──────────────────────────────────────────────────────────
+ *
+ * BUG-FIRMA · addInputListeners() no aceptaba FocusListener
+ *   CAUSA: GameOrquester llama display.init(..., keyboard) donde keyboard es
+ *          FocusListener (para limpiar teclas al perder foco, BUG-06 fix).
+ *          DisplayManager.init() pasa ese 5º parámetro a
+ *          windowManager.addInputListeners(), pero el método solo tenía 4
+ *          parámetros (sin FocusListener). El código no compilaba o el
+ *          FocusListener nunca se registraba en el Canvas.
+ *   SOLUCIÓN: añadir overload addInputListeners(..., FocusListener) que
+ *             registra también el FocusListener en el Canvas.
+ *   RIESGO: ninguno. Cambio aditivo, el overload de 4 params se mantiene
+ *           para compatibilidad con código existente que no pase FocusListener.
+ *   IMPACTO FUTURO 2D/3D: sin impacto. FocusListener es AWT puro.
+ *
+ * BUG-RESIZE-EDT · componentResized() notificaba listeners sin protección
+ *   CAUSA: la lista resizeListeners se itera en EDT (componentResized),
+ *          pero puede ser modificada concurrentemente si addResizeListener()
+ *          se llama desde otro thread.
+ *   SOLUCIÓN: cambiar List<ResizeListener> a CopyOnWriteArrayList.
+ *             Iteración en EDT es segura; adición concurrente también.
+ *   RIESGO: mínimo. CopyOnWriteArrayList tiene overhead en escritura pero
+ *           resizeListeners rara vez se modifica en runtime.
  */
 public class WindowManager {
 
@@ -35,8 +59,12 @@ public class WindowManager {
     private final DisplaySettings settings;
     private final ViewportManager viewportManager;
 
-    /** Listeners a notificar cuando el canvas cambie de tamaño. */
-    private final List<ResizeListener> resizeListeners = new ArrayList<>();
+    /**
+     * BUG-RESIZE-EDT FIX: CopyOnWriteArrayList para iteración segura en EDT
+     * con posible adición concurrente desde otros threads.
+     */
+    private final List<ResizeListener> resizeListeners =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public WindowManager(DisplaySettings settings, ViewportManager viewportManager) {
         this.settings        = settings;
@@ -65,16 +93,38 @@ public class WindowManager {
 
     /**
      * Registra keyboard y mouse en el canvas.
-     * El canvas tiene el foco, por eso los listeners van en él.
+     * Overload de compatibilidad sin FocusListener.
      */
     public void addInputListeners(KeyListener kl,
                                   MouseListener ml,
                                   MouseMotionListener mml,
                                   MouseWheelListener mwl) {
+        addInputListeners(kl, ml, mml, mwl, null);
+    }
+
+    /**
+     * BUG-FIRMA FIX: overload completo que acepta FocusListener adicional.
+     *
+     * El FocusListener (normalmente KeyBoard) se registra en el Canvas para
+     * recibir notificación de pérdida de foco y limpiar las teclas presionadas.
+     * Sin esto, las teclas quedan "pegadas" al hacer alt-tab o perder foco.
+     *
+     * @param kl  KeyListener (puede ser null)
+     * @param ml  MouseListener (puede ser null)
+     * @param mml MouseMotionListener (puede ser null)
+     * @param mwl MouseWheelListener (puede ser null)
+     * @param fl  FocusListener (puede ser null)
+     */
+    public void addInputListeners(KeyListener kl,
+                                  MouseListener ml,
+                                  MouseMotionListener mml,
+                                  MouseWheelListener mwl,
+                                  FocusListener fl) {
         if (kl  != null) canvas.addKeyListener(kl);
         if (ml  != null) canvas.addMouseListener(ml);
         if (mml != null) canvas.addMouseMotionListener(mml);
         if (mwl != null) canvas.addMouseWheelListener(mwl);
+        if (fl  != null) canvas.addFocusListener(fl);
     }
 
     /** Hace la ventana visible y solicita foco al canvas. */
@@ -95,10 +145,8 @@ public class WindowManager {
 
     private Canvas buildCanvas() {
         Canvas c = new Canvas();
-        // El Canvas arranca con el tamaño de ventana windowed
         c.setPreferredSize(new Dimension(settings.windowedWidth, settings.windowedHeight));
         c.setMinimumSize(new Dimension(320, 180));
-        // Sin cursor personalizado por defecto
         c.setFocusable(true);
         return c;
     }
@@ -112,8 +160,8 @@ public class WindowManager {
     /**
      * Detecta resize del Canvas y notifica al ViewportManager + listeners.
      *
-     * ComponentListener.componentResized() es el hook correcto para esto.
-     * NO detectar resize en el game loop (sucio y tardío).
+     * ComponentListener.componentResized() se llama en el EDT — correcto.
+     * La lista usa CopyOnWriteArrayList para iteración segura.
      */
     private void setupResizeDetection() {
         canvas.addComponentListener(new ComponentAdapter() {
