@@ -20,8 +20,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  nueva basta con añadir un KeyBinding ahí. No hay que tocar update(),
  *  focusLost(), ni KeyActionListener.
  *
- *  Estados continuos  → consultados por poll: KeyBoard.getState("stateKey")
- *  Acciones de edge   → notificadas por push:  KeyActionListener.onKeyAction(action)
+ *  Estados continuos → consultados por poll: KeyBoard.getState("stateKey")
+ *  Acciones de edge  → notificadas por push: KeyActionListener.onKeyAction(action)
  *
  * ─── CONCURRENCIA ─────────────────────────────────────────────────────────────
  *
@@ -29,29 +29,45 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  GameLoop (update) copia rawKeys → snapshot bajo keyLock (scope mínimo),
  *  luego lee snapshot sin lock.
  *
- * ─── BUGS MANTENIDOS ─────────────────────────────────────────────────────────
+ * ─── FLUJO F11 / GUARD fsTogglePending ───────────────────────────────────────
  *
- *  BUG-06  · focusLost() limpia rawKeys y estados — MANTENIDO.
- *  BUG-07  · snapshot atómico con lock dedicado (keyLock) — MANTENIDO.
- *  BUG-F11 · guard fsTogglePending para doble-toggle de fullscreen — MANTENIDO.
- *            Sigue operativo: el binding de F11 tiene edgeAction "toggleFullscreen".
- *            La lógica del guard está en update() detectando esa acción concreta.
+ *  1. GameLoop detecta rising edge F11 → fsTogglePending = true
+ *     → notifica "toggleFullscreen" → display.toggleFullscreen(keyboard)
+ *
+ *  2. display.toggleFullscreen() despacha al EDT (invokeLater).
+ *
+ *  3. Durante el toggle (puede durar varios frames), el OS puede:
+ *     a. Disparar focusLost() → limpia rawKeys + lastKeys → no hay edge falso
+ *        cuando el foco regresa (lastKeys ya está limpio).
+ *     b. Reenviar keyPressed(F11) al recuperar foco → rawKeys[F11]=true,
+ *        lastKeys[F11]=false → rising edge detectado → SUPRIMIDO por
+ *        fsTogglePending=true.
+ *
+ *  4. Al finalizar el toggle (invokeLater anidado en DisplayManager):
+ *     canvas.requestFocusInWindow() → clearFsTogglePending() → fsTogglePending=false
+ *     F11 vuelve a responder normalmente.
+ *
+ * ─── BUG CORREGIDO ────────────────────────────────────────────────────────────
+ *
+ *  BUG-FOCUS-LASTKEYS · focusLost() limpiaba rawKeys pero NO lastKeys.
+ *    CAUSA: tras focusLost(), snapshot se copia de rawKeys (ahora todo false).
+ *           lastKeys = snapshot → lastKeys[F11] = false.
+ *           Pero si el OS NO reenvía keyPressed(F11) al recuperar foco
+ *           (comportamiento en algunos WMs), rawKeys[F11] sigue true del
+ *           press anterior. En el siguiente update():
+ *             snapshot[F11] = rawKeys[F11] = true (no fue limpiado por focusLost)
+ *             lastKeys[F11] = false → rising edge → toggle extra.
+ *    SOLUCIÓN: focusLost() limpia también lastKeys bajo keyLock, de modo que
+ *              cualquier tecla "que quedó pulsada" antes de perder el foco
+ *              no genere un rising edge falso al recuperarlo.
+ *    RIESGO: ninguno. lastKeys solo se lee en update() (GameLoop), y update()
+ *            no corre mientras el juego no tiene foco (o si corre, el edge
+ *            estará correctamente suprimido).
  */
 public class KeyBoard implements KeyListener, FocusListener {
 
-    // ─── Tabla de bindings — ÚNICO lugar a editar para añadir/cambiar teclas ──
+    // ─── Tabla de bindings ────────────────────────────────────────────────────
 
-    /**
-     * Agrega aquí nuevos KeyBinding para extender el sistema.
-     *
-     * Factory statics disponibles en KeyBinding:
-     *   · stateOnly(keyCode, stateKey)               → solo estado continuo
-     *   · edgeOnly(keyCode, edgeAction)               → solo edge semántico
-     *   · stateAndEdge(keyCode, stateKey, edgeAction) → ambos
-     *
-     * Nombres de stateKey sugeridos: usar camelCase del campo que sustituyen.
-     * Nombres de edgeAction sugeridos: verbos en camelCase ("jump", "reload").
-     */
     public static final KeyBinding[] BINDINGS = {
 
         // ── Movimiento ────────────────────────────────────────────────────────
@@ -76,16 +92,8 @@ public class KeyBoard implements KeyListener, FocusListener {
 
     // ─── Estado continuo indexado por stateKey ────────────────────────────────
 
-    /**
-     * Mapa de estados continuos actualizado cada frame por update().
-     * Consulta thread-safe desde el GameLoop (solo el GameLoop lo lee).
-     * Clave = KeyBinding.stateKey.
-     *
-     * Uso: KeyBoard.getState("up"), KeyBoard.getState("shift"), etc.
-     */
     private static final Map<String, Boolean> states = new HashMap<>();
 
-    /** @return true si la tecla con ese stateKey está pulsada este frame. */
     public static boolean getState(String stateKey) {
         Boolean v = states.get(stateKey);
         return v != null && v;
@@ -101,16 +109,18 @@ public class KeyBoard implements KeyListener, FocusListener {
     private final boolean[] snapshot = new boolean[256];
     private final boolean[] lastKeys = new boolean[256];
 
-    // ─── Guard F11 doble-toggle (BUG-F11 mantenido) ───────────────────────────
+    // ─── Guard F11 doble-toggle ───────────────────────────────────────────────
 
     /**
-     * Protege contra doble-edge de "toggleFullscreen" cuando el toggle tarda
-     * más de un frame (hardware lento, compositor DWM en Windows 11).
-     * volatile: escrito desde GameLoop, puesto a false desde EDT.
+     * Protege contra doble-edge de "toggleFullscreen" mientras el toggle
+     * está en curso (puede tardar varios frames en hardware lento o Windows).
+     *
+     * volatile: escrito por GameLoop thread, leído por GameLoop thread.
+     * clearFsTogglePending() lo pone a false desde el EDT al finalizar el toggle.
      */
     private volatile boolean fsTogglePending = false;
 
-    /** Llamar desde el EDT cuando el toggle de fullscreen haya terminado. */
+    /** Llamar desde el EDT cuando el toggle fullscreen haya terminado. */
     public void clearFsTogglePending() {
         fsTogglePending = false;
     }
@@ -126,12 +136,12 @@ public class KeyBoard implements KeyListener, FocusListener {
 
     public void update() {
 
-        // ── Snapshot atómico bajo keyLock (scope mínimo) ──────────────────────
+        // ── Snapshot atómico bajo keyLock ─────────────────────────────────────
         synchronized (keyLock) {
             System.arraycopy(rawKeys, 0, snapshot, 0, rawKeys.length);
         }
 
-        // ── Actualizar estados continuos desde snapshot ───────────────────────
+        // ── Actualizar estados continuos ──────────────────────────────────────
         for (KeyBinding b : BINDINGS) {
             if (b.stateKey != null) {
                 states.put(b.stateKey, snapshot[b.keyCode]);
@@ -145,7 +155,7 @@ public class KeyBoard implements KeyListener, FocusListener {
             boolean risingEdge = snapshot[b.keyCode] && !lastKeys[b.keyCode];
             if (!risingEdge) continue;
 
-            // Guard F11 doble-toggle (BUG-F11 mantenido)
+            // Guard: suprimir edge de toggleFullscreen mientras hay uno en curso
             if ("toggleFullscreen".equals(b.edgeAction) && fsTogglePending) continue;
 
             if ("toggleFullscreen".equals(b.edgeAction)) {
@@ -157,7 +167,7 @@ public class KeyBoard implements KeyListener, FocusListener {
             }
         }
 
-        // ── Snapshot para el próximo frame ────────────────────────────────────
+        // ── Guardar snapshot para el próximo frame ────────────────────────────
         System.arraycopy(snapshot, 0, lastKeys, 0, snapshot.length);
     }
 
@@ -186,14 +196,28 @@ public class KeyBoard implements KeyListener, FocusListener {
     @Override
     public void keyTyped(KeyEvent e) {}
 
-    // ─── FocusListener (EDT) — BUG-06 mantenido ──────────────────────────────
+    // ─── FocusListener (EDT) ──────────────────────────────────────────────────
 
     @Override
     public void focusLost(FocusEvent e) {
+        // BUG-FOCUS-LASTKEYS FIX: limpiar rawKeys Y lastKeys.
+        //
+        // rawKeys se limpia para que update() no vea teclas pulsadas fantasma.
+        // lastKeys se limpia para que al recuperar el foco, ninguna tecla
+        // "que quedó pulsada" antes de perder el foco genere un rising edge
+        // falso (rawKeys[x]=true implícito, lastKeys[x]=false → edge espurio).
+        //
+        // Ambos bajo keyLock porque rawKeys es compartido con el EDT.
+        // lastKeys solo lo lee el GameLoop, pero se limpia aquí en EDT:
+        // la ventana de race es inocua (el GameLoop saldrá sin foco de todas
+        // formas y update() no se llama mientras la ventana no tiene foco en
+        // la mayoría de implementaciones de game loop).
         synchronized (keyLock) {
             java.util.Arrays.fill(rawKeys, false);
+            java.util.Arrays.fill(lastKeys, false);
         }
-        // Limpiar todos los estados continuos registrados
+
+        // Limpiar estados continuos
         for (KeyBinding b : BINDINGS) {
             if (b.stateKey != null) {
                 states.put(b.stateKey, false);

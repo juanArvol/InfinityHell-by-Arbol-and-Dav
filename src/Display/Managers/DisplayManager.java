@@ -21,82 +21,48 @@ import java.util.logging.Logger;
  *    ├── ScalingManager       — presentación del framebuffer virtual
  *    └── RenderSurfaceManager — framebuffer virtual + BufferStrategy
  *
- * USO TÍPICO EN EL GAME LOOP:
+ * ─── FLUJO CORRECTO DE F11 / toggleFullscreen ────────────────────────────────
  *
- *   // Inicio de frame:
- *   Graphics2D virtualG = displayManager.beginFrame();
- *   if (virtualG == null) return; // frame saltado (contentsLost recovery)
+ *  GameLoop thread
+ *    → keyboard.update()
+ *    → edge "toggleFullscreen" detectado → fsTogglePending = true
+ *    → KeyActionListener.onKeyAction("toggleFullscreen")
+ *    → display.toggleFullscreen(keyboard)          ← este método
+ *         invokeLater #1: toggleInProgress = true
+ *                         fullscreenManager.toggle(...)
+ *                         invokeLater #2: canvas.requestFocusInWindow()
+ *                                         keyboard.clearFsTogglePending()
+ *                                         toggleInProgress = false
  *
- *   // Render del juego completo en coordenadas virtuales:
- *   gameState.draw(virtualG, displayManager.getViewport());
+ *  Durante invokeLater #1 y #2, el Canvas recibe eventos componentResized
+ *  del WM.  WindowManager.componentResized() comprueba toggleInProgress
+ *  antes de llamar bsManager.recreate().  Si está en progreso, el recreate
+ *  se encola para el invokeLater #2 (post-toggle).
  *
- *   // Presentar a pantalla:
- *   displayManager.endFrame(virtualG);
+ *  Así se elimina el loop:
+ *    resize durante toggle → recreate suprimido → BS sigue válido → no crash.
  *
- * REGLA: el juego NO conoce la resolución real del monitor.
- *        Solo usa VIRTUAL_WIDTH / VIRTUAL_HEIGHT y ViewportInfo para input.
+ *  El recreate final (post-toggle, en invokeLater #2) garantiza que el BS
+ *  queda correcto para el nuevo tamaño de canvas.
  *
  * ─── BUGS CORREGIDOS ──────────────────────────────────────────────────────────
  *
- * BUG-INIT-FIRMA · init() no aceptaba FocusListener (5º parámetro)
- *   CAUSA: GameOrquester llama display.init(keyboard, mouse, mouse, mouse, keyboard)
- *          con 5 argumentos. El método original solo tenía 4 parámetros,
- *          por lo que el código no compilaba o el FocusListener de teclado
- *          (necesario para limpiar teclas al perder foco) nunca se registraba.
- *   SOLUCIÓN: añadir overload init() con FocusListener como 5º parámetro opcional.
- *             El overload de 4 params delega al de 5 con null, manteniendo
- *             compatibilidad total con código existente.
- *   RIESGO: ninguno. Cambio aditivo.
+ * BUG-LOOP-F11 · componentResized() durante toggle llama bsManager.recreate()
+ *   repetidamente, corrompiendo el BufferStrategy y colapsando el juego.
+ *   SOLUCIÓN: flag volatile toggleInProgress; resize listener lo consulta.
+ *   El recreate se hace UNA vez al finalizar el toggle, en el EDT.
  *
- * BUG-EDT-FULLSCREEN · toggleFullscreen() llamado desde GameLoop thread sin EDT
- *   CAUSA: el flujo es GameLoop thread → keyboard.update() → KeyActionListener
- *          → onToggleFullscreen() → display.toggleFullscreen() → fullscreenManager
- *          que llama setVisible/setUndecorated/setFullScreenWindow. Estas son
- *          operaciones de Swing/AWT que DEBEN ejecutarse en el EDT.
- *          Llamarlas desde el GameLoop thread puede causar:
- *            · DeadLock si el EDT está esperando un lock que el GameLoop tiene
- *            · Corrupcón del estado de la ventana
- *            · Crashes al modificar el peer nativo desde el thread equivocado
- *            · Pantalla negra al salir de fullscreen
- *   SOLUCIÓN: toggleFullscreen() envuelve la operación en SwingUtilities.invokeLater()
- *             para despacharla al EDT. La operación es asíncrona (se ejecuta en el
- *             siguiente ciclo del EDT), pero esto es correcto: el user no nota el
- *             delay de 1 frame, y las operaciones de ventana son inherentemente
- *             asíncronas de todas formas.
- *   RIESGO: mínimo. invokeLater() es el mecanismo estándar y seguro para esto.
- *           Si toggleFullscreen() ya se llama desde el EDT (caso raro),
- *           invokeLater() lo encola igualmente — no causa doble ejecución.
- *   NOTA: isFullscreen() puede devolver el estado "anterior" durante 1 frame
- *         mientras el EDT procesa el toggle. Esto es aceptable y es el
- *         comportamiento correcto para UI asíncrona.
+ * BUG-EDT-FULLSCREEN · operaciones Swing llamadas fuera del EDT.
+ *   SOLUCIÓN: toggleFullscreen() usa invokeLater().
  *
- * BUG-FOCUS-LOST-AFTER-TOGGLE · el Canvas pierde el foco tras el toggle y no se recupera
- *   CAUSA: FullscreenManager llama setVisible(false) durante el toggle, disparando
- *          focusLost() en KeyBoard que limpia rawKeys. Al volver a setVisible(true),
- *          nadie llama requestFocusInWindow() → el teclado queda muerto.
- *   SOLUCIÓN: toggleFullscreen(keyboard) recibe el KeyBoard y tras completar el toggle
- *             llama requestFocusInWindow() en un invokeLater() anidado (para que el WM
- *             haya terminado de procesar setVisible antes de pedir el foco), y luego
- *             llama keyboard.clearFsTogglePending() para liberar el guard anti-doble-toggle.
+ * BUG-FOCUS-LOST-AFTER-TOGGLE · Canvas pierde foco tras toggle.
+ *   SOLUCIÓN: requestFocusInWindow() en invokeLater anidado post-toggle.
  *
- * BUG-F11-DOBLE-TOGGLE · F11 puede dispararse dos veces durante el toggle
- *   CAUSA: durante el toggle, setVisible(false) → focusLost() limpia rawKeys[F11].
- *          En hardware lento (o Windows con DWM), update() corre varios frames durante
- *          el toggle. En esos frames rawKeys[F11]=false → lastKeys[F11] se pone false.
- *          Cuando el foco regresa, el OS re-envía keyPressed(F11) si la tecla sigue
- *          pulsada → rawKeys[F11]=true → edge detectado → SEGUNDO onToggleFullscreen().
- *   SOLUCIÓN: flag fsTogglePending en KeyBoard, activado al detectar el primer edge
- *             de F11 y desactivado desde el EDT cuando el toggle + requestFocus terminan.
- *             Mientras está activo, el edge de F11 se suprime.
+ * BUG-F11-DOBLE-TOGGLE · F11 puede dispararse dos veces durante el toggle.
+ *   SOLUCIÓN: fsTogglePending en KeyBoard + clearFsTogglePending() desde EDT.
  *
- * BUG-VIEWPORT-INICIAL · getCanvas().getWidth() puede ser 0 justo tras show()
- *   CAUSA: frame.setVisible(true) es asíncrono en Swing. El Canvas puede no
- *          tener sus dimensiones finales en el mismo tick. Si viewportManager
- *          .onResize(0, 0) se llama, el viewport queda en estado inválido.
- *   SOLUCIÓN: validar que w > 0 && h > 0 antes de llamar onResize(). Si las
- *             dimensiones aún no están disponibles, el ComponentListener las
- *             capturará cuando el Canvas termine de dimensionarse.
- *   RIESGO: ninguno. La validación es defensiva y no cambia el flujo normal.
+ * BUG-VIEWPORT-INICIAL · getCanvas().getWidth() puede ser 0 justo tras show().
+ *   SOLUCIÓN: validar w > 0 && h > 0 antes de llamar onResize().
  */
 public class DisplayManager {
 
@@ -112,6 +78,16 @@ public class DisplayManager {
     private final BufferStrategyManager bsManager;
 
     // ─── Estado ───────────────────────────────────────────────────────────────
+    /**
+     * BUG-LOOP-F11 FIX: true mientras un toggle fullscreen está en curso.
+     * volatile: escrito y leído desde el EDT; leído desde el ComponentListener
+     * (también EDT), pero declarado volatile por claridad de intención.
+     *
+     * Mientras está en true, el resize listener NO llama bsManager.recreate().
+     * El recreate se hace una sola vez al final del toggle.
+     */
+    private volatile boolean toggleInProgress = false;
+
     /** Graphics2D del framebuffer virtual, válido entre beginFrame/endFrame. */
     private Graphics2D currentVirtualG = null;
 
@@ -132,11 +108,20 @@ public class DisplayManager {
         scalingManager    = new ScalingManager(settings);
         bsManager         = new BufferStrategyManager(windowManager.getCanvas());
 
-        // 4. Registrar resize listener del bsManager (recrear BS al resize)
-        //    componentResized() se llama en EDT → bsManager.recreate() también
-        //    en EDT → canvas.createBufferStrategy() es correcto en EDT.
+        // 4. BUG-LOOP-F11 FIX:
+        //    El resize listener recreará el BS solo cuando NO haya un toggle
+        //    en progreso. Durante el toggle, el WM puede disparar 2-4 eventos
+        //    componentResized (setVisible false/true, setFullScreenWindow,
+        //    setSize windowed). Recrear el BS en cada uno de esos eventos
+        //    deja el BS en null repetidamente, el GameLoop salta frames,
+        //    y la ventana colapsa en un bucle de resize → crash.
+        //
+        //    Con este guard, el recreate ocurre UNA vez al finalizar el toggle
+        //    (ver toggleFullscreen → invokeLater anidado).
         windowManager.addResizeListener((rw, rh, vp) -> {
-            bsManager.recreate();
+            if (!toggleInProgress) {
+                bsManager.recreate();
+            }
         });
 
         LOG.info("DisplayManager inicializado. Virtual: " +
@@ -156,16 +141,8 @@ public class DisplayManager {
     }
 
     /**
-     * BUG-INIT-FIRMA FIX: overload completo con FocusListener opcional.
-     *
      * Inicializa la ventana y el BufferStrategy.
      * Llamar ANTES de iniciar el game loop.
-     *
-     * @param keyListener    listener de teclado (puede ser null)
-     * @param mouseListener  listener de mouse (puede ser null)
-     * @param motionListener listener de movimiento mouse (puede ser null)
-     * @param wheelListener  listener de rueda mouse (puede ser null)
-     * @param focusListener  listener de foco (puede ser null; normalmente KeyBoard)
      */
     public void init(java.awt.event.KeyListener keyListener,
                      java.awt.event.MouseListener mouseListener,
@@ -182,14 +159,20 @@ public class DisplayManager {
         bsManager.init();
 
         // Arrancar en fullscreen si settings lo pide.
-        // init() se llama desde el hilo principal (pre-GameLoop), antes de que
-        // el EDT tome control exclusivo, así que esta llamada directa es segura.
+        // invokeAndWait: el hilo main espera a que la ventana esté lista.
         if (settings.startFullscreen) {
-            fullscreenManager.enterFullscreen(windowManager.getFrame());
+            try {
+                javax.swing.SwingUtilities.invokeAndWait(() ->
+                    fullscreenManager.enterFullscreen(windowManager.getFrame())
+                );
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                LOG.warning("Error al entrar en fullscreen inicial: " + e.getCause());
+            }
         }
 
-        // BUG-VIEWPORT-INICIAL FIX: solo llamar onResize si las dimensiones
-        // ya están disponibles. El ComponentListener las capturará de todas formas.
+        // BUG-VIEWPORT-INICIAL FIX
         Canvas c = windowManager.getCanvas();
         int w = c.getWidth();
         int h = c.getHeight();
@@ -202,83 +185,87 @@ public class DisplayManager {
 
     // ─── Frame pipeline ───────────────────────────────────────────────────────
 
-    /**
-     * Inicia un frame de render.
-     *
-     * @return Graphics2D del framebuffer virtual en coordenadas virtuales,
-     *         o null si hay que saltar este frame (recovery de contentsLost).
-     *
-     * Si devuelve no-null, SIEMPRE llamar endFrame() después.
-     */
     public Graphics2D beginFrame() {
         currentVirtualG = surfaceManager.beginFrame();
         return currentVirtualG;
     }
 
-    /**
-     * Termina el frame: escala el framebuffer virtual a pantalla y presenta.
-     *
-     * @param virtualG el Graphics2D devuelto por beginFrame() (será disposed)
-     */
     public void endFrame(Graphics2D virtualG) {
-        // Cerrar el Graphics del framebuffer virtual
         surfaceManager.endFrame(virtualG);
         currentVirtualG = null;
 
-        // Adquirir Graphics2D del canvas real (BufferStrategy)
         Graphics2D screenG = bsManager.acquireGraphics();
-        if (screenG == null) return; // Frame saltado, recovery en progreso
+        if (screenG == null) return;
 
         try {
             scalingManager.present(screenG, surfaceManager.getFramebuffer(),
                                    viewportManager.getViewport());
         } finally {
-            bsManager.present(screenG); // dispose + show()
+            bsManager.present(screenG);
         }
     }
 
     // ─── Fullscreen toggle ────────────────────────────────────────────────────
 
     /**
-     * Alterna fullscreen ↔ windowed de forma segura.
+     * Alterna fullscreen ↔ windowed de forma segura desde cualquier thread.
      *
-     * BUG-EDT-FULLSCREEN FIX: la operación se despacha al EDT via invokeLater().
-     * BUG-FOCUS-LOST-AFTER-TOGGLE FIX: se pide el foco del Canvas al terminar.
-     * BUG-F11-DOBLE-TOGGLE FIX: keyboard.clearFsTogglePending() al terminar libera
-     *   el guard que suprime edges duplicados de F11 durante el toggle.
+     * FLUJO:
+     *   invokeLater #1 (EDT):
+     *     · toggleInProgress = true       → suprime recreates del resize listener
+     *     · fullscreenManager.toggle()    → opera Swing/AWT en el EDT (correcto)
+     *     invokeLater #2 (EDT, anidado):  → garantiza que setVisible(true) terminó
+     *       · canvas.requestFocusInWindow() → restaurar foco
+     *       · keyboard.clearFsTogglePending() → liberar guard anti-doble-edge
+     *       · bsManager.recreate()          → UN recreate limpio post-toggle
+     *       · toggleInProgress = false      → resize listener vuelve a operar
      *
      * @param keyboard el KeyBoard del juego (para restaurar foco y limpiar guard).
      */
     public void toggleFullscreen(KeyBoard keyboard) {
         javax.swing.SwingUtilities.invokeLater(() -> {
+            // BUG-LOOP-F11 FIX: bloquear recreates durante el toggle
+            toggleInProgress = true;
+
             fullscreenManager.toggle(
                 windowManager.getFrame(),
                 settings.windowedWidth,
                 settings.windowedHeight
             );
-            // BUG-FOCUS-LOST-AFTER-TOGGLE FIX + BUG-F11-DOBLE-TOGGLE FIX:
-            // pedir foco en el siguiente ciclo EDT (tras setVisible(true)),
-            // y luego liberar el guard para que F11 vuelva a responder.
+
+            // Anidado para ejecutarse DESPUÉS de que setVisible(true) haya
+            // devuelto el control al WM y el canvas tenga su tamaño final.
             javax.swing.SwingUtilities.invokeLater(() -> {
                 windowManager.getCanvas().requestFocusInWindow();
                 keyboard.clearFsTogglePending();
+
+                // UN recreate limpio con el canvas ya en su tamaño final
+                bsManager.recreate();
+
+                // BUG-LOOP-F11 FIX: habilitar de nuevo el resize listener
+                toggleInProgress = false;
             });
         });
     }
 
     /**
-     * Overload de compatibilidad sin referencia a KeyBoard.
-     * Úsalo solo si no tienes acceso al KeyBoard desde este punto.
-     * NO corrige BUG-F11-DOBLE-TOGGLE ni BUG-FOCUS-LOST-AFTER-TOGGLE.
+     * Overload de compatibilidad sin KeyBoard.
+     * No corrige BUG-F11-DOBLE-TOGGLE ni BUG-FOCUS-LOST-AFTER-TOGGLE.
+     * Solo úsalo si realmente no tienes acceso al KeyBoard.
      */
     public void toggleFullscreen() {
-        javax.swing.SwingUtilities.invokeLater(() ->
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            toggleInProgress = true;
             fullscreenManager.toggle(
                 windowManager.getFrame(),
                 settings.windowedWidth,
                 settings.windowedHeight
-            )
-        );
+            );
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                bsManager.recreate();
+                toggleInProgress = false;
+            });
+        });
     }
 
     public boolean isFullscreen() {
@@ -287,33 +274,20 @@ public class DisplayManager {
 
     // ─── Acceso a datos del viewport ─────────────────────────────────────────
 
-    /**
-     * Viewport actual. Usar para:
-     *  - Transformar coordenadas de mouse a coordenadas virtuales
-     *  - Saber los límites virtuales visibles
-     *
-     * Referencia inmutable — seguro cachear por frame.
-     */
     public ViewportInfo getViewport() {
         return viewportManager.getViewport();
     }
 
-    /** Ancho virtual fijo (constante de settings). */
     public int getVirtualWidth() {
         return settings.virtualWidth;
     }
 
-    /** Alto virtual fijo (constante de settings). */
     public int getVirtualHeight() {
         return settings.virtualHeight;
     }
 
     // ─── Registro de listeners externos ──────────────────────────────────────
 
-    /**
-     * Registra un listener para cuando el canvas cambia de tamaño.
-     * Útil para que Camera, UIManager y otros sistemas se adapten.
-     */
     public void addResizeListener(ResizeListener l) {
         windowManager.addResizeListener(l);
     }

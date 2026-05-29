@@ -60,8 +60,6 @@ public class GameOrquester {
         });
 
         // ── 5. Inicializar display ────────────────────────────────────────────
-        //
-        // BUG-06 FIX: keyboard se pasa también como FocusListener (5º parámetro).
         display.init(keyboard, mouse, mouse, mouse, keyboard);
 
         // Viewport inicial
@@ -74,10 +72,15 @@ public class GameOrquester {
         // KeyActionListener ni KeyBoard.
         keyboard.addKeyActionListener((KeyActionListener) action -> {
             switch (action) {
-                case "toggleFullscreen" -> {
-                    display.toggleFullscreen();
-                    keyboard.clearFsTogglePending();
-                }
+                // toggleFullscreen(keyboard): despacha al EDT vía invokeLater() y,
+                // una vez que el toggle + requestFocus terminan, llama
+                // keyboard.clearFsTogglePending() desde el EDT.
+                // NO llamar clearFsTogglePending() aquí: hacerlo desde el GameLoop
+                // thread libera el guard antes de que el toggle haya terminado,
+                // permitiendo que F11 dispare un segundo toggle y entre en loop
+                // infinito de resize → crash.
+                case "toggleFullscreen" ->
+                    display.toggleFullscreen(keyboard);
                 case "toggleFps" ->
                     GameSettings.getInstance().toggleFps();
                 // "pause", "jump", "reload", etc. son gestionados por
