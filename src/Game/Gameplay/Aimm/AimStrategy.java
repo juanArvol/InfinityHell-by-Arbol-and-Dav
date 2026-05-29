@@ -1,41 +1,50 @@
 package Game.Gameplay.Aimm;
 
-import Entradas.KeyBoard;
 import Game.Player.Player;
 
+/**
+ * Estrategia de apuntado.
+ *
+ * ─── REFACTOR (Entradas v2) ───────────────────────────────────────────────────
+ *
+ *  · Eliminados los campos de estado de teclado (up/down/left/right/c) y la
+ *    lectura directa de KeyBoard.* dentro de aim(). Esos campos eran un segundo
+ *    snapshot redundante del input — el primero ya ocurre en KeyBoard.update().
+ *
+ *  · aim() ahora simplemente delega en calculateDirection(player), que es el
+ *    método que cada estrategia concreta debe implementar. Cualquier consulta
+ *    de input se hace allí via KeyBoard.getState("stateKey").
+ *
+ *  · dir y AorA se mantienen como estado interno pero sus setters/getters se
+ *    limpian (naming corregido: AorA → aimingUpOrDown).
+ */
 public abstract class AimStrategy {
 
-    protected boolean up;
-    protected boolean down;
-    protected boolean left;
-    protected boolean right;
-    protected boolean c;
-    private boolean dir;
-    private boolean AorA;
+    private boolean dir;           // true = mirando derecha
+    private boolean aimingUpOrDown;
 
+    /** Delegación directa a la estrategia concreta. */
     public AimDirection aim(Player player) {
-        // Leer teclas aquí y guardarlas como estado solo durante este frame
-        this.up = KeyBoard.up;
-        this.down = KeyBoard.down;
-        this.left = KeyBoard.left;
-        this.right = KeyBoard.right;
-        this.c = KeyBoard.c;
-
-        // Delegamos la lógica a cada estrategia concreta
         return calculateDirection(player);
     }
-    protected void setDir(boolean dir){
-        this.dir=dir;
+
+    protected void setDir(boolean facingRight) {
+        this.dir = facingRight;
     }
-    public boolean getDir(){
+    public boolean getDir() {
         return dir;
     }
-    protected void setAorA(boolean AorA){
-        this.AorA=AorA;
+
+    protected void setAimingUpOrDown(boolean value) {
+        this.aimingUpOrDown = value;
     }
-    public boolean getAorA(){
-        return AorA;
+    public boolean getAimingUpOrDown() {
+        return aimingUpOrDown;
     }
-    // Método que cada estrategia concreta debe implementar
+
+    /**
+     * Cada estrategia concreta calcula la dirección de apuntado en este método.
+     * Para leer input usa KeyBoard.getState("stateKey").
+     */
     protected abstract AimDirection calculateDirection(Player player);
 }

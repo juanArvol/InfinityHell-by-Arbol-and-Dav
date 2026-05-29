@@ -31,11 +31,7 @@ public class BulletLife {
     public void reset(int count){
         lifeTime = lifeTime + count;
     }
-    /**
-     * NUEVO: cancela una muerte solicitada por un inner behavior.
-     * Usado por PiercingModifier para mantener la bala viva tras impactar.
-     * Solo tiene efecto si fue seteado muerto SIN que el lifetime expire.
-     */
+    
     public void revive() {
         if (lifeTime > 0) {
             dead = false;

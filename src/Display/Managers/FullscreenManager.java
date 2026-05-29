@@ -56,7 +56,10 @@ public class FullscreenManager {
     private static final Logger LOG = Logger.getLogger(FullscreenManager.class.getName());
 
     private final GraphicsDevice device;
-    private boolean fullscreen;
+    // BUG-VISIBILITY-FS FIX: volatile garantiza que el GameLoop thread vea el valor
+    // actualizado por el EDT. Sin volatile, el JIT puede cachear el valor en un
+    // registro de CPU y el GameLoop leer el estado obsoleto indefinidamente.
+    private volatile boolean fullscreen;
 
     /**
      * @param monitorIndex índice del monitor (0 = principal)

@@ -3,69 +3,49 @@ package Entradas.Listeners;
 /**
  * Listener de acciones de ratón del juego.
  *
- * Misma filosofía que KeyActionListener: eventos semánticos, desacoplados
- * del AWT subyacente. Los suscriptores solo implementan lo que necesitan.
+ * ─── DISEÑO ───────────────────────────────────────────────────────────────────
  *
- * DISEÑO:
- *  - Eventos de click son edge-triggered (se disparan una vez por press).
- *  - Los estados continuos (leftPressed, rightPressed, mouseX/Y) siguen
- *    disponibles como consulta directa en MouseInput para sistemas que los
- *    necesiten cada frame (p.ej. la dirección del aim del player).
- *  - Las coordenadas de mouse se entregan ya transformadas a espacio VIRTUAL
- *    mediante ViewportInfo, para que los suscriptores no necesiten conocer
- *    la resolución real del monitor.
+ *  · onMouseAction(String action, float vx, float vy) cubre press y release de
+ *    cualquier botón. El action string es el declarado en MouseButton.pressAction
+ *    o MouseButton.releaseAction. Añadir un botón nuevo no toca esta interfaz.
  *
- * CUÁNDO USAR LISTENER vs CONSULTA DIRECTA:
- *  - Listener   → clicks puntuales: disparar (si es edge), interactuar, menú.
- *  - Consulta   → estado continuo: aim direction, rightPressed para zoom/apuntar.
+ *  · onScroll y onMouseMoved mantienen firmas propias porque su semántica es
+ *    estructuralmente distinta (delta numérico, coordenadas sin acción asociada).
+ *
+ *  · Las coordenadas se entregan ya en espacio virtual (via ViewportInfo),
+ *    para que los suscriptores no necesiten conocer la resolución del monitor.
+ *
+ * ─── CUÁNDO USAR LISTENER vs CONSULTA DIRECTA ────────────────────────────────
+ *
+ *  Listener   → clicks puntuales: disparar (edge), interactuar, menú.
+ *  Consulta   → estado continuo: aim direction, isPressed cada frame.
  */
 public interface MouseActionListener {
 
-    // ─── Botón izquierdo ──────────────────────────────────────────────────────
-
     /**
-     * Botón izquierdo pulsado (edge).
+     * Se invoca en el press o release de un botón que tiene action declarada.
      *
-     * @param virtualX coordenada X en espacio virtual del juego
-     * @param virtualY coordenada Y en espacio virtual del juego
+     * @param action   identificador semántico, p.ej. "leftClick", "leftRelease",
+     *                 "rightClick". Definido en MouseButton.pressAction / releaseAction.
+     * @param virtualX coordenada X en espacio virtual del juego.
+     * @param virtualY coordenada Y en espacio virtual del juego.
      */
-    default void onLeftClick(float virtualX, float virtualY) {}
-
-    /** Botón izquierdo liberado. */
-    default void onLeftRelease(float virtualX, float virtualY) {}
-
-    // ─── Botón derecho ────────────────────────────────────────────────────────
-
-    /**
-     * Botón derecho pulsado (edge) — generalmente "apuntar" / aim.
-     *
-     * @param virtualX coordenada X en espacio virtual del juego
-     * @param virtualY coordenada Y en espacio virtual del juego
-     */
-    default void onRightClick(float virtualX, float virtualY) {}
-
-    /** Botón derecho liberado. */
-    default void onRightRelease(float virtualX, float virtualY) {}
-
-    // ─── Rueda ────────────────────────────────────────────────────────────────
+    default void onMouseAction(String action, float virtualX, float virtualY) {}
 
     /**
      * Rueda del ratón girada.
      *
-     * @param delta positivo = scroll hacia abajo / zoom out,
-     *              negativo = scroll hacia arriba / zoom in
-     *              (convención estándar AWT MouseWheelEvent)
+     * @param delta positivo = scroll abajo / zoom out,
+     *              negativo = scroll arriba / zoom in
+     *              (convención estándar AWT MouseWheelEvent).
      */
     default void onScroll(int delta) {}
 
-    // ─── Movimiento ───────────────────────────────────────────────────────────
-
     /**
      * El ratón se movió (incluye drag).
-     * Llamado cada frame en que la posición cambió.
      *
-     * @param virtualX nueva X en espacio virtual
-     * @param virtualY nueva Y en espacio virtual
+     * @param virtualX nueva X en espacio virtual.
+     * @param virtualY nueva Y en espacio virtual.
      */
     default void onMouseMoved(float virtualX, float virtualY) {}
 }

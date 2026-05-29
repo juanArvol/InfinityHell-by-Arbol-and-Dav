@@ -3,6 +3,7 @@ package Display.Managers;
 import Display.ResizeListener;
 import Display.Settings.DisplaySettings;
 import Display.ViewportInfo;
+import Entradas.KeyBoard;
 
 import java.awt.*;
 import java.awt.event.FocusListener;
@@ -68,6 +69,25 @@ import java.util.logging.Logger;
  *   NOTA: isFullscreen() puede devolver el estado "anterior" durante 1 frame
  *         mientras el EDT procesa el toggle. Esto es aceptable y es el
  *         comportamiento correcto para UI asíncrona.
+ *
+ * BUG-FOCUS-LOST-AFTER-TOGGLE · el Canvas pierde el foco tras el toggle y no se recupera
+ *   CAUSA: FullscreenManager llama setVisible(false) durante el toggle, disparando
+ *          focusLost() en KeyBoard que limpia rawKeys. Al volver a setVisible(true),
+ *          nadie llama requestFocusInWindow() → el teclado queda muerto.
+ *   SOLUCIÓN: toggleFullscreen(keyboard) recibe el KeyBoard y tras completar el toggle
+ *             llama requestFocusInWindow() en un invokeLater() anidado (para que el WM
+ *             haya terminado de procesar setVisible antes de pedir el foco), y luego
+ *             llama keyboard.clearFsTogglePending() para liberar el guard anti-doble-toggle.
+ *
+ * BUG-F11-DOBLE-TOGGLE · F11 puede dispararse dos veces durante el toggle
+ *   CAUSA: durante el toggle, setVisible(false) → focusLost() limpia rawKeys[F11].
+ *          En hardware lento (o Windows con DWM), update() corre varios frames durante
+ *          el toggle. En esos frames rawKeys[F11]=false → lastKeys[F11] se pone false.
+ *          Cuando el foco regresa, el OS re-envía keyPressed(F11) si la tecla sigue
+ *          pulsada → rawKeys[F11]=true → edge detectado → SEGUNDO onToggleFullscreen().
+ *   SOLUCIÓN: flag fsTogglePending en KeyBoard, activado al detectar el primer edge
+ *             de F11 y desactivado desde el EDT cuando el toggle + requestFocus terminan.
+ *             Mientras está activo, el edge de F11 se suprime.
  *
  * BUG-VIEWPORT-INICIAL · getCanvas().getWidth() puede ser 0 justo tras show()
  *   CAUSA: frame.setVisible(true) es asíncrono en Swing. El Canvas puede no
@@ -223,22 +243,33 @@ public class DisplayManager {
      * Alterna fullscreen ↔ windowed de forma segura.
      *
      * BUG-EDT-FULLSCREEN FIX: la operación se despacha al EDT via invokeLater().
+     * BUG-FOCUS-LOST-AFTER-TOGGLE FIX: se pide el foco del Canvas al terminar.
+     * BUG-F11-DOBLE-TOGGLE FIX: keyboard.clearFsTogglePending() al terminar libera
+     *   el guard que suprime edges duplicados de F11 durante el toggle.
      *
-     * POR QUÉ ES NECESARIO:
-     *   toggleFullscreen() es llamado desde el GameLoop thread (via KeyActionListener).
-     *   Las operaciones de ventana (setVisible, setUndecorated, setFullScreenWindow)
-     *   son operaciones Swing/AWT que deben ejecutarse en el EDT. Llamarlas desde
-     *   el GameLoop thread puede causar deadlocks, corrupción de estado o crashes.
-     *
-     * POR QUÉ invokeLater() ES SEGURO:
-     *   - invokeLater() encola la operación en el EDT y retorna inmediatamente.
-     *   - El GameLoop continúa sin bloquearse.
-     *   - El EDT ejecuta el toggle en su propio ciclo (1-2ms después).
-     *   - El ComponentListener del Canvas notificará onResize() automáticamente
-     *     tras el toggle, recalculando viewport y recreando BufferStrategy.
-     *
-     * NOTA: isFullscreen() puede devolver el estado anterior durante ≤1 frame.
-     *       Esto es correcto e inocuo.
+     * @param keyboard el KeyBoard del juego (para restaurar foco y limpiar guard).
+     */
+    public void toggleFullscreen(KeyBoard keyboard) {
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            fullscreenManager.toggle(
+                windowManager.getFrame(),
+                settings.windowedWidth,
+                settings.windowedHeight
+            );
+            // BUG-FOCUS-LOST-AFTER-TOGGLE FIX + BUG-F11-DOBLE-TOGGLE FIX:
+            // pedir foco en el siguiente ciclo EDT (tras setVisible(true)),
+            // y luego liberar el guard para que F11 vuelva a responder.
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                windowManager.getCanvas().requestFocusInWindow();
+                keyboard.clearFsTogglePending();
+            });
+        });
+    }
+
+    /**
+     * Overload de compatibilidad sin referencia a KeyBoard.
+     * Úsalo solo si no tienes acceso al KeyBoard desde este punto.
+     * NO corrige BUG-F11-DOBLE-TOGGLE ni BUG-FOCUS-LOST-AFTER-TOGGLE.
      */
     public void toggleFullscreen() {
         javax.swing.SwingUtilities.invokeLater(() ->

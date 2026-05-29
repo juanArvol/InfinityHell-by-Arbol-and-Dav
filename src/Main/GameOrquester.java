@@ -4,6 +4,7 @@ import Display.Managers.DisplayManager;
 import Display.Settings.DisplaySettings;
 import Display.Settings.ScalingMode;
 import Entradas.KeyBoard;
+import Entradas.Listeners.KeyActionListener;
 import Entradas.MouseInput;
 import Game.Settings.GameSettings;
 import Graficos.Assets;
@@ -12,28 +13,17 @@ import States.GameState;
 /**
  * Orquestador del juego.
  *
- * ─── CAMBIOS ──────────────────────────────────────────────────────────────────
+ * ─── CAMBIOS (refactor Entradas v2) ───────────────────────────────────────────
  *
- * REGISTRO DE KeyBoard COMO FocusListener (BUG-06)
- *   KeyBoard ahora implementa FocusListener además de KeyListener.
- *   Para que el listener de foco funcione (limpiar teclas al perder foco),
- *   hay que registrar keyboard también como FocusListener en el Canvas.
+ *  · KeyActionListener ya NO tiene métodos por tecla (onToggleFullscreen,
+ *    onToggleFps…). Ahora expone un único punto de entrada:
  *
- *   ANTES: display.init(keyboard, mouse, mouse, mouse)
- *   AHORA: display.init(keyboard, mouse, mouse, mouse, keyboard)
+ *        onKeyAction(String action)
  *
- * TOGGLE FPS COUNTER (NUEVO)
- *   Se registra un KeyActionListener adicional para la tecla F3 (o la que
- *   implementes en KeyActionListener.onToggleFps()) que alterna el contador
- *   de FPS en pantalla. El contador se controla desde GameSettings, por lo que
- *   puede activarse/desactivarse en cualquier momento sin tocar el GameLoop.
+ *    donde "action" es el string declarado en KeyBinding.edgeAction.
  *
- *   Si KeyActionListener no tiene aún el método onToggleFps(), añádelo
- *   como default method vacío para no romper implementaciones existentes:
- *
- *       default void onToggleFps() {}
- *
- *   Y en KeyBoard.update() dispara onToggleFps() cuando se pulsa F3.
+ *  · BUG-06 FIX: keyboard se pasa también como FocusListener (5º parámetro
+ *    de display.init) para que focusLost() limpie las teclas al perder foco.
  */
 public class GameOrquester {
 
@@ -72,31 +62,26 @@ public class GameOrquester {
         // ── 5. Inicializar display ────────────────────────────────────────────
         //
         // BUG-06 FIX: keyboard se pasa también como FocusListener (5º parámetro).
-        display.init(keyboard, mouse, mouse, mouse);
+        display.init(keyboard, mouse, mouse, mouse, keyboard);
 
         // Viewport inicial
         mouse.setViewport(display.getViewport());
 
         // ── 6. Listeners de teclado ───────────────────────────────────────────
-        keyboard.addKeyActionListener(new Entradas.Listeners.KeyActionListener() {
-
-            @Override
-            public void onToggleFullscreen() {
-                display.toggleFullscreen();
-            }
-
-            /**
-             * Toggle FPS counter (F3).
-             * Activa o desactiva el contador de FPS en pantalla.
-             * El estado se guarda en GameSettings; el GameLoop lo lee cada frame.
-             *
-             * Para que esto funcione debes:
-             *   1. Añadir `default void onToggleFps() {}` en KeyActionListener.java
-             *   2. Llamar listener.onToggleFps() en KeyBoard.update() cuando se pulse F3.
-             */
-            @Override
-            public void onToggleFps() {
-                GameSettings.getInstance().toggleFps();
+        //
+        // onKeyAction recibe el edgeAction declarado en KeyBoard.BINDINGS.
+        // Añadir soporte para una tecla nueva = nuevo case aquí, sin tocar
+        // KeyActionListener ni KeyBoard.
+        keyboard.addKeyActionListener((KeyActionListener) action -> {
+            switch (action) {
+                case "toggleFullscreen" -> {
+                    display.toggleFullscreen();
+                    keyboard.clearFsTogglePending();
+                }
+                case "toggleFps" ->
+                    GameSettings.getInstance().toggleFps();
+                // "pause", "jump", "reload", etc. son gestionados por
+                // otros suscriptores (p.ej. GameState, PlayerController).
             }
         });
 

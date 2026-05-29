@@ -41,7 +41,7 @@ public enum BulletType {
     /** La bala impacta al enemigo y genera un impulso de salto. */
     SPRINGBULLET   (BulletJump::new,   ItemRarity.UNCOMMON,
                   "Tiro Resorte",
-                  "Al impactar, libera un estallido cinético que catapulta al objetivo."),
+                  "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."),
 
     // ── Efectos elementales (pendientes de implementar sus behaviors) ─────
     // Descomenta cada uno cuando crees la clase de behavior correspondiente.

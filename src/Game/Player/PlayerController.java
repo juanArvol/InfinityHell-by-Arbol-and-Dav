@@ -1,7 +1,5 @@
 package Game.Player;
 
-import java.security.Key;
-
 import Entradas.KeyBoard;
 import Game.Fisics.PlayerPhysics;
 
@@ -10,12 +8,23 @@ import Game.Fisics.PlayerPhysics;
  *
  * Traduce input de teclado en llamadas a la física.
  * No contiene lógica de física; solo lee KeyBoard y delega.
+ *
+ * ─── REFACTOR (Entradas v2) ───────────────────────────────────────────────────
+ *
+ *  · Reemplaza todos los accesos a campos estáticos eliminados
+ *    (KeyBoard.left, .right, .shift, .up, .r, .c) por KeyBoard.getState().
+ *
+ *  · handleActionsInput() eliminado: contenía solo cuerpos vacíos (código muerto).
+ *    La lógica de recarga (r) y modo apuntado (c) se gestiona en Mechanics
+ *    y a través del sistema de listeners de edge — no aquí.
+ *
+ *  · Eliminado el import no usado (java.security.Key).
  */
 public class PlayerController {
 
-    private final Player player;
+    private final Player       player;
     private final PlayerPhysics physics;
-    private final PlayerState state;
+    private final PlayerState   state;
 
     public PlayerController(Player player, PlayerState state) {
         this.player  = player;
@@ -31,36 +40,27 @@ public class PlayerController {
     private void handleMovementInput() {
         double inputX = 0;
 
-        if (KeyBoard.left) {
+        if (KeyBoard.getState("left")) {
             inputX = -1;
             state.setDer(false);
         }
-        if (KeyBoard.right) {
+        if (KeyBoard.getState("right")) {
             inputX = 1;
             state.setDer(true);
         }
 
-        boolean running = KeyBoard.shift;
+        boolean running = KeyBoard.getState("shift");
         state.setRunning(running);
 
         physics.moveX(inputX, state.isEnElSuelo(), running);
     }
 
     private void handleJumpInput() {
-        if (KeyBoard.up && state.isEnElSuelo()) {
+        if (KeyBoard.getState("up") && state.isEnElSuelo()) {
             physics.jump(10);
-            // Marcar en el aire inmediatamente para que applyGravity()
-            // en Player.update() use onGround=false en este mismo frame.
             physics.setOnGround(false);
             physics.clearSurface();
             state.setEnElSuelo(false);
-        }
-    }
-    private void handleActionsInput(){
-        if(KeyBoard.r){             //boton/tecla destinada para la recarga de armas
-        }
-
-        if(KeyBoard.c){             //boton/tecla destinada para permitir el "modo apuntado" tipo cuphead (de ahi me base en la tecla)
         }
     }
 

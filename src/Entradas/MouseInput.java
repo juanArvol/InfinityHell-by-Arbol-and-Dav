@@ -4,104 +4,56 @@ import Display.ViewportInfo;
 import Entradas.Listeners.MouseActionListener;
 
 import java.awt.event.*;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Input de ratón.
  *
- * ─── BUG CORREGIDO (versión anterior) ────────────────────────────────────────
+ * ─── ARQUITECTURA ─────────────────────────────────────────────────────────────
  *
- * BUG-09 · mouseVirtualX/Y no son thread-safe — MANTENIDO
- *   mouseVirtualX y mouseVirtualY son volatile float.
- *   Garantiza visibilidad entre EDT (escritura) y GameLoop (lectura).
+ *  Toda la configuración de botones vive en BUTTONS. Para agregar un botón
+ *  nuevo basta con añadir un MouseButton ahí. No hay que tocar mousePressed(),
+ *  mouseReleased(), flushEvents(), ni MouseActionListener.
  *
- * ─── REGRESIONES CORREGIDAS EN ESTA VERSIÓN ──────────────────────────────────
+ *  Estados continuos  → consultados por poll: MouseInput.getButtonState("stateKey")
+ *  Acciones de edge   → notificadas por push:  MouseActionListener.onMouseAction(action, vx, vy)
  *
- * REGRESIÓN-3a · synchronized cubre flushEvents() completo incl. listeners
+ * ─── CONCURRENCIA ─────────────────────────────────────────────────────────────
  *
- *   CAUSA: la versión anterior declaraba flushEvents() como synchronized (this),
- *          usando el mismo monitor que enqueue(). Esto significa que durante toda
- *          la iteración de la cola de eventos — incluyendo las llamadas a los
- *          listeners (onLeftClick, onMouseMoved, etc.) — el EDT no puede llamar
- *          enqueue() para nuevos eventos.
- *
- *          Si un listener hace trabajo no trivial (p.ej. onLeftClick dispara
- *          lógica de gameplay que tarda varios milisegundos), el EDT queda
- *          bloqueado en enqueue() durante ese tiempo. Esto produce contención
- *          entre EDT y GameLoop thread que añade latencia a los eventos de input
- *          y puede causar microstutter si el bloqueo ocurre mientras el EDT
- *          también necesita procesar paint events.
- *
- *   SOLUCIÓN: separar el lock de enqueue del procesamiento de flush.
- *
- *     · enqueue() mantiene su lock (queueLock) — correcto, protege writeIdx.
- *     · flushEvents() toma el lock sólo para leer readIdx/writeIdx y hacer
- *       snapshot de los índices. El procesamiento de eventos (transform +
- *       listener calls) ocurre fuera del lock.
- *     · Para manejar la concurrencia del ring buffer correctamente sin lock
- *       en el procesamiento: se usa un snapshot de los índices bajo lock,
- *       y se procesa hasta el writeIdx capturado. Si llegan nuevos eventos
- *       durante el flush, se procesarán en el siguiente frame (correcto).
- *
- *   POR QUÉ ES SEGURO: flushEvents() es llamado SÓLO por el GameLoop thread.
- *   enqueue() es llamado SÓLO por el EDT. El ring buffer con dos índices
- *   (readIdx, writeIdx) puede ser gestionado con un lock mínimo porque:
- *     · writeIdx es escrito sólo por EDT (bajo queueLock).
- *     · readIdx es escrito sólo por GameLoop (bajo queueLock al hacer snapshot).
- *     · El contenido del array (queue[]) es escrito por EDT antes de actualizar
- *       writeIdx, y leído por GameLoop sólo hasta el writeIdx capturado.
- *
- * REGRESIÓN-3b · new PendingEvent() allocation por cada evento de movimiento
- *
- *   CAUSA: cada mouseMoved/mouseDragged crea `new PendingEvent(Type.MOVE, ...)`.
- *          Con el ratón en movimiento continuo a la tasa de polling AWT (~60-125Hz),
- *          esto genera 60-125 objetos/segundo que el GC debe colectar. Con G1GC
- *          a 30 FPS target, las minor GC pauses pueden producir spikes de 1-3ms
- *          que son perceptibles como microstutter en frametime.
- *
- *   SOLUCIÓN: preallocar el ring buffer de PendingEvent con objetos reciclables.
- *          En lugar de `new PendingEvent(...)`, mutar los campos de objetos
- *          preallocados en las posiciones del ring buffer. Los objetos son
- *          creados una vez en el constructor y reutilizados indefinidamente.
- *
- *          Esto elimina la GC pressure del path de input en el EDT.
- *          El array es de tamaño QUEUE_CAP (64), que ya era el tamaño del
- *          array de PendingEvent[] en la versión anterior — sólo se cambia
- *          de "crear objetos nuevos" a "mutar objetos preallocados".
- *
- *   POR QUÉ ES SEGURO: los campos de PendingEvent son escritos por el EDT
- *          (en enqueue) y leídos por el GameLoop (en flushEvents). La
- *          visibilidad está garantizada por el lock de queueLock en enqueue()
- *          (que establece un happens-before con el snapshot en flushEvents()).
- *          No hay aliasing entre producer (EDT) y consumer (GameLoop) porque
- *          el ring buffer garantiza que el GameLoop no lee posiciones que el EDT
- *          aún no ha publicado (writeIdx bajo lock).
- *
- *   IMPACTO EN RENDIMIENTO: elimina allocations de PendingEvent en el hot path.
- *          Reduce GC pressure y elimina potenciales GC pauses en el path de input.
- *
- *   COMPATIBILIDAD FUTURA 2D/3D: sin impacto. El sistema de eventos de input
- *          es independiente del sistema de render.
- *
- * ─── SIN OTROS CAMBIOS ───────────────────────────────────────────────────────
- *   volatile mouseVirtualX/Y — sin cambios (BUG-09 mantenido)
- *   Sistema de listeners (MouseActionListener) — sin cambios
- *   Transformación de coordenadas — sin cambios
- *   API legacy @Deprecated — sin cambios
+ *  BUG-09  (mantenido) · mouseVirtualX/Y son volatile float.
+ *  REGRESIÓN-3a (mantenida) · queueLock cubre solo el snapshot de índices;
+ *    el procesamiento de eventos (transform + listener calls) ocurre fuera del lock.
+ *  REGRESIÓN-3b (mantenida) · ring buffer preallocado — sin allocations en el hot path.
  */
 public class MouseInput implements MouseListener, MouseMotionListener, MouseWheelListener {
 
-    // ─── Estado continuo en píxeles REALES del canvas (raw AWT) ──────────────
+    // ─── Tabla de botones — ÚNICO lugar a editar para añadir/cambiar botones ──
+
+    /**
+     * Agrega aquí nuevos MouseButton para extender el sistema.
+     *
+     * new MouseButton(awtButton, stateKey, pressAction, releaseAction)
+     *   · awtButton     = MouseEvent.BUTTON1 / BUTTON2 / BUTTON3
+     *   · stateKey      = nombre del estado continuo, o null
+     *   · pressAction   = acción semántica en press, o null
+     *   · releaseAction = acción semántica en release, o null
+     */
+    public static final MouseButton[] BUTTONS = {
+        new MouseButton(MouseEvent.BUTTON1, "leftPressed",  "leftClick",   "leftRelease"),
+        new MouseButton(MouseEvent.BUTTON3, "rightPressed", "rightClick",  "rightRelease"),
+        // Ejemplo para agregar botón central:
+        // new MouseButton(MouseEvent.BUTTON2, null, "middleClick", null),
+    };
+
+    // ─── Estado continuo de coordenadas en píxeles REALES del canvas (raw AWT) ─
 
     public static int mouseX;
     public static int mouseY;
 
-    public static boolean leftPressed;
-    public static boolean rightPressed;
-
-    // ─── Estado continuo en coordenadas VIRTUALES (transformado) ─────────────
-    // BUG-09 FIX (mantenido): volatile garantiza visibilidad entre EDT y GameLoop.
+    // ─── Estado continuo en coordenadas VIRTUALES (BUG-09 mantenido: volatile) ─
 
     /** X del ratón en coordenadas virtuales del juego. Thread-safe: volatile. */
     public static volatile float mouseVirtualX;
@@ -109,7 +61,17 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
     /** Y del ratón en coordenadas virtuales del juego. Thread-safe: volatile. */
     public static volatile float mouseVirtualY;
 
-    // ─── Viewport para transformación de coordenadas ──────────────────────────
+    // ─── Estado continuo de botones indexado por stateKey ─────────────────────
+
+    private static final Map<String, Boolean> buttonStates = new HashMap<>();
+
+    /** @return true si el botón con ese stateKey está pulsado. */
+    public static boolean getButtonState(String stateKey) {
+        Boolean v = buttonStates.get(stateKey);
+        return v != null && v;
+    }
+
+    // ─── Viewport ─────────────────────────────────────────────────────────────
 
     private volatile ViewportInfo viewport;
 
@@ -120,58 +82,73 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
     // ─── Cola de eventos pendientes (EDT → GameLoop) ──────────────────────────
 
     /**
-     * Evento mutable y reciclable. REGRESIÓN-3b FIX: los campos son mutados
-     * en lugar de crear nuevas instancias por evento.
+     * Evento mutable y reciclable.
+     * REGRESIÓN-3b mantenida: campos mutados en lugar de new por evento.
      */
     private static final class PendingEvent {
-        enum Type { LEFT_PRESS, LEFT_RELEASE, RIGHT_PRESS, RIGHT_RELEASE, SCROLL, MOVE }
-        Type type;
-        int  rawX, rawY;
-        int  scrollDelta;
+        enum Type { BUTTON_PRESS, BUTTON_RELEASE, SCROLL, MOVE }
+
+        Type   type;
+        int    awtButton;   // para BUTTON_PRESS / BUTTON_RELEASE
+        int    rawX, rawY;
+        int    scrollDelta;
     }
 
     private static final int QUEUE_CAP = 64;
 
-    /**
-     * REGRESIÓN-3b FIX: array preallocado de PendingEvent reciclables.
-     * Los objetos se crean una vez en el constructor y se reusan indefinidamente.
-     * Elimina allocations en el hot path del EDT.
-     */
+    /** Array preallocado — sin allocations en el hot path. */
     private final PendingEvent[] queue = new PendingEvent[QUEUE_CAP];
 
     private int writeIdx = 0;
     private int readIdx  = 0;
 
-    /**
-     * Lock dedicado para el ring buffer. Separado del monitor de `this`
-     * para evitar interferencia con otros métodos synchronized futuros.
-     * (REGRESIÓN-3a FIX: flushEvents ya no usa este lock en el procesamiento)
-     */
     private final Object queueLock = new Object();
 
     public MouseInput() {
-        // REGRESIÓN-3b FIX: preallocar todos los slots del ring buffer.
         for (int i = 0; i < QUEUE_CAP; i++) {
             queue[i] = new PendingEvent();
         }
     }
 
     /**
-     * Encola un evento mutando el slot preallocado en la posición writeIdx.
-     * SÓLO llamar desde EDT.
-     *
-     * REGRESIÓN-3b FIX: no crea objetos nuevos. Muta el objeto preallocado.
+     * Encola un evento mutando el slot preallocado.
+     * Solo llamar desde EDT.
      */
-    private void enqueue(PendingEvent.Type type, int rawX, int rawY, int scrollDelta) {
+    private void enqueueButton(PendingEvent.Type type, int awtButton, int rawX, int rawY) {
         synchronized (queueLock) {
             int next = (writeIdx + 1) % QUEUE_CAP;
-            if (next == readIdx) return; // Cola llena — descartar
-            // Mutar el objeto preallocado en lugar de crear new PendingEvent()
+            if (next == readIdx) return;
             PendingEvent ev = queue[writeIdx];
-            ev.type        = type;
-            ev.rawX        = rawX;
-            ev.rawY        = rawY;
-            ev.scrollDelta = scrollDelta;
+            ev.type      = type;
+            ev.awtButton = awtButton;
+            ev.rawX      = rawX;
+            ev.rawY      = rawY;
+            ev.scrollDelta = 0;
+            writeIdx = next;
+        }
+    }
+
+    private void enqueueScroll(int delta) {
+        synchronized (queueLock) {
+            int next = (writeIdx + 1) % QUEUE_CAP;
+            if (next == readIdx) return;
+            PendingEvent ev = queue[writeIdx];
+            ev.type        = PendingEvent.Type.SCROLL;
+            ev.scrollDelta = delta;
+            ev.rawX        = mouseX;
+            ev.rawY        = mouseY;
+            writeIdx = next;
+        }
+    }
+
+    private void enqueueMove(int rawX, int rawY) {
+        synchronized (queueLock) {
+            int next = (writeIdx + 1) % QUEUE_CAP;
+            if (next == readIdx) return;
+            PendingEvent ev = queue[writeIdx];
+            ev.type   = PendingEvent.Type.MOVE;
+            ev.rawX   = rawX;
+            ev.rawY   = rawY;
             writeIdx = next;
         }
     }
@@ -183,49 +160,61 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
     public void addMouseActionListener(MouseActionListener l)    { listeners.add(l);    }
     public void removeMouseActionListener(MouseActionListener l) { listeners.remove(l); }
 
-    // ─── flushEvents (llamado desde GameLoop thread, 1 vez por frame) ─────────
+    // ─── flushEvents (GameLoop thread, 1 vez por frame) ──────────────────────
 
     /**
-     * Procesa todos los eventos pendientes y llama a los listeners.
+     * Procesa todos los eventos pendientes y notifica listeners.
+     * Solo llamar desde el GameLoop thread.
      *
-     * SÓLO llamar desde el GameLoop thread.
-     *
-     * ── REGRESIÓN-3a FIX ─────────────────────────────────────────────────────
-     * El lock (queueLock) se toma SÓLO para capturar el snapshot de writeIdx
-     * y avanzar readIdx. El procesamiento de eventos (transform + listener calls)
-     * ocurre fuera del lock, eliminando la contención EDT↔GameLoop durante el flush.
-     *
-     * Esto es seguro porque flushEvents() es llamado sólo por el GameLoop thread,
-     * y enqueue() sólo por el EDT. El snapshot de writeIdx garantiza que sólo
-     * procesamos eventos que el EDT ya ha publicado completamente.
+     * REGRESIÓN-3a mantenida: lock solo para capturar el writeIdx.
+     * El procesamiento ocurre fuera del lock.
      */
     public void flushEvents() {
-        // Capturar el writeIdx actual bajo lock.
-        // Procesaremos sólo hasta este índice (eventos ya publicados por EDT).
         final int capturedWriteIdx;
         synchronized (queueLock) {
             capturedWriteIdx = writeIdx;
         }
 
-        // Procesar eventos fuera del lock — sin contención con EDT.
         while (readIdx != capturedWriteIdx) {
             PendingEvent ev = queue[readIdx];
 
-            float vx = toVirtualX(ev.rawX);
-            float vy = toVirtualY(ev.rawY);
+            switch (ev.type) {
+                case BUTTON_PRESS, BUTTON_RELEASE -> {
+                    float vx = toVirtualX(ev.rawX);
+                    float vy = toVirtualY(ev.rawY);
+                    boolean isPress = ev.type == PendingEvent.Type.BUTTON_PRESS;
 
-            for (MouseActionListener l : listeners) {
-                switch (ev.type) {
-                    case LEFT_PRESS    -> l.onLeftClick(vx, vy);
-                    case LEFT_RELEASE  -> l.onLeftRelease(vx, vy);
-                    case RIGHT_PRESS   -> l.onRightClick(vx, vy);
-                    case RIGHT_RELEASE -> l.onRightRelease(vx, vy);
-                    case SCROLL        -> l.onScroll(ev.scrollDelta);
-                    case MOVE          -> l.onMouseMoved(vx, vy);
+                    for (MouseButton mb : BUTTONS) {
+                        if (mb.awtButton != ev.awtButton) continue;
+
+                        // Actualizar estado continuo
+                        if (mb.stateKey != null) {
+                            buttonStates.put(mb.stateKey, isPress);
+                        }
+
+                        // Disparar acción semántica
+                        String action = isPress ? mb.pressAction : mb.releaseAction;
+                        if (action != null) {
+                            for (MouseActionListener l : listeners) {
+                                l.onMouseAction(action, vx, vy);
+                            }
+                        }
+                    }
+                }
+                case SCROLL -> {
+                    for (MouseActionListener l : listeners) {
+                        l.onScroll(ev.scrollDelta);
+                    }
+                }
+                case MOVE -> {
+                    float vx = toVirtualX(ev.rawX);
+                    float vy = toVirtualY(ev.rawY);
+                    for (MouseActionListener l : listeners) {
+                        l.onMouseMoved(vx, vy);
+                    }
                 }
             }
 
-            // Avanzar readIdx. No necesita lock: sólo el GameLoop thread escribe readIdx.
             readIdx = (readIdx + 1) % QUEUE_CAP;
         }
     }
@@ -243,35 +232,20 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
     }
 
     private void updateVirtualCoords(int rawX, int rawY) {
-        // Escritura volatile: visible al GameLoop thread inmediatamente. (BUG-09 mantenido)
         mouseVirtualX = toVirtualX(rawX);
         mouseVirtualY = toVirtualY(rawY);
     }
 
-    // ─── MouseListener (EDT) ─────────────────────────────────────────────────
+    // ─── MouseListener (EDT) ──────────────────────────────────────────────────
 
     @Override
     public void mousePressed(MouseEvent e) {
-        if (e.getButton() == MouseEvent.BUTTON1) {
-            leftPressed = true;
-            enqueue(PendingEvent.Type.LEFT_PRESS, e.getX(), e.getY(), 0);
-        }
-        if (e.getButton() == MouseEvent.BUTTON3) {
-            rightPressed = true;
-            enqueue(PendingEvent.Type.RIGHT_PRESS, e.getX(), e.getY(), 0);
-        }
+        enqueueButton(PendingEvent.Type.BUTTON_PRESS, e.getButton(), e.getX(), e.getY());
     }
 
     @Override
     public void mouseReleased(MouseEvent e) {
-        if (e.getButton() == MouseEvent.BUTTON1) {
-            leftPressed = false;
-            enqueue(PendingEvent.Type.LEFT_RELEASE, e.getX(), e.getY(), 0);
-        }
-        if (e.getButton() == MouseEvent.BUTTON3) {
-            rightPressed = false;
-            enqueue(PendingEvent.Type.RIGHT_RELEASE, e.getX(), e.getY(), 0);
-        }
+        enqueueButton(PendingEvent.Type.BUTTON_RELEASE, e.getButton(), e.getX(), e.getY());
     }
 
     @Override public void mouseClicked(MouseEvent e) {}
@@ -285,7 +259,7 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
         mouseX = e.getX();
         mouseY = e.getY();
         updateVirtualCoords(mouseX, mouseY);
-        enqueue(PendingEvent.Type.MOVE, mouseX, mouseY, 0);
+        enqueueMove(mouseX, mouseY);
     }
 
     @Override
@@ -293,25 +267,13 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
         mouseX = e.getX();
         mouseY = e.getY();
         updateVirtualCoords(mouseX, mouseY);
-        enqueue(PendingEvent.Type.MOVE, mouseX, mouseY, 0);
+        enqueueMove(mouseX, mouseY);
     }
 
     // ─── MouseWheelListener (EDT) ─────────────────────────────────────────────
 
     @Override
     public void mouseWheelMoved(MouseWheelEvent e) {
-        int delta = e.getWheelRotation();
-        enqueue(PendingEvent.Type.SCROLL, mouseX, mouseY, delta);
+        enqueueScroll(e.getWheelRotation());
     }
-
-    // ─── API legacy mantenida ─────────────────────────────────────────────────
-
-    @Deprecated
-    public static boolean isLeftClicked()  { return false; }
-
-    @Deprecated
-    public static boolean isRightClicked() { return false; }
-
-    @Deprecated
-    public static int getWheelDelta()      { return 0; }
 }
