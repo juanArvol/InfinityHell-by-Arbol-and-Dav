@@ -1,174 +1,230 @@
 package Display.Managers;
 
-import java.awt.DisplayMode;
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
-import java.awt.IllegalComponentStateException;
-import java.awt.Window;
+import Display.State.DisplayMode;
+
+import java.awt.*;
 import java.util.logging.Logger;
 
 /**
- * Gestiona fullscreen REAL usando GraphicsDevice.setFullScreenWindow().
+ * Gestiona las transiciones entre modos de presentación de la ventana.
  *
- * REGLA CRÍTICA: NUNCA llamar frame.dispose() durante el toggle.
- * dispose() destruye el peer nativo, invalida el Canvas y el BufferStrategy.
+ * ──────────────────────────────────────────────────────────────────────────
+ * EVOLUCIÓN RESPECTO A LA VERSIÓN ANTERIOR
  *
- * REGLA DE THREADING: todos los métodos públicos DEBEN llamarse desde el EDT.
- * DisplayManager.toggleFullscreen() lo garantiza via invokeLater().
- * assertEDT() lo verifica en desarrollo (-ea).
+ * 1. enterBorderless() EXPUESTO PÚBLICAMENTE
+ *    El pipeline unificado necesita acceso directo a enterBorderless() para
+ *    ejecutar EnterFullscreen(BORDERLESS_FULLSCREEN) y SetDisplayMode.
+ *    Era privado; ahora es público con la misma semántica.
  *
- * ─── ORDEN CORRECTO DE OPERACIONES ───────────────────────────────────────────
+ * 2. setMonitor() PARA CAMBIO DE MONITOR EN RUNTIME
+ *    Permite al pipeline ejecutar ChangeMonitor sin recrear el manager.
+ *    Valida el índice contra los dispositivos disponibles.
  *
- *  enterFullscreen:
- *    setVisible(false) → setUndecorated(true) → setFullScreenWindow(frame)
- *    → setVisible(true)
+ * 3. getActiveMonitorIndex() PARA DisplayState
+ *    El índice del monitor activo es parte del snapshot completo de
+ *    DisplayState. Se expone aquí como fuente de verdad.
  *
- *    setFullScreenWindow ANTES de setVisible(true) elimina el flash de ventana
- *    decorada/sin decorar en modo normal antes de entrar a fullscreen.
+ * 4. TransitionLock ELIMINADO
+ *    TransitionLock ya no es necesario aquí: el control de exclusión mutua
+ *    lo ejerce DisplayTransitionMachine en el pipeline. Este manager solo
+ *    ejecuta operaciones atómicas de Swing sin responsabilidad de locking.
  *
- *  exitFullscreen:
- *    setVisible(false) → setFullScreenWindow(null) → setUndecorated(false)
- *    → setSize(windowed) → setLocationRelativeTo(null) → setVisible(true)
+ * ──────────────────────────────────────────────────────────────────────────
+ * COMPATIBILIDAD
  *
- *    setVisible(false) primero evita que el WM vea la ventana sin borde
- *    brevemente antes de restaurar las decoraciones.
+ * Los métodos públicos originales (enterFullscreen, exitFullscreen, toggle,
+ * getCurrentMode, isFullscreen) se mantienen con la misma semántica.
  *
- * ─── POR QUÉ NO HAY MÁS LÓGICA AQUÍ ─────────────────────────────────────────
+ * ──────────────────────────────────────────────────────────────────────────
+ * THREADING
  *
- *  La supresión de componentResized durante el toggle y el recreate del
- *  BufferStrategy post-toggle están en DisplayManager, que es quien coordina
- *  todos los subsistemas. FullscreenManager solo sabe operar la ventana.
+ *   Todos los métodos públicos deben ejecutarse desde el EDT.
+ *   currentMode es volatile para lectura thread-safe desde el GameLoop.
+ *   activeMonitorIndex es volatile por el mismo motivo.
  */
-public class FullscreenManager {
+public final class FullscreenManager {
 
     private static final Logger LOG = Logger.getLogger(FullscreenManager.class.getName());
 
-    private final GraphicsDevice device;
+    private GraphicsDevice device;
+    private int activeMonitorIndex;
 
-    /**
-     * volatile: el GameLoop puede consultar isFullscreen() desde su thread.
-     * EDT lo escribe al final de enter/exit.
-     */
-    private volatile boolean fullscreen;
+    /** Estado actual del modo de presentación. Volatile: leído desde GameLoop. */
+    private volatile DisplayMode currentMode = DisplayMode.WINDOWED;
+
+    /** Snapshot del estado windowed capturado antes de entrar en fullscreen. */
+    private WindowedSnapshot windowedSnapshot = null;
 
     public FullscreenManager(int monitorIndex) {
-        GraphicsDevice[] devices =
-            GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-
-        int idx = Math.max(0, Math.min(monitorIndex, devices.length - 1));
-        this.device     = devices[idx];
-        this.fullscreen = false;
-
-        LOG.info(() -> String.format(
-            "FullscreenManager: monitor %d (%s), fullscreen exclusivo: %b",
-            idx, device.getIDstring(), device.isFullScreenSupported()
-        ));
+        this.activeMonitorIndex = monitorIndex;
+        this.device = resolveDevice(monitorIndex);
     }
 
+    // ── Transiciones ──────────────────────────────────────────────────────────
+
     /**
-     * Activa fullscreen real en la ventana dada.
-     * Llamar DESDE EL EDT.
+     * Entra en fullscreen desde el modo windowed.
+     * Si el dispositivo soporta exclusive, usa FULLSCREEN_EXCLUSIVE.
+     * Si no, usa BORDERLESS_FULLSCREEN.
+     *
+     * Pre-condición: llamar desde el EDT.
      */
     public void enterFullscreen(Window window) {
-        if (fullscreen) return;
-        assertEDT("enterFullscreen");
-
-        LOG.fine("Entrando a fullscreen...");
-
-        if (device.isFullScreenSupported()) {
-            window.setVisible(false);
-            trySetUndecorated(window, true);
-            device.setFullScreenWindow(window);  // ANTES de setVisible(true)
-            window.setVisible(true);
-        } else {
-            LOG.warning("Fullscreen exclusivo no soportado — usando MAXIMIZED_BOTH");
-            fallbackMaximize(window);
+        if (currentMode.isFullscreen()) {
+            LOG.fine("enterFullscreen(): already in fullscreen — ignored");
+            return;
         }
-
-        fullscreen = true;
-        LOG.fine("Fullscreen activado.");
+        windowedSnapshot = WindowedSnapshot.capture(window);
+        if (device.isFullScreenSupported()) {
+            enterExclusive(window);
+        } else {
+            LOG.warning("Exclusive fullscreen not supported — falling back to BORDERLESS_FULLSCREEN");
+            enterBorderless(window);
+        }
     }
 
     /**
-     * Sale de fullscreen y vuelve a modo ventana.
-     * Llamar DESDE EL EDT.
+     * Entra en modo borderless windowed (maximized, sin decoración).
+     * Pre-condición: llamar desde el EDT.
      */
-    public void exitFullscreen(Window window, int windowedW, int windowedH) {
-        if (!fullscreen) return;
-        assertEDT("exitFullscreen");
+    public void enterBorderless(Window window) {
+        if (currentMode == DisplayMode.BORDERLESS_FULLSCREEN) {
+            LOG.fine("enterBorderless(): already BORDERLESS_FULLSCREEN — ignored");
+            return;
+        }
+        if (!currentMode.isFullscreen()) {
+            windowedSnapshot = WindowedSnapshot.capture(window);
+        }
+        window.setVisible(false);
+        setUndecorated(window, true);
+        if (window instanceof javax.swing.JFrame f) {
+            f.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
+        }
+        window.setVisible(true);
+        currentMode = DisplayMode.BORDERLESS_FULLSCREEN;
+        LOG.info("Entered BORDERLESS_FULLSCREEN");
+    }
 
-        LOG.fine("Saliendo de fullscreen...");
-
+    /**
+     * Sale de fullscreen y restaura el estado windowed capturado.
+     * Pre-condición: llamar desde el EDT.
+     */
+    public void exitFullscreen(Window window) {
+        if (!currentMode.isFullscreen()) {
+            LOG.fine("exitFullscreen(): not in fullscreen — ignored");
+            return;
+        }
         window.setVisible(false);
 
-        if (device.isFullScreenSupported() && device.getFullScreenWindow() == window) {
+        if (currentMode == DisplayMode.FULLSCREEN_EXCLUSIVE
+                && device.getFullScreenWindow() == window) {
             device.setFullScreenWindow(null);
         }
 
-        trySetUndecorated(window, false);
-        window.setSize(windowedW, windowedH);
-        window.setLocationRelativeTo(null);
-        window.setVisible(true);
+        setUndecorated(window, false);
 
-        fullscreen = false;
-        LOG.fine("Modo ventana restaurado.");
+        if (windowedSnapshot != null) {
+            windowedSnapshot.restore(window);
+            windowedSnapshot = null;
+        }
+
+        window.setVisible(true);
+        currentMode = DisplayMode.WINDOWED;
+        LOG.info("Exited fullscreen → WINDOWED");
     }
 
     /**
-     * Toggle: entra o sale según estado actual.
-     * Llamar DESDE EL EDT (DisplayManager.toggleFullscreen() lo garantiza).
+     * Alterna entre WINDOWED ↔ FULLSCREEN.
+     * Pre-condición: llamar desde el EDT.
      */
-    public void toggle(Window window, int windowedW, int windowedH) {
-        if (fullscreen) {
-            exitFullscreen(window, windowedW, windowedH);
+    public void toggle(Window window) {
+        if (currentMode.isFullscreen()) {
+            exitFullscreen(window);
         } else {
             enterFullscreen(window);
         }
     }
 
-    /** @return true si actualmente está en fullscreen. */
-    public boolean isFullscreen() {
-        return fullscreen;
+    // ── Cambio de monitor ─────────────────────────────────────────────────────
+
+    /**
+     * Cambia el monitor activo para operaciones fullscreen.
+     * Si el índice es inválido, se clampea al rango disponible.
+     * Llamar desde el EDT.
+     */
+    public void setMonitor(int monitorIndex) {
+        GraphicsDevice[] devices =
+            GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+        int clamped = Math.max(0, Math.min(monitorIndex, devices.length - 1));
+        this.activeMonitorIndex = clamped;
+        this.device = devices[clamped];
+        LOG.info("Active monitor changed to index " + clamped);
     }
 
-    /** El GraphicsDevice actual. */
-    public GraphicsDevice getDevice() {
-        return device;
+    // ── Consultas ─────────────────────────────────────────────────────────────
+
+    /** Modo de presentación activo. Thread-safe (volatile read). */
+    public DisplayMode getCurrentMode() { return currentMode; }
+
+    /** Conveniencia. Thread-safe. */
+    public boolean isFullscreen() { return currentMode.isFullscreen(); }
+
+    /** Índice del monitor activo. Thread-safe (volatile read). */
+    public int getActiveMonitorIndex() { return activeMonitorIndex; }
+
+    // ── Privados ──────────────────────────────────────────────────────────────
+
+    private void enterExclusive(Window window) {
+        window.setVisible(false);
+        setUndecorated(window, true);
+        device.setFullScreenWindow(window);
+        window.setVisible(true);
+        currentMode = DisplayMode.FULLSCREEN_EXCLUSIVE;
+        LOG.info("Entered FULLSCREEN_EXCLUSIVE");
     }
 
-    // ─── Helpers privados ─────────────────────────────────────────────────────
+    private static GraphicsDevice resolveDevice(int monitorIndex) {
+        GraphicsDevice[] devices =
+            GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+        int idx = Math.max(0, Math.min(monitorIndex, devices.length - 1));
+        return devices[idx];
+    }
 
-    private void trySetUndecorated(Window window, boolean undecorated) {
-        if (window instanceof javax.swing.JFrame frame) {
+    private static void setUndecorated(Window window, boolean undecorated) {
+        if (window instanceof javax.swing.JFrame f) {
             try {
-                frame.setUndecorated(undecorated);
+                f.setUndecorated(undecorated);
             } catch (IllegalComponentStateException e) {
-                LOG.warning("No se pudo cambiar undecorated: " + e.getMessage());
+                LOG.warning("setUndecorated(" + undecorated + ") failed: " + e.getMessage());
             }
         }
     }
 
-    private void fallbackMaximize(Window window) {
-        if (window instanceof javax.swing.JFrame frame) {
-            window.setVisible(false);
-            frame.setUndecorated(true);
-            frame.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
-            window.setVisible(true);
-        }
-    }
+    // ── WindowedSnapshot ──────────────────────────────────────────────────────
 
-    /**
-     * Verifica que estamos en el EDT.
-     * Con -ea: lanza AssertionError. Sin -ea: solo loguea WARNING.
-     */
-    private void assertEDT(String method) {
-        if (!javax.swing.SwingUtilities.isEventDispatchThread()) {
-            String msg = "FullscreenManager." + method +
-                         "() llamado desde thread no-EDT: " +
-                         Thread.currentThread().getName() +
-                         ". Usa DisplayManager.toggleFullscreen() que garantiza invokeLater().";
-            LOG.warning(msg);
-            assert false : msg;
+    private static final class WindowedSnapshot {
+        final int x, y, width, height;
+        final boolean decorated;
+
+        private WindowedSnapshot(int x, int y, int width, int height, boolean decorated) {
+            this.x = x; this.y = y;
+            this.width = width; this.height = height;
+            this.decorated = decorated;
+        }
+
+        static WindowedSnapshot capture(Window window) {
+            Rectangle b = window.getBounds();
+            boolean dec = true;
+            if (window instanceof javax.swing.JFrame f) dec = !f.isUndecorated();
+            return new WindowedSnapshot(b.x, b.y, b.width, b.height, dec);
+        }
+
+        void restore(Window window) {
+            if (window instanceof javax.swing.JFrame f) {
+                f.setExtendedState(javax.swing.JFrame.NORMAL);
+            }
+            window.setSize(width, height);
+            window.setLocation(x, y);
         }
     }
 }

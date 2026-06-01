@@ -1,14 +1,14 @@
 package Game.Engine.Systems;
 
 import Game.Engine.GameObjects;
+import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Collisions.SweptAABB;
-import Game.Engine.Components.PhysicsComponent;
+import Game.Engine.GameMath.Physics.PhysicsStepper;
+import Game.Engine.GameMath.Physics.Types.Physics2D;
 import Game.Engine.Colisions.CollisionDetector;
 import Game.Engine.Colisions.CollisionDispatcher;
 import Game.Engine.Colisions.CollisionResult;
-import Game.Fisics.Physics;
-import Game.Fisics.PhysicsStepper;
+import Game.Engine.Colisions.SweptAABB;
 import Game.World.Surface.SurfaceMaterial;
 
 import java.awt.Rectangle;
@@ -39,11 +39,11 @@ public class CollisionsSystem {
 
         for (GameObjects obj : objects) {
 
-            PhysicsComponent  physComp = obj.getComponent(PhysicsComponent.class);
+            Physics2DComponent  physComp = obj.getComponent(Physics2DComponent.class);
             ColliderComponent colA     = obj.getComponent(ColliderComponent.class);
             if (physComp == null || colA == null || colA.isTrigger()) continue;
 
-            Physics   physics = physComp.getPhysics();
+            Physics2D   physics = physComp.getPhysics();
             Rectangle bounds  = colA.getBounds();
 
             Rectangle groundCheck = new Rectangle(
@@ -83,11 +83,11 @@ public class CollisionsSystem {
 
         for (GameObjects obj : objects) {
 
-            PhysicsComponent  physComp = obj.getComponent(PhysicsComponent.class);
+            Physics2DComponent  physComp = obj.getComponent(Physics2DComponent.class);
             ColliderComponent colA     = obj.getComponent(ColliderComponent.class);
             if (physComp == null || colA == null || colA.isTrigger()) continue;
 
-            Physics physics = physComp.getPhysics();
+            Physics2D physics = physComp.getPhysics();
             double  vx      = physics.getVelocity().getX();
             double  vy      = physics.getVelocity().getY();
 

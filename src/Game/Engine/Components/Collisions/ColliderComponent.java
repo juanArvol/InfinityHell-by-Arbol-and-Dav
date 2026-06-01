@@ -1,8 +1,8 @@
 package Game.Engine.Components.Collisions;
 
 import Game.Engine.Component;
-import Game.Engine.Filter.CollisionProfile;
-import Game.Engine.Filter.Layer;
+import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Colisions.Filter.Layer;
 
 import java.awt.Rectangle;
 

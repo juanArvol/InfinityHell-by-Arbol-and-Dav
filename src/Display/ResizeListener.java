@@ -1,7 +1,5 @@
 package Display;
 
-import Display.ViewportInfo;
-
 /**
  * Callback para notificaciones de resize.
  *

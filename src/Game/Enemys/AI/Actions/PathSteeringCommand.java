@@ -1,8 +1,8 @@
 package Game.Enemys.AI.Actions;
 
 import Game.Enemys.AI.EnemyAction;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Enemys.Enemy;
-import GameMath.Vector2D;
 
 import java.util.List;
 

@@ -3,9 +3,9 @@ package Game.Enemys;
 import Game.Enemys.Types.EnemyType;
 import Game.Enemys.Types.Flying.Class.EnemyFlying;
 import Game.Enemys.Types.Ground.Class.EnemyNormal;
-import Game.Fisics.EnemyPhysics;
+import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Player.Player;
-import GameMath.Vector2D;
 import Graficos.Enemys.EnemyAssets;
 
 import java.awt.image.BufferedImage;
@@ -13,15 +13,7 @@ import java.awt.image.BufferedImage;
 /**
  * Fábrica de enemigos.
  *
- * CAMBIO vs. original:
- *   - Los behaviors ya no reciben Player — se eliminó esa dependencia de los constructors.
- *   - EnemyFactory sigue recibiendo Player para el constructor legacy de Enemy base,
- *     que lo almacena temporalmente durante la transición.
- *   - Sin cambios en la lógica de physics/textura.
- *
- * Una vez que World.update() pase EnemyContext.of(player) a todos los enemies,
- * se puede eliminar el parámetro Player de aquí también.
- */
+**/
 public class EnemyFactory {
 
     public static Enemy createEnemy(EnemyType type, Vector2D position, Player player) {

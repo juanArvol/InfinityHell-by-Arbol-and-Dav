@@ -2,9 +2,9 @@ package Game.Engine.Systems;
 
 import Game.Engine.Component;
 import Game.Engine.GameObjects;
-import Game.Engine.Transform3D;
-import Game.Render.Camera;
-import Game.Render.RenderContext;
+import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
+import Game.UI.POV.Camera;
+import Game.UI.POV.RenderContext;
 import Graficos.Renderable;
 
 import java.util.ArrayList;

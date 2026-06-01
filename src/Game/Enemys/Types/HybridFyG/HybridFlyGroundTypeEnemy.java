@@ -2,9 +2,9 @@ package Game.Enemys.Types.HybridFyG;
 
 import Game.Enemys.Enemy;
 import Game.Enemys.AI.EnemyComport;
-import Game.Fisics.EnemyPhysics;
+import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Player.Player;
-import GameMath.Vector2D;
 
 import java.awt.image.BufferedImage;
 

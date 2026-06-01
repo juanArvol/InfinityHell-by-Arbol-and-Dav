@@ -1,8 +1,8 @@
 package Game.Engine.Colisions;
 
-import Game.Bullets.Bullet;
 import Game.Enemys.Enemy;
 import Game.Engine.GameObjects;
+import Game.Items.Types.Bullets.Bullet;
 import Game.Player.Player;
 import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;

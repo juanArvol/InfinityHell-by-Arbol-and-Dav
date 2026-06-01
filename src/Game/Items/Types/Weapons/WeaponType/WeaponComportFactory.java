@@ -1,0 +1,15 @@
+package Game.Items.Types.Weapons.WeaponType;
+
+import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponPistola;
+
+public class WeaponComportFactory {
+    public static WeaponComport getComportamiento(int tipo) {
+        return switch (tipo) {
+            case 1 -> new WeaponPistola();
+            //case 2 -> new WeaponRifle();
+            //case 3 -> new WeaponEscopeta();
+            //case 4 -> new WeaponAmetralladora();
+            default -> new WeaponPistola(); // fallback
+        };
+    }
+}

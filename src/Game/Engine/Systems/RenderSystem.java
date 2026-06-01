@@ -2,8 +2,8 @@ package Game.Engine.Systems;
 
 import Game.Engine.Component;
 import Game.Engine.GameObjects;
-import Game.Render.Camera;
-import Game.Render.RenderContext;
+import Game.UI.POV.Camera;
+import Game.UI.POV.RenderContext;
 import Graficos.Renderable;
 
 import java.util.List;

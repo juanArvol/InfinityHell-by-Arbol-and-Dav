@@ -1,92 +1,129 @@
 package Display.Managers;
 
 import Display.Settings.DisplaySettings;
-import Display.ResizeListener;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
-import java.awt.event.FocusListener;
-import java.awt.event.KeyListener;
-import java.awt.event.MouseListener;
-import java.awt.event.MouseMotionListener;
-import java.awt.event.MouseWheelListener;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.awt.event.*;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Gestiona el JFrame y Canvas del juego.
+ * Responsable del ciclo de vida físico de la ventana.
  *
- * RESPONSABILIDADES:
- *  - Crear y configurar JFrame y Canvas
- *  - Registrar listeners de input en el Canvas
- *  - Detectar resize del Canvas y notificar al ViewportManager + ResizeListeners
+ * ──────────────────────────────────────────────────────────────────────────
+ * CAMBIO: RESIZE COMO EVENTO, NO COMO EJECUCIÓN DIRECTA
  *
- * NO gestiona:
- *  - Fullscreen (FullscreenManager)
- *  - BufferStrategy (BufferStrategyManager)
- *  - Supresión de resize durante toggle (DisplayManager vía ResizeListener guard)
+ * Problema anterior:
+ *   El ComponentListener llamaba directamente al listener registrado, que
+ *   ejecutaba destroyBS + createBS de forma síncrona en cada pixel de resize.
+ *   Esto era costoso y podía crear un bucle si createBS disparaba otro
+ *   componentResized desde el peer AWT nativo.
  *
- * ─── SOBRE componentResized DURANTE TOGGLE ───────────────────────────────────
+ * Solución:
+ *   El ComponentListener ya no ejecuta nada directamente.
+ *   Notifica al CanvasResizeListener que a su vez ENCOLA un ResizeCanvas
+ *   en la CommandQueue. La cola colapsa ráfagas de resize al último valor.
+ *   Solo se procesa el tamaño final de una ráfaga de arrastre.
  *
- *  Durante un toggle fullscreen, el Canvas recibe 2-4 eventos componentResized
- *  del WM (por setVisible(false/true), setFullScreenWindow, setSize).
- *  WindowManager los propaga normalmente — es responsabilidad de los listeners
- *  (particularmente el que llama bsManager.recreate en DisplayManager) decidir
- *  si actuar o no según toggleInProgress.
+ *   Además, el ComponentListener tiene ahora su propio guard de re-entrada:
+ *   si el mismo tamaño se notifica dos veces consecutivas (puede ocurrir
+ *   en algunas JVM durante validación de layout), la segunda se descarta.
  *
- *  WindowManager filtra dimensiones w=0 o h=0 (canvas aún sin peer o transitorio)
- *  pero NO filtra resizes "de toggle" — eso lo hace DisplayManager.
+ * ──────────────────────────────────────────────────────────────────────────
+ * THREADING
  *
- * ─── THREAD SAFETY ────────────────────────────────────────────────────────────
- *
- *  resizeListeners: CopyOnWriteArrayList → iteración segura en EDT con posible
- *  adición concurrente desde otros threads (p.ej. inicialización paralela).
+ *   show(), dispose(), suppressResize() → EDT únicamente.
+ *   getCanvas(), getFrame() → inmutables post-construcción → thread-safe.
+ *   suppressResize → volatile; escrito y leído desde EDT.
+ *   Los listeners de resize se invocan siempre desde el EDT.
  */
-public class WindowManager {
+public final class WindowManager {
 
     private final JFrame frame;
     private final Canvas canvas;
-    private final DisplaySettings settings;
-    private final ViewportManager viewportManager;
+    private final Dimension minimumSize;
 
-    private final List<ResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
+    private final List<CanvasResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
 
-    public WindowManager(DisplaySettings settings, ViewportManager viewportManager) {
-        this.settings        = settings;
-        this.viewportManager = viewportManager;
+    private volatile boolean suppressResize = false;
+    private boolean visible = false;
 
-        frame  = buildFrame();
-        canvas = buildCanvas();
+    /** Último tamaño notificado. Evita notificaciones duplicadas del mismo tamaño. */
+    private int lastNotifiedWidth  = -1;
+    private int lastNotifiedHeight = -1;
 
-        setupFrameContent();
-        setupResizeDetection();
+    public WindowManager(DisplaySettings settings) {
+        this.minimumSize = settings.minimumWindowSize;
+        this.frame  = buildFrame(settings);
+        this.canvas = buildCanvas(settings);
+
+        frame.add(canvas, BorderLayout.CENTER);
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+
+        canvas.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                if (!visible || suppressResize) return;
+
+                int w = canvas.getWidth();
+                int h = canvas.getHeight();
+
+                // Descartar dimensiones degeneradas o por debajo del mínimo
+                if (w <= 0 || h <= 0) return;
+                if (minimumSize != null
+                        && (w < minimumSize.width || h < minimumSize.height)) {
+                    return;
+                }
+
+                // GUARD DE RE-ENTRADA: descartar si el tamaño no cambió.
+                // Esto evita notificaciones redundantes que ocurren en algunas JVM
+                // cuando el LayoutManager re-valida sin cambiar las dimensiones.
+                if (w == lastNotifiedWidth && h == lastNotifiedHeight) return;
+                lastNotifiedWidth  = w;
+                lastNotifiedHeight = h;
+
+                for (CanvasResizeListener l : resizeListeners) {
+                    l.onCanvasResized(w, h);
+                }
+            }
+        });
     }
 
-    // ─── API pública ──────────────────────────────────────────────────────────
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    public JFrame  getFrame()  { return frame;  }
-    public Canvas  getCanvas() { return canvas; }
-
-    public void addResizeListener(ResizeListener l)    { resizeListeners.add(l);    }
-    public void removeResizeListener(ResizeListener l) { resizeListeners.remove(l); }
-
-    /**
-     * Registra listeners de input en el Canvas.
-     * Overload de compatibilidad sin FocusListener.
-     */
-    public void addInputListeners(KeyListener kl,
-                                  MouseListener ml,
-                                  MouseMotionListener mml,
-                                  MouseWheelListener mwl) {
-        addInputListeners(kl, ml, mml, mwl, null);
+    public void show() {
+        frame.setVisible(true);
+        visible = true;
+        canvas.requestFocusInWindow();
     }
 
+    public void dispose() {
+        frame.dispose();
+    }
+
+    // ── Control de resize ─────────────────────────────────────────────────────
+
     /**
-     * Registra todos los listeners de input en el Canvas.
-     * Todos los parámetros son opcionales (null = ignorar).
+     * Habilita o deshabilita la propagación de eventos de resize.
+     *
+     * Llamar con true ANTES de una transición.
+     * Llamar con false DESPUÉS de que la transición haya terminado.
+     * EDT only.
      */
+    public void suppressResize(boolean suppress) {
+        this.suppressResize = suppress;
+        if (!suppress) {
+            // Al reanudar, resetear el último tamaño notificado para que el próximo
+            // resize genuino siempre se propague, aunque coincida con el anterior.
+            lastNotifiedWidth  = -1;
+            lastNotifiedHeight = -1;
+        }
+    }
+
+    // ── Input listeners ───────────────────────────────────────────────────────
+
     public void addInputListeners(KeyListener kl,
                                   MouseListener ml,
                                   MouseMotionListener mml,
@@ -99,61 +136,39 @@ public class WindowManager {
         if (fl  != null) canvas.addFocusListener(fl);
     }
 
-    /** Hace la ventana visible y solicita foco al Canvas. */
-    public void show() {
-        frame.setVisible(true);
-        canvas.requestFocusInWindow();
+    public void addCanvasResizeListener(CanvasResizeListener l)    { resizeListeners.add(l);    }
+    public void removeCanvasResizeListener(CanvasResizeListener l) { resizeListeners.remove(l); }
+
+    public void requestCanvasFocus() {
+        SwingUtilities.invokeLater(canvas::requestFocusInWindow);
     }
 
-    // ─── Construcción ─────────────────────────────────────────────────────────
+    public JFrame getFrame()  { return frame;  }
+    public Canvas getCanvas() { return canvas; }
 
-    private JFrame buildFrame() {
-        JFrame f = new JFrame(settings.windowTitle);
+    // ── Builders ──────────────────────────────────────────────────────────────
+
+    private static JFrame buildFrame(DisplaySettings s) {
+        JFrame f = new JFrame(s.windowTitle);
         f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        f.setResizable(true);
-        // NO setUndecorated aquí — FullscreenManager lo gestiona
+        f.setResizable(s.windowResizable);
+        if (!s.windowDecorated) f.setUndecorated(true);
         return f;
     }
 
-    private Canvas buildCanvas() {
+    private static Canvas buildCanvas(DisplaySettings s) {
         Canvas c = new Canvas();
-        c.setPreferredSize(new Dimension(settings.windowedWidth, settings.windowedHeight));
-        c.setMinimumSize(new Dimension(320, 180));
+        c.setPreferredSize(new Dimension(s.windowedWidth, s.windowedHeight));
+        c.setMinimumSize(s.minimumWindowSize);
+        if (s.maximumWindowSize != null) c.setMaximumSize(s.maximumWindowSize);
+        if (s.cursor != null) c.setCursor(s.cursor);
         c.setFocusable(true);
+        c.setIgnoreRepaint(true);
         return c;
     }
 
-    private void setupFrameContent() {
-        frame.add(canvas, BorderLayout.CENTER);
-        frame.pack();
-        frame.setLocationRelativeTo(null);
-    }
-
-    /**
-     * Instala el detector de resize del Canvas.
-     *
-     * componentResized() se llama siempre en el EDT.
-     * Filtra dimensiones inválidas (w=0 o h=0) pero NO filtra resizes de toggle
-     * — esa responsabilidad es de los ResizeListeners individuales (ver DisplayManager).
-     */
-    private void setupResizeDetection() {
-        canvas.addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentResized(ComponentEvent e) {
-                int w = canvas.getWidth();
-                int h = canvas.getHeight();
-
-                // Filtrar dimensiones inválidas (canvas sin peer o transitorio)
-                if (w <= 0 || h <= 0) return;
-
-                // 1. Actualizar viewport primero (siempre, independiente del toggle)
-                viewportManager.onResize(w, h);
-
-                // 2. Notificar a los listeners (cada uno decide si actuar)
-                for (ResizeListener l : resizeListeners) {
-                    l.onResize(w, h, viewportManager.getViewport());
-                }
-            }
-        });
+    @FunctionalInterface
+    public interface CanvasResizeListener {
+        void onCanvasResized(int width, int height);
     }
 }

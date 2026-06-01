@@ -2,9 +2,9 @@ package Game.Enemys.Spawner;
 
 import Game.Enemys.*;
 import Game.Enemys.Types.EnemyType;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Player.Player;
 import Game.World.Core.World;
-import GameMath.Vector2D;
 
 public class EnemySpawner {
 

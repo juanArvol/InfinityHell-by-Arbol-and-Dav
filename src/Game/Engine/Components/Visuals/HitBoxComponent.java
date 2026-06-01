@@ -2,9 +2,7 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Render.Camera;
-import Game.Render.DebugRenderable;
-import Game.Render.RenderContext;
+import Game.UI.POV.*;
 
 import java.awt.Color;
 import java.awt.Rectangle;
@@ -39,15 +37,15 @@ public class HitBoxComponent extends Component implements DebugRenderable {
     }
 
     @Override
-    public void debugRender(RenderContext ctx, Camera camera) {
+    public void debugRender(RenderContext ctx) {
         if (!visible) return;
 
         ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
         if (col == null) return;
 
         Rectangle bounds = col.getBounds();
-        int x = (int)(bounds.x - camera.getX());
-        int y = (int)(bounds.y - camera.getY());
+        int x = (int)(bounds.x );
+        int y = (int)(bounds.y );
 
         ctx.drawHitbox(new Rectangle(x, y, bounds.width, bounds.height), debugColor);
     }
@@ -56,4 +54,5 @@ public class HitBoxComponent extends Component implements DebugRenderable {
     public boolean isVisible()           { return visible; }
     public void setDebugColor(Color c)   { this.debugColor = c; }
     public Color getDebugColor()         { return debugColor; }
+
 }

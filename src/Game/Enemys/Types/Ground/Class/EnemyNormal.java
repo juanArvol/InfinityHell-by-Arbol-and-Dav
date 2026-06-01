@@ -2,9 +2,9 @@ package Game.Enemys.Types.Ground.Class;
 
 import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Types.Ground.GroundTypeEnemy;
-import Game.Fisics.EnemyPhysics;
+import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Player.Player;
-import GameMath.Vector2D;
 
 import java.awt.image.BufferedImage;
 

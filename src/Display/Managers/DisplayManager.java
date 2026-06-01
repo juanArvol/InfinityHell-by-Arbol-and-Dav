@@ -1,305 +1,281 @@
 package Display.Managers;
 
+import Display.Background.DisplayBackground;
+import Display.Commands.DisplayCommand;
+import Display.Commands.DisplayCommandQueue;
+import Display.Pipeline.DisplayReconfigurationPipeline;
 import Display.ResizeListener;
 import Display.Settings.DisplaySettings;
+import Display.State.DisplayMode;
+import Display.State.DisplayState;
+import Display.State.Resolution;
+import Display.State.SurfaceState;
+import Display.Transition.DisplayTransitionMachine;
+import Display.Transition.DisplayTransitionState;
 import Display.ViewportInfo;
-import Entradas.KeyBoard;
 
+import javax.swing.*;
 import java.awt.*;
 import java.awt.event.FocusListener;
-import java.awt.image.BufferedImage;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
 
 /**
- * Fachada principal del sistema de display.
+ * Fachada del subsistema Display.
  *
- * Coordina todos los subsistemas:
- *   DisplayManager
- *    ├── WindowManager        — JFrame + Canvas + resize detection
- *    ├── FullscreenManager    — fullscreen real sin dispose()
- *    ├── ViewportManager      — cálculo de viewport/scale
- *    ├── ScalingManager       — presentación del framebuffer virtual
- *    └── RenderSurfaceManager — framebuffer virtual + BufferStrategy
+ * ──────────────────────────────────────────────────────────────────────────
+ * CAMBIO: RESIZE COMPLETAMENTE EVENT-DRIVEN
  *
- * ─── FLUJO CORRECTO DE F11 / toggleFullscreen ────────────────────────────────
+ * Problema anterior:
+ *   onCanvasResized() ejecutaba directamente destroyBS + createBS + viewport
+ *   en el ComponentListener. Era un camino especial fuera del pipeline.
  *
- *  GameLoop thread
- *    → keyboard.update()
- *    → edge "toggleFullscreen" detectado → fsTogglePending = true
- *    → KeyActionListener.onKeyAction("toggleFullscreen")
- *    → display.toggleFullscreen(keyboard)          ← este método
- *         invokeLater #1: toggleInProgress = true
- *                         fullscreenManager.toggle(...)
- *                         invokeLater #2: canvas.requestFocusInWindow()
- *                                         keyboard.clearFsTogglePending()
- *                                         toggleInProgress = false
+ * Solución:
+ *   El CanvasResizeListener ahora encola DisplayCommand.ResizeCanvas.
+ *   El pipeline lo procesa como cualquier otro comando, con suppressResize
+ *   durante la ejecución para evitar el bucle ComponentResized ↔ createBS.
+ *   La cola colapsa ráfagas de resize al último valor (debounce).
+ *   El ResizeListener externo (cámara, UI) se notifica desde el pipeline
+ *   tras publicar el nuevo DisplayState, no desde el ComponentListener.
  *
- *  Durante invokeLater #1 y #2, el Canvas recibe eventos componentResized
- *  del WM.  WindowManager.componentResized() comprueba toggleInProgress
- *  antes de llamar bsManager.recreate().  Si está en progreso, el recreate
- *  se encola para el invokeLater #2 (post-toggle).
+ * ──────────────────────────────────────────────────────────────────────────
+ * INVARIANTE DEL SISTEMA
  *
- *  Así se elimina el loop:
- *    resize durante toggle → recreate suprimido → BS sigue válido → no crash.
+ * Todo cambio de estado del Display sigue exactamente este flujo:
  *
- *  El recreate final (post-toggle, en invokeLater #2) garantiza que el BS
- *  queda correcto para el nuevo tamaño de canvas.
+ *   evento externo (Swing, input, código)
+ *     → enqueue(DisplayCommand)
+ *     → CommandQueue.drainToEDT()
+ *     → DisplayReconfigurationPipeline.execute()
+ *     → nuevo DisplayState publicado
+ *     → ResizeListeners notificados (si aplica)
  *
- * ─── BUGS CORREGIDOS ──────────────────────────────────────────────────────────
+ * No existe ningún camino que modifique el estado del Display
+ * fuera de este flujo.
  *
- * BUG-LOOP-F11 · componentResized() durante toggle llama bsManager.recreate()
- *   repetidamente, corrompiendo el BufferStrategy y colapsando el juego.
- *   SOLUCIÓN: flag volatile toggleInProgress; resize listener lo consulta.
- *   El recreate se hace UNA vez al finalizar el toggle, en el EDT.
+ * ──────────────────────────────────────────────────────────────────────────
+ * THREADING
  *
- * BUG-EDT-FULLSCREEN · operaciones Swing llamadas fuera del EDT.
- *   SOLUCIÓN: toggleFullscreen() usa invokeLater().
- *
- * BUG-FOCUS-LOST-AFTER-TOGGLE · Canvas pierde foco tras toggle.
- *   SOLUCIÓN: requestFocusInWindow() en invokeLater anidado post-toggle.
- *
- * BUG-F11-DOBLE-TOGGLE · F11 puede dispararse dos veces durante el toggle.
- *   SOLUCIÓN: fsTogglePending en KeyBoard + clearFsTogglePending() desde EDT.
- *
- * BUG-VIEWPORT-INICIAL · getCanvas().getWidth() puede ser 0 justo tras show().
- *   SOLUCIÓN: validar w > 0 && h > 0 antes de llamar onResize().
+ *   init()                    → thread principal; usa invokeAndWait.
+ *   enqueue(command)          → cualquier thread.
+ *   requestToggleFullscreen() → cualquier thread.
+ *   beginFrame() / endFrame() → solo GameLoop thread.
+ *   addResizeListener()       → thread-safe (CopyOnWriteArrayList).
+ *   getState()                → volatile read; thread-safe.
  */
-public class DisplayManager {
+public final class DisplayManager {
 
     private static final Logger LOG = Logger.getLogger(DisplayManager.class.getName());
 
-    // ─── Subsistemas ──────────────────────────────────────────────────────────
-    private final DisplaySettings       settings;
-    private final ViewportManager       viewportManager;
-    private final WindowManager         windowManager;
-    private final FullscreenManager     fullscreenManager;
-    private final RenderSurfaceManager  surfaceManager;
-    private final ScalingManager        scalingManager;
-    private final BufferStrategyManager bsManager;
+    private final DisplaySettings              settings;
+    private final WindowManager                windowManager;
+    private final FullscreenManager            fullscreenManager;
+    private final ViewportManager              viewportManager;
+    private final RenderSurfaceManager         surfaceManager;
+    private final DisplayTransitionMachine     transitionMachine  = new DisplayTransitionMachine();
+    private final DisplayCommandQueue          commandQueue       = new DisplayCommandQueue();
+    private       DisplayReconfigurationPipeline pipeline;
 
-    // ─── Estado ───────────────────────────────────────────────────────────────
+    private final int virtualWidth;
+    private final int virtualHeight;
+
+    private volatile DisplayState currentState;
+
     /**
-     * BUG-LOOP-F11 FIX: true mientras un toggle fullscreen está en curso.
-     * volatile: escrito y leído desde el EDT; leído desde el ComponentListener
-     * (también EDT), pero declarado volatile por claridad de intención.
-     *
-     * Mientras está en true, el resize listener NO llama bsManager.recreate().
-     * El recreate se hace una sola vez al final del toggle.
+     * ResizeListeners externos. Se notifican DESDE EL PIPELINE después de publicar
+     * el nuevo DisplayState, no desde el ComponentListener.
+     * Esto garantiza que los listeners siempre reciben un estado coherente.
      */
-    private volatile boolean toggleInProgress = false;
-
-    /** Graphics2D del framebuffer virtual, válido entre beginFrame/endFrame. */
-    private Graphics2D currentVirtualG = null;
-
-    // ─── Constructor ──────────────────────────────────────────────────────────
+    private final List<ResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
 
     public DisplayManager(DisplaySettings settings) {
-        this.settings = settings;
+        this.settings      = settings;
+        this.virtualWidth  = settings.virtualWidth;
+        this.virtualHeight = settings.virtualHeight;
 
-        // 1. ViewportManager primero (WindowManager lo necesita para notificar)
-        viewportManager   = new ViewportManager(settings);
+        windowManager = new WindowManager(settings);
 
-        // 2. WindowManager (crea JFrame + Canvas, registra resize → viewportManager)
-        windowManager     = new WindowManager(settings, viewportManager);
+        viewportManager = new ViewportManager(
+            settings.virtualWidth,
+            settings.virtualHeight,
+            settings.scalingMode,
+            settings.fillColor
+        );
 
-        // 3. Managers independientes
         fullscreenManager = new FullscreenManager(settings.monitorIndex);
-        surfaceManager    = new RenderSurfaceManager(settings);
-        scalingManager    = new ScalingManager(settings);
-        bsManager         = new BufferStrategyManager(windowManager.getCanvas());
 
-        // 4. BUG-LOOP-F11 FIX:
-        //    El resize listener recreará el BS solo cuando NO haya un toggle
-        //    en progreso. Durante el toggle, el WM puede disparar 2-4 eventos
-        //    componentResized (setVisible false/true, setFullScreenWindow,
-        //    setSize windowed). Recrear el BS en cada uno de esos eventos
-        //    deja el BS en null repetidamente, el GameLoop salta frames,
-        //    y la ventana colapsa en un bucle de resize → crash.
-        //
-        //    Con este guard, el recreate ocurre UNA vez al finalizar el toggle
-        //    (ver toggleFullscreen → invokeLater anidado).
-        windowManager.addResizeListener((rw, rh, vp) -> {
-            if (!toggleInProgress) {
-                bsManager.recreate();
+        surfaceManager = new RenderSurfaceManager(
+            windowManager.getCanvas(),
+            settings.virtualWidth,
+            settings.virtualHeight,
+            settings.bufferCount,
+            settings.useInterpolation,
+            settings.scalingMode,
+            settings.background
+        );
+
+        currentState = new DisplayState(
+            DisplayMode.WINDOWED,
+            settings.windowedWidth,
+            settings.windowedHeight,
+            new Resolution(settings.virtualWidth, settings.virtualHeight),
+            null,
+            SurfaceState.LOST,
+            DisplayTransitionState.IDLE,
+            settings.monitorIndex
+        );
+
+        pipeline = new DisplayReconfigurationPipeline(
+            windowManager, fullscreenManager, viewportManager, surfaceManager,
+            transitionMachine, currentState,
+            state -> {
+                currentState = state;
+                // Notificar ResizeListeners externos con el estado recién publicado
+                // Solo si es un resize real (realWidth/realHeight cambiaron)
+                notifyResizeListenersIfNeeded(state);
             }
-        });
+        );
 
-        LOG.info("DisplayManager inicializado. Virtual: " +
-                 settings.virtualWidth + "x" + settings.virtualHeight);
+        // El ComponentListener solo encola ResizeCanvas.
+        // NO ejecuta nada directamente. La cola se drena en el EDT via enqueue().
+        windowManager.addCanvasResizeListener((w, h) ->
+            enqueue(new DisplayCommand.ResizeCanvas(w, h))
+        );
     }
 
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Overload de compatibilidad sin FocusListener.
-     */
-    public void init(java.awt.event.KeyListener keyListener,
-                     java.awt.event.MouseListener mouseListener,
-                     java.awt.event.MouseMotionListener motionListener,
-                     java.awt.event.MouseWheelListener wheelListener) {
-        init(keyListener, mouseListener, motionListener, wheelListener, null);
+    public void init(java.awt.event.KeyListener kl,
+                     java.awt.event.MouseListener ml,
+                     java.awt.event.MouseMotionListener mml,
+                     java.awt.event.MouseWheelListener mwl) {
+        init(kl, ml, mml, mwl, null);
     }
 
-    /**
-     * Inicializa la ventana y el BufferStrategy.
-     * Llamar ANTES de iniciar el game loop.
-     */
-    public void init(java.awt.event.KeyListener keyListener,
-                     java.awt.event.MouseListener mouseListener,
-                     java.awt.event.MouseMotionListener motionListener,
-                     java.awt.event.MouseWheelListener wheelListener,
-                     FocusListener focusListener) {
+    public void init(java.awt.event.KeyListener kl,
+                     java.awt.event.MouseListener ml,
+                     java.awt.event.MouseMotionListener mml,
+                     java.awt.event.MouseWheelListener mwl,
+                     FocusListener fl) {
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                windowManager.suppressResize(true);
+                windowManager.addInputListeners(kl, ml, mml, mwl, fl);
+                windowManager.show();
+            });
 
-        windowManager.addInputListeners(keyListener, mouseListener,
-                                        motionListener, wheelListener,
-                                        focusListener);
-        windowManager.show();
+            SwingUtilities.invokeAndWait(() -> {
+                if (settings.startFullscreen) {
+                    fullscreenManager.enterFullscreen(windowManager.getFrame());
+                }
+                surfaceManager.createBufferStrategy();
 
-        // DESPUÉS de show() para que el Canvas tenga peer nativo
-        bsManager.init();
+                int w = windowManager.getCanvas().getWidth();
+                int h = windowManager.getCanvas().getHeight();
+                if (w > 0 && h > 0) {
+                    viewportManager.onResize(w, h);
+                }
 
-        // Arrancar en fullscreen si settings lo pide.
-        // invokeAndWait: el hilo main espera a que la ventana esté lista.
-        if (settings.startFullscreen) {
-            try {
-                javax.swing.SwingUtilities.invokeAndWait(() ->
-                    fullscreenManager.enterFullscreen(windowManager.getFrame())
-                );
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                LOG.warning("Error al entrar en fullscreen inicial: " + e.getCause());
-            }
+                publishFullState(w, h);
+                windowManager.suppressResize(false);
+                windowManager.requestCanvasFocus();
+            });
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw new RuntimeException("DisplayManager.init() failed", e.getCause());
         }
-
-        // BUG-VIEWPORT-INICIAL FIX
-        Canvas c = windowManager.getCanvas();
-        int w = c.getWidth();
-        int h = c.getHeight();
-        if (w > 0 && h > 0) {
-            viewportManager.onResize(w, h);
-        }
-
-        LOG.info("Display iniciado. Canvas: " + w + "x" + h);
     }
 
-    // ─── Frame pipeline ───────────────────────────────────────────────────────
+    // ── Frame pipeline ────────────────────────────────────────────────────────
 
     public Graphics2D beginFrame() {
-        currentVirtualG = surfaceManager.beginFrame();
-        return currentVirtualG;
+        return surfaceManager.beginFrame();
     }
 
     public void endFrame(Graphics2D virtualG) {
         surfaceManager.endFrame(virtualG);
-        currentVirtualG = null;
 
-        Graphics2D screenG = bsManager.acquireGraphics();
+        Graphics2D screenG = surfaceManager.beginPresent();
         if (screenG == null) return;
 
-        try {
-            scalingManager.present(screenG, surfaceManager.getFramebuffer(),
-                                   viewportManager.getViewport());
-        } finally {
-            bsManager.present(screenG);
+        surfaceManager.present(screenG, viewportManager.getViewport());
+        surfaceManager.endPresent(screenG);
+    }
+
+    // ── API de comandos ───────────────────────────────────────────────────────
+
+    /**
+     * Drena la cola de comandos y ejecuta reconfiguraciones pendientes.
+     * DEBE llamarse desde el EDT.
+     */
+    public void drainCommands() {
+        commandQueue.drainToEDT(pipeline);
+    }
+
+    /**
+     * Encola un comando. Thread-safe. Puede llamarse desde cualquier thread.
+     * El drain se programa automáticamente en el EDT.
+     */
+    public void enqueue(DisplayCommand command) {
+        commandQueue.enqueue(command);
+        SwingUtilities.invokeLater(this::drainCommands);
+    }
+
+    /**
+     * Solicita alternar fullscreen. Thread-safe.
+     */
+    public void requestToggleFullscreen() {
+        enqueue(new DisplayCommand.ToggleFullscreen());
+    }
+
+    // ── Background ────────────────────────────────────────────────────────────
+
+    public void setBackground(DisplayBackground bg) { surfaceManager.setBackground(bg); }
+    public DisplayBackground getBackground()         { return surfaceManager.getBackground(); }
+
+    // ── Estado y viewport ─────────────────────────────────────────────────────
+
+    public DisplayState getState()      { return currentState; }
+    public ViewportInfo getViewport()   { return viewportManager.getViewport(); }
+    public int getVirtualWidth()        { return virtualWidth;  }
+    public int getVirtualHeight()       { return virtualHeight; }
+    public Canvas  getCanvas()          { return windowManager.getCanvas(); }
+    public boolean isFullscreen()       { return fullscreenManager.isFullscreen(); }
+    public DisplayMode getMode()        { return fullscreenManager.getCurrentMode(); }
+
+    // ── Resize listeners ──────────────────────────────────────────────────────
+
+    public void addResizeListener(ResizeListener l)    { resizeListeners.add(l);    }
+    public void removeResizeListener(ResizeListener l) { resizeListeners.remove(l); }
+
+    // ── Privados ──────────────────────────────────────────────────────────────
+
+    private void publishFullState(int realW, int realH) {
+        ViewportInfo vp = viewportManager.getViewport();
+        DisplayState next = new DisplayState(
+            fullscreenManager.getCurrentMode(),
+            realW, realH,
+            new Resolution(virtualWidth, virtualHeight),
+            vp,
+            surfaceManager.getSurfaceState(),
+            transitionMachine.getState(),
+            fullscreenManager.getActiveMonitorIndex()
+        );
+        currentState = next;
+    }
+
+    /** Notifica ResizeListeners si el DisplayState publicado tiene nuevas dimensiones. */
+    private void notifyResizeListenersIfNeeded(DisplayState state) {
+        if (state.viewport == null || resizeListeners.isEmpty()) return;
+        for (ResizeListener l : resizeListeners) {
+            try {
+                l.onResize(state.realWidth, state.realHeight, state.viewport);
+            } catch (Exception e) {
+                LOG.warning("ResizeListener threw: " + e.getMessage());
+            }
         }
     }
-
-    // ─── Fullscreen toggle ────────────────────────────────────────────────────
-
-    /**
-     * Alterna fullscreen ↔ windowed de forma segura desde cualquier thread.
-     *
-     * FLUJO:
-     *   invokeLater #1 (EDT):
-     *     · toggleInProgress = true       → suprime recreates del resize listener
-     *     · fullscreenManager.toggle()    → opera Swing/AWT en el EDT (correcto)
-     *     invokeLater #2 (EDT, anidado):  → garantiza que setVisible(true) terminó
-     *       · canvas.requestFocusInWindow() → restaurar foco
-     *       · keyboard.clearFsTogglePending() → liberar guard anti-doble-edge
-     *       · bsManager.recreate()          → UN recreate limpio post-toggle
-     *       · toggleInProgress = false      → resize listener vuelve a operar
-     *
-     * @param keyboard el KeyBoard del juego (para restaurar foco y limpiar guard).
-     */
-    public void toggleFullscreen(KeyBoard keyboard) {
-        javax.swing.SwingUtilities.invokeLater(() -> {
-            // BUG-LOOP-F11 FIX: bloquear recreates durante el toggle
-            toggleInProgress = true;
-
-            fullscreenManager.toggle(
-                windowManager.getFrame(),
-                settings.windowedWidth,
-                settings.windowedHeight
-            );
-
-            // Anidado para ejecutarse DESPUÉS de que setVisible(true) haya
-            // devuelto el control al WM y el canvas tenga su tamaño final.
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                windowManager.getCanvas().requestFocusInWindow();
-                keyboard.clearFsTogglePending();
-
-                // UN recreate limpio con el canvas ya en su tamaño final
-                bsManager.recreate();
-
-                // BUG-LOOP-F11 FIX: habilitar de nuevo el resize listener
-                toggleInProgress = false;
-            });
-        });
-    }
-
-    /**
-     * Overload de compatibilidad sin KeyBoard.
-     * No corrige BUG-F11-DOBLE-TOGGLE ni BUG-FOCUS-LOST-AFTER-TOGGLE.
-     * Solo úsalo si realmente no tienes acceso al KeyBoard.
-     */
-    public void toggleFullscreen() {
-        javax.swing.SwingUtilities.invokeLater(() -> {
-            toggleInProgress = true;
-            fullscreenManager.toggle(
-                windowManager.getFrame(),
-                settings.windowedWidth,
-                settings.windowedHeight
-            );
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                bsManager.recreate();
-                toggleInProgress = false;
-            });
-        });
-    }
-
-    public boolean isFullscreen() {
-        return fullscreenManager.isFullscreen();
-    }
-
-    // ─── Acceso a datos del viewport ─────────────────────────────────────────
-
-    public ViewportInfo getViewport() {
-        return viewportManager.getViewport();
-    }
-
-    public int getVirtualWidth() {
-        return settings.virtualWidth;
-    }
-
-    public int getVirtualHeight() {
-        return settings.virtualHeight;
-    }
-
-    // ─── Registro de listeners externos ──────────────────────────────────────
-
-    public void addResizeListener(ResizeListener l) {
-        windowManager.addResizeListener(l);
-    }
-
-    public void removeResizeListener(ResizeListener l) {
-        windowManager.removeResizeListener(l);
-    }
-
-    // ─── Acceso a subsistemas (para casos avanzados) ─────────────────────────
-
-    public WindowManager     getWindowManager()     { return windowManager;     }
-    public ViewportManager   getViewportManager()   { return viewportManager;   }
-    public FullscreenManager getFullscreenManager() { return fullscreenManager; }
-    public Canvas            getCanvas()            { return windowManager.getCanvas(); }
 }

@@ -11,6 +11,7 @@ package Game.UI;
 public class Cronometer {
 
     private long startTime;
+    private long endTime;   // FIX B-01: guardamos el instante real de expiración
     private long duration;
     private boolean running;
 
@@ -23,7 +24,8 @@ public class Cronometer {
      */
     public void run(long millis) {
         this.duration  = millis;
-        this.startTime = System.currentTimeMillis(); // FIX: captura el tiempo AHORA
+        this.startTime = System.currentTimeMillis();
+        this.endTime   = 0;
         this.running   = true;
     }
 
@@ -34,8 +36,10 @@ public class Cronometer {
     public void update() {
         if (!running) return;
 
-        long elapsed = System.currentTimeMillis() - startTime;
+        long now     = System.currentTimeMillis();
+        long elapsed = now - startTime;
         if (elapsed >= duration) {
+            endTime = now;   // capturamos el momento exacto de expiración
             running = false;
         }
     }
@@ -45,14 +49,30 @@ public class Cronometer {
         return running;
     }
 
-    /** @return milisegundos transcurridos desde que se inició. */
+    /**
+     * Milisegundos transcurridos desde que se inició.
+     *
+     * FIX B-01: la versión anterior retornaba 0 cuando el cronómetro había
+     * expirado, confundiendo a los callers que usaban getElapsed() para
+     * animaciones post-expiración (fade-outs, efectos de UI).
+     *
+     * Ahora:
+     *  - Si está corriendo  → tiempo real desde startTime.
+     *  - Si expiró          → tiempo total transcurrido hasta la expiración
+     *                         (endTime - startTime ≈ duration).
+     *  - Si nunca arrancó   → 0.
+     */
     public long getElapsed() {
-        if (!running) return 0;
-        return System.currentTimeMillis() - startTime;
+        if (running)    return System.currentTimeMillis() - startTime;
+        if (endTime > 0) return endTime - startTime;
+        return 0;
     }
 
     /** Detiene el cronómetro manualmente. */
     public void stop() {
-        running = false;
+        if (running) {
+            endTime = System.currentTimeMillis();
+            running = false;
+        }
     }
 }

@@ -1,8 +1,8 @@
 package Game.World.WorldObjects;
 
-import Game.Items.ItemStack;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Items.Savement.ItemStack;
 import Game.World.Surface.SurfaceMaterial;
-import GameMath.Vector2D;
 
 import java.awt.image.BufferedImage;
 

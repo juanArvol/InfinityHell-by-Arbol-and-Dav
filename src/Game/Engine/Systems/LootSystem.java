@@ -1,15 +1,13 @@
 package Game.Engine.Systems;
 
-import Game.Events.GameEventBus;
-import Game.Events.OnEnemyDeathEvent;
-import Game.Items.ItemDefinition;
-import Game.Items.ItemRarity;
-import Game.Items.ItemRegistry;
-import Game.Items.ItemStack;
-import Game.World.Core.World;
-import Game.World.Core.WorldManager;
+import Game.Engine.Events.GameEventBus;
+import Game.Engine.Events.OnEnemyDeathEvent;            // ← standalone, fuente de verdad
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Items.Creation.ItemDefinition;
+import Game.Items.Creation.ItemRarity;
+import Game.Items.Creation.ItemRegistry;
+import Game.Items.Savement.ItemStack;
 import Game.World.WorldObjects.WorldObjectFactory;
-import GameMath.Vector2D;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,46 +16,61 @@ import java.util.Random;
 /**
  * Sistema de loot — spawnea WorldItems cuando un enemigo muere.
  *
- * ── DISEÑO ───────────────────────────────────────────────────────────────
- * Escucha OnEnemyDeathEvent del bus. No conoce a Enemy directamente.
- * La loot table se configura por tipo de enemigo o globalmente.
+ * ──────────────────────────────────────────────────────────────────────────
+ * CORRECCIÓN DE CONTRATO DE EVENTO
  *
- * Registro:
- *   LootSystem.register();  // en GameBootstrap
+ * PROBLEMA ANTERIOR:
+ *   LootSystem importaba:
+ *     import Game.Engine.Events.GameEvents.OnEnemyDeathEvent;
  *
- * Uso con tabla por defecto (todos los enemigos):
- *   LootSystem system = new LootSystem();
- *   system.addEntry("bandage",   ItemRarity.COMMON,   0.4f, 1, 2);
- *   system.addEntry("ammo_9mm",  ItemRarity.COMMON,   0.6f, 5, 15);
- *   system.addEntry("pistol_9mm",ItemRarity.RARE,     0.08f,1, 1);
- *   system.register();
+ *   Esto referenciaba el record INTERNO de GameEvents, que es una clase
+ *   distinta de Game.Engine.Events.OnEnemyDeathEvent (standalone).
+ *
+ *   Si el emisor (e.g. EnemyManager) usaba el standalone y LootSystem
+ *   suscribía el interno → el handler NUNCA se ejecutaba.
+ *   Sin error de compilación. Sin excepción en runtime. Loot inexistente.
+ *
+ * CAUSA RAÍZ:
+ *   Divergencia de contratos por refactor incompleto (dos clases para el
+ *   mismo evento semántico). Ver GameEvents.java y OnEnemyDeathEvent.java.
+ *
+ * SOLUCIÓN:
+ *   Importar siempre Game.Engine.Events.OnEnemyDeathEvent (standalone).
+ *   GameEvents.OnEnemyDeathEvent fue eliminado del catálogo interno.
+ *   Ahora solo existe UNA clase → cero ambigüedad.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * ARQUITECTURA (sin cambios)
+ *
+ * LootSystem recibe un itemSpawner inyectado → no depende de WorldManager.
+ * El que construye LootSystem decide cómo spawnear ítems en el mundo.
  */
 public class LootSystem {
 
-    private final List<LootEntry> entries = new ArrayList<>();
-    private final Random random;
+    private final List<LootEntry> entries;
+    private final Random          random;
+    private final java.util.function.Consumer<Object> itemSpawner;
 
-    public LootSystem() {
-        this(new Random());
+    /**
+     * @param itemSpawner callback que recibe el WorldItem y lo añade al mundo.
+     *                    Normalmente: item -> world.add(item)
+     */
+    public LootSystem(java.util.function.Consumer<Object> itemSpawner) {
+        this(itemSpawner, new Random());
     }
 
-    public LootSystem(long seed) {
-        this(new Random(seed));
+    public LootSystem(java.util.function.Consumer<Object> itemSpawner, long seed) {
+        this(itemSpawner, new Random(seed));
     }
 
-    private LootSystem(Random random) {
-        this.random = random;
+    private LootSystem(java.util.function.Consumer<Object> itemSpawner, Random random) {
+        this.itemSpawner = itemSpawner;
+        this.random      = random;
+        this.entries     = new ArrayList<>();
     }
 
     // ── Configuración ─────────────────────────────────────────────────────
 
-    /**
-     * @param itemId    ID en ItemRegistry
-     * @param rarity    rareza (afecta color en UI, aquí no afecta drop chance)
-     * @param dropChance probabilidad de caer [0.0, 1.0]
-     * @param minAmount  mínimo a dropear
-     * @param maxAmount  máximo a dropear
-     */
     public LootSystem addEntry(String itemId, ItemRarity rarity,
                                float dropChance, int minAmount, int maxAmount) {
         entries.add(new LootEntry(itemId, rarity, dropChance, minAmount, maxAmount));
@@ -66,17 +79,26 @@ public class LootSystem {
 
     // ── Activación ────────────────────────────────────────────────────────
 
-    /** Registra este sistema en el GameEventBus. Llamar una vez en bootstrap. */
+    /**
+     * Registra el handler en el bus de eventos global.
+     * A partir de este momento, cada OnEnemyDeathEvent generará loot.
+     */
     public void register() {
-        GameEventBus.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
+        // Suscribir al STANDALONE OnEnemyDeathEvent — fuente de verdad única.
+        GameEventBus.GLOBAL.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
+    }
+
+    /**
+     * Registra el handler en una instancia específica del bus.
+     * Útil para escenas aisladas o tests.
+     */
+    public void register(GameEventBus bus) {
+        bus.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
     }
 
     // ── Handler ───────────────────────────────────────────────────────────
 
     private void onEnemyDeath(OnEnemyDeathEvent event) {
-        World world = WorldManager.getInstance().getCurrentWorld();
-        if (world == null) return;
-
         Vector2D pos = event.position();
 
         for (LootEntry entry : entries) {
@@ -90,22 +112,22 @@ public class LootSystem {
                 amount += random.nextInt(entry.maxAmount - entry.minAmount + 1);
             }
 
-            // Pequeño offset aleatorio para que los ítems no se apilen exactamente
             double ox = (random.nextDouble() - 0.5) * 24;
             double oy = (random.nextDouble() - 0.5) * 24;
             Vector2D spawnPos = new Vector2D(pos.getX() + ox, pos.getY() + oy);
 
-            world.add(WorldObjectFactory.worldItem(spawnPos, new ItemStack(def, amount)));
+            Object worldItem = WorldObjectFactory.worldItem(spawnPos, new ItemStack(def, amount));
+            itemSpawner.accept(worldItem);
         }
     }
 
-    // ── Entrada de tabla ─────────────────────────────────────────────────
+    // ── Registro de entrada ───────────────────────────────────────────────
 
     private record LootEntry(
-        String itemId,
+        String     itemId,
         ItemRarity rarity,
-        float dropChance,
-        int minAmount,
-        int maxAmount
+        float      dropChance,
+        int        minAmount,
+        int        maxAmount
     ) {}
 }

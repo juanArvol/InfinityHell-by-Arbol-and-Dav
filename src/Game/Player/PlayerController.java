@@ -1,38 +1,59 @@
 package Game.Player;
 
-import Entradas.KeyBoard;
-import Game.Fisics.PlayerPhysics;
+import Game.Engine.GameMath.Physics.Implementation.PlayerPhysics;
+import Inputs.KeyBoard;
 
 /**
  * Controlador de input del jugador.
  *
- * Traduce input de teclado en llamadas a la física.
- * No contiene lógica de física; solo lee KeyBoard y delega.
+ * ── REFACTOR: DESACOPLAR DE Player ───────────────────────────────────────
  *
- * ─── REFACTOR (Entradas v2) ───────────────────────────────────────────────────
+ * PROBLEMA ORIGINAL:
+ *   PlayerController recibía el Player completo en su constructor:
  *
- *  · Reemplaza todos los accesos a campos estáticos eliminados
- *    (KeyBoard.left, .right, .shift, .up, .r, .c) por KeyBoard.getState().
+ *     public PlayerController(Player player, PlayerState state) {
+ *         this.player  = player;
+ *         this.physics = (PlayerPhysics) player.getPhysics();
+ *         ...
+ *     }
  *
- *  · handleActionsInput() eliminado: contenía solo cuerpos vacíos (código muerto).
- *    La lógica de recarga (r) y modo apuntado (c) se gestiona en Mechanics
- *    y a través del sistema de listeners de edge — no aquí.
+ *   Solo usaba player.getPhysics() — el resto del Player era ignorado.
+ *   Esto creaba una dependencia innecesaria: PlayerController conoce
+ *   Player, y Player conoce PlayerController → dependencia circular.
+ *   Además, un lector del código asume que PlayerController usa el Player
+ *   completo cuando en realidad solo usa la física.
  *
- *  · Eliminado el import no usado (java.security.Key).
+ * SOLUCIÓN:
+ *   Inyectar directamente las dependencias reales:
+ *   - PlayerPhysics: para mover y saltar.
+ *   - PlayerState:   para leer/escribir el estado del jugador.
+ *
+ *   Player extrae physics antes de pasarla:
+ *     PlayerPhysics physics = (PlayerPhysics) getPhysics();
+ *     controller = new PlayerController(physics, state);
+ *
+ * BENEFICIO:
+ *   - PlayerController no depende de Player. La firma del constructor
+ *     documenta exactamente qué necesita.
+ *   - Sin referencia circular entre Player y PlayerController.
+ *   - Reutilizable: si otro tipo de entidad controlable (NPC con IA manual,
+ *     personaje de replay) necesita el mismo controlador, funciona sin Player.
  */
 public class PlayerController {
 
-    private final Player       player;
     private final PlayerPhysics physics;
     private final PlayerState   state;
 
-    public PlayerController(Player player, PlayerState state) {
-        this.player  = player;
-        this.physics = (PlayerPhysics) player.getPhysics();
+    public PlayerController(PlayerPhysics physics, PlayerState state) {
+        this.physics = physics;
         this.state   = state;
     }
 
     public void update() {
+        // FIX A-03: respetar el flag de congelado. Si está activo (trampa,
+        // cutscene, efecto de estado), el jugador no procesa ningún input.
+        if (state.isCongelado()) return;
+
         handleMovementInput();
         handleJumpInput();
     }

@@ -52,9 +52,14 @@ public class UIManager {
     /**
      * Notifica a todos los elementos que recalculen sus posiciones.
      *
-     * En el nuevo sistema virtual, virtualWidth y virtualHeight son constantes,
-     * pero se mantiene este método para cuando en el futuro se quiera
-     * soportar cambio de resolución virtual en runtime.
+     * FIX B-03: el Javadoc anterior decía "se mantiene para uso futuro" porque
+     * en el sistema virtual la resolución es constante. Sin embargo, este método
+     * SÍ se llama activamente desde GameState.onVirtualDimensionsChanged() cada
+     * vez que la ventana cambia de tamaño. La documentación era incorrecta.
+     *
+     * En la práctica, virtualWidth y virtualHeight son constantes definidas por
+     * DisplaySettings; onVirtualDimensionsChanged solo se dispara en casos reales
+     * de cambio (modo fullscreen, cambio de resolución virtual en configuración).
      *
      * @param virtualWidth  DisplaySettings.virtualWidth
      * @param virtualHeight DisplaySettings.virtualHeight

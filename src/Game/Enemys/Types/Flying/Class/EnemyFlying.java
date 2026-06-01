@@ -3,9 +3,9 @@ package Game.Enemys.Types.Flying.Class;
 import Game.Enemys.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Types.Flying.FlyingTypeEnemy;
 import Game.Engine.Components.Visuals.ShadowComponent;
-import Game.Fisics.EnemyPhysics;
+import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Player.Player;
-import GameMath.Vector2D;
 
 import java.awt.image.BufferedImage;
 

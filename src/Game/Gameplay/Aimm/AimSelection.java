@@ -1,8 +1,8 @@
 package Game.Gameplay.Aimm;
 
-import Entradas.KeyBoard;
 import Game.Gameplay.Aimm.Dirrection.AidleStrategy;
 import Game.Player.Player;
+import Inputs.KeyBoard;
 
 /**
  * Selecciona la estrategia de apuntado según el input actual.

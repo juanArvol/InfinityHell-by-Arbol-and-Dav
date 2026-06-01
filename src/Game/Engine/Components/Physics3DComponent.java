@@ -1,7 +1,7 @@
 package Game.Engine.Components;
 
 import Game.Engine.Component;
-import Game.Engine.Transform3D;
+import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
 
 /**
  * Componente de física con eje Z — soporte para saltos en vista top-down 2.5D.

@@ -1,12 +1,12 @@
 package Game.Engine;
 
+import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.PhysicsComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
-import Game.Fisics.Physics;
-import Game.Fisics.PhysicsStepper;
-import GameMath.Vector2D;
+import Game.Engine.GameMath.Physics.PhysicsStepper;
+import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -14,58 +14,71 @@ import java.awt.image.BufferedImage;
 /**
  * Base de todos los objetos que se mueven con física.
  *
- * Agrega automáticamente:
- *   - SpriteRenderer  (con la textura dada, y el SizeSyncMode indicado)
- *   - ColliderComponent (sin perfil ni tamaño — la subclase los define)
- *   - PhysicsComponent  (con el Physics dado)
+ * ── REFACTOR: EXTIENDE Entity EN LUGAR DE GameObjects ────────────────────
  *
- * El SizeSyncMode se aplica en SpriteRenderer.start(), que se llama
- * DENTRO de addComponent(). En ese momento el ColliderComponent ya está
- * en la lista porque se agrega antes del SpriteRenderer.
+ * PROBLEMA ORIGINAL:
+ *   MovingObjects extendía GameObjects directamente, saltando la capa Entity.
+ *   Esto dejaba Entity fuera de la jerarquía real:
  *
- * Orden de addComponent() importa:
- *   1. ColliderComponent  ← sin tamaño todavía
- *   2. SpriteRenderer     ← start() lee el ColliderComponent del paso 1
- *   3. PhysicsComponent
- *   4. (subclase) collider.setProfile() + collider.setSize()
- *      → si el modo es COLLIDER_TO_SPRITE, start() ya copió el tamaño
- *        del sprite al collider. Si el modo es SPRITE_TO_COLLIDER,
- *        el SpriteRenderer ya copió el tamaño del collider al sprite.
+ *     Entity    → GameObjects        (rama huérfana, no usada)
+ *     MovingObjects → GameObjects    (la jerarquía real, que ignoraba Entity)
+ *     Player → MovingObjects
+ *     Enemy  → MovingObjects
  *
- * NOTA sobre el orden y SPRITE_TO_COLLIDER:
- *   La subclase define collider.setSize() DESPUÉS de MovingObjects constructor.
- *   Eso significa que cuando SpriteRenderer.start() se ejecuta, el collider
- *   todavía tiene tamaño 0×0. Por eso, si querés SPRITE_TO_COLLIDER en
- *   MovingObjects, usá SPRITE_TO_COLLIDER_WITH_OFFSET y llamá a
- *   syncRendererToCollider() DESPUÉS de definir el collider en la subclase.
- *   Ver método syncRendererToCollider() más abajo.
+ *   Entity existía en el código pero Player y Enemy no la heredaban porque
+ *   MovingObjects no la incluía. Era una capa declarada pero no activa.
+ *
+ * SOLUCIÓN:
+ *   MovingObjects extiende Entity en lugar de GameObjects.
+ *   Entity extiende GameObjects.
+ *   La cadena queda completa:
+ *
+ *     GameObjects → Entity → MovingObjects → Player/Enemy/Bullet
+ *
+ *   Ahora Player y Enemy heredan automáticamente los shortcuts de gameplay
+ *   de Entity (damage, isDead, addEffect...) sin ningún cambio en su código.
+ *
+ * BENEFICIO:
+ *   - La jerarquía refleja la intención arquitectónica real.
+ *   - Player y Enemy tienen acceso a entity.damage(), entity.isDead(),
+ *     entity.addEffect() sin boilerplate adicional.
+ *   - Cualquier sistema que reciba Entity puede operar sobre Player y Enemy
+ *     sin saber cuál de los dos es.
+ *
+ * ── RESPONSABILIDAD DE MovingObjects (sin cambios) ────────────────────────
+ *
+ * MovingObjects se mantiene enfocado exclusivamente en movimiento y física:
+ * - Agrega ColliderComponent, SpriteRenderer y PhysicsComponent.
+ * - Provee acceso a la física (getPhysics, getVelocity).
+ * - Provee utilidades de movimiento (moveByPhysics, getCenter, getBounds).
+ * - Provee sincronización de tamaños (syncRendererToCollider).
+ *
+ * No contiene lógica de gameplay. Eso es responsabilidad de Entity y sus
+ * subclases concretas.
  */
-public abstract class MovingObjects extends GameObjects {
+public abstract class MovingObjects extends Entity {
 
-    protected final PhysicsComponent physicsComponent;
+    protected final Physics2DComponent physicsComponent;
 
-    // ── Constructor base: sin sync ────────────────────────────────────────
+    // ── Constructor base ──────────────────────────────────────────────────
 
-    public MovingObjects(Vector2D position, BufferedImage texture, Physics physics) {
+    public MovingObjects(Vector2D position, BufferedImage texture, Physics2D physics) {
         this(position, texture, physics, SizeSyncMode.NONE);
     }
 
-    // ── Constructor con modo de sync declarativo ──────────────────────────
+    // ── Constructor con modo de sync ──────────────────────────────────────
 
     public MovingObjects(Vector2D position,
                          BufferedImage texture,
-                         Physics physics,
+                         Physics2D physics,
                          SizeSyncMode syncMode) {
 
         getTransform().setPosition(position);
 
-        // Collider primero (sin tamaño/perfil aún — la subclase los define)
         addComponent(new ColliderComponent());
-
-        // SpriteRenderer con su modo de sync
         addComponent(new SpriteRenderer(texture, syncMode));
 
-        physicsComponent = new PhysicsComponent(physics);
+        physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
     }
 
@@ -73,14 +86,7 @@ public abstract class MovingObjects extends GameObjects {
 
     /**
      * Sincroniza el SpriteRenderer al ColliderComponent actual.
-     *
-     * Llamar desde la subclase DESPUÉS de definir collider.setSize(),
-     * cuando querés que el sprite se escale al tamaño del collider.
-     *
-     * Ejemplo en Player:
-     *   collider.setSize(15, 24);
-     *   collider.setOffset(4, 0);
-     *   syncRendererToCollider();  // sprite queda 15×24, offsetX=4
+     * Llamar desde la subclase DESPUÉS de definir collider.setSize().
      */
     protected void syncRendererToCollider() {
         ColliderComponent col = getComponent(ColliderComponent.class);
@@ -91,11 +97,10 @@ public abstract class MovingObjects extends GameObjects {
         ren.setOffset(col.getOffsetX(), col.getOffsetY());
     }
 
-    // ── API pública ───────────────────────────────────────────────────────
+    // ── API de movimiento y física ────────────────────────────────────────
 
-    public Physics getPhysics() { return physicsComponent.getPhysics(); }
-
-    public Vector2D getVelocity() { return getPhysics().getVelocity(); }
+    public Physics2D getPhysics()     { return physicsComponent.getPhysics(); }
+    public Vector2D getVelocity()   { return getPhysics().getVelocity(); }
 
     /**
      * Mueve el objeto según su velocidad actual.

@@ -1,7 +1,7 @@
 package Graficos;
 
-import Game.Render.Camera;
-import Game.Render.RenderContext;
+import Game.UI.POV.Camera;
+import Game.UI.POV.RenderContext;
 
 public interface Renderable {
     void render(RenderContext ctx, Camera camera);

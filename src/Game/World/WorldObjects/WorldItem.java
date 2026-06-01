@@ -1,14 +1,15 @@
 package Game.World.WorldObjects;
 
-import Game.Bullets.Bullet;
 import Game.Enemys.Enemy;
 import Game.Engine.GameObjects;
+import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.SpriteRenderer;
-import Game.Engine.Filter.CollisionProfile;
-import Game.Items.ItemStack;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.Systems.PickupSystem;
+import Game.Items.Savement.ItemStack;
+import Game.Items.Types.Bullets.Bullet;
 import Game.Player.Player;
-import GameMath.Vector2D;
 
 import java.awt.image.BufferedImage;
 

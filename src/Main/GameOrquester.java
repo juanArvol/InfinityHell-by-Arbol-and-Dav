@@ -1,29 +1,41 @@
 package Main;
 
+import Display.Background.SolidColorBackground;
 import Display.Managers.DisplayManager;
 import Display.Settings.DisplaySettings;
 import Display.Settings.ScalingMode;
-import Entradas.KeyBoard;
-import Entradas.Listeners.KeyActionListener;
-import Entradas.MouseInput;
-import Game.Settings.GameSettings;
 import Graficos.Assets;
-import States.GameState;
+import Inputs.KeyBoard;
+import Inputs.MouseInput;
+import Inputs.Listeners.KeyActionListener;
+import Main.Debug.DebugGameSettings;
+import Main.States.GameState;
+
+import java.awt.Color;
 
 /**
  * Orquestador del juego.
  *
- * ─── CAMBIOS (refactor Entradas v2) ───────────────────────────────────────────
+ * ──────────────────────────────────────────────────────────────────────────
+ * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR
  *
- *  · KeyActionListener ya NO tiene métodos por tecla (onToggleFullscreen,
- *    onToggleFps…). Ahora expone un único punto de entrada:
+ * 1. toggleFullscreen(keyboard) → requestToggleFullscreen()
+ *    El método anterior recibía un KeyBoard que no usaba, y ejecutaba la
+ *    transición vía invokeLater sin protección contra llamadas concurrentes.
+ *    El nuevo método es seguro ante key repeat por diseño (TransitionLock).
+ *    El KeyBoard ya no es necesario como parámetro.
  *
- *        onKeyAction(String action)
+ * 2. display.toggleFullscreen() eliminado de la API pública.
+ *    La única forma de solicitar un toggle es requestToggleFullscreen(),
+ *    que garantiza:
+ *      - Ejecución en el EDT.
+ *      - Exclusión mutua entre transiciones.
+ *      - Supresión de resize durante la transición.
+ *      - Restauración de estado windowed correcta.
  *
- *    donde "action" es el string declarado en KeyBinding.edgeAction.
- *
- *  · BUG-06 FIX: keyboard se pasa también como FocusListener (5º parámetro
- *    de display.init) para que focusLost() limpie las teclas al perder foco.
+ * 3. DisplaySettings sin cambios en el contrato básico.
+ *    fillColor y background siguen siendo configurables independientemente.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 public class GameOrquester {
 
@@ -49,15 +61,16 @@ public class GameOrquester {
             .scalingMode(ScalingMode.FIT)
             .useInterpolation(false)
             .targetFps(30)
-            .uiScale(1.0f)
+            .fillColor(Color.BLACK)
+            .background(SolidColorBackground.WHITE) // fondo transparente, sin limpiar (ideal para debugging)
             .build();
 
         display = new DisplayManager(settings);
 
         // ── 4. Conectar viewport al mouse ─────────────────────────────────────
-        display.addResizeListener((realW, realH, viewport) -> {
-            mouse.setViewport(viewport);
-        });
+        display.addResizeListener((realW, realH, viewport) ->
+            mouse.setViewport(viewport)
+        );
 
         // ── 5. Inicializar display ────────────────────────────────────────────
         display.init(keyboard, mouse, mouse, mouse, keyboard);
@@ -66,30 +79,24 @@ public class GameOrquester {
         mouse.setViewport(display.getViewport());
 
         // ── 6. Listeners de teclado ───────────────────────────────────────────
-        //
-        // onKeyAction recibe el edgeAction declarado en KeyBoard.BINDINGS.
-        // Añadir soporte para una tecla nueva = nuevo case aquí, sin tocar
-        // KeyActionListener ni KeyBoard.
         keyboard.addKeyActionListener((KeyActionListener) action -> {
             switch (action) {
-                // toggleFullscreen(keyboard): despacha al EDT vía invokeLater() y,
-                // una vez que el toggle + requestFocus terminan, llama
-                // keyboard.clearFsTogglePending() desde el EDT.
-                // NO llamar clearFsTogglePending() aquí: hacerlo desde el GameLoop
-                // thread libera el guard antes de que el toggle haya terminado,
-                // permitiendo que F11 dispare un segundo toggle y entre en loop
-                // infinito de resize → crash.
                 case "toggleFullscreen" ->
-                    display.toggleFullscreen(keyboard);
+                    // requestToggleFullscreen() es seguro desde cualquier thread:
+                    // - Protegido por TransitionLock contra key repeat y pulsaciones rápidas.
+                    // - Despacha al EDT automáticamente.
+                    // - Gestiona supresión de resize, restauración de estado y BS.
+                    display.requestToggleFullscreen();
                 case "toggleFps" ->
-                    GameSettings.getInstance().toggleFps();
-                // "pause", "jump", "reload", etc. son gestionados por
-                // otros suscriptores (p.ej. GameState, PlayerController).
+                    DebugGameSettings.getInstance().toggleFps();
             }
         });
 
         // ── 7. Game State ─────────────────────────────────────────────────────
-        GameState state = new GameState(display);
+        GameState state = new GameState(
+            display.getVirtualWidth(),
+            display.getVirtualHeight()
+        );
 
         // ── 8. Game Loop ──────────────────────────────────────────────────────
         loop = new GameLoop(

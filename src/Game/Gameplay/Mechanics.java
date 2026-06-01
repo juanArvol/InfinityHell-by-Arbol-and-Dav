@@ -1,10 +1,10 @@
 package Game.Gameplay;
 
-import Entradas.KeyBoard;
 import Game.Gameplay.Aimm.AimDirection;
 import Game.Gameplay.Aimm.AimSelection;
 import Game.Gameplay.Aimm.AimStrategy;
 import Game.Player.Player;
+import Inputs.KeyBoard;
 
 /**
  * Mecánicas de juego por frame.

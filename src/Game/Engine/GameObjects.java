@@ -1,7 +1,8 @@
 package Game.Engine;
 
-import Game.Bullets.Bullet;
 import Game.Enemys.Enemy;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
+import Game.Items.Types.Bullets.Bullet;
 import Game.Player.Player;
 import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;
@@ -30,12 +31,12 @@ import java.util.List;
  */
 public class GameObjects {
 
-    private final Transform transform = new Transform();
+    private final Transform2D transform = new Transform2D();
     private final List<Component> components = new ArrayList<>();
 
     // ── Transform ─────────────────────────────────────────────────────────
 
-    public Transform getTransform() { return transform; }
+    public Transform2D getTransform() { return transform; }
 
     // ── Components ────────────────────────────────────────────────────────
 

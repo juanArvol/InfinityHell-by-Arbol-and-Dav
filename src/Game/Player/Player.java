@@ -1,59 +1,133 @@
 package Game.Player;
 
-import Game.Bullets.Bullet;
 import Game.Enemys.Enemy;
 import Game.Engine.MovingObjects;
-import Game.Engine.Components.PhysicsComponent;
+import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Components.HealthComponent;
+import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
-import Game.Engine.Filter.CollisionProfile;
-import Game.Fisics.PlayerPhysics;
-import Game.Items.EquippedItems;
-import Game.Items.Inventory;
-import Game.World.Core.World;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Physics.Implementation.PlayerPhysics;
+import Game.Items.Savement.EquippedItems;
+import Game.Items.Savement.Inventory;
+import Game.Items.Types.Bullets.Bullet;
 import Game.World.WorldObjects.BlockWorld;
 import Game.World.WorldObjects.Obstacle;
-import GameMath.Vector2D;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.util.function.Consumer;
 
 /**
- * Player — integrado con Inventory y EquippedItems.
+ * Jugador.
  *
- * CAMBIOS RESPECTO AL ORIGINAL:
- *   - Añade Inventory (20 slots por defecto, configurable).
- *   - Añade EquippedItems para slots de equipamiento.
- *   - Expone getInventory() y getEquippedItems() para PickupSystem y UI.
+ * ── REFACTOR: SALUD MIGRADA A HealthComponent ─────────────────────────────
  *
- * TODO LO DEMÁS ES IDÉNTICO AL ORIGINAL — no se tocó lógica de física,
- * colisiones, controller ni combat.
+ * PROBLEMA ORIGINAL:
+ *   Player usaba PlayerStats para la salud (life, lifeMax, receiveDamage,
+ *   isDead). PlayerStats duplicaba exactamente la responsabilidad de
+ *   HealthComponent. Había dos sistemas de salud para el mismo objeto.
  *
- * Para activar Physics3D (salto Z), añadir:
- *   addComponent(new Physics3DComponent());
- * en el constructor (comentado abajo).
+ * SOLUCIÓN:
+ *   Player ahora añade HealthComponent como componente en su constructor.
+ *   PlayerStats queda solo con los atributos complementarios (speedMultiplier,
+ *   damageMultiplier, invulnerabilidad post-golpe).
+ *
+ *   La salud es accesible a través de los shortcuts de Entity (heredados
+ *   via MovingObjects → Entity):
+ *     player.damage(10)           → delega a HealthComponent
+ *     player.heal(5)              → delega a HealthComponent
+ *     player.isDead()             → delega a HealthComponent
+ *     player.getHealthPercent()   → delega a HealthComponent
+ *     player.getHealth()          → retorna HealthComponent directamente
+ *
+ *   Para daño con invulnerabilidad (específico del Player):
+ *     player.receiveDamage(10)    → verifica PlayerStats.isInvulnerable()
+ *                                   luego llama damage() y triggerInvulnerability()
+ *
+ * ── FLUJO DE DAÑO ────────────────────────────────────────────────────────
+ *
+ * Sistema externo que quiere dañar al Player:
+ *
+ *   // Con invulnerabilidad (daño de contacto, proyectiles normales):
+ *   player.receiveDamage(amount);
+ *
+ *   // Sin invulnerabilidad (daño de efecto de estado, caída):
+ *   player.damage(amount);  // shortcut de Entity → HealthComponent directo
+ *
+ * ── JERARQUÍA EN EFECTO ───────────────────────────────────────────────────
+ *
+ *   GameObjects → Entity → MovingObjects → Player
+ *
+ *   Player hereda de Entity (vía MovingObjects) los shortcuts:
+ *   damage(), heal(), isDead(), getHealthPercent(), addEffect(), hasEffect()
  */
 public class Player extends MovingObjects {
 
-    private final PlayerController controller;
-    private final PlayerCombat combat;
-    private final PlayerStats stats;
-    private final PlayerState state;
-    private final PhysicsComponent pc;
+    // Configuración de salud del jugador
+    // BASE_HP     = vida con la que el jugador comienza la partida
+    // BASE_HP_MAX = vida máxima que puede tener (techo de curación)
+    private static final int BASE_HP     = 100;
+    private static final int BASE_HP_MAX = 200;
 
-    // ── NUEVO: inventario y equipamiento ──────────────────────────────────
-    private final Inventory inventory;
+    private final PlayerController controller;
+    private final PlayerCombat     combat;
+    private final PlayerStats      stats;
+    private final PlayerState      state;
+    private final Physics2DComponent pc;
+
+    private final Inventory     inventory;
     private final EquippedItems equippedItems;
 
-    public Player(Vector2D spawn, BufferedImage texture, World world) {
+    /**
+     * @param spawn         posición inicial
+     * @param texture       textura del sprite
+     * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
+     */
+    public Player(Vector2D spawn, BufferedImage texture, Consumer<Bullet> bulletSpawner) {
         super(spawn, texture, new PlayerPhysics(0.78), SizeSyncMode.NONE);
 
-        state      = new PlayerState();
-        stats      = new PlayerStats();
-        controller = new PlayerController(this, state);
-        combat     = new PlayerCombat(this, state);
+        // ── Componentes de gameplay (Entity) ─────────────────────────────
+        // HealthComponent gestiona la salud — PlayerStats ya no lo hace.
+        addComponent(new HealthComponent(BASE_HP_MAX) {
+            @Override
+            protected void onDeath() {
+                // Punto de extensión: notificar muerte del Player al bus de eventos,
+                // activar pantalla de game over, etc. Por ahora vacío.
+            }
+        });
+        // StatusEffectComponent: Player puede recibir efectos (veneno de trampa, etc.)
+        addComponent(new StatusEffectComponent());
 
+        // ── Estado y lógica específica del Player ─────────────────────────
+        state = new PlayerState();
+        stats = new PlayerStats();
+
+        // Vincular HealthComponent a PlayerStats para que actúe como fachada
+        // de solo lectura hacia la UI (cadena: LifeHUD → PlayerStats → HealthComponent).
+        stats.bindHealth(getHealth());
+
+        PlayerPhysics physics = (PlayerPhysics) getPhysics();
+        controller = new PlayerController(physics, state);
+
+        combat = new PlayerCombat(
+            state,
+            () -> getTransform().getPosition(),
+            bulletSpawner
+        );
+
+        // Loadout inicial — responsabilidad de Player, no de PlayerCombat
+        combat.setInitialWeapon(
+            new Game.Items.Types.Weapons.WeaponSelected(
+                new Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponEscopeta(),
+                Game.Items.Types.Bullets.BulletType.SPRINGBULLET
+            )
+        );
+
+        // ── Colisión y visual ─────────────────────────────────────────────
         ColliderComponent collider = getComponent(ColliderComponent.class);
         if (collider != null) {
             collider.setProfile(CollisionProfile.PLAYER);
@@ -66,17 +140,20 @@ public class Player extends MovingObjects {
 
         pc = physicsComponent;
 
-        // ── Inventario ────────────────────────────────────────────────────
-        inventory     = new Inventory(20);
+        // ── Inventario y equipamiento ─────────────────────────────────────
+        // getMaxInventorySlots() es la única fuente de verdad para el tamaño del inventario.
+        inventory     = new Inventory(stats.getMaxInventorySlots());
         equippedItems = new EquippedItems();
 
-        // ── Physics3D opcional (descomentar para activar saltos Z) ─────────
-        // addComponent(new Game.Physics3D.Physics3DComponent());
+        // Establecer HP inicial (HealthComponent arranca en max; queremos BASE_HP).
+        // BASE_HP < BASE_HP_MAX → aplicamos la diferencia como "vida que falta".
+        if (BASE_HP < BASE_HP_MAX) {
+            getHealth().damage(BASE_HP_MAX - BASE_HP);
+        }
     }
 
     @Override
     public void update() {
-        // Mismo orden que el original — NO modificado
         if (pc != null) {
             state.setEnElSuelo(pc.getPhysics().getOnGround());
         }
@@ -88,36 +165,40 @@ public class Player extends MovingObjects {
             pc.getPhysics().applyGravity(state.isEnElSuelo());
         }
 
-        super.update();
-        stats.update();
+        super.update(); // actualiza todos los Component (HealthComponent, StatusEffectComponent, etc.)
+        stats.update(); // actualiza frames de invulnerabilidad
     }
 
-    // ── Getters originales ────────────────────────────────────────────────
+    // ── API de daño con invulnerabilidad ──────────────────────────────────
 
-    public Vector2D getPosition()           { return getTransform().getPosition(); }
-    public PlayerState getState()           { return state; }
-    public PlayerController getController() { return controller; }
-    public PlayerCombat getCombat()         { return combat; }
-    public PlayerStats getStats()           { return stats; }
-
-    // ── NUEVOS getters ────────────────────────────────────────────────────
-
-    public Inventory getInventory()           { return inventory; }
-    public EquippedItems getEquippedItems()   { return equippedItems; }
-
-    // ── Colisiones — idénticas al original ────────────────────────────────
-
-    @Override
-    public void onCollisionWith(BlockWorld block) {
-        state.setEnElSuelo(true);
+    /**
+     * Aplica daño al Player respetando los frames de invulnerabilidad post-golpe.
+     *
+     * Usar para daño directo (colisión con enemigo, proyectil).
+     * Para daño de efecto de estado (veneno, caída), usar damage() de Entity,
+     * que va directo al HealthComponent sin verificar invulnerabilidad.
+     */
+    public void receiveDamage(int amount) {
+        if (stats.isInvulnerable()) return;
+        damage(amount);                      // shortcut de Entity → HealthComponent
+        stats.triggerInvulnerability();
     }
 
-    @Override
-    public void onCollisionWith(Obstacle obstacle) {
-        state.setEnElSuelo(true);
-    }
+    // ── Getters ───────────────────────────────────────────────────────────
 
-    @Override public void onCollisionWith(Enemy enemy)   {}
-    @Override public void onCollisionWith(Bullet bullet) {}
-    @Override public void onCollisionWith(Player player) {}
+    public Vector2D         getPosition()    { return getTransform().getPosition(); }
+    public PlayerState      getState()       { return state; }
+    public PlayerController getController()  { return controller; }
+    public PlayerCombat     getCombat()      { return combat; }
+    public PlayerStats      getStats()       { return stats; }
+    public Inventory        getInventory()   { return inventory; }
+    public EquippedItems    getEquippedItems() { return equippedItems; }
+
+    // ── Colisiones ────────────────────────────────────────────────────────
+
+    @Override public void onCollisionWith(BlockWorld block)  { state.setEnElSuelo(true); }
+    @Override public void onCollisionWith(Obstacle obstacle) { state.setEnElSuelo(true); }
+    @Override public void onCollisionWith(Enemy enemy)       {}
+    @Override public void onCollisionWith(Bullet bullet)     {}
+    @Override public void onCollisionWith(Player player)     {}
 }

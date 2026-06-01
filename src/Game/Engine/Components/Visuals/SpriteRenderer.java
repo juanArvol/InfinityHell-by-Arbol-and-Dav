@@ -2,8 +2,8 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Render.Camera;
-import Game.Render.RenderContext;
+import Game.UI.POV.Camera;
+import Game.UI.POV.RenderContext;
 import Graficos.Renderable;
 
 import java.awt.image.BufferedImage;
@@ -151,4 +151,5 @@ public class SpriteRenderer extends Component implements Renderable {
     public int getRenderWidth()       { return renderWidth; }
     public int getRenderHeight()      { return renderHeight; }
     public SizeSyncMode getSyncMode() { return syncMode; }
+
 }

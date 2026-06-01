@@ -1,13 +1,13 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.GameObjects;
+import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
-import Game.Engine.Filter.CollisionProfile;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.World.Surface.SurfaceMaterial;
-import GameMath.Vector2D;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
