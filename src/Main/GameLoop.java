@@ -1,33 +1,76 @@
 package Main;
 
-import Display.Managers.DisplayManager;
+import Display.Surface.RenderFrame;
+import Display.Surface.RenderGateway;
 import Inputs.KeyBoard;
 import Inputs.MouseInput;
 import Main.States.GameState;
 
 import java.awt.Graphics2D;
 
+/**
+ * Loop principal del juego.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * CAMBIO ARQUITECTÓNICO PRINCIPAL
+ *
+ * Antes: GameLoop dependía de DisplayManager y llamaba directamente a
+ * beginFrame() / endFrame(), que internamente accedían a RenderSurfaceManager
+ * y BufferStrategy. El GameLoop conocía indirectamente el ciclo de vida
+ * gráfico a través de estos métodos.
+ *
+ * Ahora: GameLoop solo conoce RenderGateway. No conoce DisplayManager,
+ * BufferStrategy, RenderSurfaceManager, resize, fullscreen ni ningún
+ * otro detalle del subsistema gráfico.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * FLUJO DE RENDER
+ *
+ *   1. acquireFrame()       → obtiene un frame o null (drop silencioso).
+ *   2. frame.beginVirtual() → Graphics2D del framebuffer off-screen.
+ *   3. gameState.draw()     → render de la escena al framebuffer.
+ *   4. frame.endVirtual()   → cierra el contexto virtual.
+ *   5. frame.beginPresent() → abre el contexto de pantalla (puede ser false).
+ *   6. frame.present()      → copia framebuffer → pantalla con escalado.
+ *   7. frame.endPresent()   → flip (bs.show()) + cierra el contexto.
+ *   8. releaseFrame()       → libera el frame (en finally, siempre).
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * GARANTÍAS
+ *
+ * - Un frame adquirido permanece válido hasta releaseFrame().
+ * - resize y fullscreen no afectan un frame ya adquirido.
+ * - Si no hay superficie publicada (transición), acquireFrame() retorna null
+ *   y el frame se descarta silenciosamente. El siguiente tick lo reintentará.
+ * - No hay null checks defensivos: el contrato de RenderGateway los elimina.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * THREADING
+ *
+ * run() y render() → GameLoop thread únicamente.
+ * stop() → puede llamarse desde cualquier thread.
+ */
 public final class GameLoop implements Runnable {
 
-    private final DisplayManager display;
-    private final GameState      gameState;
-    private final KeyBoard       keyboard;
-    private final MouseInput     mouse;
+    private final RenderGateway renderGateway;
+    private final GameState     gameState;
+    private final KeyBoard      keyboard;
+    private final MouseInput    mouse;
 
     private final double  targetTime;
     private Thread        thread;
     private volatile boolean running = false;
 
-    public GameLoop(DisplayManager display,
+    public GameLoop(RenderGateway renderGateway,
                     GameState gameState,
                     KeyBoard keyboard,
                     MouseInput mouse,
                     int fps) {
-        this.display   = display;
-        this.gameState = gameState;
-        this.keyboard  = keyboard;
-        this.mouse     = mouse;
-        this.targetTime = 1_000_000_000.0 / fps;
+        this.renderGateway = renderGateway;
+        this.gameState     = gameState;
+        this.keyboard      = keyboard;
+        this.mouse         = mouse;
+        this.targetTime    = 1_000_000_000.0 / fps;
     }
 
     public void start() {
@@ -79,30 +122,43 @@ public final class GameLoop implements Runnable {
         }
     }
 
-    // ─── Update ───────────────────────────────────────────────────────────────
+    // ── Update ────────────────────────────────────────────────────────────────
 
     private void update() {
         keyboard.update();
         mouse.flushEvents();
-        // Las dimensiones virtuales no cambian en cada frame; GameState
-        // las recibió en construcción y las recibe de nuevo solo cuando
-        // ocurre un resize real (vía DisplayManager.addResizeListener).
         gameState.update();
     }
 
-    // ─── Render ───────────────────────────────────────────────────────────────
+    // ── Render ────────────────────────────────────────────────────────────────
 
     private void render() {
-        // beginFrame() siempre retorna un Graphics2D válido (BufferedImage en memoria).
-        Graphics2D virtualG = display.beginFrame();
+        RenderFrame frame = renderGateway.acquireFrame();
+        if (frame == null) return; // sin superficie: drop silencioso
 
         try {
-            gameState.draw(virtualG);
+            // Fase 1: render al framebuffer virtual
+            Graphics2D virtualG = frame.beginVirtual();
+            try {
+                gameState.draw(virtualG);
+            } finally {
+                frame.endVirtual(virtualG);
+            }
+
+            // Fase 2: presentación a pantalla
+            if (frame.beginPresent()) {
+                try {
+                    frame.present();
+                } finally {
+                    frame.endPresent();
+                }
+            }
+
         } finally {
-            // endFrame() descarta virtualG y presenta a pantalla si el BS está listo.
-            // Si el BS no está disponible (transición fullscreen, resize), el frame
-            // se descarta silenciosamente — el siguiente frame lo reemplazará.
-            display.endFrame(virtualG);
+            // Siempre liberar el frame, incluso si lanzó una excepción.
+            // Esto permite que la superficie antigua sea dispuesta por el EDT
+            // cuando ya no tiene consumidores activos.
+            renderGateway.releaseFrame(frame);
         }
     }
 }

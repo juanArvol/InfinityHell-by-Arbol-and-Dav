@@ -4,48 +4,49 @@ import Display.Background.FillArea;
 import Display.Settings.ScalingMode;
 
 import java.awt.Color;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Calculador puro de viewport.
+ * Calculador puro de viewport. Única fuente de verdad en el subsistema Display.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: ELIMINACIÓN DE OSCILACIÓN DE 1 PÍXEL EN FILL AREAS
+ * CORRECCIÓN: UNIFICACIÓN DE ViewportCalculator
  *
- * Problema original:
- *   calcFit() usaba Math.round(vW * scale) para calcular vpW y vpH.
- *   Con redondeo, cuando el canvas tiene ancho impar relativo al viewport,
- *   la división entera del offset (rW - vpW) / 2 produce offX = 0 mientras
- *   que rightGap = rW - offX - vpW = 1. Al siguiente pixel de resize,
- *   vpW se redondea diferente y offX salta a 1 mientras rightGap permanece
- *   en 1. Esto hace que el fill area derecho oscile entre 0px y 1px y 2px
- *   de forma no monotónica, produciendo el parpadeo visible.
+ * Problema anterior:
+ *   Existían DOS clases con el mismo nombre y responsabilidad:
+ *     - Display.ViewportCalculator          (con truncamiento, corregida)
+ *     - Display.Managers.ViewportCalculator (con Math.round, original)
  *
- * Causa raíz:
- *   Math.round(vW * scale) puede generar vpW que NO divide simétricamente
- *   rW. Cuando rW - vpW es impar, la barra derecha tiene 1px más que la
- *   izquierda, y la paridad cambia con cada pixel de cambio de canvas.
+ *   ViewportManager importaba Display.Managers.ViewportCalculator (Math.round).
+ *   El pipeline y DisplayManager usaban el viewport producido por ViewportManager,
+ *   que calculaba FillAreas con Math.round. Esto hacía que la barra derecha
+ *   oscilara entre 0, 1 y 2px de forma no monotónica con cada pixel de resize,
+ *   produciendo el parpadeo visible en la barra lateral.
  *
- * Solución:
- *   Usar conversión a entero (truncamiento hacia cero, equivalente a floor
- *   para valores positivos) en lugar de Math.round para vpW y vpH.
- *   El truncamiento garantiza que vpW ≤ vW * scale siempre, por lo que
- *   el viewport NUNCA excede la escala correcta, y los fill areas cubren
- *   el resto de forma exacta y monotónica.
+ *   Display.Managers.ViewportCalculator ha sido eliminado. Esta clase es la
+ *   única implementación del cálculo de viewport en todo el subsistema.
  *
- *   Garantía aritmética post-fix:
- *     offX = (rW - vpW) / 2            (división entera hacia cero)
- *     rightGap = rW - offX - vpW       (siempre ≥ leftGap)
- *     leftGap + vpW + rightGap = rW    (cubre el canvas exactamente)
+ * Solución — truncamiento (floor) en lugar de Math.round:
  *
- *   Con esta garantía, los fill areas son exactos: ningún pixel del canvas
- *   queda sin cubrir, y el fill derecho nunca es menor que el izquierdo.
+ *   Con Math.round(vW * scale):
+ *     vpW puede ser mayor que la proporción exacta → fill derecho = 0 o negativo.
+ *     La paridad de (rW - vpW) cambia con cada pixel → oscilación de 1px.
+ *
+ *   Con (int)(vW * scale) [truncamiento hacia cero]:
+ *     vpW ≤ vW * scale siempre (nunca excede).
+ *     offX = (rW - vpW) / 2 es siempre ≥ 0.
+ *     rightGap = rW - offX - vpW es siempre ≥ offX.
+ *     La suma offX + vpW + rightGap = rW exactamente, sin pixels sin cubrir.
+ *     El comportamiento es monótonamente creciente con el tamaño del canvas:
+ *     nunca hay oscilaciones.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * IDEMPOTENCIA
  *
- * El mismo par (realW, realH) produce siempre exactamente el mismo
+ * El mismo conjunto de parámetros produce siempre exactamente el mismo
  * ViewportInfo. No existe fuente de variación entre llamadas.
+ * El viewport es completamente determinista.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * FÓRMULAS
@@ -62,6 +63,7 @@ import java.util.List;
  * THREAD SAFETY
  *
  *   Sin estado interno → completamente thread-safe.
+ *   Puede llamarse desde cualquier thread sin sincronización.
  */
 public final class ViewportCalculator {
 
@@ -70,24 +72,38 @@ public final class ViewportCalculator {
     /**
      * Calcula el ViewportInfo para los parámetros dados.
      *
-     * Idempotente: los mismos parámetros producen siempre el mismo resultado.
+     * Idempotente y determinista: los mismos parámetros producen siempre
+     * el mismo resultado.
+     *
+     * @param virtualW   ancho virtual del juego
+     * @param virtualH   alto virtual del juego
+     * @param realW      ancho real del canvas
+     * @param realH      alto real del canvas
+     * @param mode       modo de escalado
+     * @param fillColor  color de relleno para las barras de letterbox/pillarbox
+     * @return           ViewportInfo inmutable con todos los datos de presentación
      */
     public static ViewportInfo calculate(int virtualW, int virtualH,
-                                         int realW, int realH,
+                                         int realW,    int realH,
                                          ScalingMode mode,
                                          Color fillColor) {
-        // Sanidad: nunca calcular con dimensiones degeneradas
-        if (realW <= 0 || realH <= 0) {
-            realW = Math.max(1, realW);
-            realH = Math.max(1, realH);
-        }
+        // Sanidad: nunca calcular con dimensiones degeneradas.
+        realW = Math.max(1, realW);
+        realH = Math.max(1, realH);
+        virtualW = Math.max(1, virtualW);
+        virtualH = Math.max(1, virtualH);
+
         return switch (mode) {
-            case NATIVE                       -> calcNative(virtualW, virtualH, realW, realH, fillColor);
-            case FIT, LETTERBOX, PILLARBOX,
-                 FREE_SCALE                   -> calcFit(virtualW, virtualH, realW, realH, fillColor);
-            case INTEGER_SCALE                -> calcIntegerScale(virtualW, virtualH, realW, realH, fillColor);
-            case PIXEL_PERFECT                -> calcPixelPerfect(virtualW, virtualH, realW, realH, fillColor);
-            case STRETCH                      -> calcStretch(virtualW, virtualH, realW, realH);
+            case NATIVE ->
+                calcNative(virtualW, virtualH, realW, realH, fillColor);
+            case FIT, LETTERBOX, PILLARBOX, FREE_SCALE ->
+                calcFit(virtualW, virtualH, realW, realH, fillColor);
+            case INTEGER_SCALE ->
+                calcIntegerScale(virtualW, virtualH, realW, realH, fillColor);
+            case PIXEL_PERFECT ->
+                calcPixelPerfect(virtualW, virtualH, realW, realH, fillColor);
+            case STRETCH ->
+                calcStretch(virtualW, virtualH, realW, realH);
         };
     }
 
@@ -103,23 +119,19 @@ public final class ViewportCalculator {
     }
 
     /**
-     * Modo FIT: escala uniforme para que el área virtual quepa en el canvas
+     * Modo FIT: escala uniforme para que el área virtual quepa en el canvas,
      * con barras de relleno donde no cabe.
      *
-     * CORRECCIÓN: usa truncamiento (int cast) en lugar de Math.round para
-     * garantizar que vpW ≤ rW y vpH ≤ rH, y que los fill areas cubren
-     * el canvas exactamente sin oscilaciones de 1 pixel.
+     * TRUNCAMIENTO — no Math.round — para garantizar vpW ≤ rW y vpH ≤ rH,
+     * y que los fill areas cubren el canvas exactamente sin oscilaciones de 1px.
      */
     private static ViewportInfo calcFit(int vW, int vH, int rW, int rH, Color fill) {
         float scale = Math.min((float) rW / vW, (float) rH / vH);
 
-        // TRUNCAMIENTO, no redondeo. Garantiza vpW <= rW y vpH <= rH.
-        // El fill area cubre el resto exactamente.
-        int vpW = (int)(vW * scale);
-        int vpH = (int)(vH * scale);
-
-        // Centrado entero: el fill izquierdo/superior es floor((rW-vpW)/2).
-        // El fill derecho/inferior cubre el resto: siempre >= fill izquierdo.
+        // (int) trunca hacia cero = floor para valores positivos.
+        // Garantiza vpW <= rW y vpH <= rH sin excepción.
+        int vpW  = (int)(vW * scale);
+        int vpH  = (int)(vH * scale);
         int offX = (rW - vpW) / 2;
         int offY = (rH - vpH) / 2;
 
@@ -157,55 +169,50 @@ public final class ViewportCalculator {
         return new ViewportInfo(0, 0, rW, rH, scale, rW, rH, vW, vH, List.of());
     }
 
-    // ── Utilidad: construir áreas de relleno ─────────────────────────────────
+    // ── Construcción de áreas de relleno ─────────────────────────────────────
 
     /**
      * Construye la lista de FillArea para las zonas fuera del viewport.
      *
-     * GARANTÍA: leftGap + vpW + rightGap == rW  (cubre el canvas exactamente).
-     *           topGap + vpH + bottomGap == rH  (cubre el canvas exactamente).
+     * GARANTÍA aritmética (con truncamiento para vpW/vpH):
+     *   offX + vpW + rightW  == rW   (cubre el canvas exactamente en horizontal)
+     *   offY + vpH + bottomH == rH   (cubre el canvas exactamente en vertical)
      *
-     * Con truncamiento para vpW/vpH y división entera para offX/offY,
-     * esto siempre se cumple. No existen pixels sin cubrir.
+     * No existen pixels sin cubrir. Los fill areas nunca se solapan con
+     * el área de juego.
      *
      * Si el viewport cubre exactamente el canvas: lista vacía.
      * Barras horizontales (letterbox): top + bottom.
-     * Barras verticales (pillarbox):   left + right.
-     * Ambas (casos extremos):          top + bottom + left + right.
+     * Barras verticales  (pillarbox):  left + right.
+     * Ambas (esquinas visibles):       top + bottom + left + right.
      */
-    static List<FillArea> buildFillAreas(int offX, int offY, int vpW, int vpH,
-                                          int rW, int rH, Color fill) {
-        // Calcular los tamaños reales de cada barra
-        int rightW  = rW - offX - vpW;  // siempre >= offX con truncamiento
-        int bottomH = rH - offY - vpH;  // siempre >= offY con truncamiento
+    public static List<FillArea> buildFillAreas(int offX, int offY,
+                                                 int vpW,  int vpH,
+                                                 int rW,   int rH,
+                                                 Color fill) {
+        int rightW  = rW - offX - vpW;
+        int bottomH = rH - offY - vpH;
 
         boolean hasHoriz = (offY > 0 || bottomH > 0);
         boolean hasVert  = (offX > 0 || rightW  > 0);
 
         if (!hasHoriz && !hasVert) return List.of();
 
-        if (hasHoriz && !hasVert) {
-            // Letterbox: solo barras horizontales
-            var areas = new java.util.ArrayList<FillArea>(2);
-            if (offY  > 0) areas.add(new FillArea(0,         0,   rW, offY,    fill));
-            if (bottomH > 0) areas.add(new FillArea(0, offY + vpH, rW, bottomH, fill));
-            return List.copyOf(areas);
+        List<FillArea> areas = new ArrayList<>(4);
+
+        if (hasHoriz) {
+            if (offY    > 0) areas.add(new FillArea(0,           0,    rW,     offY,    fill));
+            if (bottomH > 0) areas.add(new FillArea(0,   offY + vpH,   rW,     bottomH, fill));
+        }
+        if (hasVert) {
+            // Las barras laterales cubren solo la franja entre las barras horizontales
+            // (o todo el alto si no hay barras horizontales) para no solaparse.
+            int sideY = hasHoriz ? offY : 0;
+            int sideH = hasHoriz ? vpH  : rH;
+            if (offX   > 0) areas.add(new FillArea(0,           sideY, offX,   sideH,   fill));
+            if (rightW > 0) areas.add(new FillArea(offX + vpW,  sideY, rightW, sideH,   fill));
         }
 
-        if (hasVert && !hasHoriz) {
-            // Pillarbox: solo barras verticales
-            var areas = new java.util.ArrayList<FillArea>(2);
-            if (offX   > 0) areas.add(new FillArea(0,          0, offX,   rH, fill));
-            if (rightW > 0) areas.add(new FillArea(offX + vpW, 0, rightW, rH, fill));
-            return List.copyOf(areas);
-        }
-
-        // Ambas (border): 4 barras
-        var areas = new java.util.ArrayList<FillArea>(4);
-        if (offY    > 0) areas.add(new FillArea(0,           0,   rW,    offY,    fill));
-        if (bottomH > 0) areas.add(new FillArea(0,   offY + vpH,  rW,    bottomH, fill));
-        if (offX    > 0) areas.add(new FillArea(0,           offY, offX,  vpH,     fill));
-        if (rightW  > 0) areas.add(new FillArea(offX + vpW,  offY, rightW, vpH,    fill));
         return List.copyOf(areas);
     }
 }

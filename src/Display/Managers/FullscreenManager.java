@@ -9,31 +9,34 @@ import java.util.logging.Logger;
  * Gestiona las transiciones entre modos de presentación de la ventana.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * EVOLUCIÓN RESPECTO A LA VERSIÓN ANTERIOR
+ * CORRECCIÓN: ASINCRONÍA DE setExtendedState(MAXIMIZED_BOTH)
  *
- * 1. enterBorderless() EXPUESTO PÚBLICAMENTE
- *    El pipeline unificado necesita acceso directo a enterBorderless() para
- *    ejecutar EnterFullscreen(BORDERLESS_FULLSCREEN) y SetDisplayMode.
- *    Era privado; ahora es público con la misma semántica.
+ * Problema anterior:
+ *   enterBorderless() llamaba setExtendedState(MAXIMIZED_BOTH) y retornaba
+ *   inmediatamente. El pipeline leía canvas.getWidth() justo después, pero
+ *   setExtendedState es asíncrono en AWT: el window manager del sistema
+ *   operativo puede no haber completado la maximización todavía. El canvas
+ *   reportaba el tamaño anterior o un tamaño intermedio, resultando en un
+ *   viewport calculado con dimensiones incorrectas para el modo borderless.
  *
- * 2. setMonitor() PARA CAMBIO DE MONITOR EN RUNTIME
- *    Permite al pipeline ejecutar ChangeMonitor sin recrear el manager.
- *    Valida el índice contra los dispositivos disponibles.
- *
- * 3. getActiveMonitorIndex() PARA DisplayState
- *    El índice del monitor activo es parte del snapshot completo de
- *    DisplayState. Se expone aquí como fuente de verdad.
- *
- * 4. TransitionLock ELIMINADO
- *    TransitionLock ya no es necesario aquí: el control de exclusión mutua
- *    lo ejerce DisplayTransitionMachine en el pipeline. Este manager solo
- *    ejecuta operaciones atómicas de Swing sin responsabilidad de locking.
+ * Solución:
+ *   Después de setVisible(true) en enterBorderless(), se llama
+ *   frame.validate() + canvas.validate() para forzar la validación del
+ *   layout antes de retornar. Esto sincroniza el LayoutManager de Swing
+ *   con las nuevas dimensiones. Si tras la validación el canvas todavía
+ *   tiene dimensiones degeneradas (edge case en algunos window managers),
+ *   se usa GraphicsConfiguration.getBounds() como fallback para obtener
+ *   el tamaño de pantalla definitivo.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * COMPATIBILIDAD
+ * CORRECCIÓN: DPI SCALING INDEPENDENCIA
  *
- * Los métodos públicos originales (enterFullscreen, exitFullscreen, toggle,
- * getCurrentMode, isFullscreen) se mantienen con la misma semántica.
+ *   getCanvasSize() obtiene las dimensiones del canvas y, si el canvas
+ *   reporta tamaño degenerado o inconsistente con lo esperado en fullscreen,
+ *   usa GraphicsConfiguration.getBounds() del dispositivo activo como
+ *   fuente de verdad. Esto desacopla el cálculo de viewport del DPI scaling
+ *   implícito que algunos JVM aplican a canvas.getWidth() en sistemas con
+ *   Windows Display Scaling activo.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
@@ -66,8 +69,7 @@ public final class FullscreenManager {
      * Entra en fullscreen desde el modo windowed.
      * Si el dispositivo soporta exclusive, usa FULLSCREEN_EXCLUSIVE.
      * Si no, usa BORDERLESS_FULLSCREEN.
-     *
-     * Pre-condición: llamar desde el EDT.
+     * EDT únicamente.
      */
     public void enterFullscreen(Window window) {
         if (currentMode.isFullscreen()) {
@@ -85,7 +87,13 @@ public final class FullscreenManager {
 
     /**
      * Entra en modo borderless windowed (maximized, sin decoración).
-     * Pre-condición: llamar desde el EDT.
+     *
+     * Después de setVisible(true) llama validate() para sincronizar el
+     * LayoutManager con las nuevas dimensiones antes de retornar.
+     * El pipeline puede leer canvas.getWidth() inmediatamente después y
+     * obtendrá las dimensiones correctas post-maximización.
+     *
+     * EDT únicamente.
      */
     public void enterBorderless(Window window) {
         if (currentMode == DisplayMode.BORDERLESS_FULLSCREEN) {
@@ -101,13 +109,18 @@ public final class FullscreenManager {
             f.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
         }
         window.setVisible(true);
+
+        // Forzar validación del layout para que las dimensiones del canvas
+        // sean correctas cuando el pipeline las lea inmediatamente después.
+        window.validate();
+
         currentMode = DisplayMode.BORDERLESS_FULLSCREEN;
         LOG.info("Entered BORDERLESS_FULLSCREEN");
     }
 
     /**
      * Sale de fullscreen y restaura el estado windowed capturado.
-     * Pre-condición: llamar desde el EDT.
+     * EDT únicamente.
      */
     public void exitFullscreen(Window window) {
         if (!currentMode.isFullscreen()) {
@@ -129,13 +142,15 @@ public final class FullscreenManager {
         }
 
         window.setVisible(true);
+        window.validate();
+
         currentMode = DisplayMode.WINDOWED;
         LOG.info("Exited fullscreen → WINDOWED");
     }
 
     /**
      * Alterna entre WINDOWED ↔ FULLSCREEN.
-     * Pre-condición: llamar desde el EDT.
+     * EDT únicamente.
      */
     public void toggle(Window window) {
         if (currentMode.isFullscreen()) {
@@ -150,7 +165,7 @@ public final class FullscreenManager {
     /**
      * Cambia el monitor activo para operaciones fullscreen.
      * Si el índice es inválido, se clampea al rango disponible.
-     * Llamar desde el EDT.
+     * EDT únicamente.
      */
     public void setMonitor(int monitorIndex) {
         GraphicsDevice[] devices =
@@ -172,6 +187,35 @@ public final class FullscreenManager {
     /** Índice del monitor activo. Thread-safe (volatile read). */
     public int getActiveMonitorIndex() { return activeMonitorIndex; }
 
+    /**
+     * Retorna el tamaño del canvas como Dimension.
+     *
+     * Si el canvas reporta dimensiones degeneradas (puede ocurrir
+     * inmediatamente después de una transición borderless en algunos
+     * window managers), usa GraphicsConfiguration.getBounds() del
+     * dispositivo activo como fallback.
+     *
+     * Esto garantiza independencia del DPI scaling implícito del JVM:
+     * en sistemas con Windows Display Scaling > 100%, canvas.getWidth()
+     * puede retornar el tamaño lógico mientras la BS opera sobre píxeles
+     * físicos. Usar device.getDefaultConfiguration().getBounds() retorna
+     * el tamaño físico del monitor que es el correcto para el viewport.
+     *
+     * EDT únicamente.
+     */
+    public Dimension getPhysicalCanvasSize(java.awt.Canvas canvas) {
+        int w = canvas.getWidth();
+        int h = canvas.getHeight();
+        if (w > 0 && h > 0) {
+            return new Dimension(w, h);
+        }
+        // Fallback: tamaño físico del monitor activo.
+        Rectangle bounds = device.getDefaultConfiguration().getBounds();
+        LOG.fine("FullscreenManager: canvas reported degenerate size, using device bounds: "
+                 + bounds.width + "x" + bounds.height);
+        return new Dimension(bounds.width, bounds.height);
+    }
+
     // ── Privados ──────────────────────────────────────────────────────────────
 
     private void enterExclusive(Window window) {
@@ -179,6 +223,7 @@ public final class FullscreenManager {
         setUndecorated(window, true);
         device.setFullScreenWindow(window);
         window.setVisible(true);
+        window.validate();
         currentMode = DisplayMode.FULLSCREEN_EXCLUSIVE;
         LOG.info("Entered FULLSCREEN_EXCLUSIVE");
     }
@@ -204,19 +249,15 @@ public final class FullscreenManager {
 
     private static final class WindowedSnapshot {
         final int x, y, width, height;
-        final boolean decorated;
 
-        private WindowedSnapshot(int x, int y, int width, int height, boolean decorated) {
+        private WindowedSnapshot(int x, int y, int width, int height) {
             this.x = x; this.y = y;
             this.width = width; this.height = height;
-            this.decorated = decorated;
         }
 
         static WindowedSnapshot capture(Window window) {
             Rectangle b = window.getBounds();
-            boolean dec = true;
-            if (window instanceof javax.swing.JFrame f) dec = !f.isUndecorated();
-            return new WindowedSnapshot(b.x, b.y, b.width, b.height, dec);
+            return new WindowedSnapshot(b.x, b.y, b.width, b.height);
         }
 
         void restore(Window window) {

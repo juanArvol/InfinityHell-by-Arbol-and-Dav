@@ -8,6 +8,7 @@ import Main.Bootstrap.UIBootstrap;
 import Main.Debug.DebugGameSettings;
 import Main.Debug.FpsOverlay;
 
+import java.awt.Color;
 import java.awt.Graphics2D;
 
 /**
@@ -96,6 +97,9 @@ public class GameState {
      * (safe areas, letterbox en UI), se añade de vuelta con uso real.
      */
     public void draw(Graphics2D g) {
+        g.setColor(Color.WHITE);  //esto posiblemente genere error ps debe ir en el display
+        g.fillRect(0, 0, virtualWidth, virtualHeight);
+
         worldManager.draw(g);
         uiManager.draw(g);
 

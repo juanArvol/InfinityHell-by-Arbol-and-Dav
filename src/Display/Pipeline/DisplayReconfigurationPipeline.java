@@ -1,19 +1,23 @@
 package Display.Pipeline;
 
+import Display.Background.DisplayBackground;
 import Display.Commands.DisplayCommand;
 import Display.Commands.DisplayCommandQueue;
 import Display.Managers.FullscreenManager;
-import Display.Managers.RenderSurfaceManager;
 import Display.Managers.ViewportManager;
 import Display.Managers.WindowManager;
 import Display.State.DisplayMode;
 import Display.State.DisplayState;
 import Display.State.Resolution;
 import Display.State.SurfaceState;
+import Display.Surface.RenderSurface;
+import Display.Surface.SurfaceBuilder;
+import Display.Surface.SurfacePublisher;
 import Display.Transition.DisplayTransitionMachine;
 import Display.Transition.DisplayTransitionState;
 import Display.ViewportInfo;
 
+import java.awt.Dimension;
 import java.awt.Window;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
@@ -22,47 +26,58 @@ import java.util.logging.Logger;
  * Pipeline unificado para toda reconfiguración del subsistema Display.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIOS EN ESTA VERSIÓN
+ * CORRECCIÓN: ÚNICA FUENTE DE VERDAD PARA currentState
  *
- * 1. ResizeCanvas COMO COMANDO DE PRIMERA CLASE
- *    El resize del canvas (por arrastre del usuario) pasa ahora por este
- *    pipeline como DisplayCommand.ResizeCanvas.
+ * Problema anterior:
+ *   DisplayManager tenía su propio campo currentState y su propio método
+ *   publishFullState() que construía y publicaba un DisplayState
+ *   independientemente del pipeline. El pipeline también tenía su propio
+ *   currentState inicializado con el initialState del constructor.
+ *   Cualquier llamada a publishState() en el pipeline usaba toBuilder()
+ *   sobre ese initialState obsoleto, produciendo snapshots con datos del
+ *   estado inicial mezclados con datos del estado actual.
  *
- *    Antes: onCanvasResized() en DisplayManager ejecutaba directamente
- *    viewportManager.onResize + destroyBS + createBS + publishState.
- *    Esto no pasaba por el TransitionMachine ni por suppressResize.
+ *   DisplayManager.init() construía y publicaba la superficie fuera del
+ *   pipeline, por lo que el pipeline.currentState nunca se enteraba del
+ *   estado real post-init. El primer ResizeCanvas publicaba un DisplayState
+ *   con viewport=null y surfaceState=LOST aunque la superficie ya existía.
  *
- *    Ahora: ResizeCanvas sigue exactamente las mismas 9 fases que cualquier
- *    otro comando. suppressResize se activa durante la ejecución, lo que
- *    rompe el posible bucle: createBS → componentResized → onCanvasResized.
+ * Solución:
+ *   El pipeline es la ÚNICA fuente de currentState. DisplayManager no
+ *   tiene lógica de construcción de estado propia; lee el último valor
+ *   publicado por el statePublisher.
  *
- * 2. IDEMPOTENCIA EN RESIZE
- *    ResizeCanvas es idempotente: si las dimensiones son idénticas al
- *    estado actual del viewport (mismo realWidth × realHeight), el comando
- *    se descarta sin recalcular nada. No ocurre destroyBS ni createBS.
- *
- * 3. BS SOLO SE RECREA EN RECONFIGURACIONES REALES
- *    Para ResizeCanvas: si el viewport no cambió (idempotencia), NO se
- *    destruye/recrea el BufferStrategy. Solo se recrea si algo cambió.
- *    Esto elimina la recreación innecesaria de BS durante resizes iguales.
+ *   El método initializeState() permite al pipeline publicar el estado
+ *   correcto post-init sin necesidad de ejecutar un comando completo.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * FASES DEL PIPELINE (sin cambios salvo la adición de ResizeCanvas)
+ * CORRECCIÓN: DPI INDEPENDENCE EN LECTURA DE DIMENSIONES
+ *
+ *   El pipeline ya no llama canvas.getWidth() / canvas.getHeight()
+ *   directamente. Usa fullscreenManager.getPhysicalCanvasSize(canvas),
+ *   que aplica el fallback a device.getDefaultConfiguration().getBounds()
+ *   si el canvas reporta dimensiones degeneradas. Esto garantiza que el
+ *   viewport se calcula siempre sobre el tamaño físico real, independiente
+ *   del DPI scaling del sistema operativo.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * FASES DEL PIPELINE (todas las reconfiguraciones excepto ResizeCanvas)
  *
  *   FASE 1 — Adquirir transición (TransitionMachine).
  *   FASE 2 — Suprimir resize espurios (WindowManager).
- *   FASE 3 — Destruir BufferStrategy (si se requiere para este comando).
+ *   FASE 3 — Publicar null (retirar superficie activa del GameLoop).
  *   FASE 4 — Ejecutar la operación específica del comando.
- *   FASE 5 — Recalcular viewport.
- *   FASE 6 — Recrear BufferStrategy (si se destruyó en FASE 3).
- *   FASE 7 — Publicar nuevo DisplayState.
- *   FASE 8 — Reanudar resize.
- *   FASE 9 — Liberar transición (siempre en finally).
+ *   FASE 5 — Recalcular viewport (con getPhysicalCanvasSize).
+ *   FASE 6 — Construir nueva RenderSurface (SurfaceBuilder.build).
+ *   FASE 7 — Publicar nueva RenderSurface (SurfacePublisher.publish).
+ *   FASE 8 — Publicar nuevo DisplayState (única fuente de verdad).
+ *   FASE 9 — Reanudar resize.
+ *   FASE 10 — Liberar transición (siempre en finally).
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
- *   execute() → solo EDT.
+ *   execute() / initializeState() → solo EDT.
  */
 public final class DisplayReconfigurationPipeline
         implements DisplayCommandQueue.CommandExecutor {
@@ -70,20 +85,29 @@ public final class DisplayReconfigurationPipeline
     private static final Logger LOG =
         Logger.getLogger(DisplayReconfigurationPipeline.class.getName());
 
-    private final WindowManager           windowManager;
-    private final FullscreenManager       fullscreenManager;
-    private final ViewportManager         viewportManager;
-    private final RenderSurfaceManager    surfaceManager;
+    private final WindowManager            windowManager;
+    private final FullscreenManager        fullscreenManager;
+    private final ViewportManager          viewportManager;
+    private final SurfaceBuilder           surfaceBuilder;
+    private final SurfacePublisher         surfacePublisher;
     private final DisplayTransitionMachine transitionMachine;
+    private final DisplayBackground        background;
+    private final Consumer<DisplayState>   statePublisher;
 
-    private final Consumer<DisplayState> statePublisher;
-    private volatile DisplayState currentState;
+    /**
+     * Estado canónico del subsistema Display.
+     * Solo se modifica en publishState() / publishFailedState() / initializeState().
+     * Es la única fuente de verdad; DisplayManager lee el valor publicado.
+     */
+    private DisplayState currentState;
 
     public DisplayReconfigurationPipeline(
             WindowManager windowManager,
             FullscreenManager fullscreenManager,
             ViewportManager viewportManager,
-            RenderSurfaceManager surfaceManager,
+            SurfaceBuilder surfaceBuilder,
+            SurfacePublisher surfacePublisher,
+            DisplayBackground background,
             DisplayTransitionMachine transitionMachine,
             DisplayState initialState,
             Consumer<DisplayState> statePublisher) {
@@ -91,10 +115,36 @@ public final class DisplayReconfigurationPipeline
         this.windowManager     = windowManager;
         this.fullscreenManager = fullscreenManager;
         this.viewportManager   = viewportManager;
-        this.surfaceManager    = surfaceManager;
+        this.surfaceBuilder    = surfaceBuilder;
+        this.surfacePublisher  = surfacePublisher;
+        this.background        = background;
         this.transitionMachine = transitionMachine;
         this.statePublisher    = statePublisher;
         this.currentState      = initialState;
+    }
+
+    // ── Inicialización ────────────────────────────────────────────────────────
+
+    /**
+     * Publica el estado completo post-init sin ejecutar un comando completo.
+     *
+     * Llamar desde DisplayManager.init() después de que la superficie inicial
+     * fue construida y publicada por SurfacePublisher. Esto garantiza que
+     * el currentState del pipeline refleja el estado real del sistema desde
+     * el primer frame, sin esperar al primer ResizeCanvas.
+     *
+     * EDT únicamente.
+     */
+    public void initializeState() {
+        assertEDT();
+        Dimension size = fullscreenManager.getPhysicalCanvasSize(windowManager.getCanvas());
+        int w = size.width;
+        int h = size.height;
+        if (w > 0 && h > 0) {
+            viewportManager.onResize(w, h);
+        }
+        publishState(w, h, DisplayTransitionState.IDLE);
+        LOG.info("Pipeline: state initialized — " + currentState);
     }
 
     // ── CommandExecutor ───────────────────────────────────────────────────────
@@ -103,8 +153,6 @@ public final class DisplayReconfigurationPipeline
     public void execute(DisplayCommand command) {
         assertEDT();
 
-        // CASO ESPECIAL: ResizeCanvas tiene idempotencia propia.
-        // Si las dimensiones no cambiaron, descartar sin transición.
         if (command instanceof DisplayCommand.ResizeCanvas rc) {
             executeResize(rc);
             return;
@@ -121,23 +169,24 @@ public final class DisplayReconfigurationPipeline
 
         windowManager.suppressResize(true);
         try {
-            // FASE 3: Destruir BufferStrategy
-            surfaceManager.destroyBufferStrategy();
+            // FASE 3: Retirar superficie activa
+            surfacePublisher.unpublish();
 
             // FASE 4: Operación específica
             applyCommand(command);
 
-            // FASE 5: Recalcular viewport con el nuevo tamaño real
-            int w = windowManager.getCanvas().getWidth();
-            int h = windowManager.getCanvas().getHeight();
+            // FASE 5: Recalcular viewport con dimensiones físicas
+            Dimension size = fullscreenManager.getPhysicalCanvasSize(windowManager.getCanvas());
+            int w = size.width;
+            int h = size.height;
             if (w > 0 && h > 0) {
                 viewportManager.onResize(w, h);
             }
 
-            // FASE 6: Recrear BufferStrategy
-            surfaceManager.createBufferStrategy();
+            // FASE 6 + 7: Construir y publicar nueva superficie
+            buildAndPublish();
 
-            // FASE 7: Publicar estado
+            // FASE 8: Publicar estado
             publishState(w, h, transition);
 
             windowManager.requestCanvasFocus();
@@ -151,25 +200,19 @@ public final class DisplayReconfigurationPipeline
             throw e instanceof RuntimeException re ? re : new RuntimeException(e);
 
         } finally {
-            // FASE 8: Reanudar resize
+            // FASE 9: Reanudar resize
             windowManager.suppressResize(false);
-            // FASE 9: Liberar transición SIEMPRE
+            // FASE 10: Liberar transición SIEMPRE
             transitionMachine.end(transition);
         }
     }
 
-    // ── ResizeCanvas: pipeline optimizado ────────────────────────────────────
+    // ── ResizeCanvas: pipeline optimizado ─────────────────────────────────────
 
     /**
      * Ejecuta un ResizeCanvas con idempotencia y sin transición de modo.
      *
-     * IDEMPOTENCIA: si las dimensiones son idénticas al viewport actual,
-     * descarta sin recalcular ni recrear BS.
-     *
-     * BS SOLO SE RECREA SI EL VIEWPORT CAMBIÓ: evita destroy+create
-     * innecesarios que podían generar eventos AWT adicionales.
-     *
-     * suppressResize durante la ejecución: rompe el bucle
+     * suppressResize durante la ejecución rompe el bucle:
      * createBS → componentResized → ResizeCanvas → createBS.
      */
     private void executeResize(DisplayCommand.ResizeCanvas cmd) {
@@ -185,7 +228,6 @@ public final class DisplayReconfigurationPipeline
             return;
         }
 
-        // Adquirir transición (RECONFIGURING_DISPLAY para resize)
         if (!transitionMachine.tryBegin(DisplayTransitionState.RECONFIGURING_DISPLAY)) {
             LOG.fine("Pipeline: ResizeCanvas rejected — transition in progress");
             return;
@@ -193,17 +235,14 @@ public final class DisplayReconfigurationPipeline
 
         windowManager.suppressResize(true);
         try {
-            // Recalcular viewport
             boolean viewportChanged = viewportManager.onResize(newW, newH);
 
             if (viewportChanged) {
-                // Solo recrear BS si el viewport realmente cambió
-                surfaceManager.destroyBufferStrategy();
-                surfaceManager.createBufferStrategy();
+                surfacePublisher.unpublish();
+                buildAndPublish();
                 publishState(newW, newH, DisplayTransitionState.RECONFIGURING_DISPLAY);
-                LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — viewport updated");
+                LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — surface rebuilt");
             } else {
-                // No cambió: actualizar solo el estado (sin recrear BS)
                 LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — viewport unchanged");
             }
 
@@ -215,6 +254,14 @@ public final class DisplayReconfigurationPipeline
             windowManager.suppressResize(false);
             transitionMachine.end(DisplayTransitionState.RECONFIGURING_DISPLAY);
         }
+    }
+
+    // ── Construcción y publicación de superficie ──────────────────────────────
+
+    private void buildAndPublish() {
+        ViewportInfo viewport = viewportManager.getViewport();
+        RenderSurface newSurface = surfaceBuilder.build(viewport, background);
+        surfacePublisher.publish(newSurface);
     }
 
     // ── FASE 4: operación específica por tipo de comando ─────────────────────
@@ -241,7 +288,7 @@ public final class DisplayReconfigurationPipeline
                 applySetDisplayMode(cmd.mode(), frame);
 
             case DisplayCommand.ChangeResolution cmd -> {
-                surfaceManager.onVirtualResolutionChanged(
+                surfaceBuilder.onVirtualResolutionChanged(
                     cmd.resolution().width, cmd.resolution().height);
                 viewportManager.onVirtualResolutionChanged(
                     cmd.resolution().width, cmd.resolution().height);
@@ -265,9 +312,8 @@ public final class DisplayReconfigurationPipeline
                 fullscreenManager.exitFullscreen(frame);
 
             case DisplayCommand.RecreateBufferStrategy ignored ->
-                LOG.fine("Pipeline: explicit BufferStrategy recreation (destroy+create in phases 3+6)");
+                LOG.fine("Pipeline: explicit surface rebuild (unpublish in phase 3, rebuild in 6+7)");
 
-            // ResizeCanvas se maneja en executeResize(), nunca llega aquí
             case DisplayCommand.ResizeCanvas ignored ->
                 throw new IllegalStateException("ResizeCanvas should not reach applyCommand()");
         }
@@ -289,11 +335,14 @@ public final class DisplayReconfigurationPipeline
         }
     }
 
-    // ── Publicación de estado ─────────────────────────────────────────────────
+    // ── Publicación de DisplayState ───────────────────────────────────────────
 
     private void publishState(int realW, int realH, DisplayTransitionState completedTransition) {
         ViewportInfo vp = viewportManager.getViewport();
-        SurfaceState ss = surfaceManager.getSurfaceState();
+
+        SurfaceState ss = surfacePublisher.hasPublishedSurface()
+            ? SurfaceState.READY
+            : SurfaceState.LOST;
 
         DisplayState next = currentState.toBuilder()
             .mode(fullscreenManager.getCurrentMode())
@@ -316,6 +365,11 @@ public final class DisplayReconfigurationPipeline
         currentState = failed;
         statePublisher.accept(failed);
     }
+
+    // ── Consultas ─────────────────────────────────────────────────────────────
+
+    /** Estado canónico actual. EDT únicamente para coherencia con publishState. */
+    public DisplayState getCurrentState() { return currentState; }
 
     // ── Resolución de tipo de transición ─────────────────────────────────────
 
@@ -350,7 +404,7 @@ public final class DisplayReconfigurationPipeline
                 DisplayTransitionState.RECONFIGURING_DISPLAY;
 
             case DisplayCommand.ResizeCanvas ignored ->
-                DisplayTransitionState.RECONFIGURING_DISPLAY; // manejado por executeResize
+                DisplayTransitionState.RECONFIGURING_DISPLAY;
         };
     }
 
@@ -371,7 +425,7 @@ public final class DisplayReconfigurationPipeline
     private static void assertEDT() {
         if (!javax.swing.SwingUtilities.isEventDispatchThread()) {
             throw new IllegalStateException(
-                "DisplayReconfigurationPipeline.execute() must be called from the EDT");
+                "DisplayReconfigurationPipeline must be called from the EDT");
         }
     }
 }

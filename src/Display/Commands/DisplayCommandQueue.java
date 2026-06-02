@@ -1,44 +1,46 @@
 package Display.Commands;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.logging.Logger;
 
 /**
  * Cola de comandos centralizada para el subsistema Display.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIO: COLAPSO DE ResizeCanvas (DEBOUNCE DE RESIZE)
+ * CORRECCIÓN: RACE CONDITION EN replaceLastIfSameType()
  *
  * Problema anterior:
- *   El resize del canvas (arrastre con ratón) disparaba componentResized
- *   por cada pixel, y cada evento llamaba directamente onCanvasResized()
- *   que hacía destroyBS + createBS. Esto era extremadamente costoso y
- *   podía crear un bucle de retroalimentación si createBS disparaba otro
- *   componentResized desde el peer nativo.
+ *   La cola usaba ConcurrentLinkedQueue, que no ofrece operaciones compuestas
+ *   atómicas. replaceLastIfSameType() hacía toArray() + clear() + re-offer:
+ *   entre clear() y el re-offer, cualquier thread concurrente que llamara
+ *   enqueue() encolaba un comando que era descartado silenciosamente por el
+ *   clear(). Esto podía perder comandos bajo concurrencia.
  *
  * Solución:
- *   ResizeCanvas es ahora un comando colapsable. La cola mantiene solo el
- *   ÚLTIMO ResizeCanvas encolado: cuando llega uno nuevo, reemplaza al
- *   anterior sin ejecutarlo. Solo se procesa el tamaño final de la ráfaga.
+ *   La cola usa ArrayDeque protegida con synchronized. El acceso de escritura
+ *   ocurre solo desde el thread encolador (cualquier thread) y desde el
+ *   drain (EDT). La contención real es mínima — enqueue es O(1) y drain
+ *   solo ocurre en el EDT — por lo que synchronized es suficiente y no
+ *   introduce latencia perceptible.
  *
- *   Esto convierte el comportamiento de "polling por evento" en verdadero
- *   event-driven: una sola reconfiguración al final del resize, no una
- *   por pixel.
+ *   Con synchronized, toArray/clear/re-offer son una región crítica atómica.
+ *   No existe ventana de carrera en ninguna operación compuesta.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * POLÍTICA DE COLAPSO
  *
  * Comandos colapsables (solo el último prevalece):
- *   - ResizeCanvas          → el tamaño final del canvas importa, no los intermedios
- *   - ToggleFullscreen      → dos toggles consecutivos sin ejecutar = sin-op
- *   - ChangeResolution      → la resolución final importa
- *   - RecreateBufferStrategy → múltiples solicitudes = una ejecución
+ *   - ResizeCanvas            → el tamaño final del canvas importa, no los intermedios
+ *   - ToggleFullscreen        → dos toggles consecutivos sin ejecutar = sin-op
+ *   - ChangeResolution        → la resolución final importa
+ *   - RecreateBufferStrategy  → múltiples solicitudes = una ejecución
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
- *   enqueue()    → cualquier thread (ConcurrentLinkedQueue es thread-safe).
- *   drainToEDT() → solo EDT.
+ *   enqueue()    → cualquier thread; synchronized sobre la cola.
+ *   drainToEDT() → solo EDT; synchronized sobre la cola durante poll.
  */
 public final class DisplayCommandQueue {
 
@@ -46,7 +48,8 @@ public final class DisplayCommandQueue {
 
     private static final int MAX_QUEUE_SIZE = 32;
 
-    private final ConcurrentLinkedQueue<DisplayCommand> queue = new ConcurrentLinkedQueue<>();
+    /** Protegida con synchronized en todos los accesos. */
+    private final Deque<DisplayCommand> queue = new ArrayDeque<>();
 
     // ── Encolado ─────────────────────────────────────────────────────────────
 
@@ -58,24 +61,26 @@ public final class DisplayCommandQueue {
     public void enqueue(DisplayCommand command) {
         if (command == null) throw new IllegalArgumentException("command cannot be null");
 
-        if (queue.size() >= MAX_QUEUE_SIZE) {
-            LOG.warning("DisplayCommandQueue: queue full (" + MAX_QUEUE_SIZE
-                        + ") — dropping command: " + command.getClass().getSimpleName());
-            return;
-        }
-
-        if (isCollapsible(command)) {
-            // Para comandos colapsables: si el último es del mismo tipo, reemplazar.
-            DisplayCommand last = peekLast();
-            if (last != null && last.getClass() == command.getClass()) {
-                replaceLastIfSameType(command);
-                LOG.fine("DisplayCommandQueue: collapsed " + command.getClass().getSimpleName());
+        synchronized (queue) {
+            if (queue.size() >= MAX_QUEUE_SIZE) {
+                LOG.warning("DisplayCommandQueue: queue full (" + MAX_QUEUE_SIZE
+                            + ") — dropping command: " + command.getClass().getSimpleName());
                 return;
             }
-        }
 
-        queue.offer(command);
-        LOG.fine("DisplayCommandQueue: enqueued " + command.getClass().getSimpleName());
+            if (isCollapsible(command)) {
+                DisplayCommand last = queue.peekLast();
+                if (last != null && last.getClass() == command.getClass()) {
+                    // Reemplazar el último del mismo tipo — atómico dentro del lock.
+                    replaceLastIfSameType(command);
+                    LOG.fine("DisplayCommandQueue: collapsed " + command.getClass().getSimpleName());
+                    return;
+                }
+            }
+
+            queue.offerLast(command);
+            LOG.fine("DisplayCommandQueue: enqueued " + command.getClass().getSimpleName());
+        }
     }
 
     /**
@@ -86,8 +91,17 @@ public final class DisplayCommandQueue {
      */
     public void drainToEDT(CommandExecutor executor) {
         assertEDT();
-        DisplayCommand command;
-        while ((command = queue.poll()) != null) {
+
+        // Extraer todos los comandos actuales en una sola región crítica.
+        // Así el executor corre fuera del lock y no bloquea enqueue().
+        DisplayCommand[] snapshot;
+        synchronized (queue) {
+            if (queue.isEmpty()) return;
+            snapshot = queue.toArray(new DisplayCommand[0]);
+            queue.clear();
+        }
+
+        for (DisplayCommand command : snapshot) {
             LOG.fine("DisplayCommandQueue: executing " + command.getClass().getSimpleName());
             try {
                 executor.execute(command);
@@ -100,35 +114,36 @@ public final class DisplayCommandQueue {
 
     // ── Consultas ────────────────────────────────────────────────────────────
 
-    public boolean hasPending() { return !queue.isEmpty(); }
-    public int size()           { return queue.size();     }
+    public boolean hasPending() {
+        synchronized (queue) { return !queue.isEmpty(); }
+    }
+
+    public int size() {
+        synchronized (queue) { return queue.size(); }
+    }
 
     // ── Privados ─────────────────────────────────────────────────────────────
 
-    private DisplayCommand peekLast() {
-        DisplayCommand last = null;
-        for (DisplayCommand c : queue) last = c;
-        return last;
-    }
-
     /**
-     * Reemplaza el último elemento de la cola si es del mismo tipo.
-     * Reconstruye la cola preservando el orden de los otros comandos.
+     * Reemplaza el último elemento de la cola si es del mismo tipo que newCmd.
+     * Llamar únicamente dentro de un bloque synchronized(queue).
      */
     private void replaceLastIfSameType(DisplayCommand newCmd) {
+        // Reconstruir la cola reemplazando el último elemento del mismo tipo.
+        // Operación completamente contenida dentro del lock — atómica para el exterior.
         DisplayCommand[] snapshot = queue.toArray(new DisplayCommand[0]);
         queue.clear();
         boolean replaced = false;
         for (int i = 0; i < snapshot.length; i++) {
             if (!replaced && i == snapshot.length - 1
                     && snapshot[i].getClass() == newCmd.getClass()) {
-                queue.offer(newCmd);
+                queue.offerLast(newCmd);
                 replaced = true;
             } else {
-                queue.offer(snapshot[i]);
+                queue.offerLast(snapshot[i]);
             }
         }
-        if (!replaced) queue.offer(newCmd);
+        if (!replaced) queue.offerLast(newCmd);
     }
 
     private static boolean isCollapsible(DisplayCommand cmd) {

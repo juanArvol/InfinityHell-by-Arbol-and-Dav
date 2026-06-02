@@ -2,7 +2,6 @@ package Display;
 
 import Display.Background.FillArea;
 
-import java.awt.Color;
 import java.util.List;
 
 /**
@@ -15,26 +14,30 @@ import java.util.List;
  *  - Pintar las áreas de relleno (letterbox / pillarbox).
  *
  * Es un value object: sin estado mutable, sin lógica de cálculo.
- * Se recalcula completo en cada onResize().
+ * Se recalcula completo en cada onResize() a través de ViewportCalculator.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIO RESPECTO A LA VERSIÓN ANTERIOR
+ * CORRECCIÓN: ELIMINACIÓN DEL CONSTRUCTOR DE COMPATIBILIDAD CON Color.WHITE
  *
- * Se añade {@code fillAreas}: lista de {@link FillArea} que describe
- * exactamente las zonas de relleno que deben pintarse en la presentación.
+ * Problema anterior:
+ *   El constructor de compatibilidad sin fillAreas llamaba a
+ *   computeDefaultFillAreas(..., Color.WHITE) con blanco hardcodeado.
+ *   Cualquier código que construyera ViewportInfo sin especificar fillColor
+ *   obtenía barras blancas en lugar del fillColor configurado.
+ *   Esto producía flashes blancos durante transiciones cuando el viewport
+ *   se construía fuera del flujo normal del ViewportCalculator.
  *
- * Esto permite:
- *   (a) Pintar solo las zonas que realmente necesitan relleno, sin sobreescribir
- *       toda la superficie (más preciso y más eficiente en surface grandes).
- *   (b) Configurar el color de cada área de forma independiente.
- *   (c) El modo STRETCH puede devolver una lista vacía → sin relleno necesario.
- *   (d) Futura extensión: cada FillArea podría tener su propio DisplayBackground.
+ * Solución:
+ *   El constructor de compatibilidad ha sido eliminado. Toda instancia de
+ *   ViewportInfo debe construirse a través de ViewportCalculator.calculate(),
+ *   que es la única fuente válida de ViewportInfo en el subsistema.
+ *   No existe camino alternativo que pueda producir fill areas con color
+ *   incorrecto.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * COMPATIBILIDAD
+ * THREAD SAFETY
  *
- * El constructor completo acepta fillAreas. Los sistemas que no necesitan
- * gestionar barras de relleno (cámara, UI, input) no tocan este campo.
+ * Inmutable. Seguro compartir entre threads sin sincronización.
  */
 public final class ViewportInfo {
 
@@ -69,15 +72,13 @@ public final class ViewportInfo {
      * Áreas de relleno calculadas para este viewport.
      *
      * Lista vacía si el modo de escalado no produce barras (STRETCH, NATIVE exacto).
-     * Lista con 1 o 2 elementos en modos FIT, INTEGER_SCALE, etc.
-     *
-     * El color de cada área proviene del {@code fillColor} con que se calculó
-     * el viewport. Es inmutable; si cambia el color, se recalcula el viewport.
+     * Construida exclusivamente por ViewportCalculator; el color proviene del
+     * fillColor configurado en DisplaySettings — nunca hardcodeado.
      */
     public final List<FillArea> fillAreas;
 
     /**
-     * Constructor completo (con áreas de relleno).
+     * Constructor canónico. Solo debe ser invocado por ViewportCalculator.
      */
     public ViewportInfo(int x, int y, int width, int height, float scale,
                         int realWidth, int realHeight,
@@ -92,19 +93,7 @@ public final class ViewportInfo {
         this.realHeight    = realHeight;
         this.virtualWidth  = virtualWidth;
         this.virtualHeight = virtualHeight;
-        this.fillAreas     = List.copyOf(fillAreas); // inmutable
-    }
-
-    /**
-     * Constructor de compatibilidad sin áreas de relleno.
-     * Genera automáticamente las áreas de relleno con color negro.
-     * Útil para código existente que no gestiona colores de relleno.
-     */
-    public ViewportInfo(int x, int y, int width, int height, float scale,
-                        int realWidth, int realHeight,
-                        int virtualWidth, int virtualHeight) {
-        this(x, y, width, height, scale, realWidth, realHeight, virtualWidth, virtualHeight,
-             computeDefaultFillAreas(x, y, width, height, realWidth, realHeight, Color.WHITE));
+        this.fillAreas     = List.copyOf(fillAreas);
     }
 
     // ── Utilidades ────────────────────────────────────────────────────────────
@@ -131,29 +120,6 @@ public final class ViewportInfo {
 
     /** Convierte Y virtual a Y de pantalla real. */
     public int toScreenY(float virtualY) { return (int)(virtualY * scale) + y; }
-
-    // ── Privados ──────────────────────────────────────────────────────────────
-
-    private static List<FillArea> computeDefaultFillAreas(
-            int x, int y, int vpW, int vpH,
-            int realW, int realH, Color color) {
-
-        // Barras horizontales (letterbox): arriba y abajo
-        if (y > 0) {
-            return List.of(
-                new FillArea(0, 0, realW, y, color),                        // top
-                new FillArea(0, y + vpH, realW, realH - y - vpH, color)   // bottom
-            );
-        }
-        // Barras verticales (pillarbox): izquierda y derecha
-        if (x > 0) {
-            return List.of(
-                new FillArea(0, 0, x, realH, color),                        // left
-                new FillArea(x + vpW, 0, realW - x - vpW, realH, color)   // right
-            );
-        }
-        return List.of();
-    }
 
     @Override
     public String toString() {

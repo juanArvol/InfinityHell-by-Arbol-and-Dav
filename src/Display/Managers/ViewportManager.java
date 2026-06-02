@@ -1,6 +1,7 @@
 package Display.Managers;
 
 import Display.Settings.ScalingMode;
+import Display.ViewportCalculator;
 import Display.ViewportInfo;
 
 import java.awt.Color;
@@ -10,26 +11,26 @@ import java.awt.Color;
  * o la resolución virtual.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: IDEMPOTENCIA DE RECÁLCULO
+ * CORRECCIÓN: USO DEL ViewportCalculator UNIFICADO
  *
  * Problema anterior:
- *   onResize(w, h) recalculaba el viewport aunque w y h fueran idénticos
- *   al tamaño anterior. Esto producía una nueva instancia de ViewportInfo
- *   por cada evento de resize incluso cuando nada había cambiado,
- *   lo que podía activar lógica dependiente del cambio de referencia.
+ *   ViewportManager importaba Display.Managers.ViewportCalculator, que usaba
+ *   Math.round() para calcular vpW y vpH. Esto divergía del ViewportCalculator
+ *   en el package Display (que usaba truncamiento correcto), causando que
+ *   los FillAreas calculados por ViewportManager fueran diferentes de los
+ *   que se necesitaban, produciendo oscilación de 1px en la barra lateral.
  *
  * Solución:
- *   Guardar las últimas dimensiones reales y virtuales conocidas.
- *   Solo recalcular si alguna dimensión realmente cambia.
- *   El mismo par (realW, realH) con la misma resolución virtual
- *   devuelve siempre el mismo viewport (idempotente).
+ *   ViewportManager ahora usa Display.ViewportCalculator (el unificado).
+ *   Display.Managers.ViewportCalculator ha sido eliminado.
+ *   Existe un único calculador con lógica de truncamiento correcta.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
  *   onResize() / onVirtualResolutionChanged() → EDT únicamente.
  *   getViewport()                             → volatile; seguro desde GameLoop.
- *   setFillColor()                            → EDT only (antes de onResize).
+ *   setFillColor()                            → EDT únicamente.
  */
 public final class ViewportManager {
 
@@ -69,14 +70,14 @@ public final class ViewportManager {
      * Recalcula el viewport cuando cambia el tamaño del canvas.
      *
      * IDEMPOTENTE: no recalcula si w y h son idénticos al estado anterior.
-     * EDT only.
+     * EDT únicamente.
      *
      * @return true si el viewport cambió efectivamente; false si era igual.
      */
     public boolean onResize(int realWidth, int realHeight) {
         if (realWidth <= 0 || realHeight <= 0) return false;
         if (realWidth == lastRealWidth && realHeight == lastRealHeight) {
-            return false; // ya teníamos este tamaño, no recalcular
+            return false;
         }
         this.lastRealWidth  = realWidth;
         this.lastRealHeight = realHeight;
@@ -92,7 +93,7 @@ public final class ViewportManager {
      * Recalcula el viewport cuando cambia la resolución virtual.
      *
      * IDEMPOTENTE: no recalcula si las dimensiones virtuales son iguales.
-     * EDT only.
+     * EDT únicamente.
      *
      * @return true si el viewport cambió efectivamente.
      */
@@ -112,14 +113,13 @@ public final class ViewportManager {
     }
 
     /**
-     * Cambia el color de relleno de las barras y fuerza recálculo.
-     * EDT only.
+     * Cambia el color de relleno y fuerza recálculo.
+     * EDT únicamente.
      */
     public void setFillColor(Color color) {
         Color newColor = color != null ? color : Color.BLACK;
         if (newColor.equals(this.fillColor)) return;
         this.fillColor = newColor;
-        // Forzar recálculo con el mismo tamaño real
         currentViewport = ViewportCalculator.calculate(
             virtualWidth, virtualHeight,
             lastRealWidth, lastRealHeight,

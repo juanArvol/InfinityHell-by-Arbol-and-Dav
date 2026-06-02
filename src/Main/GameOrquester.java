@@ -17,24 +17,19 @@ import java.awt.Color;
  * Orquestador del juego.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR
+ * CAMBIO RESPECTO A LA VERSIÓN ANTERIOR
  *
- * 1. toggleFullscreen(keyboard) → requestToggleFullscreen()
- *    El método anterior recibía un KeyBoard que no usaba, y ejecutaba la
- *    transición vía invokeLater sin protección contra llamadas concurrentes.
- *    El nuevo método es seguro ante key repeat por diseño (TransitionLock).
- *    El KeyBoard ya no es necesario como parámetro.
+ * El GameLoop ya no recibe DisplayManager como dependencia.
+ * Recibe RenderGateway, que es la única interfaz que necesita para render.
  *
- * 2. display.toggleFullscreen() eliminado de la API pública.
- *    La única forma de solicitar un toggle es requestToggleFullscreen(),
- *    que garantiza:
- *      - Ejecución en el EDT.
- *      - Exclusión mutua entre transiciones.
- *      - Supresión de resize durante la transición.
- *      - Restauración de estado windowed correcta.
+ * Esto completa la separación de responsabilidades:
+ *   - DisplayManager: gestiona el ciclo de vida del Display (solo EDT).
+ *   - RenderGateway: punto de acceso del GameLoop a superficies publicadas.
+ *   - GameLoop: consume frames a través de RenderGateway sin conocer nada más.
  *
- * 3. DisplaySettings sin cambios en el contrato básico.
- *    fillColor y background siguen siendo configurables independientemente.
+ * La línea de cambio en este archivo es mínima (paso 8):
+ *   antes: new GameLoop(display, state, ...)
+ *   ahora: new GameLoop(display.getRenderGateway(), state, ...)
  * ──────────────────────────────────────────────────────────────────────────
  */
 public class GameOrquester {
@@ -62,7 +57,7 @@ public class GameOrquester {
             .useInterpolation(false)
             .targetFps(30)
             .fillColor(Color.BLACK)
-            .background(SolidColorBackground.WHITE) // fondo transparente, sin limpiar (ideal para debugging)
+            .background(SolidColorBackground.WHITE)
             .build();
 
         display = new DisplayManager(settings);
@@ -82,10 +77,6 @@ public class GameOrquester {
         keyboard.addKeyActionListener((KeyActionListener) action -> {
             switch (action) {
                 case "toggleFullscreen" ->
-                    // requestToggleFullscreen() es seguro desde cualquier thread:
-                    // - Protegido por TransitionLock contra key repeat y pulsaciones rápidas.
-                    // - Despacha al EDT automáticamente.
-                    // - Gestiona supresión de resize, restauración de estado y BS.
                     display.requestToggleFullscreen();
                 case "toggleFps" ->
                     DebugGameSettings.getInstance().toggleFps();
@@ -99,8 +90,10 @@ public class GameOrquester {
         );
 
         // ── 8. Game Loop ──────────────────────────────────────────────────────
+        // El GameLoop recibe RenderGateway, no DisplayManager.
+        // No tiene conocimiento del ciclo de vida gráfico; solo adquiere frames.
         loop = new GameLoop(
-            display,
+            display.getRenderGateway(),   // único punto de acceso al display
             state,
             keyboard,
             mouse,
