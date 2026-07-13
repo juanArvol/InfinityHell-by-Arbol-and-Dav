@@ -2,7 +2,6 @@ package Display.Settings;
 
 import Display.Background.DisplayBackground;
 import Display.Background.SolidColorBackground;
-
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;

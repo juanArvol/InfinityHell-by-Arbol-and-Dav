@@ -167,16 +167,42 @@ public final class DisplayManager {
     /**
      * Inicializa el subsistema Display.
      *
-     * 1. Construye JFrame + Canvas en el EDT (backend.init()).
-     * 2. Registra listeners AWT (windowManager.registerListeners()).
-     * 3. Registra listeners de input.
-     * 4. Muestra la ventana (backend.show()).
-     * 5. Si startFullscreen: solicita fullscreen al Backend.
-     * 6. Construye la surface inicial.
-     * 7. Lee el snapshot real y publica el estado inicial (pipeline.initializeState()).
+     * ── Protocolo de dos fases ────────────────────────────────────────────
      *
-     * La gate se abre dentro de initializeState() solo si el snapshot
-     * confirma que el canvas está realmente en estado usable y render-ready.
+     * FASE A — invokeAndWait (hilo principal bloquea hasta que EDT termina):
+     *   1. Construir JFrame + Canvas.
+     *   2. Registrar listeners AWT e input.
+     *   3. Mostrar ventana en modo WINDOWED.
+     *   4. Construir surface inicial sobre el canvas windowed.
+     *   5. Publicar estado inicial y abrir gate.
+     *
+     * FASE B — si startFullscreen=true:
+     *   Encolar EnterFullscreen como comando normal.
+     *   El pipeline lo procesará en el siguiente ciclo del EDT,
+     *   siguiendo exactamente el mismo protocolo que cualquier transición
+     *   posterior: solicitud → readSnapshot → isBootstrapReady → build → openGate.
+     *
+     * ── Por qué no se hace fullscreen dentro de invokeAndWait ─────────────
+     *
+     * La transición fullscreen (especialmente FULLSCREEN_EXCLUSIVE) requiere
+     * que el OS complete la negociación del device antes de que la BS sea
+     * útil para presentar. Esa negociación es asíncrona respecto al EDT:
+     * frame.validate() retorna antes de que el compositor la complete.
+     *
+     * Si la BS se construye en el mismo ciclo EDT que la solicitud fullscreen,
+     * bs.show() escribe sobre un buffer que el compositor aún no está usando.
+     * El primer frame no aparece hasta que un evento posterior (resize, etc.)
+     * fuerza una nueva transición con el pipeline ya estable.
+     *
+     * Encolando EnterFullscreen como comando, el pipeline se ejecuta en el
+     * siguiente ciclo del EDT — cuando el OS ya completó la transición — y
+     * el protocolo completo (snapshot → validate → build → gate) garantiza
+     * que la BS se construye sobre un canvas completamente sincronizado.
+     *
+     * El GameLoop adquiere frames normalmente durante la transición (gate
+     * cerrada → drops silenciosos). La pantalla se activa cuando el pipeline
+     * completa la transición y abre la gate, igual que en cualquier F11
+     * posterior.
      */
     public void init(java.awt.event.KeyListener kl,
                      java.awt.event.MouseListener ml,
@@ -195,17 +221,15 @@ public final class DisplayManager {
                 // 3. Suprimir resize durante init.
                 windowManager.suppressResize(true);
 
-                // 4. Mostrar la ventana.
+                // 4. Mostrar la ventana en modo WINDOWED.
+                //    Independientemente de startFullscreen, la ventana siempre
+                //    aparece primero en windowed: el canvas tiene dimensiones
+                //    conocidas, el peer AWT está completamente sincronizado y
+                //    la BS funciona desde el primer frame.
                 backend.show();
                 windowManager.onWindowShown();
 
-                // 5. Fullscreen inicial si está configurado.
-                if (settings.startFullscreen) {
-                    fullscreenManager.enterFullscreen();
-                }
-
-                // 6. Construir la surface inicial.
-                // Leer snapshot para inicializar el viewport con dimensiones reales.
+                // 5. Construir la surface inicial sobre el canvas windowed.
                 DisplaySnapshot initSnapshot = backend.readSnapshot();
                 if (initSnapshot.hasValidDimensions()) {
                     viewportManager.onResize(
@@ -215,10 +239,9 @@ public final class DisplayManager {
                     viewportManager.getViewport(), settings.background);
                 surfacePublisher.publish(surface);
 
-                // 7. Publicar estado inicial derivado del snapshot real.
+                // 6. Publicar estado inicial y abrir gate.
                 pipeline.initializeState();
 
-                // Liberar suppressResize.
                 windowManager.suppressResize(false);
                 backend.requestCanvasFocus();
             });
@@ -227,6 +250,17 @@ public final class DisplayManager {
             Thread.currentThread().interrupt();
         } catch (java.lang.reflect.InvocationTargetException e) {
             throw new RuntimeException("DisplayManager.init() failed", e.getCause());
+        }
+
+        // FASE B: si se solicitó arranque en fullscreen, encolarlo ahora como
+        // comando normal. El pipeline lo ejecutará en el EDT cuando esté libre,
+        // con el protocolo completo: snapshot → isBootstrapReady → build → gate.
+        // No hay caso especial: es exactamente el mismo camino que un F11.
+        // El Backend es la única autoridad sobre qué modo fullscreen usar.
+        if (settings.startFullscreen) {
+            enqueue(new DisplayCommand.EnterFullscreen(
+                backend.getPreferredFullscreenMode()
+            ));
         }
     }
 

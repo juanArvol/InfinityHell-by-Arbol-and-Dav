@@ -134,8 +134,12 @@ public final class DisplayReconfigurationPipeline
     public void initializeState() {
         assertEDT();
         DisplaySnapshot snapshot = backend.readSnapshot();
+
+        // isBootstrapReady() verifica usabilidad + BS presente, pero NO contentsLost.
+        // contentsLost() no tiene semántica definida antes del primer getDrawGraphics(),
+        // por lo que no puede usarse para decidir si abrir la gate en el arranque.
         SnapshotValidator.ValidationResult ready =
-            SnapshotValidator.isRenderReady(snapshot);
+            SnapshotValidator.isBootstrapReady(snapshot);
 
         if (ready.passed) {
             viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
@@ -143,11 +147,9 @@ public final class DisplayReconfigurationPipeline
             surfacePublisher.openGate();
             LOG.info("Pipeline: initialized from snapshot — gate opened. " + snapshot);
         } else {
-            // Surface exists but AWT not fully ready yet (rare edge case at startup).
-            // Publish LOST and schedule a retry: the gate remains closed.
             publishTransientState(SurfaceState.LOST);
             scheduleBuildRetry();
-            LOG.warning("Pipeline: initializeState — isRenderReady failed: "
+            LOG.warning("Pipeline: initializeState — isBootstrapReady failed: "
                         + ready.summary() + " — retry scheduled");
         }
     }
@@ -205,8 +207,9 @@ public final class DisplayReconfigurationPipeline
                 viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
                 boolean built = buildAndPublish();
                 DisplaySnapshot snapshot2 = backend.readSnapshot();
+                // isBootstrapReady(): BS recién creada, contentsLost no es fiable.
                 SnapshotValidator.ValidationResult ready =
-                    SnapshotValidator.isRenderReady(snapshot2);
+                    SnapshotValidator.isBootstrapReady(snapshot2);
 
                 if (built && ready.passed) {
                     publishStateFromSnapshot(snapshot2, SurfaceState.READY);
@@ -216,7 +219,7 @@ public final class DisplayReconfigurationPipeline
                 } else {
                     publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
                     scheduleBuildRetry();
-                    LOG.warning("Pipeline: ResumeRendering(rebuild=true) — not render-ready: "
+                    LOG.warning("Pipeline: ResumeRendering(rebuild=true) — not bootstrap-ready: "
                                 + ready.summary());
                 }
             } finally {
@@ -307,7 +310,8 @@ public final class DisplayReconfigurationPipeline
 
             boolean built = buildAndPublish();
             DisplaySnapshot snapshot2 = backend.readSnapshot();
-            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+            // isBootstrapReady(): no verifica contentsLost — BS recién creada.
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isBootstrapReady(snapshot2);
 
             if (built && ready.passed) {
                 publishStateFromSnapshot(snapshot2, SurfaceState.READY);
@@ -316,7 +320,7 @@ public final class DisplayReconfigurationPipeline
             } else {
                 publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
                 scheduleBuildRetry();
-                LOG.warning("Pipeline: ResizeCanvas — not render-ready: " + ready.summary());
+                LOG.warning("Pipeline: ResizeCanvas — not bootstrap-ready: " + ready.summary());
             }
 
         } catch (Exception e) {
@@ -376,9 +380,11 @@ public final class DisplayReconfigurationPipeline
             // FASE 9: construir surface
             boolean built = buildAndPublish();
 
-            // FASE 10: re-leer snapshot y validar render-readiness
+            // FASE 10: re-leer snapshot y validar bootstrap-readiness post-build.
+            // isBootstrapReady() no verifica contentsLost — correcto aquí porque
+            // la BS acaba de ser creada y nunca se llamó getDrawGraphics() todavía.
             DisplaySnapshot snapshot2 = backend.readSnapshot();
-            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isBootstrapReady(snapshot2);
 
             if (built && ready.passed) {
                 publishStateFromSnapshot(snapshot2, SurfaceState.READY);
@@ -390,7 +396,7 @@ public final class DisplayReconfigurationPipeline
                 publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
                 scheduleBuildRetry();
                 LOG.warning("Pipeline: " + command.getClass().getSimpleName()
-                            + " — not render-ready after build: " + ready.summary());
+                            + " — not bootstrap-ready after build: " + ready.summary());
             }
 
         } catch (Exception e) {
@@ -433,7 +439,7 @@ public final class DisplayReconfigurationPipeline
             viewportManager.onResize(current.canvasWidth(), current.canvasHeight());
             boolean built = buildAndPublish();
             DisplaySnapshot snapshot2 = backend.readSnapshot();
-            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isBootstrapReady(snapshot2);
 
             if (built && ready.passed) {
                 publishStateFromSnapshot(snapshot2, SurfaceState.READY);

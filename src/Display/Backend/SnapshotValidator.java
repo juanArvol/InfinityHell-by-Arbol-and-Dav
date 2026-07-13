@@ -95,25 +95,47 @@ public final class SnapshotValidator {
             : ValidationResult.failed(failures);
     }
 
-    // ── Validación de readiness completa ──────────────────────────────────────
+    // ── Validación post-build (arranque y transiciones) ──────────────────────
 
     /**
-     * Verifica las condiciones completas para reanudar el render.
+     * Verifica que la superficie recién construida está lista para render.
      *
-     * Extiende isUsable() con:
-     *   6. graphicsConfig != null  — hay un device gráfico activo.
-     *   7. bufferStrategyPresent   — la BS fue creada correctamente.
-     *   8. !bufferStrategyContentsLost — la BS tiene contenido válido.
+     * Se usa en dos contextos:
+     *   1. {@code initializeState()} — primer arranque del Display.
+     *   2. Post-build en {@code executeFullPipeline} y {@code executeResize} —
+     *      inmediatamente después de que {@code buildAndPublish()} creó la BS.
      *
-     * La gate de readiness se abre solo cuando este nivel pasa.
-     * Si la BS está presente pero contentsLost, no se abre la gate:
-     * la surface debe reconstruirse antes de reanudar.
+     * ── Por qué NO se verifica contentsLost aquí ──────────────────────────
      *
-     * @param snapshot snapshot a validar tras construir la surface; nunca null.
+     * {@code bs.contentsLost()} solo tiene semántica definida después de al
+     * menos una llamada a {@code bs.getDrawGraphics()}. Según el Javadoc AWT:
+     *   "Returns whether the drawing buffer was lost since the last call to
+     *    getDrawGraphics."
+     *
+     * Sobre una BS recién creada, nunca se llamó {@code getDrawGraphics()}.
+     * En Windows con DWM, la JVM puede retornar {@code contentsLost() == true}
+     * en ese estado porque el buffer aún no fue inicializado por ningún draw.
+     * Interpretar ese {@code true} como "la BS está dañada" es incorrecto —
+     * la BS está perfectamente operativa; simplemente no ha sido usada todavía.
+     *
+     * Si se consulta aquí, {@code initializeState()} falla, la gate no se
+     * abre, y el Engine encola un retry en invokeLater. El GameLoop arranca
+     * con la gate cerrada y la pantalla permanece blanca hasta que el retry
+     * (o un resize) ejecuta el pipeline nuevamente.
+     *
+     * El loop {@code do-while} en {@code RenderFrame.present()} maneja
+     * {@code contentsRestored()} correctamente cuando ocurre en el primer
+     * frame real — no se necesita verificarlo aquí.
+     *
+     * Condiciones verificadas:
+     *   1-5. Todas las de {@code isUsable()}.
+     *     6. graphicsConfig != null — device gráfico activo.
+     *     7. bufferStrategyPresent  — la BS fue creada correctamente.
+     *
+     * @param snapshot snapshot leído inmediatamente después de build(); nunca null.
      * @return resultado con passed=true si todas las condiciones se cumplen.
      */
-    public static ValidationResult isRenderReady(DisplaySnapshot snapshot) {
-        // Primero verificar las condiciones básicas de usabilidad.
+    public static ValidationResult isBootstrapReady(DisplaySnapshot snapshot) {
         ValidationResult base = isUsable(snapshot);
         List<String> failures = new ArrayList<>(base.reasons);
 
@@ -123,8 +145,44 @@ public final class SnapshotValidator {
         if (!snapshot.bufferStrategyPresent()) {
             failures.add("no BufferStrategy present (build may have failed)");
         }
+        // contentsLost NO se verifica: no tiene semántica válida antes del
+        // primer getDrawGraphics(). El render loop lo maneja correctamente.
+
+        return failures.isEmpty()
+            ? ValidationResult.passed()
+            : ValidationResult.failed(failures);
+    }
+
+    // ── Validación de readiness en rutas donde la BS ya fue usada ────────────
+
+    /**
+     * Verifica las condiciones completas para reanudar el render tras una
+     * suspensión o pérdida conocida.
+     *
+     * Solo debe usarse en rutas donde la BS ya fue utilizada al menos una
+     * vez (es decir, donde {@code getDrawGraphics()} fue llamado previamente).
+     * En esas rutas, {@code contentsLost()} tiene semántica definida.
+     *
+     * Contextos de uso:
+     *   - {@code executeResume(rebuild=false)} — reanudar tras Alt+Tab.
+     *   - Diagnóstico de una surface existente.
+     *
+     * Extiende {@code isBootstrapReady()} con:
+     *   8. !bufferStrategyContentsLost — la BS tiene contenido válido.
+     *
+     * Si la BS está presente pero {@code contentsLost}, el render loop
+     * do-while puede resolverlo, pero para rutas de Resume es más limpio
+     * verificarlo aquí antes de reabrir la gate.
+     *
+     * @param snapshot snapshot a validar; nunca null.
+     * @return resultado con passed=true si todas las condiciones se cumplen.
+     */
+    public static ValidationResult isRenderReady(DisplaySnapshot snapshot) {
+        ValidationResult base = isBootstrapReady(snapshot);
+        List<String> failures = new ArrayList<>(base.reasons);
+
         if (snapshot.bufferStrategyContentsLost()) {
-            failures.add("BufferStrategy contentsLost (needs rebuild before render)");
+            failures.add("BufferStrategy contentsLost (needs rebuild or render-loop handling)");
         }
 
         return failures.isEmpty()

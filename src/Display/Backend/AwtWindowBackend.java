@@ -378,9 +378,30 @@ public final class AwtWindowBackend {
         }
     }
 
-    // ── Acceso a referencias AWT ──────────────────────────────────────────────
+    // ── Política de fullscreen ────────────────────────────────────────────────
 
-    /** JFrame. Inmutable post-init. Solo para registro de listeners. */
+    /**
+     * Retorna el modo fullscreen preferido según las capacidades del device.
+     *
+     * Política:
+     *   FULLSCREEN_EXCLUSIVE  si el GraphicsDevice lo soporta.
+     *   BORDERLESS_FULLSCREEN en caso contrario.
+     *
+     * Esta es la única implementación de la política de selección de modo
+     * fullscreen en todo el Engine. Toda decisión sobre qué modo usar al
+     * entrar en fullscreen debe delegarse aquí — nunca replicarse fuera
+     * del Backend.
+     *
+     * Thread-safe: consulta únicamente {@code device.isFullScreenSupported()},
+     * que es seguro llamar desde cualquier thread.
+     */
+    public DisplayMode getPreferredFullscreenMode() {
+        return device.isFullScreenSupported()
+            ? DisplayMode.FULLSCREEN_EXCLUSIVE
+            : DisplayMode.BORDERLESS_FULLSCREEN;
+    }
+
+    // ── Acceso a referencias AWT ──────────────────────────────────────────────
     public JFrame         getFrame()  { return frame;  }
     /** Canvas. Inmutable post-init. Solo para registro de listeners. */
     public Canvas         getCanvas() { return canvas; }
