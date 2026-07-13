@@ -2,11 +2,9 @@ package Game.Engine.GameMath.Physics.Types.Physics3D;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Physics3DComponent;
-import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Graficos.Renderable;
-
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
+import Game.Engine.Render.Renderable;
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;

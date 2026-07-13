@@ -1,52 +1,43 @@
 package Game.Engine.Colisions;
 
-import Game.Enemys.Enemy;
 import Game.Engine.GameObjects;
-import Game.Items.Types.Bullets.Bullet;
-import Game.Player.Player;
-import Game.World.WorldObjects.BlockWorld;
-import Game.World.WorldObjects.Obstacle;
 
 /**
- * Despacha la colisión al método correcto de cada objeto según su tipo.
+ * Despacha la colisión a ambos objetos del par.
  *
- * ── Por qué reemplaza el Visitor ─────────────────────────────────────────
- * El sistema Visitor original (Collidable + CollisionVisitor + CollisionVisitorInstance
- * + VisitorsAcepts) requería 4 clases/interfaces para hacer un simple instanceof.
- * El default vacío en VisitorsAcepts hacía que colisiones se "procesaran"
- * silenciosamente sin hacer nada — difícil de debuggear.
+ * ── REFACTOR: sin imports de Game.* ──────────────────────────────────────
  *
- * Este dispatcher hace lo mismo con 1 clase, de forma explícita y legible.
+ * PROBLEMA ORIGINAL:
+ *   CollisionDispatcher detectaba el tipo concreto de cada objeto (Player,
+ *   Enemy, Bullet, BlockWorld, Obstacle) con instanceof para llamar la
+ *   sobrecarga tipada correcta de GameObjects. Eso requería importar 5 tipos
+ *   del Game en el corazón del Engine — dependencia inversa.
  *
- * ── Cómo funciona ────────────────────────────────────────────────────────
- * Dado un par (A, B) que colisionaron:
- *   dispatch(A, B) → A.onCollisionWith( tipo correcto de B )
- *                  → B.onCollisionWith( tipo correcto de A )
+ * SOLUCIÓN:
+ *   GameObjects ahora tiene un único método genérico:
+ *     onCollisionWith(GameObjects other)
  *
- * Cada objeto solo implementa los onCollisionWith() que le importan.
- * Los que no implementa tienen el default vacío en GameObjects.
+ *   CollisionDispatcher simplemente llama ese método en ambas direcciones.
+ *   La distinción de tipos, cuando es necesaria, la hace cada subclase con
+ *   instanceof en su propia implementación de onCollisionWith().
+ *
+ *   El Engine no sabe nada de Player, Enemy, Bullet ni de ningún tipo del Game.
+ *
+ * ── Funcionamiento ───────────────────────────────────────────────────────
+ *   dispatch(A, B):
+ *     A.onCollisionWith(B)   — A reacciona al tipo de B
+ *     B.onCollisionWith(A)   — B reacciona al tipo de A
  */
 public final class CollisionDispatcher {
 
     private CollisionDispatcher() {}
 
     /**
-     * Notifica la colisión a ambos objetos con el tipo correcto del otro.
+     * Notifica la colisión a ambos objetos.
+     * Cada objeto decide cómo reaccionar en su propia implementación.
      */
     public static void dispatch(GameObjects a, GameObjects b) {
-        notifyOne(a, b);
-        notifyOne(b, a);
-    }
-
-    /**
-     * Notifica a `receiver` que colisionó con `other`, casteando other al tipo correcto.
-     */
-    private static void notifyOne(GameObjects receiver, GameObjects other) {
-        if (other instanceof Player p)     { receiver.onCollisionWith(p); return; }
-        if (other instanceof Bullet b)     { receiver.onCollisionWith(b); return; }
-        if (other instanceof Enemy e)      { receiver.onCollisionWith(e); return; }
-        if (other instanceof BlockWorld w) { receiver.onCollisionWith(w); return; }
-        if (other instanceof Obstacle o)   { receiver.onCollisionWith(o); return; }
-        // Tipo desconocido — sin efecto. No lanzar excepción.
+        a.onCollisionWith(b);
+        b.onCollisionWith(a);
     }
 }

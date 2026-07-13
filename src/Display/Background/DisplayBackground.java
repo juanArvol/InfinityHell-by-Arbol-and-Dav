@@ -12,18 +12,19 @@ import java.awt.Graphics2D;
  * MOTIVACIÓN
  *
  * Problema original:
- *   RenderSurfaceManager.beginFrame() tenía hardcodeado:
+ *   El inicio de cada frame tenía el fondo hardcodeado:
  *
  *     g.setBackground(Color.BLACK);
  *     g.clearRect(0, 0, virtualWidth, virtualHeight);
  *
- *   El color negro no es configurable, y la responsabilidad de "cómo se
+ *   El color negro no era configurable, y la responsabilidad de "cómo se
  *   limpia el frame" estaba mezclada con la de "gestionar el framebuffer".
  *
  * Solución:
  *   DisplayBackground desacopla el "qué se hace para preparar el canvas"
- *   del mecanismo de buffer. RenderSurfaceManager llama a apply() al inicio
- *   de cada frame sin saber cómo está implementado.
+ *   del mecanismo de buffer. SurfaceBuilder lo aplica al construir la
+ *   superficie inicial; RenderFrame lo aplica en beginVirtual() si se
+ *   configura en el pipeline.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * EXTENSIBILIDAD

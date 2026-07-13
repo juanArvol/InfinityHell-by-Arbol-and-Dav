@@ -6,46 +6,43 @@ import Inputs.KeyBoard;
 import Inputs.MouseInput;
 import Main.States.GameState;
 
-import java.awt.Graphics2D;
-
 /**
  * Loop principal del juego.
  *
- * ──────────────────────────────────────────────────────────────────────────
- * CAMBIO ARQUITECTÓNICO PRINCIPAL
+ * ── Cambio arquitectónico principal ──────────────────────────────────────
  *
- * Antes: GameLoop dependía de DisplayManager y llamaba directamente a
- * beginFrame() / endFrame(), que internamente accedían a RenderSurfaceManager
- * y BufferStrategy. El GameLoop conocía indirectamente el ciclo de vida
- * gráfico a través de estos métodos.
+ * GameLoop solo conoce RenderGateway. No conoce DisplayManager,
+ * BufferStrategy, resize, fullscreen ni ningún detalle del ciclo de vida
+ * gráfico. Toda comunicación con el subsistema gráfico ocurre a través
+ * de los tres métodos de RenderGateway: acquireFrame, releaseFrame,
+ * notifyContentLost.
  *
- * Ahora: GameLoop solo conoce RenderGateway. No conoce DisplayManager,
- * BufferStrategy, RenderSurfaceManager, resize, fullscreen ni ningún
- * otro detalle del subsistema gráfico.
+ * ── HRFC-001: flujo de render con sistema de capas ───────────────────────
  *
- * ──────────────────────────────────────────────────────────────────────────
- * FLUJO DE RENDER
+ * El GameLoop ya no pasa un Graphics2D a gameState.draw(). En su lugar
+ * pasa el RenderFrame completo. GameState decide en qué capa dibuja cada
+ * subsistema. Al terminar el dibujado, flushLayers() compone las capas
+ * sobre el framebuffer antes de present().
  *
- *   1. acquireFrame()       → obtiene un frame o null (drop silencioso).
- *   2. frame.beginVirtual() → Graphics2D del framebuffer off-screen.
- *   3. gameState.draw()     → render de la escena al framebuffer.
- *   4. frame.endVirtual()   → cierra el contexto virtual.
- *   5. frame.beginPresent() → abre el contexto de pantalla (puede ser false).
- *   6. frame.present()      → copia framebuffer → pantalla con escalado.
- *   7. frame.endPresent()   → flip (bs.show()) + cierra el contexto.
- *   8. releaseFrame()       → libera el frame (en finally, siempre).
+ * Flujo (AWT Audit — protocolo Oracle correcto):
+ *   1. acquireFrame()            → frame o null (drop silencioso).
+ *   2. gameState.draw(frame)     → cada subsistema dibuja en su capa.
+ *   3. frame.flushLayers()       → componer capas sobre el framebuffer.
+ *   4. frame.present()           → loop do-while Oracle completo:
+ *                                    inner: getDrawGraphics + blit + dispose,
+ *                                    repetir si contentsRestored() (buffer restaurado a blanco).
+ *                                    outer: show() + repetir si contentsLost().
+ *   5. releaseFrame(frame)       → liberar surface (siempre, en finally).
+ *   6. notifyContentLost()       → si BS requiere rebuild estructural, señalizar al EDT.
  *
- * ──────────────────────────────────────────────────────────────────────────
- * GARANTÍAS
+ * ── Garantías ────────────────────────────────────────────────────────────
  *
  * - Un frame adquirido permanece válido hasta releaseFrame().
  * - resize y fullscreen no afectan un frame ya adquirido.
- * - Si no hay superficie publicada (transición), acquireFrame() retorna null
- *   y el frame se descarta silenciosamente. El siguiente tick lo reintentará.
- * - No hay null checks defensivos: el contrato de RenderGateway los elimina.
+ * - acquireFrame() retorna null durante transiciones → drop silencioso.
+ * - notifyContentLost() es thread-safe y no bloquea el GameLoop.
  *
- * ──────────────────────────────────────────────────────────────────────────
- * THREADING
+ * ── Threading ────────────────────────────────────────────────────────────
  *
  * run() y render() → GameLoop thread únicamente.
  * stop() → puede llamarse desde cualquier thread.
@@ -137,28 +134,23 @@ public final class GameLoop implements Runnable {
         if (frame == null) return; // sin superficie: drop silencioso
 
         try {
-            // Fase 1: render al framebuffer virtual
-            Graphics2D virtualG = frame.beginVirtual();
-            try {
-                gameState.draw(virtualG);
-            } finally {
-                frame.endVirtual(virtualG);
-            }
+            // Fase 1: render por capas.
+            gameState.draw(frame);
 
-            // Fase 2: presentación a pantalla
-            if (frame.beginPresent()) {
-                try {
-                    frame.present();
-                } finally {
-                    frame.endPresent();
-                }
-            }
+            // Fase 2: componer capas sobre el framebuffer.
+            frame.flushLayers();
+
+            // Fase 3: presentación a pantalla.
+            // present() implementa el protocolo Oracle completo con do-while
+            // anidado: inner loop para contentsRestored, outer loop para contentsLost.
+            frame.present();
 
         } finally {
-            // Siempre liberar el frame, incluso si lanzó una excepción.
-            // Esto permite que la superficie antigua sea dispuesta por el EDT
-            // cuando ya no tiene consumidores activos.
             renderGateway.releaseFrame(frame);
+
+            if (frame.isContentLost()) {
+                renderGateway.notifyContentLost();
+            }
         }
     }
 }

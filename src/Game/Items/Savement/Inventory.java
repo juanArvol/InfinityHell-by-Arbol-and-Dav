@@ -1,11 +1,10 @@
 package Game.Items.Savement;
 
+import Game.Items.Creation.ItemType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
-
-import Game.Items.Creation.ItemType;
 
 /**
  * Inventario de ítems — contenedor de ItemStacks.
@@ -56,9 +55,7 @@ public class Inventory {
             if (existing != null
                     && existing.getDefinition() == stack.getDefinition()
                     && !existing.isFull()) {
-                int overflow = existing.transferFrom(stack) == 0
-                        ? stack.getCount() : 0;
-                // transferFrom modifica `stack` directamente
+                existing.transferFrom(stack);
                 if (stack.isEmpty()) return true;
             }
         }

@@ -2,8 +2,8 @@ package Game.Enemys.AI.Actions;
 
 import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.AI.EnemyContext;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Enemys.Enemy;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 
 /**
  * Sigue al objetivo con steering suave.
@@ -14,10 +14,14 @@ import Game.Enemys.Enemy;
  *
  * FIX BUG-14 (conservado): steeringForce era 9999999 (teleport).
  * Ahora default = 0.15 → persecución fluida y realista.
+ *
+ * FIX BUG-16: updateContext() permite a FlyingBehavior reutilizar la misma
+ * instancia entre frames en lugar de crear una nueva cada frame.
+ * La instancia se actualiza con el contexto del frame actual antes de ejecutarse.
  */
 public class FollowSteeringCommand implements EnemyAction {
 
-    private final EnemyContext ctx;
+    private EnemyContext ctx;
     private final double maxSpeed;
     private final double steeringForce;
 
@@ -33,6 +37,15 @@ public class FollowSteeringCommand implements EnemyAction {
         this(ctx, 3.0, 0.15);
     }
 
+    /**
+     * Actualiza el contexto para el frame actual.
+     * Llamar desde FlyingBehavior.decideAction() antes de retornar la instancia
+     * cacheada, evitando la creación de un nuevo objeto por frame.
+     */
+    public void updateContext(EnemyContext newCtx) {
+        this.ctx = newCtx;
+    }
+
     @Override
     public void execute(Enemy enemy) {
         enemy.getState().setMoving(true);
@@ -42,7 +55,7 @@ public class FollowSteeringCommand implements EnemyAction {
 
         if (desired.lengthSquared() == 0) return;
 
-        desired.normalize().scaleLocal(maxSpeed);
+        desired.normalizeLocal().scaleLocal(maxSpeed);
 
         Vector2D steering = desired.subtract(
             enemy.getPhysics().getVelocity()
@@ -56,6 +69,6 @@ public class FollowSteeringCommand implements EnemyAction {
 
         enemy.getPhysics()
              .getVelocity()
-             .limit(maxSpeed);
+             .limitLocal(maxSpeed);
     }
 }

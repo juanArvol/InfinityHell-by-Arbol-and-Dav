@@ -1,15 +1,12 @@
 package Inputs;
 
+import Inputs.Listeners.KeyActionListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-
-import Inputs.Listeners.KeyActionListener;
 
 /**
  * Teclado del juego.
@@ -20,9 +17,24 @@ import Inputs.Listeners.KeyActionListener;
  *  nueva basta con añadir un KeyBinding ahí. No hay que tocar update(),
  *  focusLost(), ni KeyActionListener.
  *
- *  Estados continuos → consultados por poll: KeyBoard.getState("stateKey")
+ *  Estados continuos → consultados por poll: keyboard.getState("stateKey")
  *  Acciones de edge  → notificadas por push: KeyActionListener.onKeyAction(action)
  *
+ * ─── MIGRACIÓN DE ESTADO ESTÁTICO ─────────────────────────────────────────────
+ *
+ *  El Map de estados era estático, lo que hacía que:
+ *    - Dos instancias de KeyBoard compartieran el mismo estado (confuso).
+ *    - El estado de un test contaminara los siguientes.
+ *    - Las dependencias fueran implícitas: cualquier clase podía leer
+ *      KeyBoard.getState() sin declarar ninguna dependencia explícita.
+ *
+ *  Ahora el mapa de estados es de instancia. Para compatibilidad con el
+ *  código existente se mantiene KeyBoard.getState(key) como delegador a
+ *  la instancia activa (igual que GameEventBus.GLOBAL).
+ *
+ *  Plan de migración:
+ *    Hoy: KeyBoard.getState(key) → delega a la instancia en GameOrquester.
+ *    Futuro: pasar la instancia explícita a cada sistema que la necesite.
  */
 public class KeyBoard implements KeyListener, FocusListener {
 
@@ -52,10 +64,42 @@ public class KeyBoard implements KeyListener, FocusListener {
 
     // ─── Estado continuo indexado por stateKey ────────────────────────────────
 
-    private static final Map<String, Boolean> states = new HashMap<>();
+    /**
+     * Mapa de estados continuos de esta instancia.
+     * Ahora es de instancia, no estático, para que cada KeyBoard tenga
+     * su propio estado independiente.
+     *
+     * Se mantiene el método estático getState() como delegador a la instancia
+     * activa registrada en setActiveInstance() para compatibilidad con el
+     * código existente que usa KeyBoard.getState(key) directamente.
+     */
+    private final java.util.Map<String, Boolean> stateMap = new java.util.HashMap<>();
 
+    /**
+     * Instancia activa global para compatibilidad con el código existente.
+     * GameOrquester registra la instancia al crear el KeyBoard.
+     * Usar getState(key) es correcto para juego single-player con una sola instancia.
+     * Para aislamiento real (tests, multiplayer) usar getInstanceState(key) en la instancia.
+     */
+    private static volatile KeyBoard activeInstance;
+
+    public static void setActiveInstance(KeyBoard instance) {
+        activeInstance = instance;
+    }
+
+    /**
+     * Consulta el estado continuo de la instancia activa global.
+     * Retorna false si no hay instancia activa registrada.
+     */
     public static boolean getState(String stateKey) {
-        Boolean v = states.get(stateKey);
+        KeyBoard inst = activeInstance;
+        if (inst == null) return false;
+        return inst.getInstanceState(stateKey);
+    }
+
+    /** Consulta el estado continuo de esta instancia específica. */
+    public boolean getInstanceState(String stateKey) {
+        Boolean v = stateMap.get(stateKey);
         return v != null && v;
     }
 
@@ -90,10 +134,25 @@ public class KeyBoard implements KeyListener, FocusListener {
         // ── Actualizar estados continuos ──────────────────────────────────────
         for (KeyBinding b : BINDINGS) {
             if (b.stateKey != null) {
-                states.put(b.stateKey, snapshot[b.keyCode]);
+                stateMap.put(b.stateKey, snapshot[b.keyCode]);
             }
         }
 
+        // ── Disparar edge actions (rising edge: off → on) ─────────────────────
+        // Se dispara una sola vez en el frame en que la tecla pasa de
+        // no-pulsada (lastKeys=false) a pulsada (snapshot=true).
+        // lastKeys se actualiza al FINAL de update(), garantizando que la
+        // comparación usa siempre el estado del frame anterior.
+        if (!listeners.isEmpty()) {
+            for (KeyBinding b : BINDINGS) {
+                if (b.edgeAction == null) continue;
+                if (!lastKeys[b.keyCode] && snapshot[b.keyCode]) {
+                    for (KeyActionListener l : listeners) {
+                        l.onKeyAction(b.edgeAction);
+                    }
+                }
+            }
+        }
 
         // ── Guardar snapshot para el próximo frame ────────────────────────────
         System.arraycopy(snapshot, 0, lastKeys, 0, snapshot.length);
@@ -137,7 +196,7 @@ public class KeyBoard implements KeyListener, FocusListener {
         // Limpiar estados continuos
         for (KeyBinding b : BINDINGS) {
             if (b.stateKey != null) {
-                states.put(b.stateKey, false);
+                stateMap.put(b.stateKey, false);
             }
         }
     }

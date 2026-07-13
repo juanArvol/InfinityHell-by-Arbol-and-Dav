@@ -1,271 +1,144 @@
 package Display.Managers;
 
+import Display.Backend.AwtWindowBackend;
 import Display.State.DisplayMode;
-
-import java.awt.*;
 import java.util.logging.Logger;
 
 /**
- * Gestiona las transiciones entre modos de presentación de la ventana.
+ * Coordina transiciones entre modos de presentación de la ventana.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: ASINCRONÍA DE setExtendedState(MAXIMIZED_BOTH)
+ * HRFC-003: DELEGACIÓN COMPLETA AL BACKEND
  *
- * Problema anterior:
- *   enterBorderless() llamaba setExtendedState(MAXIMIZED_BOTH) y retornaba
- *   inmediatamente. El pipeline leía canvas.getWidth() justo después, pero
- *   setExtendedState es asíncrono en AWT: el window manager del sistema
- *   operativo puede no haber completado la maximización todavía. El canvas
- *   reportaba el tamaño anterior o un tamaño intermedio, resultando en un
- *   viewport calculado con dimensiones incorrectas para el modo borderless.
+ * Antes del HRFC-003, FullscreenManager mantenía un campo volatile
+ * {@code currentMode} que actualizaba al finalizar cada solicitud de
+ * transición. Ese campo era una suposición interna: el Engine asumía que
+ * la operación había tenido éxito porque había sido solicitada.
  *
- * Solución:
- *   Después de setVisible(true) en enterBorderless(), se llama
- *   frame.validate() + canvas.validate() para forzar la validación del
- *   layout antes de retornar. Esto sincroniza el LayoutManager de Swing
- *   con las nuevas dimensiones. Si tras la validación el canvas todavía
- *   tiene dimensiones degeneradas (edge case en algunos window managers),
- *   se usa GraphicsConfiguration.getBounds() como fallback para obtener
- *   el tamaño de pantalla definitivo.
+ * Ahora FullscreenManager ya no mantiene ningún estado de modo propio.
+ * Toda consulta del modo actual se delega a AwtWindowBackend.deriveCurrentMode(),
+ * que lee el estado real confirmado por AWT en el instante de la consulta.
  *
- * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: DPI SCALING INDEPENDENCIA
+ * Responsabilidades de FullscreenManager:
+ *   1. Decidir QUÉ tipo de fullscreen corresponde (exclusive vs borderless)
+ *      según las capacidades del device.
+ *   2. Delegar la solicitud al Backend.
+ *   3. Mantener el índice del monitor activo (entero puro, no estado AWT).
  *
- *   getCanvasSize() obtiene las dimensiones del canvas y, si el canvas
- *   reporta tamaño degenerado o inconsistente con lo esperado en fullscreen,
- *   usa GraphicsConfiguration.getBounds() del dispositivo activo como
- *   fuente de verdad. Esto desacopla el cálculo de viewport del DPI scaling
- *   implícito que algunos JVM aplican a canvas.getWidth() en sistemas con
- *   Windows Display Scaling activo.
+ * El Pipeline llama readSnapshot() después de cualquier transición para
+ * conocer el estado real. FullscreenManager no interviene en esa lectura.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
- *   Todos los métodos públicos deben ejecutarse desde el EDT.
- *   currentMode es volatile para lectura thread-safe desde el GameLoop.
- *   activeMonitorIndex es volatile por el mismo motivo.
+ *   Todos los métodos → EDT únicamente (delegan en Backend que es EDT-only).
+ *   getActiveMonitorIndex() → thread-safe (volatile int).
+ *   getCurrentMode() → hilo del llamador; delega en Backend.deriveCurrentMode()
+ *                      que es EDT-only. Usar solo desde el EDT.
  */
 public final class FullscreenManager {
 
-    private static final Logger LOG = Logger.getLogger(FullscreenManager.class.getName());
+    private static final Logger LOG =
+        Logger.getLogger(FullscreenManager.class.getName());
 
-    private GraphicsDevice device;
-    private int activeMonitorIndex;
+    private final AwtWindowBackend backend;
 
-    /** Estado actual del modo de presentación. Volatile: leído desde GameLoop. */
-    private volatile DisplayMode currentMode = DisplayMode.WINDOWED;
+    /**
+     * Índice del monitor activo para operaciones fullscreen.
+     * Volatile: puede leerse desde cualquier thread para diagnóstico.
+     */
+    private volatile int activeMonitorIndex;
 
-    /** Snapshot del estado windowed capturado antes de entrar en fullscreen. */
-    private WindowedSnapshot windowedSnapshot = null;
-
-    public FullscreenManager(int monitorIndex) {
+    public FullscreenManager(AwtWindowBackend backend, int monitorIndex) {
+        this.backend            = backend;
         this.activeMonitorIndex = monitorIndex;
-        this.device = resolveDevice(monitorIndex);
     }
 
     // ── Transiciones ──────────────────────────────────────────────────────────
 
     /**
-     * Entra en fullscreen desde el modo windowed.
-     * Si el dispositivo soporta exclusive, usa FULLSCREEN_EXCLUSIVE.
-     * Si no, usa BORDERLESS_FULLSCREEN.
-     * EDT únicamente.
-     */
-    public void enterFullscreen(Window window) {
-        if (currentMode.isFullscreen()) {
-            LOG.fine("enterFullscreen(): already in fullscreen — ignored");
-            return;
-        }
-        windowedSnapshot = WindowedSnapshot.capture(window);
-        if (device.isFullScreenSupported()) {
-            enterExclusive(window);
-        } else {
-            LOG.warning("Exclusive fullscreen not supported — falling back to BORDERLESS_FULLSCREEN");
-            enterBorderless(window);
-        }
-    }
-
-    /**
-     * Entra en modo borderless windowed (maximized, sin decoración).
+     * Solicita entrar en fullscreen desde el modo windowed.
      *
-     * Después de setVisible(true) llama validate() para sincronizar el
-     * LayoutManager con las nuevas dimensiones antes de retornar.
-     * El pipeline puede leer canvas.getWidth() inmediatamente después y
-     * obtendrá las dimensiones correctas post-maximización.
+     * Delega en el Backend que elige exclusive vs borderless según el device.
+     * El resultado real se confirma leyendo el snapshot después de la llamada.
      *
      * EDT únicamente.
      */
-    public void enterBorderless(Window window) {
-        if (currentMode == DisplayMode.BORDERLESS_FULLSCREEN) {
-            LOG.fine("enterBorderless(): already BORDERLESS_FULLSCREEN — ignored");
-            return;
-        }
-        if (!currentMode.isFullscreen()) {
-            windowedSnapshot = WindowedSnapshot.capture(window);
-        }
-        window.setVisible(false);
-        setUndecorated(window, true);
-        if (window instanceof javax.swing.JFrame f) {
-            f.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
-        }
-        window.setVisible(true);
-
-        // Forzar validación del layout para que las dimensiones del canvas
-        // sean correctas cuando el pipeline las lea inmediatamente después.
-        window.validate();
-
-        currentMode = DisplayMode.BORDERLESS_FULLSCREEN;
-        LOG.info("Entered BORDERLESS_FULLSCREEN");
+    public void enterFullscreen() {
+        LOG.fine("FullscreenManager: requesting enterFullscreen");
+        backend.requestEnterFullscreen();
     }
 
     /**
-     * Sale de fullscreen y restaura el estado windowed capturado.
+     * Solicita entrar en modo borderless windowed.
+     *
      * EDT únicamente.
      */
-    public void exitFullscreen(Window window) {
-        if (!currentMode.isFullscreen()) {
-            LOG.fine("exitFullscreen(): not in fullscreen — ignored");
-            return;
-        }
-        window.setVisible(false);
-
-        if (currentMode == DisplayMode.FULLSCREEN_EXCLUSIVE
-                && device.getFullScreenWindow() == window) {
-            device.setFullScreenWindow(null);
-        }
-
-        setUndecorated(window, false);
-
-        if (windowedSnapshot != null) {
-            windowedSnapshot.restore(window);
-            windowedSnapshot = null;
-        }
-
-        window.setVisible(true);
-        window.validate();
-
-        currentMode = DisplayMode.WINDOWED;
-        LOG.info("Exited fullscreen → WINDOWED");
+    public void enterBorderless() {
+        LOG.fine("FullscreenManager: requesting enterBorderless");
+        backend.requestEnterBorderless();
     }
 
     /**
-     * Alterna entre WINDOWED ↔ FULLSCREEN.
+     * Solicita salir de fullscreen y restaurar el estado windowed.
+     *
      * EDT únicamente.
      */
-    public void toggle(Window window) {
-        if (currentMode.isFullscreen()) {
-            exitFullscreen(window);
-        } else {
-            enterFullscreen(window);
-        }
+    public void exitFullscreen() {
+        LOG.fine("FullscreenManager: requesting exitFullscreen");
+        backend.requestExitFullscreen();
+    }
+
+    /**
+     * Alterna entre WINDOWED y FULLSCREEN.
+     *
+     * EDT únicamente.
+     */
+    public void toggle() {
+        LOG.fine("FullscreenManager: requesting toggleFullscreen");
+        backend.requestToggleFullscreen();
     }
 
     // ── Cambio de monitor ─────────────────────────────────────────────────────
 
     /**
-     * Cambia el monitor activo para operaciones fullscreen.
-     * Si el índice es inválido, se clampea al rango disponible.
+     * Cambia el monitor activo. El cambio toma efecto en la próxima
+     * transición fullscreen.
+     *
      * EDT únicamente.
      */
     public void setMonitor(int monitorIndex) {
-        GraphicsDevice[] devices =
-            GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-        int clamped = Math.max(0, Math.min(monitorIndex, devices.length - 1));
-        this.activeMonitorIndex = clamped;
-        this.device = devices[clamped];
-        LOG.info("Active monitor changed to index " + clamped);
+        backend.requestSetMonitor(monitorIndex);
+        this.activeMonitorIndex = monitorIndex;
+        LOG.info("FullscreenManager: active monitor index set to " + monitorIndex);
     }
 
     // ── Consultas ─────────────────────────────────────────────────────────────
 
-    /** Modo de presentación activo. Thread-safe (volatile read). */
-    public DisplayMode getCurrentMode() { return currentMode; }
-
-    /** Conveniencia. Thread-safe. */
-    public boolean isFullscreen() { return currentMode.isFullscreen(); }
-
-    /** Índice del monitor activo. Thread-safe (volatile read). */
-    public int getActiveMonitorIndex() { return activeMonitorIndex; }
+    /**
+     * Modo de presentación actual, derivado del estado real de AWT.
+     *
+     * Delega en AwtWindowBackend.deriveCurrentMode() — la única fuente
+     * válida del modo confirmado. No hay campo currentMode interno.
+     *
+     * EDT únicamente (deriveCurrentMode() lee objetos AWT).
+     */
+    public DisplayMode getCurrentMode() {
+        return backend.deriveCurrentMode();
+    }
 
     /**
-     * Retorna el tamaño del canvas como Dimension.
-     *
-     * Si el canvas reporta dimensiones degeneradas (puede ocurrir
-     * inmediatamente después de una transición borderless en algunos
-     * window managers), usa GraphicsConfiguration.getBounds() del
-     * dispositivo activo como fallback.
-     *
-     * Esto garantiza independencia del DPI scaling implícito del JVM:
-     * en sistemas con Windows Display Scaling > 100%, canvas.getWidth()
-     * puede retornar el tamaño lógico mientras la BS opera sobre píxeles
-     * físicos. Usar device.getDefaultConfiguration().getBounds() retorna
-     * el tamaño físico del monitor que es el correcto para el viewport.
-     *
+     * True si actualmente se está en algún modo fullscreen, según AWT.
      * EDT únicamente.
      */
-    public Dimension getPhysicalCanvasSize(java.awt.Canvas canvas) {
-        int w = canvas.getWidth();
-        int h = canvas.getHeight();
-        if (w > 0 && h > 0) {
-            return new Dimension(w, h);
-        }
-        // Fallback: tamaño físico del monitor activo.
-        Rectangle bounds = device.getDefaultConfiguration().getBounds();
-        LOG.fine("FullscreenManager: canvas reported degenerate size, using device bounds: "
-                 + bounds.width + "x" + bounds.height);
-        return new Dimension(bounds.width, bounds.height);
+    public boolean isFullscreen() {
+        return backend.deriveCurrentMode().isFullscreen();
     }
 
-    // ── Privados ──────────────────────────────────────────────────────────────
-
-    private void enterExclusive(Window window) {
-        window.setVisible(false);
-        setUndecorated(window, true);
-        device.setFullScreenWindow(window);
-        window.setVisible(true);
-        window.validate();
-        currentMode = DisplayMode.FULLSCREEN_EXCLUSIVE;
-        LOG.info("Entered FULLSCREEN_EXCLUSIVE");
-    }
-
-    private static GraphicsDevice resolveDevice(int monitorIndex) {
-        GraphicsDevice[] devices =
-            GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
-        int idx = Math.max(0, Math.min(monitorIndex, devices.length - 1));
-        return devices[idx];
-    }
-
-    private static void setUndecorated(Window window, boolean undecorated) {
-        if (window instanceof javax.swing.JFrame f) {
-            try {
-                f.setUndecorated(undecorated);
-            } catch (IllegalComponentStateException e) {
-                LOG.warning("setUndecorated(" + undecorated + ") failed: " + e.getMessage());
-            }
-        }
-    }
-
-    // ── WindowedSnapshot ──────────────────────────────────────────────────────
-
-    private static final class WindowedSnapshot {
-        final int x, y, width, height;
-
-        private WindowedSnapshot(int x, int y, int width, int height) {
-            this.x = x; this.y = y;
-            this.width = width; this.height = height;
-        }
-
-        static WindowedSnapshot capture(Window window) {
-            Rectangle b = window.getBounds();
-            return new WindowedSnapshot(b.x, b.y, b.width, b.height);
-        }
-
-        void restore(Window window) {
-            if (window instanceof javax.swing.JFrame f) {
-                f.setExtendedState(javax.swing.JFrame.NORMAL);
-            }
-            window.setSize(width, height);
-            window.setLocation(x, y);
-        }
+    /**
+     * Índice del monitor activo. Thread-safe (volatile read).
+     */
+    public int getActiveMonitorIndex() {
+        return activeMonitorIndex;
     }
 }

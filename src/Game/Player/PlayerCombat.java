@@ -1,14 +1,13 @@
 package Game.Player;
 
-import java.util.List;
-import java.util.function.Consumer;
-
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Weapons.WeaponInventory;
 import Game.Items.Types.Weapons.WeaponSelected;
-import Inputs.MouseInput;
 import Inputs.Listeners.MouseActionListener;
+import Inputs.MouseInput;
+import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Combate del jugador.
@@ -133,6 +132,8 @@ public class PlayerCombat implements MouseActionListener {
     // ── Update ────────────────────────────────────────────────────────────
 
     public void update() {
+        if (state.isCongelado()) return;
+
         WeaponSelected currentWeapon = inventory.getCurrentWeapon();
         if (currentWeapon == null) return;
 

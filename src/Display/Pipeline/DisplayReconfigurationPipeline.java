@@ -1,5 +1,8 @@
 package Display.Pipeline;
 
+import Display.Backend.AwtWindowBackend;
+import Display.Backend.DisplaySnapshot;
+import Display.Backend.SnapshotValidator;
 import Display.Background.DisplayBackground;
 import Display.Commands.DisplayCommand;
 import Display.Commands.DisplayCommandQueue;
@@ -8,7 +11,6 @@ import Display.Managers.ViewportManager;
 import Display.Managers.WindowManager;
 import Display.State.DisplayMode;
 import Display.State.DisplayState;
-import Display.State.Resolution;
 import Display.State.SurfaceState;
 import Display.Surface.RenderSurface;
 import Display.Surface.SurfaceBuilder;
@@ -16,9 +18,6 @@ import Display.Surface.SurfacePublisher;
 import Display.Transition.DisplayTransitionMachine;
 import Display.Transition.DisplayTransitionState;
 import Display.ViewportInfo;
-
-import java.awt.Dimension;
-import java.awt.Window;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
@@ -26,53 +25,48 @@ import java.util.logging.Logger;
  * Pipeline unificado para toda reconfiguración del subsistema Display.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: ÚNICA FUENTE DE VERDAD PARA currentState
+ * HRFC-003: AWT COMO FUENTE DE VERDAD
  *
- * Problema anterior:
- *   DisplayManager tenía su propio campo currentState y su propio método
- *   publishFullState() que construía y publicaba un DisplayState
- *   independientemente del pipeline. El pipeline también tenía su propio
- *   currentState inicializado con el initialState del constructor.
- *   Cualquier llamada a publishState() en el pipeline usaba toBuilder()
- *   sobre ese initialState obsoleto, produciendo snapshots con datos del
- *   estado inicial mezclados con datos del estado actual.
+ * El Pipeline ya no es la autoridad sobre el estado del Display.
+ * El Pipeline coordina transiciones y publica estados derivados de lo que
+ * AWT confirma — nunca de lo que el Engine supuso que ocurriría.
  *
- *   DisplayManager.init() construía y publicaba la superficie fuera del
- *   pipeline, por lo que el pipeline.currentState nunca se enteraba del
- *   estado real post-init. El primer ResizeCanvas publicaba un DisplayState
- *   con viewport=null y surfaceState=LOST aunque la superficie ya existía.
+ * Cambio central respecto a HRFC-002:
  *
- * Solución:
- *   El pipeline es la ÚNICA fuente de currentState. DisplayManager no
- *   tiene lógica de construcción de estado propia; lee el último valor
- *   publicado por el statePublisher.
+ *   Antes (HRFC-002):
+ *     applyCommand() ejecuta la operación.
+ *     El Pipeline asume que tuvo éxito.
+ *     publishState() usa fullscreenManager.getCurrentMode() —
+ *       que era un campo interno, no confirmado por AWT.
  *
- *   El método initializeState() permite al pipeline publicar el estado
- *   correcto post-init sin necesidad de ejecutar un comando completo.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: DPI INDEPENDENCE EN LECTURA DE DIMENSIONES
- *
- *   El pipeline ya no llama canvas.getWidth() / canvas.getHeight()
- *   directamente. Usa fullscreenManager.getPhysicalCanvasSize(canvas),
- *   que aplica el fallback a device.getDefaultConfiguration().getBounds()
- *   si el canvas reporta dimensiones degeneradas. Esto garantiza que el
- *   viewport se calcula siempre sobre el tamaño físico real, independiente
- *   del DPI scaling del sistema operativo.
+ *   Ahora (HRFC-003):
+ *     backend.requestXxx() ejecuta la solicitud.
+ *     backend.readSnapshot() lee lo que AWT reporta realmente.
+ *     SnapshotValidator.isUsable() verifica condiciones mínimas.
+ *     Si la validación pasa, se construye la surface y se valida
+ *     con isRenderReady().
+ *     publishState() se construye enteramente desde el snapshot.
+ *     La gate se abre solo si isRenderReady() pasa.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * FASES DEL PIPELINE (todas las reconfiguraciones excepto ResizeCanvas)
+ * FASES DEL PIPELINE (todos los comandos excepto Resize/Suspend/Resume)
  *
- *   FASE 1 — Adquirir transición (TransitionMachine).
- *   FASE 2 — Suprimir resize espurios (WindowManager).
- *   FASE 3 — Publicar null (retirar superficie activa del GameLoop).
- *   FASE 4 — Ejecutar la operación específica del comando.
- *   FASE 5 — Recalcular viewport (con getPhysicalCanvasSize).
- *   FASE 6 — Construir nueva RenderSurface (SurfaceBuilder.build).
- *   FASE 7 — Publicar nueva RenderSurface (SurfacePublisher.publish).
- *   FASE 8 — Publicar nuevo DisplayState (única fuente de verdad).
- *   FASE 9 — Reanudar resize.
- *   FASE 10 — Liberar transición (siempre en finally).
+ *   FASE 1  — tryBegin(transition)
+ *   FASE 2  — closeGate() + publishTransientState(RECREATING)
+ *   FASE 3  — suppressResize(true)
+ *   FASE 4  — unpublish()
+ *   FASE 5  — backend.requestXxx()              ← solicitud a AWT
+ *   FASE 6  — snapshot = backend.readSnapshot() ← estado observado post-solicitud
+ *   FASE 7  — SnapshotValidator.isUsable(snapshot) — ¿tiene sentido construir?
+ *               Si falla: publishLost + scheduleRetry → return
+ *   FASE 8  — viewportManager.onResize(snapshot dims)
+ *   FASE 9  — buildAndPublish(snapshot)
+ *   FASE 10 — snapshot2 = backend.readSnapshot() ← re-leer tras build
+ *             SnapshotValidator.isRenderReady(snapshot2)
+ *               Si pasa:  publishState(snapshot2, READY) + openGate()
+ *               Si falla: publishState(snapshot2, LOST)  + scheduleRetry
+ *   FASE 11 — suppressResize(false)             [finally]
+ *   FASE 12 — transitionMachine.end()           [finally]
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
@@ -85,66 +79,77 @@ public final class DisplayReconfigurationPipeline
     private static final Logger LOG =
         Logger.getLogger(DisplayReconfigurationPipeline.class.getName());
 
-    private final WindowManager            windowManager;
+    private final AwtWindowBackend         backend;
     private final FullscreenManager        fullscreenManager;
     private final ViewportManager          viewportManager;
     private final SurfaceBuilder           surfaceBuilder;
     private final SurfacePublisher         surfacePublisher;
+    private final WindowManager            windowManager;
     private final DisplayTransitionMachine transitionMachine;
-    private final DisplayBackground        background;
     private final Consumer<DisplayState>   statePublisher;
+    private final Runnable                 onBuildFailed;
 
-    /**
-     * Estado canónico del subsistema Display.
-     * Solo se modifica en publishState() / publishFailedState() / initializeState().
-     * Es la única fuente de verdad; DisplayManager lee el valor publicado.
-     */
+    /** Fondo activo. EDT únicamente. */
+    private DisplayBackground background;
+
+    /** Estado canónico. Única fuente de verdad dentro del Pipeline. */
     private DisplayState currentState;
 
     public DisplayReconfigurationPipeline(
-            WindowManager windowManager,
+            AwtWindowBackend backend,
             FullscreenManager fullscreenManager,
             ViewportManager viewportManager,
             SurfaceBuilder surfaceBuilder,
             SurfacePublisher surfacePublisher,
+            WindowManager windowManager,
             DisplayBackground background,
             DisplayTransitionMachine transitionMachine,
             DisplayState initialState,
-            Consumer<DisplayState> statePublisher) {
+            Consumer<DisplayState> statePublisher,
+            Runnable onBuildFailed) {
 
-        this.windowManager     = windowManager;
+        this.backend           = backend;
         this.fullscreenManager = fullscreenManager;
         this.viewportManager   = viewportManager;
         this.surfaceBuilder    = surfaceBuilder;
         this.surfacePublisher  = surfacePublisher;
+        this.windowManager     = windowManager;
         this.background        = background;
         this.transitionMachine = transitionMachine;
         this.statePublisher    = statePublisher;
+        this.onBuildFailed     = onBuildFailed != null ? onBuildFailed : () -> {};
         this.currentState      = initialState;
     }
 
     // ── Inicialización ────────────────────────────────────────────────────────
 
     /**
-     * Publica el estado completo post-init sin ejecutar un comando completo.
+     * Publica el estado post-init derivado del snapshot real y abre la gate.
      *
-     * Llamar desde DisplayManager.init() después de que la superficie inicial
-     * fue construida y publicada por SurfacePublisher. Esto garantiza que
-     * el currentState del pipeline refleja el estado real del sistema desde
-     * el primer frame, sin esperar al primer ResizeCanvas.
+     * Llama readSnapshot() para confirmar el estado AWT antes de decidir si
+     * la gate puede abrirse. No asume nada sobre lo que ocurrió en init().
      *
      * EDT únicamente.
      */
     public void initializeState() {
         assertEDT();
-        Dimension size = fullscreenManager.getPhysicalCanvasSize(windowManager.getCanvas());
-        int w = size.width;
-        int h = size.height;
-        if (w > 0 && h > 0) {
-            viewportManager.onResize(w, h);
+        DisplaySnapshot snapshot = backend.readSnapshot();
+        SnapshotValidator.ValidationResult ready =
+            SnapshotValidator.isRenderReady(snapshot);
+
+        if (ready.passed) {
+            viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
+            publishStateFromSnapshot(snapshot, SurfaceState.READY);
+            surfacePublisher.openGate();
+            LOG.info("Pipeline: initialized from snapshot — gate opened. " + snapshot);
+        } else {
+            // Surface exists but AWT not fully ready yet (rare edge case at startup).
+            // Publish LOST and schedule a retry: the gate remains closed.
+            publishTransientState(SurfaceState.LOST);
+            scheduleBuildRetry();
+            LOG.warning("Pipeline: initializeState — isRenderReady failed: "
+                        + ready.summary() + " — retry scheduled");
         }
-        publishState(w, h, DisplayTransitionState.IDLE);
-        LOG.info("Pipeline: state initialized — " + currentState);
     }
 
     // ── CommandExecutor ───────────────────────────────────────────────────────
@@ -152,74 +157,119 @@ public final class DisplayReconfigurationPipeline
     @Override
     public void execute(DisplayCommand command) {
         assertEDT();
-
-        if (command instanceof DisplayCommand.ResizeCanvas rc) {
-            executeResize(rc);
-            return;
+        switch (command) {
+            case DisplayCommand.ResizeCanvas rc    -> { executeResize(rc);  return; }
+            case DisplayCommand.SuspendRendering s -> { executeSuspend(s);  return; }
+            case DisplayCommand.ResumeRendering r  -> { executeResume(r);   return; }
+            default -> {}
         }
-
-        DisplayTransitionState transition = resolveTransition(command);
-
-        // FASE 1: Adquirir la transición
-        if (!transitionMachine.tryBegin(transition)) {
-            LOG.fine("Pipeline: " + command.getClass().getSimpleName()
-                     + " rejected — " + transitionMachine.getState() + " in progress");
-            return;
-        }
-
-        windowManager.suppressResize(true);
-        try {
-            // FASE 3: Retirar superficie activa
-            surfacePublisher.unpublish();
-
-            // FASE 4: Operación específica
-            applyCommand(command);
-
-            // FASE 5: Recalcular viewport con dimensiones físicas
-            Dimension size = fullscreenManager.getPhysicalCanvasSize(windowManager.getCanvas());
-            int w = size.width;
-            int h = size.height;
-            if (w > 0 && h > 0) {
-                viewportManager.onResize(w, h);
-            }
-
-            // FASE 6 + 7: Construir y publicar nueva superficie
-            buildAndPublish();
-
-            // FASE 8: Publicar estado
-            publishState(w, h, transition);
-
-            windowManager.requestCanvasFocus();
-            LOG.info("Pipeline: completed " + command.getClass().getSimpleName()
-                     + " → " + fullscreenManager.getCurrentMode());
-
-        } catch (Exception e) {
-            LOG.warning("Pipeline: exception during " + command.getClass().getSimpleName()
-                        + ": " + e.getMessage());
-            publishFailedState();
-            throw e instanceof RuntimeException re ? re : new RuntimeException(e);
-
-        } finally {
-            // FASE 9: Reanudar resize
-            windowManager.suppressResize(false);
-            // FASE 10: Liberar transición SIEMPRE
-            transitionMachine.end(transition);
-        }
+        executeFullPipeline(command);
     }
 
-    // ── ResizeCanvas: pipeline optimizado ─────────────────────────────────────
+    // ── SuspendRendering ──────────────────────────────────────────────────────
 
-    /**
-     * Ejecuta un ResizeCanvas con idempotencia y sin transición de modo.
-     *
-     * suppressResize durante la ejecución rompe el bucle:
-     * createBS → componentResized → ResizeCanvas → createBS.
-     */
+    private void executeSuspend(DisplayCommand.SuspendRendering cmd) {
+        LOG.fine("Pipeline: SuspendRendering — closing gate");
+        surfacePublisher.closeGate();
+        publishTransientState(SurfaceState.SUSPENDED);
+    }
+
+    // ── ResumeRendering ───────────────────────────────────────────────────────
+
+    private void executeResume(DisplayCommand.ResumeRendering cmd) {
+        LOG.fine("Pipeline: ResumeRendering(rebuild=" + cmd.requiresRebuild() + ")");
+
+        if (cmd.requiresRebuild()) {
+            if (!transitionMachine.tryBegin(DisplayTransitionState.RECONFIGURING_DISPLAY)) {
+                LOG.fine("Pipeline: ResumeRendering(rebuild=true) rejected — transition in progress");
+                return;
+            }
+            // Cerrar gate ANTES de unpublish: evita la ventana donde
+            // gate=open pero publishedRef=null (dispararía onRecoveryNeeded).
+            surfacePublisher.closeGate();
+            windowManager.suppressResize(true);
+            try {
+                surfacePublisher.unpublish();
+
+                DisplaySnapshot snapshot = backend.readSnapshot();
+                SnapshotValidator.ValidationResult usable =
+                    SnapshotValidator.isUsable(snapshot);
+                if (usable.failed()) {
+                    LOG.warning("Pipeline: ResumeRendering — snapshot not usable: "
+                                + usable.summary() + " — retry scheduled");
+                    publishTransientState(SurfaceState.LOST);
+                    scheduleBuildRetry();
+                    return;
+                }
+
+                viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
+                boolean built = buildAndPublish();
+                DisplaySnapshot snapshot2 = backend.readSnapshot();
+                SnapshotValidator.ValidationResult ready =
+                    SnapshotValidator.isRenderReady(snapshot2);
+
+                if (built && ready.passed) {
+                    publishStateFromSnapshot(snapshot2, SurfaceState.READY);
+                    surfacePublisher.openGate();
+                    backend.requestCanvasFocus();
+                    LOG.info("Pipeline: ResumeRendering(rebuild=true) — gate opened.");
+                } else {
+                    publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
+                    scheduleBuildRetry();
+                    LOG.warning("Pipeline: ResumeRendering(rebuild=true) — not render-ready: "
+                                + ready.summary());
+                }
+            } finally {
+                windowManager.suppressResize(false);
+                transitionMachine.end(DisplayTransitionState.RECONFIGURING_DISPLAY);
+            }
+            return;
+        }
+
+        // rebuild=false: verificar estado AWT y reabrir gate si el canvas es usable
+        // y la BS existe (aunque tenga contentsLost transitorio — el do-while de
+        // RenderFrame.present() lo maneja sin necesidad de rebuild completo).
+        if (!surfacePublisher.hasPublishedSurface()) {
+            LOG.fine("Pipeline: ResumeRendering(rebuild=false) — no surface, forcing rebuild");
+            executeResume(new DisplayCommand.ResumeRendering(true));
+            return;
+        }
+
+        DisplaySnapshot snapshot = backend.readSnapshot();
+
+        // Verificar condiciones básicas de usabilidad (canvas displayable, visible, dims válidas).
+        SnapshotValidator.ValidationResult usable = SnapshotValidator.isUsable(snapshot);
+        if (usable.failed()) {
+            LOG.fine("Pipeline: ResumeRendering(rebuild=false) — canvas not usable ("
+                     + usable.summary() + "), escalating to rebuild");
+            executeResume(new DisplayCommand.ResumeRendering(true));
+            return;
+        }
+
+        // Verificar que la BS existe. Si no existe, necesitamos rebuild completo.
+        if (!snapshot.bufferStrategyPresent()) {
+            LOG.fine("Pipeline: ResumeRendering(rebuild=false) — no BufferStrategy, escalating to rebuild");
+            executeResume(new DisplayCommand.ResumeRendering(true));
+            return;
+        }
+
+        // La BS puede tener contentsLost transitorio — NO escalar a rebuild.
+        // El loop do-while en RenderFrame.present() lo resolverá en el próximo frame.
+        // Simplemente reabrir la gate; el GameLoop retomará el render.
+        publishStateFromSnapshot(snapshot, SurfaceState.READY);
+        surfacePublisher.openGate();
+        backend.requestCanvasFocus();
+        LOG.info("Pipeline: ResumeRendering(rebuild=false) — gate reopened"
+                 + (snapshot.bufferStrategyContentsLost() ? " (contentsLost transient, will resolve in render loop)" : "")
+                 + ".");
+    }
+
+    // ── ResizeCanvas ──────────────────────────────────────────────────────────
+
     private void executeResize(DisplayCommand.ResizeCanvas cmd) {
         int newW = cmd.width();
         int newH = cmd.height();
 
-        // Idempotencia: si el viewport ya refleja este tamaño, descartar.
         ViewportInfo existing = viewportManager.getViewport();
         if (existing != null
                 && existing.realWidth  == newW
@@ -233,59 +283,211 @@ public final class DisplayReconfigurationPipeline
             return;
         }
 
+        surfacePublisher.closeGate();
         windowManager.suppressResize(true);
         try {
             boolean viewportChanged = viewportManager.onResize(newW, newH);
+            if (!viewportChanged) {
+                surfacePublisher.openGate();
+                LOG.fine("Pipeline: ResizeCanvas — viewport unchanged, gate reopened");
+                return;
+            }
 
-            if (viewportChanged) {
-                surfacePublisher.unpublish();
-                buildAndPublish();
-                publishState(newW, newH, DisplayTransitionState.RECONFIGURING_DISPLAY);
-                LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — surface rebuilt");
+            surfacePublisher.unpublish();
+
+            // Confirm AWT state before building.
+            DisplaySnapshot snapshot = backend.readSnapshot();
+            SnapshotValidator.ValidationResult usable = SnapshotValidator.isUsable(snapshot);
+            if (usable.failed()) {
+                publishStateFromSnapshot(snapshot, SurfaceState.LOST);
+                scheduleBuildRetry();
+                LOG.warning("Pipeline: ResizeCanvas — snapshot not usable: " + usable.summary());
+                return;
+            }
+
+            boolean built = buildAndPublish();
+            DisplaySnapshot snapshot2 = backend.readSnapshot();
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+
+            if (built && ready.passed) {
+                publishStateFromSnapshot(snapshot2, SurfaceState.READY);
+                surfacePublisher.openGate();
+                LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — surface rebuilt, gate opened.");
             } else {
-                LOG.fine("Pipeline: ResizeCanvas " + newW + "x" + newH + " — viewport unchanged");
+                publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
+                scheduleBuildRetry();
+                LOG.warning("Pipeline: ResizeCanvas — not render-ready: " + ready.summary());
             }
 
         } catch (Exception e) {
             LOG.warning("Pipeline: exception during ResizeCanvas: " + e.getMessage());
-            publishFailedState();
-
+            publishTransientState(SurfaceState.LOST);
+            scheduleBuildRetry();
         } finally {
             windowManager.suppressResize(false);
             transitionMachine.end(DisplayTransitionState.RECONFIGURING_DISPLAY);
         }
     }
 
-    // ── Construcción y publicación de superficie ──────────────────────────────
+    // ── Pipeline completo ─────────────────────────────────────────────────────
 
-    private void buildAndPublish() {
-        ViewportInfo viewport = viewportManager.getViewport();
-        RenderSurface newSurface = surfaceBuilder.build(viewport, background);
-        surfacePublisher.publish(newSurface);
+    private void executeFullPipeline(DisplayCommand command) {
+        DisplayTransitionState transition = resolveTransition(command);
+
+        // FASE 1
+        if (!transitionMachine.tryBegin(transition)) {
+            LOG.fine("Pipeline: " + command.getClass().getSimpleName()
+                     + " rejected — " + transitionMachine.getState() + " in progress");
+            return;
+        }
+
+        // FASE 2
+        surfacePublisher.closeGate();
+        publishTransientState(SurfaceState.RECREATING);
+
+        // FASE 3
+        windowManager.suppressResize(true);
+
+        try {
+            // FASE 4
+            surfacePublisher.unpublish();
+
+            // FASE 5: solicitud a AWT
+            applyRequest(command);
+
+            // FASE 6: leer estado observado post-solicitud
+            DisplaySnapshot snapshot = backend.readSnapshot();
+            LOG.fine("Pipeline: post-request snapshot → " + snapshot);
+
+            // FASE 7: validar usabilidad
+            SnapshotValidator.ValidationResult usable = SnapshotValidator.isUsable(snapshot);
+            if (usable.failed()) {
+                LOG.warning("Pipeline: " + command.getClass().getSimpleName()
+                            + " — snapshot not usable after request: " + usable.summary()
+                            + " — attempting emergency path");
+                // No hacer return inmediato: intentar recuperación de emergencia.
+                attemptEmergencyRecovery(command, snapshot);
+                return;
+            }
+
+            // FASE 8: recalcular viewport desde dimensiones confirmadas
+            viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
+
+            // FASE 9: construir surface
+            boolean built = buildAndPublish();
+
+            // FASE 10: re-leer snapshot y validar render-readiness
+            DisplaySnapshot snapshot2 = backend.readSnapshot();
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+
+            if (built && ready.passed) {
+                publishStateFromSnapshot(snapshot2, SurfaceState.READY);
+                surfacePublisher.openGate();
+                backend.requestCanvasFocus();
+                LOG.info("Pipeline: completed " + command.getClass().getSimpleName()
+                         + " → mode=" + snapshot2.confirmedMode());
+            } else {
+                publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
+                scheduleBuildRetry();
+                LOG.warning("Pipeline: " + command.getClass().getSimpleName()
+                            + " — not render-ready after build: " + ready.summary());
+            }
+
+        } catch (Exception e) {
+            LOG.warning("Pipeline: exception during "
+                        + command.getClass().getSimpleName() + ": " + e.getMessage());
+            attemptEmergencyRecovery(command, backend.readSnapshot());
+
+        } finally {
+            // FASE 11 + 12: siempre
+            windowManager.suppressResize(false);
+            transitionMachine.end(transition);
+        }
     }
 
-    // ── FASE 4: operación específica por tipo de comando ─────────────────────
+    // ── Recuperación de emergencia ────────────────────────────────────────────
 
-    private void applyCommand(DisplayCommand command) {
-        Window frame = windowManager.getFrame();
+    /**
+     * Cuando la transición principal falla, intenta construir una surface sobre
+     * el estado real actual de AWT (sea cual sea). Si incluso eso falla,
+     * publica LOST y programa un reintento.
+     *
+     * El estado publicado siempre proviene del snapshot leído en ese instante,
+     * nunca de una suposición sobre lo que debería haber ocurrido.
+     */
+    private void attemptEmergencyRecovery(DisplayCommand failedCommand,
+                                          DisplaySnapshot contextSnapshot) {
+        LOG.warning("Pipeline: emergency recovery after failed "
+                    + failedCommand.getClass().getSimpleName());
+        try {
+            DisplaySnapshot current = backend.readSnapshot();
+            SnapshotValidator.ValidationResult usable = SnapshotValidator.isUsable(current);
+            if (usable.failed()) {
+                LOG.warning("Pipeline: emergency recovery — canvas not usable: "
+                            + usable.summary() + " — scheduling retry");
+                publishTransientState(SurfaceState.LOST);
+                scheduleBuildRetry();
+                return;
+            }
 
+            viewportManager.onResize(current.canvasWidth(), current.canvasHeight());
+            boolean built = buildAndPublish();
+            DisplaySnapshot snapshot2 = backend.readSnapshot();
+            SnapshotValidator.ValidationResult ready = SnapshotValidator.isRenderReady(snapshot2);
+
+            if (built && ready.passed) {
+                publishStateFromSnapshot(snapshot2, SurfaceState.READY);
+                surfacePublisher.openGate();
+                LOG.info("Pipeline: emergency recovery succeeded.");
+            } else {
+                publishStateFromSnapshot(snapshot2, SurfaceState.LOST);
+                scheduleBuildRetry();
+                LOG.warning("Pipeline: emergency recovery also failed: " + ready.summary());
+            }
+        } catch (Exception e) {
+            LOG.warning("Pipeline: emergency recovery threw: " + e.getMessage());
+            publishTransientState(SurfaceState.LOST);
+            scheduleBuildRetry();
+        }
+    }
+
+    // ── Build ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Construye y publica una nueva RenderSurface.
+     * Retorna true si la surface fue construida correctamente; false si build() devolvió null.
+     */
+    private boolean buildAndPublish() {
+        ViewportInfo vp = viewportManager.getViewport();
+        RenderSurface surface = surfaceBuilder.build(vp, background);
+        if (surface == null) {
+            LOG.warning("Pipeline: buildAndPublish() — surfaceBuilder.build() returned null");
+            return false;
+        }
+        surfacePublisher.publish(surface);
+        return true;
+    }
+
+    // ── FASE 5: solicitudes al Backend por tipo de comando ────────────────────
+
+    private void applyRequest(DisplayCommand command) {
         switch (command) {
             case DisplayCommand.ToggleFullscreen ignored ->
-                fullscreenManager.toggle(frame);
+                fullscreenManager.toggle();
 
             case DisplayCommand.EnterFullscreen cmd -> {
                 if (cmd.targetMode() == DisplayMode.FULLSCREEN_EXCLUSIVE) {
-                    fullscreenManager.enterFullscreen(frame);
+                    fullscreenManager.enterFullscreen();
                 } else {
-                    fullscreenManager.enterBorderless(frame);
+                    fullscreenManager.enterBorderless();
                 }
             }
 
             case DisplayCommand.ExitFullscreen ignored ->
-                fullscreenManager.exitFullscreen(frame);
+                fullscreenManager.exitFullscreen();
 
             case DisplayCommand.SetDisplayMode cmd ->
-                applySetDisplayMode(cmd.mode(), frame);
+                applySetDisplayMode(cmd.mode());
 
             case DisplayCommand.ChangeResolution cmd -> {
                 surfaceBuilder.onVirtualResolutionChanged(
@@ -295,60 +497,59 @@ public final class DisplayReconfigurationPipeline
                 LOG.info("Pipeline: virtual resolution changed to " + cmd.resolution());
             }
 
-            case DisplayCommand.ChangeMonitor cmd -> {
+            case DisplayCommand.ChangeMonitor cmd ->
                 fullscreenManager.setMonitor(cmd.monitorIndex());
-                if (fullscreenManager.getCurrentMode().isFullscreen()) {
-                    DisplayMode currentMode = fullscreenManager.getCurrentMode();
-                    fullscreenManager.exitFullscreen(frame);
-                    if (currentMode == DisplayMode.FULLSCREEN_EXCLUSIVE) {
-                        fullscreenManager.enterFullscreen(frame);
-                    } else {
-                        fullscreenManager.enterBorderless(frame);
-                    }
-                }
-            }
 
             case DisplayCommand.RestoreWindow ignored ->
-                fullscreenManager.exitFullscreen(frame);
+                fullscreenManager.exitFullscreen();
 
             case DisplayCommand.RecreateBufferStrategy ignored ->
-                LOG.fine("Pipeline: explicit surface rebuild (unpublish in phase 3, rebuild in 6+7)");
+                LOG.fine("Pipeline: explicit surface rebuild (unpublish phase 4, rebuild phase 9)");
+
+            case DisplayCommand.ChangeBackground cmd -> {
+                this.background = cmd.background();
+                LOG.info("Pipeline: background changed to " + cmd.background());
+            }
 
             case DisplayCommand.ResizeCanvas ignored ->
-                throw new IllegalStateException("ResizeCanvas should not reach applyCommand()");
+                throw new IllegalStateException("ResizeCanvas should not reach applyRequest()");
+            case DisplayCommand.SuspendRendering ignored ->
+                throw new IllegalStateException("SuspendRendering should not reach applyRequest()");
+            case DisplayCommand.ResumeRendering ignored ->
+                throw new IllegalStateException("ResumeRendering should not reach applyRequest()");
         }
     }
 
-    private void applySetDisplayMode(DisplayMode target, Window frame) {
+    private void applySetDisplayMode(DisplayMode target) {
         DisplayMode current = fullscreenManager.getCurrentMode();
         if (current == target) return;
         switch (target) {
-            case DisplayMode.WINDOWED -> fullscreenManager.exitFullscreen(frame);
-            case DisplayMode.FULLSCREEN_EXCLUSIVE -> {
-                if (current.isFullscreen()) fullscreenManager.exitFullscreen(frame);
-                fullscreenManager.enterFullscreen(frame);
+            case WINDOWED              -> fullscreenManager.exitFullscreen();
+            case FULLSCREEN_EXCLUSIVE  -> {
+                if (current.isFullscreen()) fullscreenManager.exitFullscreen();
+                fullscreenManager.enterFullscreen();
             }
-            case DisplayMode.BORDERLESS_FULLSCREEN -> {
-                if (current.isFullscreen()) fullscreenManager.exitFullscreen(frame);
-                fullscreenManager.enterBorderless(frame);
+            case BORDERLESS_FULLSCREEN -> {
+                if (current.isFullscreen()) fullscreenManager.exitFullscreen();
+                fullscreenManager.enterBorderless();
             }
         }
     }
 
     // ── Publicación de DisplayState ───────────────────────────────────────────
 
-    private void publishState(int realW, int realH, DisplayTransitionState completedTransition) {
+    /**
+     * Publica un DisplayState derivado enteramente del snapshot confirmado.
+     * Ningún campo proviene de una suposición interna del Pipeline.
+     */
+    private void publishStateFromSnapshot(DisplaySnapshot snapshot, SurfaceState surfaceState) {
         ViewportInfo vp = viewportManager.getViewport();
 
-        SurfaceState ss = surfacePublisher.hasPublishedSurface()
-            ? SurfaceState.READY
-            : SurfaceState.LOST;
-
         DisplayState next = currentState.toBuilder()
-            .mode(fullscreenManager.getCurrentMode())
-            .realSize(realW, realH)
+            .mode(snapshot.confirmedMode())
+            .realSize(snapshot.canvasWidth(), snapshot.canvasHeight())
             .viewport(vp)
-            .surfaceState(ss)
+            .surfaceState(surfaceState)
             .transitionState(DisplayTransitionState.IDLE)
             .activeMonitorIndex(fullscreenManager.getActiveMonitorIndex())
             .build();
@@ -357,18 +558,34 @@ public final class DisplayReconfigurationPipeline
         statePublisher.accept(next);
     }
 
-    private void publishFailedState() {
-        DisplayState failed = currentState.toBuilder()
-            .surfaceState(SurfaceState.FAILED)
-            .transitionState(DisplayTransitionState.IDLE)
+    /**
+     * Publica un estado transitorio (RECREATING / SUSPENDED / LOST).
+     * Los campos de modo y dimensiones mantienen el último valor confirmado.
+     */
+    private void publishTransientState(SurfaceState transientState) {
+        DisplayTransitionState active = transitionMachine.getState();
+        DisplayState transient_ = currentState.toBuilder()
+            .surfaceState(transientState)
+            .transitionState(active.isActive()
+                ? active
+                : DisplayTransitionState.RECONFIGURING_DISPLAY)
             .build();
-        currentState = failed;
-        statePublisher.accept(failed);
+        currentState = transient_;
+        statePublisher.accept(transient_);
+    }
+
+    // ── Recovery ─────────────────────────────────────────────────────────────
+
+    private void scheduleBuildRetry() {
+        LOG.warning("Pipeline: scheduling build retry");
+        try { onBuildFailed.run(); }
+        catch (Exception e) {
+            LOG.warning("Pipeline: onBuildFailed callback threw: " + e.getMessage());
+        }
     }
 
     // ── Consultas ─────────────────────────────────────────────────────────────
 
-    /** Estado canónico actual. EDT únicamente para coherencia con publishState. */
     public DisplayState getCurrentState() { return currentState; }
 
     // ── Resolución de tipo de transición ─────────────────────────────────────
@@ -403,8 +620,15 @@ public final class DisplayReconfigurationPipeline
             case DisplayCommand.RecreateBufferStrategy ignored ->
                 DisplayTransitionState.RECONFIGURING_DISPLAY;
 
-            case DisplayCommand.ResizeCanvas ignored ->
+            case DisplayCommand.ChangeBackground ignored ->
                 DisplayTransitionState.RECONFIGURING_DISPLAY;
+
+            case DisplayCommand.ResizeCanvas ignored ->
+                throw new AssertionError("ResizeCanvas should not reach resolveTransition()");
+            case DisplayCommand.SuspendRendering ignored ->
+                throw new AssertionError("SuspendRendering should not reach resolveTransition()");
+            case DisplayCommand.ResumeRendering ignored ->
+                throw new AssertionError("ResumeRendering should not reach resolveTransition()");
         };
     }
 

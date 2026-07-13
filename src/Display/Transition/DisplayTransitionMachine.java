@@ -9,9 +9,10 @@ import java.util.logging.Logger;
  * ──────────────────────────────────────────────────────────────────────────
  * MOTIVACIÓN
  *
- * TransitionLock (boolean atómico) garantiza exclusión mutua pero no sabe
- * QUÉ transición está en curso. DisplayTransitionMachine reemplaza el
- * boolean por un enum atómico ({@link DisplayTransitionState}), obteniendo:
+ * El mecanismo anterior (TransitionLock) usaba un boolean atómico que
+ * garantizaba exclusión mutua pero no sabía QUÉ transición estaba en curso.
+ * DisplayTransitionMachine reemplaza ese boolean por un enum atómico
+ * ({@link DisplayTransitionState}), obteniendo:
  *
  *   1. Conocer exactamente qué operación está ejecutándose.
  *   2. Impedir transiciones incompatibles simultáneas con semántica clara.
@@ -25,12 +26,6 @@ import java.util.logging.Logger;
  *   - Toda transición DEBE comenzar con tryBegin() y terminar con end().
  *   - end() debe llamarse en un bloque finally para garantizar retorno a IDLE.
  *   - IDLE es el único estado desde el que puede iniciarse cualquier transición.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * COMPATIBILIDAD CON TransitionLock
- *
- * DisplayTransitionMachine sustituye completamente a TransitionLock.
- * TransitionLock se conserva para retrocompatibilidad pero ya no debe usarse.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING

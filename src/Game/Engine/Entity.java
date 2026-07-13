@@ -2,6 +2,7 @@ package Game.Engine;
 
 import Game.Engine.Components.HealthComponent;
 import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
 
 /**
  * Capa de gameplay compartido entre todas las entidades interactuables.
@@ -73,6 +74,20 @@ import Game.Engine.Components.StatusEffectComponent;
  * - TagComponent      → hasTag("boss"), hasTag("destructible")
  */
 public abstract class Entity extends GameObjects {
+
+    /**
+     * Constructor con transform inyectable.
+     * Propaga hacia GameObjects para soporte de Transform3D en la jerarquía.
+     * Solo deben usarlo subclases que necesiten un Transform3D (ej. objetos 2.5D).
+     */
+    protected Entity(Transform2D transform) {
+        super(transform);
+    }
+
+    /** Constructor por defecto — delega a GameObjects(), que usa Transform2D. */
+    protected Entity() {
+        super();
+    }
 
     // ── Acceso tipado a componentes de gameplay ────────────────────────────
 

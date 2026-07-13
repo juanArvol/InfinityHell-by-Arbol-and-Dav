@@ -1,9 +1,8 @@
 package Game.Enemys.AI.Actions;
 
 import Game.Enemys.AI.EnemyAction;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Enemys.Enemy;
-
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import java.util.List;
 
 /**
@@ -50,7 +49,7 @@ public class PathSteeringCommand implements EnemyAction {
 
         enemy.getState().setMoving(true);
 
-        desired.normalize().scaleLocal(maxSpeed);
+        desired.normalizeLocal().scaleLocal(maxSpeed);
 
         Vector2D steering = desired.subtract(
             enemy.getPhysics().getVelocity()
@@ -58,7 +57,7 @@ public class PathSteeringCommand implements EnemyAction {
         steering.scaleLocal(steeringForce);
 
         enemy.getPhysics().getVelocity().addLocal(steering);
-        enemy.getPhysics().getVelocity().limit(maxSpeed);
+        enemy.getPhysics().getVelocity().limitLocal(maxSpeed);
     }
 
     public void resetPath() { index = 0; }

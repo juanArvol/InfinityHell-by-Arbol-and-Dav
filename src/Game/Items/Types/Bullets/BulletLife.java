@@ -18,26 +18,42 @@ public class BulletLife {
         this.dead = false;
     }
 
-    public boolean isAlive() {
+    /**
+     * Avanza un tick de vida. Debe llamarse exactamente una vez por frame,
+     * desde Bullet.update(). No llamar desde isPendingDestruction().
+     * @return true si la bala sigue viva tras el tick.
+     */
+    public boolean tick() {
         if (dead) return false;
         lifeTime--;
-        return lifeTime > 0;
+        if (lifeTime <= 0) {
+            dead = true;
+        }
+        return !dead;
+    }
+
+    /**
+     * Consulta sin efecto secundario: ¿sigue viva?
+     * Seguro llamar múltiples veces por frame.
+     */
+    public boolean isAlive() {
+        return !dead && lifeTime > 0;
     }
 
     public void setDead() {
         dead = true;
     }
 
-    public void reset(int count){
+    public void reset(int count) {
         lifeTime = lifeTime + count;
     }
-    
+
     public void revive() {
         if (lifeTime > 0) {
             dead = false;
         }
     }
 
-    public boolean isDead() { return dead; }
-    public int getRemainingLife() { return lifeTime; }
+    public boolean isDead()          { return dead; }
+    public int     getRemainingLife() { return lifeTime; }
 }

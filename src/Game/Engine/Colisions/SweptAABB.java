@@ -93,7 +93,7 @@ public final class SweptAABB {
             yExit  = (target.y + target.height) - moving.y;
         } else if (vy < 0.0) {
             yEntry = (target.y + target.height) - moving.y;
-            yExit  = target.y - (moving.y + moving.height);;
+            yExit  = target.y - (moving.y + moving.height);
         } else {
             // Eje Y inactivo: sin límite de tiempo en Y
             yEntry = Double.NEGATIVE_INFINITY;

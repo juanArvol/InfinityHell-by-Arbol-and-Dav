@@ -1,85 +1,92 @@
 package Display.Managers;
 
+import Display.Backend.AwtWindowBackend;
 import Display.Settings.DisplaySettings;
-
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Logger;
+import javax.swing.*;
 
 /**
- * Responsable del ciclo de vida físico de la ventana.
+ * Gestiona los listeners de eventos AWT de la ventana.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIO: RESIZE COMO EVENTO, NO COMO EJECUCIÓN DIRECTA
+ * HRFC-003: RESPONSABILIDADES ACOTADAS
  *
- * Problema anterior:
- *   El ComponentListener llamaba directamente al listener registrado, que
- *   ejecutaba destroyBS + createBS de forma síncrona en cada pixel de resize.
- *   Esto era costoso y podía crear un bucle si createBS disparaba otro
- *   componentResized desde el peer AWT nativo.
+ * Después del HRFC-003, WindowManager ya no construye ni posee el JFrame
+ * ni el Canvas. Esa responsabilidad pertenece a AwtWindowBackend.
  *
- * Solución:
- *   El ComponentListener ya no ejecuta nada directamente.
- *   Notifica al CanvasResizeListener que a su vez ENCOLA un ResizeCanvas
- *   en la CommandQueue. La cola colapsa ráfagas de resize al último valor.
- *   Solo se procesa el tamaño final de una ráfaga de arrastre.
+ * WindowManager retiene exactamente una responsabilidad:
+ *   Registrar listeners AWT sobre los objetos que el Backend expone
+ *   y convertir los eventos en notificaciones a los listeners del Engine.
  *
- *   Además, el ComponentListener tiene ahora su propio guard de re-entrada:
- *   si el mismo tamaño se notifica dos veces consecutivas (puede ocurrir
- *   en algunas JVM durante validación de layout), la segunda se descarta.
+ * Mapa de eventos → acciones:
+ *
+ *   componentResized (Canvas) → CanvasResizeListener → ResizeCanvas cmd
+ *   windowIconified           → suppressResize=true + onWindowSuspended()
+ *   windowDeiconified         → suppressResize=false + onWindowResumed(true)
+ *   windowDeactivated         → onWindowSuspended()
+ *   windowActivated           → onWindowResumed(false)
+ *   windowGainedFocus         → backend.requestCanvasFocus()
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
- *   show(), dispose(), suppressResize() → EDT únicamente.
- *   getCanvas(), getFrame() → inmutables post-construcción → thread-safe.
- *   suppressResize → volatile; escrito y leído desde EDT.
- *   Los listeners de resize se invocan siempre desde el EDT.
+ *   Todos los métodos de registro → EDT únicamente (se llaman desde init).
+ *   suppressResize → volatile boolean; escrito y leído desde EDT.
+ *   Los listeners registrados se invocan siempre desde el EDT.
+ *   getFrame() / getCanvas() → delegan en backend (inmutables post-init).
  */
 public final class WindowManager {
 
-    private final JFrame frame;
-    private final Canvas canvas;
-    private final Dimension minimumSize;
+    private static final Logger LOG =
+        Logger.getLogger(WindowManager.class.getName());
 
-    private final List<CanvasResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
+    private final AwtWindowBackend backend;
+    private final Dimension        minimumSize;
+
+    private final List<CanvasResizeListener>    resizeListeners    = new CopyOnWriteArrayList<>();
+    private final List<WindowLifecycleListener> lifecycleListeners = new CopyOnWriteArrayList<>();
 
     private volatile boolean suppressResize = false;
     private boolean visible = false;
 
-    /** Último tamaño notificado. Evita notificaciones duplicadas del mismo tamaño. */
     private int lastNotifiedWidth  = -1;
     private int lastNotifiedHeight = -1;
 
-    public WindowManager(DisplaySettings settings) {
+    public WindowManager(AwtWindowBackend backend, DisplaySettings settings) {
+        this.backend     = backend;
         this.minimumSize = settings.minimumWindowSize;
-        this.frame  = buildFrame(settings);
-        this.canvas = buildCanvas(settings);
+    }
 
-        frame.add(canvas, BorderLayout.CENTER);
-        frame.pack();
-        frame.setLocationRelativeTo(null);
+    // ── Registro de listeners AWT ─────────────────────────────────────────────
 
-        canvas.addComponentListener(new ComponentAdapter() {
+    /**
+     * Registra todos los listeners AWT sobre el JFrame y Canvas del Backend.
+     *
+     * Debe llamarse desde el EDT, después de backend.init().
+     */
+    public void registerListeners() {
+        registerCanvasResizeListener();
+        registerWindowLifecycleListener();
+    }
+
+    private void registerCanvasResizeListener() {
+        backend.getCanvas().addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
                 if (!visible || suppressResize) return;
 
-                int w = canvas.getWidth();
-                int h = canvas.getHeight();
+                int w = backend.getCanvas().getWidth();
+                int h = backend.getCanvas().getHeight();
 
-                // Descartar dimensiones degeneradas o por debajo del mínimo
                 if (w <= 0 || h <= 0) return;
                 if (minimumSize != null
                         && (w < minimumSize.width || h < minimumSize.height)) {
                     return;
                 }
-
-                // GUARD DE RE-ENTRADA: descartar si el tamaño no cambió.
-                // Esto evita notificaciones redundantes que ocurren en algunas JVM
-                // cuando el LayoutManager re-valida sin cambiar las dimensiones.
                 if (w == lastNotifiedWidth && h == lastNotifiedHeight) return;
                 lastNotifiedWidth  = w;
                 lastNotifiedHeight = h;
@@ -91,36 +98,81 @@ public final class WindowManager {
         });
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private void registerWindowLifecycleListener() {
+        backend.getFrame().addWindowListener(new WindowAdapter() {
 
-    public void show() {
-        frame.setVisible(true);
-        visible = true;
-        canvas.requestFocusInWindow();
+            @Override
+            public void windowIconified(WindowEvent e) {
+                suppressResize(true);
+                LOG.fine("WindowManager: windowIconified — suppressResize=true + suspending");
+                notifySuspend();
+            }
+
+            @Override
+            public void windowDeiconified(WindowEvent e) {
+                suppressResize(false);
+                LOG.fine("WindowManager: windowDeiconified — suppressResize=false + resuming (rebuild=true)");
+                notifyResume(true);
+            }
+
+            @Override
+            public void windowDeactivated(WindowEvent e) {
+                LOG.fine("WindowManager: windowDeactivated — suspending");
+                notifySuspend();
+            }
+
+            @Override
+            public void windowActivated(WindowEvent e) {
+                LOG.fine("WindowManager: windowActivated — resuming (rebuild=false)");
+                notifyResume(false);
+            }
+        });
+
+        backend.getFrame().addWindowFocusListener(new WindowAdapter() {
+            @Override
+            public void windowGainedFocus(WindowEvent e) {
+                LOG.fine("WindowManager: windowGainedFocus — requesting canvas focus");
+                backend.requestCanvasFocus();
+            }
+        });
     }
 
-    public void dispose() {
-        frame.dispose();
+    // ── Notificaciones ────────────────────────────────────────────────────────
+
+    private void notifySuspend() {
+        for (WindowLifecycleListener l : lifecycleListeners) {
+            try { l.onWindowSuspended(); }
+            catch (Exception ex) {
+                LOG.warning("WindowLifecycleListener.onWindowSuspended threw: " + ex);
+            }
+        }
+    }
+
+    private void notifyResume(boolean requiresRebuild) {
+        for (WindowLifecycleListener l : lifecycleListeners) {
+            try { l.onWindowResumed(requiresRebuild); }
+            catch (Exception ex) {
+                LOG.warning("WindowLifecycleListener.onWindowResumed threw: " + ex);
+            }
+        }
     }
 
     // ── Control de resize ─────────────────────────────────────────────────────
 
-    /**
-     * Habilita o deshabilita la propagación de eventos de resize.
-     *
-     * Llamar con true ANTES de una transición.
-     * Llamar con false DESPUÉS de que la transición haya terminado.
-     * EDT only.
-     */
     public void suppressResize(boolean suppress) {
         this.suppressResize = suppress;
         if (!suppress) {
-            // Al reanudar, resetear el último tamaño notificado para que el próximo
-            // resize genuino siempre se propague, aunque coincida con el anterior.
             lastNotifiedWidth  = -1;
             lastNotifiedHeight = -1;
         }
     }
+
+    public boolean isSuppressingResize() { return suppressResize; }
+
+    // ── Visibilidad ───────────────────────────────────────────────────────────
+
+    /** Marca la ventana como visible para que el ComponentListener procese eventos. */
+    public void onWindowShown() { this.visible = true; }
 
     // ── Input listeners ───────────────────────────────────────────────────────
 
@@ -129,46 +181,37 @@ public final class WindowManager {
                                   MouseMotionListener mml,
                                   MouseWheelListener mwl,
                                   FocusListener fl) {
-        if (kl  != null) canvas.addKeyListener(kl);
-        if (ml  != null) canvas.addMouseListener(ml);
-        if (mml != null) canvas.addMouseMotionListener(mml);
-        if (mwl != null) canvas.addMouseWheelListener(mwl);
-        if (fl  != null) canvas.addFocusListener(fl);
+        Canvas c = backend.getCanvas();
+        if (kl  != null) c.addKeyListener(kl);
+        if (ml  != null) c.addMouseListener(ml);
+        if (mml != null) c.addMouseMotionListener(mml);
+        if (mwl != null) c.addMouseWheelListener(mwl);
+        if (fl  != null) c.addFocusListener(fl);
     }
 
     public void addCanvasResizeListener(CanvasResizeListener l)    { resizeListeners.add(l);    }
     public void removeCanvasResizeListener(CanvasResizeListener l) { resizeListeners.remove(l); }
 
-    public void requestCanvasFocus() {
-        SwingUtilities.invokeLater(canvas::requestFocusInWindow);
-    }
+    public void addWindowLifecycleListener(WindowLifecycleListener l)    { lifecycleListeners.add(l);    }
+    public void removeWindowLifecycleListener(WindowLifecycleListener l) { lifecycleListeners.remove(l); }
 
-    public JFrame getFrame()  { return frame;  }
-    public Canvas getCanvas() { return canvas; }
+    /** Delegación a Backend para compatibilidad con el Pipeline. */
+    public void requestCanvasFocus() { backend.requestCanvasFocus(); }
 
-    // ── Builders ──────────────────────────────────────────────────────────────
+    /** Delegación a Backend. */
+    public JFrame  getFrame()  { return backend.getFrame();  }
+    /** Delegación a Backend. */
+    public Canvas  getCanvas() { return backend.getCanvas(); }
 
-    private static JFrame buildFrame(DisplaySettings s) {
-        JFrame f = new JFrame(s.windowTitle);
-        f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        f.setResizable(s.windowResizable);
-        if (!s.windowDecorated) f.setUndecorated(true);
-        return f;
-    }
-
-    private static Canvas buildCanvas(DisplaySettings s) {
-        Canvas c = new Canvas();
-        c.setPreferredSize(new Dimension(s.windowedWidth, s.windowedHeight));
-        c.setMinimumSize(s.minimumWindowSize);
-        if (s.maximumWindowSize != null) c.setMaximumSize(s.maximumWindowSize);
-        if (s.cursor != null) c.setCursor(s.cursor);
-        c.setFocusable(true);
-        c.setIgnoreRepaint(true);
-        return c;
-    }
+    // ── Interfaces de callback ────────────────────────────────────────────────
 
     @FunctionalInterface
     public interface CanvasResizeListener {
         void onCanvasResized(int width, int height);
+    }
+
+    public interface WindowLifecycleListener {
+        void onWindowSuspended();
+        void onWindowResumed(boolean requiresRebuild);
     }
 }

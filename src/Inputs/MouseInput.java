@@ -2,7 +2,6 @@ package Inputs;
 
 import Display.ViewportInfo;
 import Inputs.Listeners.MouseActionListener;
-
 import java.awt.event.*;
 import java.util.HashMap;
 import java.util.List;
@@ -18,12 +17,25 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  nuevo basta con añadir un MouseButton ahí. No hay que tocar mousePressed(),
  *  mouseReleased(), flushEvents(), ni MouseActionListener.
  *
- *  Estados continuos  → consultados por poll: MouseInput.getButtonState("stateKey")
+ *  Estados continuos  → consultados por poll: mouse.getButtonState("stateKey")
  *  Acciones de edge   → notificadas por push:  MouseActionListener.onMouseAction(action, vx, vy)
+ *
+ * ─── MIGRACIÓN DE ESTADO ESTÁTICO ─────────────────────────────────────────────
+ *
+ *  mouseX/Y, mouseVirtualX/Y y buttonStates eran campos estáticos compartidos
+ *  por todas las instancias. Los problemas son los mismos que se resolvieron
+ *  en KeyBoard y GameEventBus:
+ *    - Dos instancias compartían estado (no aislable para tests).
+ *    - Dependencias implícitas: cualquier clase podía leer MouseInput.mouseX
+ *      sin declarar ninguna dependencia explícita.
+ *
+ *  Ahora todos los campos son de instancia. Para compatibilidad con el código
+ *  existente se mantienen los métodos estáticos como delegadores a la instancia
+ *  registrada con setActiveInstance() en GameOrquester.
  *
  * ─── CONCURRENCIA ─────────────────────────────────────────────────────────────
  *
- *  BUG-09  (mantenido) · mouseVirtualX/Y son volatile float.
+ *  BUG-09  (mantenido) · mouseVirtualX/Y son volatile.
  *  REGRESIÓN-3a (mantenida) · queueLock cubre solo el snapshot de índices;
  *    el procesamiento de eventos (transform + listener calls) ocurre fuera del lock.
  *  REGRESIÓN-3b (mantenida) · ring buffer preallocado — sin allocations en el hot path.
@@ -50,24 +62,50 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
 
     // ─── Estado continuo de coordenadas en píxeles REALES del canvas (raw AWT) ─
 
-    public static int mouseX;
-    public static int mouseY;
+    /** X del ratón en píxeles reales del canvas. Solo GameLoop thread tras flushEvents(). */
+    public int mouseX;
+    /** Y del ratón en píxeles reales del canvas. Solo GameLoop thread tras flushEvents(). */
+    public int mouseY;
 
-    // ─── Estado continuo en coordenadas VIRTUALES (BUG-09 mantenido: volatile) ─
+    // ─── Estado continuo en coordenadas VIRTUALES (volatile: leído desde GameLoop) ─
 
     /** X del ratón en coordenadas virtuales del juego. Thread-safe: volatile. */
-    public static volatile float mouseVirtualX;
+    public volatile float mouseVirtualX;
 
     /** Y del ratón en coordenadas virtuales del juego. Thread-safe: volatile. */
-    public static volatile float mouseVirtualY;
+    public volatile float mouseVirtualY;
 
     // ─── Estado continuo de botones indexado por stateKey ─────────────────────
 
-    private static final Map<String, Boolean> buttonStates = new HashMap<>();
+    /**
+     * Mapa de estados de botones de esta instancia.
+     * Ahora es de instancia para que cada MouseInput tenga estado independiente.
+     */
+    private final Map<String, Boolean> buttonStateMap = new HashMap<>();
 
-    /** @return true si el botón con ese stateKey está pulsado. */
+    /**
+     * Instancia activa global para compatibilidad con el código existente.
+     * GameOrquester llama a setActiveInstance() justo después de crear el MouseInput.
+     */
+    private static volatile MouseInput activeInstance;
+
+    public static void setActiveInstance(MouseInput instance) {
+        activeInstance = instance;
+    }
+
+    /**
+     * Consulta el estado de un botón en la instancia activa global.
+     * Retorna false si no hay instancia activa registrada.
+     */
     public static boolean getButtonState(String stateKey) {
-        Boolean v = buttonStates.get(stateKey);
+        MouseInput inst = activeInstance;
+        if (inst == null) return false;
+        return inst.getInstanceButtonState(stateKey);
+    }
+
+    /** Consulta el estado de un botón de esta instancia específica. */
+    public boolean getInstanceButtonState(String stateKey) {
+        Boolean v = buttonStateMap.get(stateKey);
         return v != null && v;
     }
 
@@ -189,7 +227,7 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
 
                         // Actualizar estado continuo
                         if (mb.stateKey != null) {
-                            buttonStates.put(mb.stateKey, isPress);
+                            buttonStateMap.put(mb.stateKey, isPress);
                         }
 
                         // Disparar acción semántica

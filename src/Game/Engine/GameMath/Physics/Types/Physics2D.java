@@ -3,8 +3,8 @@ package Game.Engine.GameMath.Physics.Types;
 import Game.Engine.GameMath.Physics.ModifierStack;
 import Game.Engine.GameMath.Physics.MovementContext;
 import Game.Engine.GameMath.Physics.MovementModifier;
+import Game.Engine.GameMath.Physics.SurfaceMaterial;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.World.Surface.SurfaceMaterial;
 
 /**
  * Clase base de física.
@@ -186,9 +186,6 @@ public class Physics2D {
 
     public void setMaxSpeed(boolean onGround) {
         speedMax = onGround ? speedMaxPiso : speedMaxAir;
-        if (Math.abs(vx) > speedMax - accel) {
-            speedMax = Math.max(0, speedMax - accel);
-        }
     }
 
     // ── Gravedad ──────────────────────────────────────────────────────────

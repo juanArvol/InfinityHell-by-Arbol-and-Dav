@@ -2,6 +2,7 @@ package Main.Bootstrap;
 
 import Game.Enemys.Spawner.EnemySpawner;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Items.Creation.ItemRegistry;
 import Game.Player.Player;
 import Game.World.Core.World;
 import Game.World.Core.WorldManager;
@@ -14,27 +15,33 @@ import Graficos.Player.PlayerAssets;
  *
  * Hace exactamente tres cosas:
  *   1. Crea el Player en la posición de spawn.
- *   2. Lo registra en el World y configura la cámara inicial.
- *   3. Registra el Player como tracked object y lanza el spawn inicial de enemigos.
+ *   2. Lo añade al World.
+ *   3. Lo registra en WorldManager como tracked object (configura cámara y EnemyUpdater).
  *
  * Lo que NO hace:
  *   - No conoce la UI.
  *   - No coordina update() ni draw().
  *   - No toma decisiones de gameplay.
+ *   - No gestiona la cámara directamente (eso lo hace WorldManager).
  *
- * Por qué esta clase y no un método privado en GameState:
- *   Si en el futuro aparecen múltiples modos de juego (tutorial, boss rush,
- *   multiplayer), cada modo puede tener su propio Bootstrap sin modificar GameState.
- *   Un método privado no ofrece ese punto de extensión.
+ * ── HRFC-001 ─────────────────────────────────────────────────────────────
+ *
+ * centerCameraOn() fue eliminado de World. La cámara ya no pertenece al World.
+ * Ahora se llama worldManager.setTrackedObject(player), que:
+ *   1. Registra el player como target de seguimiento en World.
+ *   2. Configura el FollowCameraController en WorldManager.
+ *   3. Hace snap inicial de la cámara sobre el player.
  */
 public final class GameWorldBootstrap {
 
-    private final Player      player;
-    private final EnemySpawner spawner;
+    private final Player player;
 
     public GameWorldBootstrap(WorldManager worldManager,
                               int virtualWidth,
                               int virtualHeight) {
+
+        // ── Registros globales ───────────────────────────────────────────────
+        ItemRegistry.init();
 
         World world = worldManager.getCurrentWorld();
 
@@ -47,18 +54,17 @@ public final class GameWorldBootstrap {
         // ── Player ───────────────────────────────────────────────────────────
         player = new Player(spawnPos, PlayerAssets.idle.getSprite(), world::add);
         world.add(player);
-        world.centerCameraOn(player, virtualWidth, virtualHeight);
 
-        // El conocimiento de "quién es el jugador" vive en la capa de composición,
-        // no dentro de WorldManager. Aquí es donde se establece ese vínculo.
+        // ── Cámara y tracking ─────────────────────────────────────────────────
+        // WorldManager configura el FollowCameraController, hace snap inicial
+        // de la GameCamera sobre el player y registra el EnemyUpdater en World.
         worldManager.setTrackedObject(player);
 
         // ── Initial enemy spawn ──────────────────────────────────────────────
-        spawner = new EnemySpawner(player);
-        spawner.spawn(world, 0);
+        new EnemySpawner().spawn(world, 5);
     }
 
-    /** El Player creado durante el bootstrap. GameState lo necesita para la UI y la cámara en update(). */
+    /** El Player creado durante el bootstrap. */
     public Player getPlayer() {
         return player;
     }

@@ -1,42 +1,43 @@
 package Game.World.Core;
 
-import Game.Enemys.Enemy;
 import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Enemy;
 import Game.Engine.GameObjects;
 import Game.Player.Player;
-
 import java.util.List;
 
 /**
- * Updater de enemigos con contexto — parche mínimo para World.
+ * Helper de actualización de enemigos con contexto.
  *
- * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────
- * World.update() llama gameObject.update() en bucle sin saber si es Enemy.
- * Enemy.update() sin contexto funciona (usa legacyPlayer si lo tiene),
- * pero para migrar completamente basta con que World.update() use este helper:
+ * ── ROL ──────────────────────────────────────────────────────────────────
+ * Desacopla el bucle de update de World.java del conocimiento de Enemy y Player.
+ * World inyecta este helper en WorldObjectsContainer como objectUpdater:
  *
- *   // En World.update(), reemplazar:
- *   object.update();
- *   // Por:
- *   WorldEnemyUpdater.update(object, player);
+ *   objects.setObjectUpdater(list -> WorldEnemyUpdater.updateAll(list, player));
  *
- * Eso es el único cambio en World.java. Todo lo demás permanece igual.
+ * Con esto, cada Enemy recibe EnemyContext correcto en cada frame, activando
+ * la IA para perseguir al jugador. Objetos que no son Enemy se actualizan
+ * con su update() normal.
  *
- * ── CUÁNDO ELIMINAR ESTE ARCHIVO ─────────────────────────────────────────
- * Cuando todas las subclases de Enemy hayan migrado a constructores sin Player
- * y World.update() pase EnemyContext directamente, este helper queda obsoleto
- * y se puede eliminar junto con el constructor @Deprecated de Enemy.
+ * ── DISEÑO ───────────────────────────────────────────────────────────────
+ * WorldObjectsContainer no puede importar Player ni Enemy directamente
+ * (acoplaría un contenedor genérico a tipos concretos del juego). Este helper
+ * centraliza ese conocimiento en un solo lugar del paquete Game.World.Core,
+ * donde ya es aceptable que Player y Enemy sean conocidos.
+ *
+ * ── RESPONSABILIDADES ────────────────────────────────────────────────────
+ *   updateAll()  — bucle principal: Enemy recibe EnemyContext, el resto update()
  */
 public final class WorldEnemyUpdater {
 
     private WorldEnemyUpdater() {}
 
     /**
-     * Actualiza un GameObject. Si es Enemy, le pasa el EnemyContext del player.
-     * Cualquier otro tipo se actualiza normalmente.
+     * Actualiza un GameObject. Si es Enemy, le pasa EnemyContext del player.
+     * Cualquier otro tipo se actualiza con su update() normal.
      *
-     * @param object el objeto del mundo a actualizar
-     * @param player el jugador actual (puede ser null)
+     * @param object el objeto a actualizar
+     * @param player el jugador actual (puede ser null — Enemy no actuará si es null)
      */
     public static void update(GameObjects object, Player player) {
         if (object instanceof Enemy enemy) {
@@ -48,27 +49,15 @@ public final class WorldEnemyUpdater {
     }
 
     /**
-     * Actualiza toda la lista de objetos del mundo.
-     * Reemplaza el bucle de update en World.update().
+     * Actualiza todos los objetos del mundo.
+     * Los Enemy reciben EnemyContext; el resto reciben update() normal.
      *
-     * Uso en World.java:
-     *   WorldEnemyUpdater.updateAll(objects, player);
+     * @param objects lista de objetos activos del mundo (ya flushada)
+     * @param player  el jugador actual (puede ser null)
      */
     public static void updateAll(List<? extends GameObjects> objects, Player player) {
         for (GameObjects obj : objects) {
             update(obj, player);
         }
-    }
-
-    /**
-     * Limpia objetos marcados para remoción (enemies muertos + WorldItems recogidos).
-     * Centraliza la limpieza post-update.
-     */
-    public static void removeDeadObjects(List<GameObjects> objects) {
-        objects.removeIf(obj -> {
-            if (obj instanceof Enemy e) return e.isPendingRemoval();
-            if (obj instanceof Game.World.WorldObjects.WorldItem wi) return wi.isPendingRemoval();
-            return false;
-        });
     }
 }

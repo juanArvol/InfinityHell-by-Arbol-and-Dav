@@ -2,37 +2,26 @@ package Game.Engine.Systems;
 
 import Game.Engine.Component;
 import Game.Engine.GameObjects;
-import Game.UI.POV.Camera;
-import Game.UI.POV.DebugRenderable;
-import Game.UI.POV.RenderContext;
-import Main.Debug.DebugGameSettings;
-
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.DebugRenderable;
+import Game.Engine.Render.RenderContext;
 import java.util.List;
 
 /**
  * Renderiza los hitboxes y helpers de debug.
  *
- * REFACTORIZACIÓN: GameSettings inyectado por constructor.
+ * Recibe DebugSettings por constructor (DIP: depende de la abstracción,
+ * no de la implementación concreta Main.Debug.DebugGameSettings).
+ * Esto elimina la única dependencia que quedaba del Engine hacia Main.*.
  *
- *   ANTES: `GameSettings.getInstance().isDebugEnabled()`
- *   → dependencia estática invisible; imposible testear sin el singleton
- *
- *   AHORA: recibe GameSettings en el constructor
- *   → dependencia explícita; testeable; no usa singletons
- *
- *   Justificación DIP: DebugRenderSystem depende de la abstracción
- *   (el objeto GameSettings) no de cómo se obtiene esa instancia.
- *   El wiring (quién crea GameSettings y cómo) es responsabilidad
- *   de la capa de composición (WorldRenderer, GameState).
- *
- * Compatibilidad: se mantiene constructor con GameSettings como argumento.
- * Ningún otro cambio de comportamiento.
+ * El wiring (pasar la instancia concreta) es responsabilidad de la capa
+ * de composición (WorldRenderer). DebugGameSettings implementa DebugSettings.
  */
 public class DebugRenderSystem {
 
-    private final DebugGameSettings settings;
+    private final DebugSettings settings;
 
-    public DebugRenderSystem(DebugGameSettings settings) {
+    public DebugRenderSystem(DebugSettings settings) {
         this.settings = settings;
     }
 
@@ -42,7 +31,7 @@ public class DebugRenderSystem {
         for (GameObjects obj : objects) {
             for (Component c : obj.getComponents()) {
                 if (c instanceof DebugRenderable d) {
-                    d.debugRender(ctx);
+                    d.debugRender(ctx, camera);
                 }
             }
         }

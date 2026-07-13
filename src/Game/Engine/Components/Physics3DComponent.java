@@ -19,19 +19,39 @@ import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
  * La colisión "con el suelo" (Z → 0) la maneja este componente internamente.
  *
  * ── RENDER ───────────────────────────────────────────────────────────────
- * Para que el salto se vea bien, el objeto DEBE tener un Transform3D (no Transform).
- * ShadowComponent puede leer getZ() para dibujar una sombra escalada en el suelo.
+ * Para que el salto se vea bien, el objeto DEBE tener un Transform3D.
+ * ShadowComponent3D puede leer getZ() para dibujar una sombra escalada en el suelo.
+ *
+ * Para activar Transform3D en un objeto: en el constructor de la subclase,
+ * llamar al constructor protegido de GameObjects con new Transform3D():
+ *
+ *   // En EnemyFlying o cualquier subclase de MovingObjects:
+ *   public EnemyFlying(Vector2D pos, BufferedImage tex, EnemyPhysics physics) {
+ *       // El constructor de MovingObjects pasa el transform a GameObjects
+ *       // a través de la cadena super(). Ver GameObjects(Transform2D).
+ *   }
+ *
+ * Mientras el objeto no tenga Transform3D, syncTransform3D() es un no-op
+ * silencioso — el objeto simplemente no tiene offset visual de altura.
  *
  * ── USO BÁSICO ───────────────────────────────────────────────────────────
  *   // En el constructor del Player o Enemy:
  *   Physics3DComponent jump3d = new Physics3DComponent();
  *   addComponent(jump3d);
  *
+ *   // Con configuración explícita:
+ *   addComponent(new Physics3DComponent(HeightPhysicsConfig.defaults()));
+ *
  *   // En el input del Player (al presionar espacio):
  *   jump3d.jump(8.0);   // velocidad inicial hacia arriba
  *
  *   // En update() del Player:
  *   jump3d.update();    // se llama automáticamente via GameObjects.update()
+ *
+ * ── CONSOLIDACIÓN ────────────────────────────────────────────────────────
+ * Se eliminó la copia duplicada en Game.Engine.GameMath.Physics.Types.Physics3D.
+ * Esa copia añadía HeightPhysicsConfig y un tercer constructor; ambos fueron
+ * integrados aquí. ShadowComponent3D ya apuntaba a esta clase — sin cambios.
  *
  * ── NO INCLUIR COMO PRINCIPAL AÚN ────────────────────────────────────────
  * Según la intención del proyecto: este sistema se añade sin romper lo existente.
@@ -54,12 +74,23 @@ public class Physics3DComponent extends Component {
     /** Si true, aterrizar dispara onLand(). Flag para evitar disparar múltiples veces. */
     private boolean wasInAir = false;
 
-    // ── Constructor ───────────────────────────────────────────────────────
+    // ── Constructores ─────────────────────────────────────────────────────
 
+    /** Gravedad por defecto (0.5). */
     public Physics3DComponent() {}
 
+    /** Gravedad personalizada. */
     public Physics3DComponent(double gravity) {
         this.gravity = gravity;
+    }
+
+    /**
+     * Constructor con configuración completa.
+     *
+     * @param config configuración de física 3D (gravedad, velocidad terminal)
+     */
+    public Physics3DComponent(HeightPhysicsConfig config) {
+        this.gravity = config.gravity();
     }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
@@ -164,6 +195,24 @@ public class Physics3DComponent extends Component {
         if (gameObject == null) return;
         if (gameObject.getTransform() instanceof Transform3D t3d) {
             t3d.setZ(z);
+        }
+    }
+
+    // ── Configuración inmutable ───────────────────────────────────────────
+
+    /**
+     * Configuración de física 3D.
+     * Permite ajustar gravedad y velocidad terminal sin tocar la clase.
+     *
+     * Uso: new Physics3DComponent(new HeightPhysicsConfig(0.4, 20.0))
+     *
+     * Nota: terminalVelocity está disponible para que sistemas externos puedan
+     * leerla y aplicarla si lo desean; Physics3DComponent no la usa internamente
+     * por ahora (el clamp al suelo (z=0) actúa como límite natural).
+     */
+    public record HeightPhysicsConfig(double gravity, double terminalVelocity) {
+        public static HeightPhysicsConfig defaults() {
+            return new HeightPhysicsConfig(0.5, 15.0);
         }
     }
 }

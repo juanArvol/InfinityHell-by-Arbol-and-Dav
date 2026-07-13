@@ -2,14 +2,9 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Graficos.Renderable;
-
-import java.awt.Color;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
+import Game.Engine.Render.Renderable;
 
 /**
  * Componente de sombra proyectada para objetos con altura Z.

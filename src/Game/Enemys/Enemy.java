@@ -1,56 +1,38 @@
 package Game.Enemys;
 
-import Game.Engine.Components.HealthComponent;
-import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.StatusEffectComponent;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Visuals.SizeSyncMode;
-import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.GameEvents.OnEnemyDeathEvent;
-import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Items.Types.Bullets.Bullet;
-import Game.Engine.MovingObjects;
-import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Enemys.AI.EnemyAI;
 import Game.Enemys.AI.EnemyComport;
 import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Components.EnemyState;
-import Game.Player.Player;
-
+import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Components.HealthComponent;
+import Game.Engine.Components.Physics2DComponent;
+import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.Components.Visuals.SizeSyncMode;
+import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.MovingObjects;
+import Game.World.WorldObjects.WorldObjectsContainer;
 import java.awt.image.BufferedImage;
 
 /**
  * Clase base de todos los enemigos.
  *
- * ── REFACTOR: COMPONENTES DE GAMEPLAY COMPARTIDOS ────────────────────────
+ * MIGRACIÓN COMPLETA: eliminado constructor @Deprecated con Player y el campo
+ * legacyPlayer. Todos los enemigos se construyen ahora sin referencia al Player;
+ * el contexto llega vía EnemyContext en cada llamada a update(EnemyContext).
  *
- * CAMBIO 1 — HealthComponent movido a Engine.Components.Gameplay
- *   PROBLEMA: HealthComponent vivía en Game.Enemys.Components, impidiendo
- *   su uso por Player, NPCs u otras entidades sin duplicar código.
- *   SOLUCIÓN: Enemy ahora importa HealthComponent desde su nueva ubicación
- *   compartida. El import cambia; la API y comportamiento son idénticos.
- *   BENEFICIO: Player puede usar el mismo HealthComponent, eliminando la
- *   duplicación actual con PlayerStats.
+ * El update() sin argumentos delega a update(null), que ejecuta la IA sin
+ * contexto de jugador. En la práctica, WorldObjectsContainer llama a
+ * WorldEnemyUpdater.updateAll() que sí pasa el EnemyContext correcto.
  *
- * CAMBIO 2 — StatusEffectComponent desacoplado de Enemy
- *   PROBLEMA: StatusEffectComponent.StatusEffect.tick() recibía Enemy como
- *   parámetro, acoplando el sistema de efectos al tipo Enemy. No podía
- *   aplicarse a Player ni a otras entidades.
- *   SOLUCIÓN: tick() ahora recibe GameObjects (base común). Los efectos
- *   que necesiten Enemy hacen instanceof internamente. StatusEffectComponent
- *   es ahora un componente de gameplay genérico.
- *   BENEFICIO: Player puede recibir efectos de estado sin cambios adicionales.
- *
- * CAMBIO 3 — addEffect() actualizado a nueva firma de StatusEffect
- *   El shortcut addEffect() delega a StatusEffectComponent con la nueva API.
- *   Los efectos de PoisonModifier se adaptan inline (cast seguro a Enemy).
- *
- * ── RESTO SIN CAMBIOS ────────────────────────────────────────────────────
- * Constructor, IA, muerte, física, colisiones — idénticos al original.
- * La retrocompatibilidad con legacyPlayer se mantiene.
+ * ── JERARQUÍA ────────────────────────────────────────────────────────────
+ *   GameObjects → Entity → MovingObjects → Enemy → GroundTypeEnemy / FlyingTypeEnemy
+ *                                                         ↓
+ *                                                  EnemyNormal / EnemyFlying
  */
-public abstract class Enemy extends MovingObjects {
+public abstract class Enemy extends MovingObjects implements WorldObjectsContainer.Destroyable {
 
     private final EnemyAI               ai;
     private final HealthComponent       health;
@@ -83,29 +65,16 @@ public abstract class Enemy extends MovingObjects {
         }
     }
 
-    /**
-     * Constructor legacy — acepta Player directamente para retrocompatibilidad.
-     * @deprecated Usar el constructor sin Player y pasar EnemyContext.of(player)
-     *             en update(). Este constructor existe para retrocompatibilidad.
-     */
-    @Deprecated
-    public Enemy(
-            Vector2D position,
-            BufferedImage texture,
-            int maxHealth,
-            EnemyComport comport,
-            Player player,
-            EnemyPhysics physics
-    ) {
-        this(position, texture, maxHealth, comport, physics);
-        this.legacyPlayer = player;
-    }
-
-    /** Solo para transición. Se elimina cuando todas las subclases migren. */
-    private Player legacyPlayer;
-
     // ── Update ────────────────────────────────────────────────────────────
 
+    /**
+     * Actualiza el enemigo con el contexto del objetivo actual.
+     * Llamar desde WorldEnemyUpdater para garantizar que la IA siempre
+     * recibe un EnemyContext válido.
+     *
+     * @param ctx contexto del objetivo (posición del jugador, etc.).
+     *            Si es null, la IA no ejecuta acciones este frame.
+     */
     public void update(EnemyContext ctx) {
         if (health.isDead()) {
             onDeath();
@@ -117,19 +86,23 @@ public abstract class Enemy extends MovingObjects {
 
         if (ctx != null) {
             ai.update(this, ctx);
-        } else if (legacyPlayer != null) {
-            ai.update(this, EnemyContext.of(legacyPlayer));
         }
 
         updateTypePhysics();
-        // effects se actualiza automáticamente vía Component.update() en super.update()
-        super.update();
+        super.update();  // actualiza todos los Component (HealthComponent, StatusEffectComponent, etc.)
     }
 
+    /**
+     * update() sin argumentos — delega a update(null).
+     * La IA no actúa cuando no hay contexto; la física y los componentes
+     * sí se actualizan normalmente.
+     *
+     * WorldObjectsContainer llama este método; WorldEnemyUpdater lo
+     * sobreescribe pasando el EnemyContext correcto.
+     */
     @Override
     public void update() {
-        EnemyContext ctx = (legacyPlayer != null) ? EnemyContext.of(legacyPlayer) : null;
-        update(ctx);
+        update(null);
     }
 
     // ── Hook de subtipo ───────────────────────────────────────────────────
@@ -138,22 +111,13 @@ public abstract class Enemy extends MovingObjects {
 
     // ── Daño y muerte ─────────────────────────────────────────────────────
 
-    public void damage(int amount) {
-        health.damage(amount);
-    }
-
     protected void onDeath() {
-        //GameEventBus.post(new OnEnemyDeathEvent(this, getTransform().getPosition()));
+        GameEventBus.GLOBAL.post(new OnEnemyDeathEvent(this, getTransform().getPosition()));
         markForRemoval();
     }
 
     // ── Efectos de estado ─────────────────────────────────────────────────
 
-    /**
-     * Aplica un efecto de estado al enemigo.
-     * El efecto recibe GameObjects en tick(); si necesita acceso a Enemy,
-     * hace instanceof/cast interno.
-     */
     public void addEffect(StatusEffectComponent.StatusEffect effect) {
         effects.add(effect);
     }
@@ -164,16 +128,19 @@ public abstract class Enemy extends MovingObjects {
 
     // ── Getters ───────────────────────────────────────────────────────────
 
-    public EnemyState      getState()            { return state; }
-    public HealthComponent getHealthComponent()   { return health; }
-    public EnemyAI         getAI()               { return ai; }
+    public EnemyState      getState()          { return state; }
+    public HealthComponent getHealthComponent() { return health; }
+    public EnemyAI         getAI()             { return ai; }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
     private boolean pendingRemoval = false;
 
-    public void    markForRemoval()      { pendingRemoval = true; }
-    public boolean isPendingRemoval()    { return pendingRemoval; }
+    public void    markForRemoval()   { pendingRemoval = true; }
+    public boolean isPendingRemoval() { return pendingRemoval; }
+
+    @Override
+    public boolean isPendingDestruction() { return pendingRemoval; }
 
     public EnemyPhysics getPhysics() {
         Physics2DComponent pc = getComponent(Physics2DComponent.class);
@@ -183,10 +150,4 @@ public abstract class Enemy extends MovingObjects {
     public Physics2DComponent getPhysicsComponent() {
         return getComponent(Physics2DComponent.class);
     }
-
-    // ── Colisiones ────────────────────────────────────────────────────────
-
-    @Override public void onCollisionWith(Player player) {}
-    @Override public void onCollisionWith(Enemy enemy)   {}
-    @Override public void onCollisionWith(Bullet bullet) {}
 }

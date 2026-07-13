@@ -1,16 +1,13 @@
 package Game.World.WorldObjects;
 
-import Game.Enemys.Enemy;
-import Game.Engine.GameObjects;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Engine.Systems.PickupSystem;
+import Game.Engine.GameObjects;
 import Game.Items.Savement.ItemStack;
-import Game.Items.Types.Bullets.Bullet;
 import Game.Player.Player;
-
+import Game.World.Systems.PickupSystem;
 import java.awt.image.BufferedImage;
 
 /**
@@ -39,7 +36,7 @@ import java.awt.image.BufferedImage;
  *   );
  *   world.add(item);
  */
-public class WorldItem extends GameObjects {
+public class WorldItem extends GameObjects implements WorldObjectsContainer.Destroyable {
 
     private ItemStack itemStack;
     private boolean pendingRemoval = false;
@@ -81,12 +78,12 @@ public class WorldItem extends GameObjects {
     }
 
     @Override
-    public void onCollisionWith(Player player) {
-        attemptPickup(player);
+    public void onCollisionWith(GameObjects other) {
+        if (other instanceof Player p) {
+            attemptPickup(p);
+        }
+        // Ignora colisiones con Enemy, Bullet, etc.
     }
-
-    @Override public void onCollisionWith(Enemy enemy) {}
-    @Override public void onCollisionWith(Bullet bullet) {}
 
     // ── API ───────────────────────────────────────────────────────────────
 
@@ -94,4 +91,8 @@ public class WorldItem extends GameObjects {
     public void setItemStack(ItemStack stack)   { this.itemStack = stack; }
     public boolean isPendingRemoval()           { return pendingRemoval; }
     public void markForRemoval()                { pendingRemoval = true; }
+
+    /** Implementa Destroyable — WorldObjectsContainer elimina el ítem cuando se recoge. */
+    @Override
+    public boolean isPendingDestruction()       { return pendingRemoval; }
 }

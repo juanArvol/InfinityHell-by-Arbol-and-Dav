@@ -58,6 +58,15 @@ public class HealthComponent extends Component {
         this.current = max;
     }
 
+    /**
+     * Establece la vida actual directamente, sin disparar hooks (onDamage, onDeath).
+     * Solo para inicialización — no usar en gameplay.
+     * @param value vida inicial, clamped a [0, max].
+     */
+    public void initCurrentHP(int value) {
+        this.current = Math.max(0, Math.min(value, max));
+    }
+
     // ── Daño ─────────────────────────────────────────────────────────────
 
     /**

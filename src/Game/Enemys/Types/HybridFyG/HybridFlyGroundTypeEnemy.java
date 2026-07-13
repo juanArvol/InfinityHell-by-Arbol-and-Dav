@@ -1,20 +1,24 @@
 package Game.Enemys.Types.HybridFyG;
 
-import Game.Enemys.Enemy;
 import Game.Enemys.AI.EnemyComport;
-import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
+import Game.Enemys.Enemy;
+import Game.Enemys.EnemyPhysics;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Player.Player;
-
 import java.awt.image.BufferedImage;
 
 /**
  * Base para enemigos híbridos tierra/vuelo.
  *
+ * MIGRACIÓN: eliminado el constructor @Deprecated con Player.
+ * Consistente con la migración de GroundTypeEnemy y FlyingTypeEnemy.
+ *
  * FIX 1-3 del original conservados:
  *   - getPhysicsComponent() en lugar de getPhysics() inexistente.
- *   - Sincronización de enElSuelo antes de applyGravity en modo terrestre.
+ *   - Sincronización de enElSuelo hacia EnemyState antes de cada frame de física.
  *   - Null-check en getPhysicsComponent().
+ *
+ * BUG-15: applyGravity eliminado de updateTypePhysics(). Ahora lo aplica
+ * CollisionsSystem en FASE 0.5, después de actualizar onGround en FASE 0.
  */
 public abstract class HybridFlyGroundTypeEnemy extends Enemy {
 
@@ -30,18 +34,6 @@ public abstract class HybridFlyGroundTypeEnemy extends Enemy {
         super(position, texture, hp, comport, physics);
     }
 
-    @Deprecated
-    public HybridFlyGroundTypeEnemy(
-            Vector2D position,
-            BufferedImage texture,
-            int hp,
-            EnemyComport comport,
-            Player player,
-            EnemyPhysics physics
-    ) {
-        super(position, texture, hp, comport, player, physics);
-    }
-
     @Override
     protected void updateTypePhysics() {
         if (flyingMode) return; // Volando: steering puro, sin gravedad
@@ -49,8 +41,10 @@ public abstract class HybridFlyGroundTypeEnemy extends Enemy {
         var pc = getPhysicsComponent();
         if (pc == null) return;
 
+        // Sincronizar enElSuelo hacia EnemyState (necesario para MoveCommand.moveX()).
+        // applyGravity() ya NO se llama aquí — CollisionsSystem la aplica en
+        // FASE 0.5, después de actualizar onGround en FASE 0. Ver BUG-15.
         getState().setEnElSuelo(pc.getPhysics().getOnGround());
-        pc.getPhysics().applyGravity(getState().isEnElSuelo());
     }
 
     public void setFlyingMode(boolean flying) {

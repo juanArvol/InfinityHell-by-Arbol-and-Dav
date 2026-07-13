@@ -1,12 +1,12 @@
 package Game.World.Core;
 
+import Game.Engine.Camera.GameCamera;
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
 import Game.Engine.Systems.DebugRenderSystem;
+import Game.Engine.Systems.DebugSettings;
 import Game.Engine.Systems.DepthSortedRenderSystem;
 import Game.Engine.Systems.RenderSystem;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Main.Debug.DebugGameSettings;
-
 import java.awt.Graphics2D;
 
 /**
@@ -22,16 +22,25 @@ import java.awt.Graphics2D;
  *   - Usar World en un servidor headless sin dependencias de Display.
  *   - Agregar efectos post-proceso en WorldRenderer sin contaminar el dominio.
  *
+ * ── HRFC-001: WorldRenderer recibe GameCamera externamente ───────────────
+ *
+ * La cámara ya no se extrae de World.getCamera(). World no tiene cámara.
+ * WorldRenderer recibe la GameCamera activa del Engine en draw() y crea
+ * un adaptador Camera para pasarlo a los sistemas de render existentes
+ * (que aún usan la API Camera por compatibilidad).
+ *
+ * Esto garantiza:
+ *   - World es estado puro sin dependencias de render.
+ *   - La cámara es un servicio del Engine, no del World.
+ *   - Los sistemas de render existentes no necesitan cambios.
+ *
  * USO:
  *   WorldRenderer renderer = new WorldRenderer(gameSettings);
- *   renderer.draw(world, g);  // llamado por WorldManager o GameState
+ *   renderer.draw(world, camera, g);
  *
  * ESTRATEGIA DE RENDER:
  *   Por defecto usa DepthSortedRenderSystem (Painter's Algorithm para 2.5D).
  *   El flag useDepthSort permite alternar en runtime si fuera necesario.
- *   En el futuro, esto podría convertirse en una interfaz IRenderStrategy
- *   inyectada por constructor, pero por ahora no hay suficientes variantes
- *   para justificar esa abstracción extra.
  */
 public class WorldRenderer {
 
@@ -42,34 +51,41 @@ public class WorldRenderer {
     private boolean useDepthSort = true;
 
     /**
-     * Constructor que recibe GameSettings por inyección de dependencia.
-     *
-     * Justificación: DebugRenderSystem necesita saber si el debug está activo.
-     * En lugar de llamar GameSettings.getInstance() desde DebugRenderSystem
-     * (dependencia estática invisible), recibimos GameSettings aquí y lo pasamos.
-     * Esto hace la dependencia explícita y testeable.
+     * Recibe la interfaz DebugSettings del Engine, no la clase concreta de Main.Debug.
+     * Cualquier implementación de DebugSettings puede inyectarse (producción, mock de test).
      */
-    public WorldRenderer(DebugGameSettings settings) {
+    public WorldRenderer(DebugSettings settings) {
         this.debugRenderSystem = new DebugRenderSystem(settings);
     }
 
     /**
-     * Dibuja el mundo actual en el Graphics2D del framebuffer virtual.
+     * Dibuja el mundo usando la cámara del Engine.
      *
-     * @param world  el mundo a dibujar (solo lectura durante render)
-     * @param g      Graphics2D del framebuffer virtual (de DisplayManager.beginFrame())
+     * La GameCamera proviene del Engine (GameState / WorldManager la gestiona).
+     * Se crea un adaptador Camera de solo lectura para los sistemas de render
+     * existentes, que aún usan la API Camera.
+     *
+     * @param world   el mundo a dibujar (solo lectura durante render)
+     * @param camera  la cámara activa del Engine
+     * @param g       Graphics2D del framebuffer virtual
      */
-    public void draw(World world, Graphics2D g) {
-        Camera camera = world.getCamera();
+    public void draw(World world, GameCamera camera, Graphics2D g) {
+        // Crear adaptador de solo lectura: captura el estado actual de la cámara.
+        // Los sistemas de render existentes (SpriteRenderer, etc.) usan Camera.getX/Y().
+        // Con zoom=1 y rotation=0, el resultado es idéntico al anterior.
+        // Con zoom≠1 o rotation≠0, el viewTransform aplicado en RenderContext.withCamera(GameCamera)
+        // gestionará la transformación completa.
+        Camera renderCamera = new Camera(camera);
+
         RenderContext ctx = new RenderContext(g, world.getWidth(), world.getHeight());
 
         if (useDepthSort) {
-            depthRenderSystem.render(world.getObjectsContainer().getObjects(), ctx, camera);
+            depthRenderSystem.render(world.getObjectsContainer().getObjects(), ctx, renderCamera);
         } else {
-            renderSystem.render(world.getObjectsContainer().getObjects(), ctx, camera);
+            renderSystem.render(world.getObjectsContainer().getObjects(), ctx, renderCamera);
         }
 
-        debugRenderSystem.render(world.getObjectsContainer().getObjects(), ctx, camera);
+        debugRenderSystem.render(world.getObjectsContainer().getObjects(), ctx, renderCamera);
     }
 
     /**

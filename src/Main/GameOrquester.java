@@ -6,36 +6,50 @@ import Display.Settings.DisplaySettings;
 import Display.Settings.ScalingMode;
 import Graficos.Assets;
 import Inputs.KeyBoard;
-import Inputs.MouseInput;
 import Inputs.Listeners.KeyActionListener;
+import Inputs.MouseInput;
 import Main.Debug.DebugGameSettings;
 import Main.States.GameState;
-
 import java.awt.Color;
 
 /**
  * Orquestador del juego.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CAMBIO RESPECTO A LA VERSIÓN ANTERIOR
+ * RESPONSABILIDADES
  *
- * El GameLoop ya no recibe DisplayManager como dependencia.
- * Recibe RenderGateway, que es la única interfaz que necesita para render.
+ * GameOrquester ensambla todos los subsistemas y los conecta:
+ *   - DisplayManager: ciclo de vida del Display (EDT).
+ *   - RenderGateway:  acceso del GameLoop a superficies publicadas.
+ *   - GameLoop:       consume frames sin conocer DisplayManager.
+ *   - GameState:      estado del juego y gameplay.
+ *   - Input:          teclado y ratón conectados al canvas.
  *
- * Esto completa la separación de responsabilidades:
- *   - DisplayManager: gestiona el ciclo de vida del Display (solo EDT).
- *   - RenderGateway: punto de acceso del GameLoop a superficies publicadas.
- *   - GameLoop: consume frames a través de RenderGateway sin conocer nada más.
- *
- * La línea de cambio en este archivo es mínima (paso 8):
- *   antes: new GameLoop(display, state, ...)
- *   ahora: new GameLoop(display.getRenderGateway(), state, ...)
  * ──────────────────────────────────────────────────────────────────────────
+ * CORRECCIÓN: SHUTDOWN LIMPIO EN windowClosing
+ *
+ * Problema anterior:
+ *   WindowManager usaba JFrame.EXIT_ON_CLOSE, que llama System.exit()
+ *   inmediatamente al cerrar la ventana. El GameLoop thread quedaba en
+ *   ejecución hasta que la JVM lo mataba. WorldManager.bgExecutor nunca
+ *   recibía shutdown() limpio. No había oportunidad de liberar recursos.
+ *
+ * Solución:
+ *   WindowManager usa JFrame.DO_NOTHING_ON_CLOSE. GameOrquester registra
+ *   un WindowAdapter en el JFrame después de init() que llama stop() y
+ *   luego dispone la ventana. stop() para el GameLoop y llama
+ *   GameState.shutdown() (que para el bgExecutor con awaitTermination).
+ *   Solo entonces se llama frame.dispose(), que cierra la ventana y
+ *   permite que la JVM termine limpiamente.
+ *
+ *   El WindowAdapter se registra DESPUÉS de init() para evitar que se
+ *   active durante la inicialización del Display.
  */
 public class GameOrquester {
 
     private DisplayManager display;
     private GameLoop       loop;
+    private GameState      state;
 
     public void start() {
 
@@ -45,6 +59,9 @@ public class GameOrquester {
         // ── 2. Input ──────────────────────────────────────────────────────────
         KeyBoard   keyboard = new KeyBoard();
         MouseInput mouse    = new MouseInput();
+
+        KeyBoard.setActiveInstance(keyboard);
+        MouseInput.setActiveInstance(mouse);
 
         // ── 3. Display ────────────────────────────────────────────────────────
         DisplaySettings settings = DisplaySettings.builder()
@@ -84,16 +101,16 @@ public class GameOrquester {
         });
 
         // ── 7. Game State ─────────────────────────────────────────────────────
-        GameState state = new GameState(
+        state = new GameState(
             display.getVirtualWidth(),
             display.getVirtualHeight()
         );
 
         // ── 8. Game Loop ──────────────────────────────────────────────────────
-        // El GameLoop recibe RenderGateway, no DisplayManager.
-        // No tiene conocimiento del ciclo de vida gráfico; solo adquiere frames.
+        state.registerMouseInput(mouse);
+
         loop = new GameLoop(
-            display.getRenderGateway(),   // único punto de acceso al display
+            display.getRenderGateway(),
             state,
             keyboard,
             mouse,
@@ -101,9 +118,20 @@ public class GameOrquester {
         );
 
         loop.start();
+
+        // ── 9. Shutdown al cerrar la ventana ──────────────────────────────────
+        // addWindowCloseListener encapsula el registro dentro del subsistema
+        // Display, sin exponer el JFrame hacia GameOrquester.
+        // El callback para el GameLoop y para disposeWindow() son la
+        // única comunicación necesaria con el Display en este punto.
+        display.addWindowCloseListener(() -> {
+            stop();
+            display.disposeWindow();
+        });
     }
 
     public void stop() {
-        if (loop != null) loop.stop();
+        if (loop  != null) loop.stop();
+        if (state != null) state.shutdown();
     }
 }

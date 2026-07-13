@@ -1,22 +1,17 @@
 package Game.Player;
 
-import Game.Enemys.Enemy;
-import Game.Engine.MovingObjects;
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.HealthComponent;
-import Game.Engine.Components.StatusEffectComponent;
-import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Components.HealthComponent;
+import Game.Engine.Components.Physics2DComponent;
+import Game.Engine.Components.StatusEffectComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Engine.GameMath.Physics.Implementation.PlayerPhysics;
+import Game.Engine.MovingObjects;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Bullets.Bullet;
-import Game.World.WorldObjects.BlockWorld;
-import Game.World.WorldObjects.Obstacle;
-
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.util.function.Consumer;
@@ -146,14 +141,18 @@ public class Player extends MovingObjects {
         equippedItems = new EquippedItems();
 
         // Establecer HP inicial (HealthComponent arranca en max; queremos BASE_HP).
-        // BASE_HP < BASE_HP_MAX → aplicamos la diferencia como "vida que falta".
+        // initCurrentHP() fija el valor directamente sin disparar onDamage ni onDeath.
         if (BASE_HP < BASE_HP_MAX) {
-            getHealth().damage(BASE_HP_MAX - BASE_HP);
+            getHealth().initCurrentHP(BASE_HP);
         }
     }
 
     @Override
     public void update() {
+        // Sincronizar el flag de estado con el valor autoritativo de la física.
+        // onGround lo establece CollisionsSystem (FASE 0) en el frame anterior;
+        // aquí solo lo copiamos a PlayerState para que el controlador y las
+        // animaciones puedan consultarlo sin acceder directamente a la física.
         if (pc != null) {
             state.setEnElSuelo(pc.getPhysics().getOnGround());
         }
@@ -161,9 +160,10 @@ public class Player extends MovingObjects {
         controller.update();
         combat.update();
 
-        if (pc != null) {
-            pc.getPhysics().applyGravity(state.isEnElSuelo());
-        }
+        // applyGravity() ya NO se llama aquí.
+        // CollisionsSystem la aplica en FASE 0.5, DESPUÉS de actualizar onGround
+        // en FASE 0. Esto elimina el bug donde la gravedad se acumulaba usando
+        // el valor de onGround del frame anterior. Ver CollisionsSystem.java.
 
         super.update(); // actualiza todos los Component (HealthComponent, StatusEffectComponent, etc.)
         stats.update(); // actualiza frames de invulnerabilidad
@@ -195,10 +195,7 @@ public class Player extends MovingObjects {
     public EquippedItems    getEquippedItems() { return equippedItems; }
 
     // ── Colisiones ────────────────────────────────────────────────────────
-
-    @Override public void onCollisionWith(BlockWorld block)  { state.setEnElSuelo(true); }
-    @Override public void onCollisionWith(Obstacle obstacle) { state.setEnElSuelo(true); }
-    @Override public void onCollisionWith(Enemy enemy)       {}
-    @Override public void onCollisionWith(Bullet bullet)     {}
-    @Override public void onCollisionWith(Player player)     {}
+    // onCollisionWith(GameObjects) heredado de GameObjects — default vacío correcto.
+    // Player no reacciona a colisiones directas; sus efectos los gestiona
+    // la física (CollisionsSystem) o sistemas externos (enemy.onCollisionWith).
 }

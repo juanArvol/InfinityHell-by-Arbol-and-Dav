@@ -1,13 +1,13 @@
 package Game.Engine;
 
-import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 
@@ -73,6 +73,38 @@ public abstract class MovingObjects extends Entity {
                          Physics2D physics,
                          SizeSyncMode syncMode) {
 
+        getTransform().setPosition(position);
+
+        addComponent(new ColliderComponent());
+        addComponent(new SpriteRenderer(texture, syncMode));
+
+        physicsComponent = new Physics2DComponent(physics);
+        addComponent(physicsComponent);
+    }
+
+    // ── Constructores con Transform inyectable (soporte 2.5D/3D) ─────────
+    //
+    // Permiten que subclases concretas pasen un Transform3D para activar
+    // la sincronización de altura Z en Physics3DComponent, ShadowComponent
+    // y DepthSortedRenderSystem sin cambios en la API del Engine.
+    //
+    // Uso en una subclase:
+    //   super(new Transform3D(), position, texture, physics);
+    //   addComponent(new Physics3DComponent());
+
+    protected MovingObjects(Transform2D transform,
+                            Vector2D position,
+                            BufferedImage texture,
+                            Physics2D physics) {
+        this(transform, position, texture, physics, SizeSyncMode.NONE);
+    }
+
+    protected MovingObjects(Transform2D transform,
+                            Vector2D position,
+                            BufferedImage texture,
+                            Physics2D physics,
+                            SizeSyncMode syncMode) {
+        super(transform);
         getTransform().setPosition(position);
 
         addComponent(new ColliderComponent());

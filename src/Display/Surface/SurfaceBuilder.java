@@ -1,11 +1,9 @@
 package Display.Surface;
 
+import Display.Backend.AwtWindowBackend;
 import Display.Background.DisplayBackground;
 import Display.Background.SolidColorBackground;
-import Display.Settings.ScalingMode;
 import Display.ViewportInfo;
-
-import java.awt.Canvas;
 import java.awt.image.BufferStrategy;
 import java.awt.image.BufferedImage;
 import java.util.logging.Logger;
@@ -14,54 +12,54 @@ import java.util.logging.Logger;
  * Construye {@link RenderSurface} completamente inicializadas.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * RESPONSABILIDAD
+ * HRFC-003: createBufferStrategy() MOVIDO AL BACKEND
  *
- * SurfaceBuilder es el único lugar donde se llama canvas.createBufferStrategy().
- * Esto centraliza toda la lógica de construcción de superficies y garantiza
- * que ninguna superficie llega a SurfacePublisher en estado parcial.
+ * Antes del HRFC-003, SurfaceBuilder llamaba canvas.createBufferStrategy()
+ * directamente. Esa llamada ha sido movida a AwtWindowBackend, que es el
+ * único punto autorizado de contacto con AWT.
+ *
+ * SurfaceBuilder ahora recibe la BufferStrategy ya creada mediante
+ * backend.createBufferStrategy(bufferCount), la combina con el framebuffer
+ * virtual y el viewport para construir la RenderSurface.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * SECUENCIA DE BUILD
  *
- *   1. canvas.createBufferStrategy(bufferCount)   → inicializa la BS en AWT
- *   2. canvas.getBufferStrategy()                 → obtiene la referencia
- *   3. new BufferedImage(vw, vh, ...)             → framebuffer virtual
- *   4. new RenderSurface(bs, fb, viewport, ...)   → empaqueta todo
- *
- * La RenderSurface retornada tiene refCount=0 y disposed=false.
- * La publica SurfacePublisher (nunca SurfaceBuilder directamente).
+ *   1. backend.createBufferStrategy(bufferCount)   → crea BS en AWT
+ *   2. Si null (canvas no displayable): retorna null sin continuar.
+ *   3. new BufferedImage(vw, vh, ...)              → framebuffer virtual
+ *   4. bg.apply(g, vw, vh)                         → limpiar framebuffer
+ *   5. new RenderSurface(bs, fb, viewport, ...)    → ensamblar surface
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
  *
- * build() → EDT únicamente.
- * Los campos son inmutables tras construcción; onVirtualResolutionChanged()
- * crea un nuevo SurfaceBuilder (o actualiza virtualWidth/Height) antes del
- * próximo build().
+ *   build() → EDT únicamente (backend.createBufferStrategy() es EDT-only).
+ *   onVirtualResolutionChanged() → EDT únicamente.
  */
 public final class SurfaceBuilder {
 
-    private static final Logger LOG = Logger.getLogger(SurfaceBuilder.class.getName());
+    private static final Logger LOG =
+        Logger.getLogger(SurfaceBuilder.class.getName());
 
-    private final Canvas  canvas;
-    private final int     bufferCount;
-    private       int     virtualWidth;
-    private       int     virtualHeight;
+    private final AwtWindowBackend backend;
+    private final int              bufferCount;
+    private       int              virtualWidth;
+    private       int              virtualHeight;
 
-    public SurfaceBuilder(Canvas canvas, int bufferCount,
+    public SurfaceBuilder(AwtWindowBackend backend, int bufferCount,
                           int virtualWidth, int virtualHeight) {
-        this.canvas        = canvas;
+        this.backend       = backend;
         this.bufferCount   = bufferCount;
         this.virtualWidth  = virtualWidth;
         this.virtualHeight = virtualHeight;
     }
 
-    // ── Mutación controlada de resolución virtual (EDT) ───────────────────────
+    // ── Mutación controlada de resolución virtual ─────────────────────────────
 
     /**
      * Actualiza la resolución virtual. La próxima llamada a build()
      * producirá un framebuffer con las nuevas dimensiones.
-     *
      * EDT únicamente.
      */
     public void onVirtualResolutionChanged(int newWidth, int newHeight) {
@@ -76,50 +74,53 @@ public final class SurfaceBuilder {
     /**
      * Construye una {@link RenderSurface} completamente inicializada.
      *
-     * Pre-condición: canvas.isDisplayable() == true (verificar antes de llamar).
-     * Pre-condición: llamar únicamente desde el EDT.
+     * Delega la creación de BufferStrategy al Backend, que es el único
+     * punto autorizado para llamar canvas.createBufferStrategy().
      *
-     * @param viewport  viewport calculado para las dimensiones actuales del canvas.
+     * @param viewport   viewport calculado para las dimensiones actuales.
      * @param background fondo que se aplica al framebuffer al inicio de cada frame.
-     * @return superficie lista para publicar, o null si la BS no pudo crearse.
+     * @return superficie lista para publicar, o null si el canvas no es
+     *         displayable o si la creación de BS falló.
+     *
+     * EDT únicamente.
      */
     public RenderSurface build(ViewportInfo viewport, DisplayBackground background) {
         assertEDT("build");
 
-        if (!canvas.isDisplayable()) {
-            LOG.warning("SurfaceBuilder.build(): canvas not displayable — returning null");
+        // El Backend verifica isDisplayable() internamente y retorna null si falla.
+        BufferStrategy bs = backend.createBufferStrategy(bufferCount);
+        if (bs == null) {
+            LOG.warning("SurfaceBuilder.build(): backend.createBufferStrategy() returned null — canvas not ready");
             return null;
         }
 
         try {
-            canvas.createBufferStrategy(bufferCount);
-            BufferStrategy bs = canvas.getBufferStrategy();
+            BufferedImage fb = new BufferedImage(
+                virtualWidth, virtualHeight, BufferedImage.TYPE_INT_ARGB);
 
-            BufferedImage fb = createFramebuffer(virtualWidth, virtualHeight);
-
-            // Aplicar el fondo al framebuffer inicial para que el primer frame
-            // no muestre basura de memoria.
-            if (background != null) {
-                var g = fb.createGraphics();
-                try { background.apply(g, virtualWidth, virtualHeight); }
-                finally { g.dispose(); }
-            }
+            DisplayBackground bg = background != null ? background : SolidColorBackground.BLACK;
+            var g = fb.createGraphics();
+            try { bg.apply(g, virtualWidth, virtualHeight); }
+            finally { g.dispose(); }
 
             LOG.fine("SurfaceBuilder: RenderSurface built ("
                 + virtualWidth + "x" + virtualHeight
-                + ", bufferCount=" + bufferCount + ")");
+                + ", buffers=" + bufferCount + ")");
 
-            return new RenderSurface(bs, fb, viewport, virtualWidth, virtualHeight);
+            return new RenderSurface(bs, fb, viewport, virtualWidth, virtualHeight, bg);
 
         } catch (Exception e) {
-            LOG.warning("SurfaceBuilder.build() failed: " + e);
+            LOG.warning("SurfaceBuilder.build() failed after BS creation: " + e);
+            // BS was created but framebuffer construction failed: dispose it cleanly.
+            backend.disposeBufferStrategy();
             return null;
         }
     }
 
     /**
-     * Construye sin aplicar fondo (framebuffer limpio, fondo negro por defecto).
+     * @deprecated Preferir {@link #build(ViewportInfo, DisplayBackground)}.
      */
+    @Deprecated(since = "hrfc-003", forRemoval = false)
     public RenderSurface build(ViewportInfo viewport) {
         return build(viewport, SolidColorBackground.BLACK);
     }
@@ -130,10 +131,6 @@ public final class SurfaceBuilder {
     public int getVirtualHeight() { return virtualHeight; }
 
     // ── Privados ──────────────────────────────────────────────────────────────
-
-    private static BufferedImage createFramebuffer(int w, int h) {
-        return new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-    }
 
     private static void assertEDT(String methodName) {
         if (!javax.swing.SwingUtilities.isEventDispatchThread()) {

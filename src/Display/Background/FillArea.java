@@ -10,7 +10,7 @@ import java.awt.Graphics2D;
  * MOTIVACIÓN
  *
  * Problema original:
- *   RenderSurfaceManager.present() calculaba y pintaba las barras de relleno
+ *   La presentación calculaba y pintaba las barras de relleno
  *   con un único fillRect sobre toda la superficie:
  *
  *     screenG.setColor(letterboxColor);

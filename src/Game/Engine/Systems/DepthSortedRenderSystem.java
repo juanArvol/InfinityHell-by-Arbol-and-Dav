@@ -1,12 +1,11 @@
 package Game.Engine.Systems;
 
 import Game.Engine.Component;
-import Game.Engine.GameObjects;
 import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Graficos.Renderable;
-
+import Game.Engine.GameObjects;
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
+import Game.Engine.Render.Renderable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -14,8 +13,8 @@ import java.util.List;
 /**
  * Sistema de render con ordenamiento por profundidad (Painter's Algorithm).
  *
- * NUEVO SISTEMA para 2.5D: reemplaza al RenderSystem original cuando se
- * quiere depth sorting correcto.
+ * SISTEMA 2.5D: reemplaza al RenderSystem original cuando se quiere
+ * depth sorting correcto.
  *
  * Funcionamiento:
  * 1. Ordena todos los objetos por su valor de profundidad antes de dibujar.
@@ -34,16 +33,40 @@ import java.util.List;
  * objetos se intersecan en profundidad. Para el 90% de casos de juego
  * top-down esto no es problema. Si se necesita exactitud, se requiere
  * BSP tree o render por capas separadas.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * CORRECCIÓN: BUFFER LOCAL EN LUGAR DE CAMPO MUTABLE
+ *
+ * Problema anterior:
+ *   sortBuffer era un campo de instancia mutable pre-allocado. El objetivo
+ *   era evitar crear un ArrayList en cada frame. Sin embargo:
+ *
+ *   1. El addAll(objects) ya crea un iterador interno cada frame, anulando
+ *      el ahorro de la pre-allocación.
+ *   2. Un campo de instancia mutable hace que render() no sea reentrante:
+ *      si en el futuro se invocara desde múltiples threads (render secundario,
+ *      sistema de reflejo, captura de screenshot) el sortBuffer se corrompería.
+ *   3. La lista nunca se recorta: si en un frame hay 500 objetos y en el
+ *      siguiente hay 10, el buffer retiene capacidad para 500 indefinidamente.
+ *
+ * Solución:
+ *   Crear el buffer local dentro de render() cada invocación. El GC de la
+ *   JVM optimiza bien listas de vida corta (escape analysis). render() es
+ *   llamado 30 veces por segundo con listas de cientos de objetos — el
+ *   overhead de crear un ArrayList<>(N) es O(N) igual que el addAll(),
+ *   por lo que no hay regresión de rendimiento medible.
+ *
+ *   render() es ahora stateless y reentrante, preparado para usos futuros
+ *   como renders secundarios, previews o capturas de pantalla.
  */
 public class DepthSortedRenderSystem {
-
-    // Lista de trabajo pre-allocada para evitar crear objetos cada frame
-    private final List<GameObjects> sortBuffer = new ArrayList<>(256);
 
     /**
      * Renderiza los objetos ordenados por profundidad Y+Z.
      *
-     * @param objects lista de todos los objetos del mundo
+     * Crea un buffer local para la ordenación — stateless y reentrante.
+     *
+     * @param objects lista de todos los objetos del mundo (no se modifica)
      * @param ctx     contexto de render
      * @param camera  cámara actual
      */
@@ -51,9 +74,8 @@ public class DepthSortedRenderSystem {
                        RenderContext ctx,
                        Camera camera) {
 
-        // Copiar a buffer de trabajo para no modificar la lista original
-        sortBuffer.clear();
-        sortBuffer.addAll(objects);
+        // Buffer local: stateless, reentrante, sin retención de memoria entre frames.
+        List<GameObjects> sortBuffer = new ArrayList<>(objects);
 
         // Ordenar por profundidad: menor valor primero (se dibuja primero = detrás)
         sortBuffer.sort(Comparator.comparingDouble(this::getDepthValue));
@@ -71,7 +93,7 @@ public class DepthSortedRenderSystem {
     /**
      * Calcula el valor de profundidad de un objeto.
      * Si tiene Transform3D, usa Y + Z*0.5.
-     * Si solo tiene Transform, usa solo Y (retro-compatible).
+     * Si solo tiene Transform2D, usa solo Y (retro-compatible).
      */
     private double getDepthValue(GameObjects obj) {
         if (obj.getTransform() instanceof Transform3D t3d) {

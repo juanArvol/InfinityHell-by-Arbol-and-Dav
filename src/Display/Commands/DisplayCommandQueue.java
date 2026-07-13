@@ -24,17 +24,41 @@ import java.util.logging.Logger;
  *   solo ocurre en el EDT — por lo que synchronized es suficiente y no
  *   introduce latencia perceptible.
  *
- *   Con synchronized, toArray/clear/re-offer son una región crítica atómica.
- *   No existe ventana de carrera en ninguna operación compuesta.
- *
  * ──────────────────────────────────────────────────────────────────────────
- * POLÍTICA DE COLAPSO
+ * POLÍTICA DE COLAPSO — DOS SEMÁNTICAS DISTINTAS
  *
- * Comandos colapsables (solo el último prevalece):
- *   - ResizeCanvas            → el tamaño final del canvas importa, no los intermedios
- *   - ToggleFullscreen        → dos toggles consecutivos sin ejecutar = sin-op
- *   - ChangeResolution        → la resolución final importa
- *   - RecreateBufferStrategy  → múltiples solicitudes = una ejecución
+ * 1. LAST-WINS (isLastWins): el último valor reemplaza al anterior.
+ *    Correcto cuando solo importa el estado final, no la cantidad.
+ *      - ResizeCanvas           → importa el tamaño final, no los intermedios.
+ *      - ChangeResolution       → idem.
+ *      - RecreateBufferStrategy → múltiples solicitudes = una ejecución.
+ *      - ChangeBackground       → importa el fondo final.
+ *
+ * 2. INVERTIBLE (isInvertible): los pares se anulan, los impares se ejecutan.
+ *    Correcto cuando el comando es su propio inverso — N ejecuciones impares
+ *    producen el mismo resultado que 1, y N ejecuciones pares son un no-op.
+ *      - ToggleFullscreen → 2 toggles pendientes = volver al estado original
+ *                           = no-op. 3 toggles = un toggle neto.
+ *
+ * ── POR QUÉ ToggleFullscreen NO puede ser LAST-WINS ──────────────────────
+ * Con la política anterior (last-wins), pulsar F11 seis veces rápido
+ * colapsaba a 1 ToggleFullscreen: la cola siempre mantenía exactamente 1,
+ * reemplazando cada nuevo toggle por el mismo comando. El resultado era
+ * siempre 1 toggle ejecutado, independientemente de la paridad de pulsaciones.
+ *
+ * Con 6 pulsaciones, el usuario espera volver al estado original (6 toggles
+ * = 3 ida/vuelta = sin cambio neto). Con last-wins obtenía 1 toggle = estado
+ * contrario. El Display quedaba en el modo incorrecto tras alternar rápidamente,
+ * produciendo el comportamiento erróneo observable con F11 mantenido.
+ *
+ * Con la política invertible:
+ *   Pulsación 1: cola vacía → añadir ToggleFullscreen.
+ *   Pulsación 2: hay 1 en cola → eliminar (paridad par = sin-op).
+ *   Pulsación 3: cola vacía → añadir ToggleFullscreen.
+ *   Pulsación 4: hay 1 en cola → eliminar.
+ *   ...
+ *   N impares → 1 ToggleFullscreen ejecutado. N pares → 0 ejecutados.
+ *   El resultado siempre refleja la intención real del usuario.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
@@ -56,7 +80,10 @@ public final class DisplayCommandQueue {
     /**
      * Encola un comando para ejecución posterior en el EDT.
      *
-     * Thread-safe. Comandos colapsables sustituyen al anterior del mismo tipo.
+     * Thread-safe. Aplica la política de colapso correspondiente al tipo:
+     *   - Invertibles: se cancela con el anterior del mismo tipo si existe.
+     *   - Last-wins:   reemplaza al anterior del mismo tipo si existe.
+     *   - Sin política: se añade al final sin restricción.
      */
     public void enqueue(DisplayCommand command) {
         if (command == null) throw new IllegalArgumentException("command cannot be null");
@@ -64,18 +91,37 @@ public final class DisplayCommandQueue {
         synchronized (queue) {
             if (queue.size() >= MAX_QUEUE_SIZE) {
                 LOG.warning("DisplayCommandQueue: queue full (" + MAX_QUEUE_SIZE
-                            + ") — dropping command: " + command.getClass().getSimpleName());
+                            + ") — dropping: " + command.getClass().getSimpleName());
                 return;
             }
 
-            if (isCollapsible(command)) {
-                DisplayCommand last = queue.peekLast();
-                if (last != null && last.getClass() == command.getClass()) {
-                    // Reemplazar el último del mismo tipo — atómico dentro del lock.
-                    replaceLastIfSameType(command);
-                    LOG.fine("DisplayCommandQueue: collapsed " + command.getClass().getSimpleName());
+            if (isInvertible(command)) {
+                // Política invertible: si ya existe uno del mismo tipo, eliminarlo
+                // (paridad par = operaciones que se cancelan). Si no existe, añadir.
+                if (removeLastOfType(command.getClass())) {
+                    LOG.fine("DisplayCommandQueue: cancelled (invertible) "
+                             + command.getClass().getSimpleName());
                     return;
                 }
+                // No había ninguno: añadir.
+                queue.offerLast(command);
+                LOG.fine("DisplayCommandQueue: enqueued (invertible) "
+                         + command.getClass().getSimpleName());
+                return;
+            }
+
+            if (isLastWins(command)) {
+                // Política last-wins: si ya existe uno del mismo tipo, reemplazarlo.
+                if (replaceLastOfType(command)) {
+                    LOG.fine("DisplayCommandQueue: collapsed (last-wins) "
+                             + command.getClass().getSimpleName());
+                    return;
+                }
+                // No había ninguno: añadir.
+                queue.offerLast(command);
+                LOG.fine("DisplayCommandQueue: enqueued (last-wins) "
+                         + command.getClass().getSimpleName());
+                return;
             }
 
             queue.offerLast(command);
@@ -125,32 +171,86 @@ public final class DisplayCommandQueue {
     // ── Privados ─────────────────────────────────────────────────────────────
 
     /**
-     * Reemplaza el último elemento de la cola si es del mismo tipo que newCmd.
+     * Elimina la última ocurrencia del tipo dado de la cola.
+     *
      * Llamar únicamente dentro de un bloque synchronized(queue).
+     *
+     * @return true si se encontró y eliminó una ocurrencia; false si no había ninguna.
      */
-    private void replaceLastIfSameType(DisplayCommand newCmd) {
-        // Reconstruir la cola reemplazando el último elemento del mismo tipo.
-        // Operación completamente contenida dentro del lock — atómica para el exterior.
+    private boolean removeLastOfType(Class<? extends DisplayCommand> type) {
         DisplayCommand[] snapshot = queue.toArray(new DisplayCommand[0]);
-        queue.clear();
-        boolean replaced = false;
-        for (int i = 0; i < snapshot.length; i++) {
-            if (!replaced && i == snapshot.length - 1
-                    && snapshot[i].getClass() == newCmd.getClass()) {
-                queue.offerLast(newCmd);
-                replaced = true;
-            } else {
-                queue.offerLast(snapshot[i]);
+
+        int lastIdx = -1;
+        for (int i = snapshot.length - 1; i >= 0; i--) {
+            if (snapshot[i].getClass() == type) {
+                lastIdx = i;
+                break;
             }
         }
-        if (!replaced) queue.offerLast(newCmd);
+
+        if (lastIdx < 0) return false;
+
+        // Reconstruir la cola sin el elemento en lastIdx.
+        queue.clear();
+        for (int i = 0; i < snapshot.length; i++) {
+            if (i != lastIdx) queue.offerLast(snapshot[i]);
+        }
+        return true;
     }
 
-    private static boolean isCollapsible(DisplayCommand cmd) {
+    /**
+     * Reemplaza la última ocurrencia del mismo tipo que newCmd en la cola.
+     *
+     * Llamar únicamente dentro de un bloque synchronized(queue).
+     *
+     * @return true si se encontró y reemplazó una ocurrencia; false si no había ninguna.
+     */
+    private boolean replaceLastOfType(DisplayCommand newCmd) {
+        DisplayCommand[] snapshot = queue.toArray(new DisplayCommand[0]);
+
+        int lastIdx = -1;
+        for (int i = snapshot.length - 1; i >= 0; i--) {
+            if (snapshot[i].getClass() == newCmd.getClass()) {
+                lastIdx = i;
+                break;
+            }
+        }
+
+        if (lastIdx < 0) return false;
+
+        // Reconstruir la cola sustituyendo la posición lastIdx.
+        queue.clear();
+        for (int i = 0; i < snapshot.length; i++) {
+            queue.offerLast(i == lastIdx ? newCmd : snapshot[i]);
+        }
+        return true;
+    }
+
+    /**
+     * Comandos invertibles: se cancelan con el anterior del mismo tipo.
+     * N pares pendientes = sin-op. N impares pendientes = 1 ejecución neta.
+     */
+    private static boolean isInvertible(DisplayCommand cmd) {
+        return cmd instanceof DisplayCommand.ToggleFullscreen;
+    }
+
+    /**
+     * Comandos last-wins: el último valor reemplaza al anterior del mismo tipo.
+     * Solo importa el estado final, no la cantidad de solicitudes.
+     *
+     * SuspendRendering y ResumeRendering son last-wins sobre sí mismos:
+     *   - Dos Suspend seguidos colapsan a uno (idempotente).
+     *   - Dos Resume seguidos colapsan a uno (idempotente).
+     *   - Un Suspend + un Resume son tipos distintos: no se cancelan entre
+     *     sí y se procesan en orden FIFO, lo cual es el comportamiento correcto.
+     */
+    private static boolean isLastWins(DisplayCommand cmd) {
         return cmd instanceof DisplayCommand.ResizeCanvas
-            || cmd instanceof DisplayCommand.ToggleFullscreen
             || cmd instanceof DisplayCommand.ChangeResolution
-            || cmd instanceof DisplayCommand.RecreateBufferStrategy;
+            || cmd instanceof DisplayCommand.RecreateBufferStrategy
+            || cmd instanceof DisplayCommand.ChangeBackground
+            || cmd instanceof DisplayCommand.SuspendRendering
+            || cmd instanceof DisplayCommand.ResumeRendering;
     }
 
     private static void assertEDT() {

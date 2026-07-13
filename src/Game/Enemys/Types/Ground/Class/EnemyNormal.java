@@ -1,38 +1,29 @@
 package Game.Enemys.Types.Ground.Class;
 
 import Game.Enemys.AI.Behaviors.AggressiveBehavior;
+import Game.Enemys.EnemyPhysics;
 import Game.Enemys.Types.Ground.GroundTypeEnemy;
-import Game.Engine.GameMath.Physics.Implementation.EnemyPhysics;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Player.Player;
-
 import java.awt.image.BufferedImage;
 
 /**
  * Enemigo terrestre estándar — persigue al jugador en el eje X.
  *
- * CAMBIO vs. original:
- *   - Eliminado draw(Graphics g) manual que duplicaba el renderer del engine.
- *     El SpriteRenderer del MovingObjects ya maneja el dibujo correctamente.
- *   - Eliminado campo `texture` duplicado (ya existe en MovingObjects/GameObjects).
- *   - AggressiveBehavior ya no recibe Player — lo recibe vía EnemyContext en update().
- *
- * Retro-compatible: EnemyFactory sigue funcionando con el constructor legacy.
+ * MIGRACIÓN: eliminado el constructor legacy con Player.
+ * EnemyFactory ya no pasa Player; el contexto llega vía EnemyContext en update().
  */
 public class EnemyNormal extends GroundTypeEnemy {
 
     public EnemyNormal(
             Vector2D position,
             BufferedImage texture,
-            Player player,
             EnemyPhysics physics
     ) {
         super(
             position,
             texture,
             100,
-            new AggressiveBehavior(),   // Ya no recibe Player
-            player,                     // Legacy path en Enemy base
+            new AggressiveBehavior(),
             physics
         );
     }

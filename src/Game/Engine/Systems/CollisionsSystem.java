@@ -1,25 +1,44 @@
 package Game.Engine.Systems;
 
-import Game.Engine.GameObjects;
-import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.GameMath.Physics.PhysicsStepper;
-import Game.Engine.GameMath.Physics.Types.Physics2D;
 import Game.Engine.Colisions.CollisionDetector;
 import Game.Engine.Colisions.CollisionDispatcher;
 import Game.Engine.Colisions.CollisionResult;
 import Game.Engine.Colisions.SweptAABB;
-import Game.World.Surface.SurfaceMaterial;
-
+import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Components.Physics2DComponent;
+import Game.Engine.GameMath.Physics.PhysicsStepper;
+import Game.Engine.GameMath.Physics.SurfaceMaterial;
+import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameObjects;
 import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * Sistema de colisiones. Tres fases por frame.
+ * Sistema de colisiones. Cuatro fases por frame.
  *
  * FASE 0 — Revalidación de contacto vertical
  *   Detecta si hay suelo debajo (2px margin). Actualiza onGround y surface.
  *   Sin esto, al caminar sobre el borde de un bloque onGround nunca se resetea.
+ *
+ * FASE 0.5 — Aplicar gravedad (después de actualizar onGround)
+ *   Se aplica gravedad a todos los objetos con física que NO gestionen su
+ *   propia gravedad (isGravityManagedExternally() == false).
+ *
+ *   CORRECCIÓN BUG-15:
+ *   ANTES: Player.update() llamaba applyGravity(state.isEnElSuelo()) usando
+ *   el valor de onGround del frame ANTERIOR, porque CollisionsSystem (FASE 0)
+ *   aún no había actualizado onGround para el frame actual. En el frame del
+ *   aterrizaje: onGround=false (viejo) → gravedad acumulada → CollisionsSystem
+ *   detecta suelo → onGround=true. Un frame extra de gravedad acumulada.
+ *
+ *   SOLUCIÓN: applyGravity se aplica aquí (FASE 0.5), después de que FASE 0
+ *   ya estableció el onGround correcto para este frame. Player.update() ya
+ *   no llama applyGravity() manualmente.
+ *
+ *   El contrato isGravityManagedExternally() ya existía en Physics2D.
+ *   BulletPhysics lo retorna true (gestiona su propia gravedad en Bullet.update()),
+ *   por lo que las balas no se ven afectadas. PlayerPhysics retorna false
+ *   (valor base de Physics2D), por lo que el Player recibe gravedad aquí.
  *
  * FASE 1 — Movimiento continuo (SweptAABB) eje por eje
  *   Eje X primero, luego Y con bounds ya actualizados.
@@ -77,6 +96,17 @@ public class CollisionsSystem {
                 physics.setOnGround(false);
                 physics.clearSurface();
             }
+        }
+
+        // ── FASE 0.5: Aplicar gravedad ────────────────────────────────────
+        // onGround ya es el valor correcto para este frame (FASE 0 lo actualizó).
+        // Solo aplicar a objetos que NO gestionan su propia gravedad.
+        for (GameObjects obj : objects) {
+            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+            if (physComp == null) continue;
+            Physics2D physics = physComp.getPhysics();
+            if (physics.isGravityManagedExternally()) continue;
+            physics.applyGravity(physics.getOnGround());
         }
 
         // ── FASE 1: SweptAABB eje por eje ────────────────────────────────

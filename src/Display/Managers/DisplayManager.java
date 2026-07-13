@@ -1,5 +1,7 @@
 package Display.Managers;
 
+import Display.Backend.AwtWindowBackend;
+import Display.Backend.DisplaySnapshot;
 import Display.Background.DisplayBackground;
 import Display.Commands.DisplayCommand;
 import Display.Commands.DisplayCommandQueue;
@@ -16,66 +18,31 @@ import Display.Surface.SurfacePublisher;
 import Display.Transition.DisplayTransitionMachine;
 import Display.Transition.DisplayTransitionState;
 import Display.ViewportInfo;
-
-import javax.swing.*;
-import java.awt.*;
 import java.awt.event.FocusListener;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Logger;
+import javax.swing.*;
 
 /**
  * Fachada del subsistema Display.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: ELIMINACIÓN DE publishFullState() Y DOBLE currentState
+ * HRFC-003: ENSAMBLAJE CON AwtWindowBackend
  *
- * Problema anterior:
- *   DisplayManager tenía su propio campo currentState y su propio método
- *   publishFullState() que construía DisplayState independientemente del
- *   pipeline. Esto creaba dos fuentes de verdad para el mismo dato:
+ * DisplayManager construye y conecta todos los componentes del subsistema:
  *
- *     - DisplayManager.currentState: construido en init() y por publishFullState()
- *     - DisplayReconfigurationPipeline.currentState: construido en publishState()
+ *   AwtWindowBackend  — único punto de contacto con AWT.
+ *   FullscreenManager — coordina transiciones de modo (delega en Backend).
+ *   WindowManager     — registra listeners AWT, convierte en comandos.
+ *   ViewportManager   — calcula viewport.
+ *   SurfaceBuilder    — construye RenderSurface (BS via Backend).
+ *   SurfacePublisher  — publica surfaces al GameLoop via RenderGateway.
+ *   Pipeline          — coordina transiciones, deriva estado del snapshot.
  *
- *   Los dos divergían desde el primer frame. Cualquier getState() que llamara
- *   código externo obtenía el de DisplayManager, que podía diferir del que
- *   usaba el pipeline como base para toBuilder() en la próxima transición.
- *
- * Solución:
- *   DisplayManager ya no tiene lógica de construcción de estado propia.
- *   currentState es simplemente el último valor publicado por el pipeline
- *   a través del statePublisher. El pipeline llama a pipeline.initializeState()
- *   al final de init() para publicar el estado correcto post-init.
- *   getState() retorna el valor más reciente publicado por el pipeline.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN: init() COMPLETAMENTE ATÓMICO
- *
- * Problema anterior:
- *   init() usaba dos invokeAndWait separados. Entre ellos el EDT podía
- *   procesar eventos encolados durante show(), incluyendo componentResized.
- *   El segundo bloque podía recibir un resize antes de haber completado
- *   la inicialización.
- *
- * Solución:
- *   Todo el cuerpo de init() — show(), construcción inicial, publicación de
- *   superficie, publicación de estado — ocurre dentro de un único
- *   invokeAndWait, con suppressResize activo desde el inicio. Al final,
- *   suppressResize(false) se ejecuta dentro del mismo bloque atómico, justo
- *   después de que el estado es consistente.
- *
- * ──────────────────────────────────────────────────────────────────────────
- * INVARIANTE DEL SISTEMA
- *
- * Todo cambio de estado del Display sigue exactamente este flujo:
- *
- *   evento externo (Swing, input, código)
- *     → enqueue(DisplayCommand)
- *     → CommandQueue.drainToEDT()
- *     → DisplayReconfigurationPipeline.execute()
- *     → nuevo DisplayState publicado
- *     → ResizeListeners notificados (si aplica)
+ * getSnapshot() expone el último DisplaySnapshot leído por el Backend.
+ * Cualquier componente autorizado puede consultar el estado observado
+ * del Display sin pasar por el Pipeline.
  *
  * ──────────────────────────────────────────────────────────────────────────
  * THREADING
@@ -84,41 +51,45 @@ import java.util.logging.Logger;
  *   enqueue(command)          → cualquier thread.
  *   requestToggleFullscreen() → cualquier thread.
  *   getRenderGateway()        → cualquier thread (referencia inmutable).
- *   addResizeListener()       → thread-safe (CopyOnWriteArrayList).
+ *   getSnapshot()             → thread-safe (volatile en Backend).
  *   getState()                → volatile read; thread-safe.
+ *   addResizeListener()       → thread-safe (CopyOnWriteArrayList).
  */
 public final class DisplayManager {
 
-    private static final Logger LOG = Logger.getLogger(DisplayManager.class.getName());
+    private static final Logger LOG =
+        Logger.getLogger(DisplayManager.class.getName());
 
     private final DisplaySettings              settings;
-    private final WindowManager                windowManager;
+    private final AwtWindowBackend             backend;
     private final FullscreenManager            fullscreenManager;
+    private final WindowManager                windowManager;
     private final ViewportManager              viewportManager;
     private final SurfaceBuilder               surfaceBuilder;
     private final SurfacePublisher             surfacePublisher;
-    private final DisplayTransitionMachine     transitionMachine  = new DisplayTransitionMachine();
-    private final DisplayCommandQueue          commandQueue       = new DisplayCommandQueue();
-    private       DisplayReconfigurationPipeline pipeline;
+    private final DisplayTransitionMachine     transitionMachine = new DisplayTransitionMachine();
+    private final DisplayCommandQueue          commandQueue      = new DisplayCommandQueue();
+    private final DisplayReconfigurationPipeline pipeline;
 
     private final int virtualWidth;
     private final int virtualHeight;
 
-    /**
-     * Último DisplayState publicado por el pipeline.
-     * Solo se escribe desde el statePublisher (EDT). Volatile para lectura
-     * thread-safe desde GameLoop u otros threads.
-     */
     private volatile DisplayState currentState;
 
     private final List<ResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
 
     public DisplayManager(DisplaySettings settings) {
-        this.settings      = settings;
+        this.settings     = settings;
         this.virtualWidth  = settings.virtualWidth;
         this.virtualHeight = settings.virtualHeight;
 
-        windowManager = new WindowManager(settings);
+        // ── Backend (sole AWT contact) ─────────────────────────────────────
+        backend = new AwtWindowBackend(settings);
+
+        // ── Managers ───────────────────────────────────────────────────────
+        fullscreenManager = new FullscreenManager(backend, settings.monitorIndex);
+
+        windowManager = new WindowManager(backend, settings);
 
         viewportManager = new ViewportManager(
             settings.virtualWidth,
@@ -127,10 +98,9 @@ public final class DisplayManager {
             settings.fillColor
         );
 
-        fullscreenManager = new FullscreenManager(settings.monitorIndex);
-
+        // ── Surface layer ──────────────────────────────────────────────────
         surfaceBuilder = new SurfaceBuilder(
-            windowManager.getCanvas(),
+            backend,
             settings.bufferCount,
             settings.virtualWidth,
             settings.virtualHeight
@@ -138,10 +108,12 @@ public final class DisplayManager {
 
         surfacePublisher = new SurfacePublisher(
             settings.scalingMode,
-            settings.useInterpolation
+            settings.useInterpolation,
+            () -> enqueue(new DisplayCommand.RecreateBufferStrategy()),
+            () -> enqueue(new DisplayCommand.RecreateBufferStrategy())
         );
 
-        // Estado inicial: SurfaceState.LOST hasta que init() publique el real.
+        // ── Initial state (LOST until init() confirms otherwise) ──────────
         currentState = new DisplayState(
             DisplayMode.WINDOWED,
             settings.windowedWidth,
@@ -153,40 +125,58 @@ public final class DisplayManager {
             settings.monitorIndex
         );
 
+        // ── Pipeline ───────────────────────────────────────────────────────
         pipeline = new DisplayReconfigurationPipeline(
-            windowManager, fullscreenManager, viewportManager,
-            surfaceBuilder, surfacePublisher, settings.background,
-            transitionMachine, currentState,
+            backend,
+            fullscreenManager,
+            viewportManager,
+            surfaceBuilder,
+            surfacePublisher,
+            windowManager,
+            settings.background,
+            transitionMachine,
+            currentState,
             state -> {
-                // statePublisher: actualiza currentState y notifica listeners.
-                // Esta lambda se ejecuta en el EDT (desde publishState del pipeline).
                 currentState = state;
                 notifyResizeListenersIfNeeded(state);
-            }
+            },
+            () -> enqueue(new DisplayCommand.RecreateBufferStrategy())
         );
 
-        // El ComponentListener solo encola ResizeCanvas.
+        // ── Window event wiring ────────────────────────────────────────────
         windowManager.addCanvasResizeListener((w, h) ->
             enqueue(new DisplayCommand.ResizeCanvas(w, h))
+        );
+
+        windowManager.addWindowLifecycleListener(
+            new WindowManager.WindowLifecycleListener() {
+                @Override
+                public void onWindowSuspended() {
+                    enqueue(new DisplayCommand.SuspendRendering());
+                }
+                @Override
+                public void onWindowResumed(boolean requiresRebuild) {
+                    enqueue(new DisplayCommand.ResumeRendering(requiresRebuild));
+                }
+            }
         );
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
-    public void init(java.awt.event.KeyListener kl,
-                     java.awt.event.MouseListener ml,
-                     java.awt.event.MouseMotionListener mml,
-                     java.awt.event.MouseWheelListener mwl) {
-        init(kl, ml, mml, mwl, null);
-    }
-
     /**
      * Inicializa el subsistema Display.
      *
-     * Todo el proceso ocurre en un único invokeAndWait para garantizar
-     * atomicidad: desde show() hasta la publicación del estado inicial.
-     * suppressResize permanece activo durante todo el bloque y se libera
-     * solo cuando el estado es completamente consistente.
+     * 1. Construye JFrame + Canvas en el EDT (backend.init()).
+     * 2. Registra listeners AWT (windowManager.registerListeners()).
+     * 3. Registra listeners de input.
+     * 4. Muestra la ventana (backend.show()).
+     * 5. Si startFullscreen: solicita fullscreen al Backend.
+     * 6. Construye la surface inicial.
+     * 7. Lee el snapshot real y publica el estado inicial (pipeline.initializeState()).
+     *
+     * La gate se abre dentro de initializeState() solo si el snapshot
+     * confirma que el canvas está realmente en estado usable y render-ready.
      */
     public void init(java.awt.event.KeyListener kl,
                      java.awt.event.MouseListener ml,
@@ -195,39 +185,42 @@ public final class DisplayManager {
                      FocusListener fl) {
         try {
             SwingUtilities.invokeAndWait(() -> {
-                // suppressResize activo desde el primer momento.
-                windowManager.suppressResize(true);
+                // 1. Construir la ventana física.
+                backend.init();
+
+                // 2. Registrar listeners AWT.
+                windowManager.registerListeners();
                 windowManager.addInputListeners(kl, ml, mml, mwl, fl);
-                windowManager.show();
 
-                // Fullscreen inicial si está configurado.
+                // 3. Suprimir resize durante init.
+                windowManager.suppressResize(true);
+
+                // 4. Mostrar la ventana.
+                backend.show();
+                windowManager.onWindowShown();
+
+                // 5. Fullscreen inicial si está configurado.
                 if (settings.startFullscreen) {
-                    fullscreenManager.enterFullscreen(windowManager.getFrame());
+                    fullscreenManager.enterFullscreen();
                 }
 
-                // Construir y publicar la superficie inicial.
-                // getPhysicalCanvasSize usa fallback a device bounds si el canvas
-                // no reporta dimensiones válidas todavía.
-                Dimension size = fullscreenManager.getPhysicalCanvasSize(windowManager.getCanvas());
-                int w = size.width;
-                int h = size.height;
-
-                if (w > 0 && h > 0) {
-                    viewportManager.onResize(w, h);
+                // 6. Construir la surface inicial.
+                // Leer snapshot para inicializar el viewport con dimensiones reales.
+                DisplaySnapshot initSnapshot = backend.readSnapshot();
+                if (initSnapshot.hasValidDimensions()) {
+                    viewportManager.onResize(
+                        initSnapshot.canvasWidth(), initSnapshot.canvasHeight());
                 }
-
-                var surface = surfaceBuilder.build(viewportManager.getViewport(), settings.background);
+                var surface = surfaceBuilder.build(
+                    viewportManager.getViewport(), settings.background);
                 surfacePublisher.publish(surface);
 
-                // Publicar el estado real post-init a través del pipeline.
-                // Esto sincroniza pipeline.currentState con el estado real,
-                // eliminando la divergencia que causaba snapshots incorrectos
-                // en el primer ResizeCanvas tras el arranque.
+                // 7. Publicar estado inicial derivado del snapshot real.
                 pipeline.initializeState();
 
-                // suppressResize se libera DESPUÉS de que el estado es consistente.
+                // Liberar suppressResize.
                 windowManager.suppressResize(false);
-                windowManager.requestCanvasFocus();
+                backend.requestCanvasFocus();
             });
 
         } catch (InterruptedException e) {
@@ -237,63 +230,81 @@ public final class DisplayManager {
         }
     }
 
-    // ── API de render (solo para el GameLoop) ─────────────────────────────────
+    // ── Shutdown ──────────────────────────────────────────────────────────────
 
-    /**
-     * Retorna el gateway de render. La referencia es inmutable: puede
-     * obtenerse una vez en construcción y reutilizarse durante toda la sesión.
-     */
-    public RenderGateway getRenderGateway() {
-        return surfacePublisher;
+    public void addWindowCloseListener(Runnable onClose) {
+        if (onClose == null) throw new IllegalArgumentException("onClose cannot be null");
+        backend.getFrame().addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                try { onClose.run(); }
+                catch (Exception ex) {
+                    LOG.warning("DisplayManager: windowClosing callback threw: " + ex.getMessage());
+                }
+            }
+        });
     }
+
+    public void disposeWindow() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            backend.dispose();
+        } else {
+            SwingUtilities.invokeLater(backend::dispose);
+        }
+    }
+
+    // ── API de render ─────────────────────────────────────────────────────────
+
+    public RenderGateway getRenderGateway() { return surfacePublisher; }
 
     // ── API de comandos ───────────────────────────────────────────────────────
 
-    /**
-     * Drena la cola de comandos y ejecuta reconfiguraciones pendientes.
-     * DEBE llamarse desde el EDT.
-     */
-    public void drainCommands() {
-        commandQueue.drainToEDT(pipeline);
-    }
+    void drainCommands() { commandQueue.drainToEDT(pipeline); }
 
-    /**
-     * Encola un comando. Thread-safe. El drain se programa automáticamente
-     * en el EDT mediante invokeLater.
-     */
     public void enqueue(DisplayCommand command) {
         commandQueue.enqueue(command);
         SwingUtilities.invokeLater(this::drainCommands);
     }
 
-    /**
-     * Solicita alternar fullscreen. Thread-safe.
-     */
     public void requestToggleFullscreen() {
         enqueue(new DisplayCommand.ToggleFullscreen());
     }
 
     // ── Background ────────────────────────────────────────────────────────────
 
-    /**
-     * Cambia el fondo del framebuffer virtual.
-     * El cambio se aplica en la próxima reconfiguración de superficie.
-     */
     public void setBackground(DisplayBackground bg) {
-        enqueue(new DisplayCommand.RecreateBufferStrategy());
+        if (bg == null) throw new IllegalArgumentException("background cannot be null");
+        enqueue(new DisplayCommand.ChangeBackground(bg));
     }
 
-    // ── Estado y viewport ─────────────────────────────────────────────────────
+    // ── Estado y snapshot ─────────────────────────────────────────────────────
 
-    /** Estado publicado más reciente. Thread-safe (volatile read). */
-    public DisplayState getState()      { return currentState; }
-    /** Viewport calculado actual. Thread-safe (volatile en ViewportManager). */
+    /** Último DisplayState publicado por el pipeline. Thread-safe (volatile). */
+    public DisplayState getState() { return currentState; }
+
+    /**
+     * Último DisplaySnapshot leído por el Backend.
+     *
+     * Representa el estado real observado de AWT en el momento de la última
+     * lectura. Thread-safe (volatile en Backend). Puede ser null antes de
+     * que init() complete su primera lectura.
+     *
+     * Cualquier módulo autorizado puede consultar este snapshot directamente
+     * sin pasar por el Pipeline ni por una transición activa.
+     */
+    public DisplaySnapshot getSnapshot() { return backend.getLastSnapshot(); }
+
     public ViewportInfo getViewport()   { return viewportManager.getViewport(); }
     public int getVirtualWidth()        { return virtualWidth;  }
     public int getVirtualHeight()       { return virtualHeight; }
-    public Canvas  getCanvas()          { return windowManager.getCanvas(); }
     public boolean isFullscreen()       { return fullscreenManager.isFullscreen(); }
     public DisplayMode getMode()        { return fullscreenManager.getCurrentMode(); }
+
+    /**
+     * @deprecated Preferir {@link #addWindowCloseListener(Runnable)}.
+     */
+    @Deprecated(since = "hrfc-001", forRemoval = false)
+    public JFrame getFrame() { return backend.getFrame(); }
 
     // ── Resize listeners ──────────────────────────────────────────────────────
 
@@ -305,9 +316,8 @@ public final class DisplayManager {
     private void notifyResizeListenersIfNeeded(DisplayState state) {
         if (state.viewport == null || resizeListeners.isEmpty()) return;
         for (ResizeListener l : resizeListeners) {
-            try {
-                l.onResize(state.realWidth, state.realHeight, state.viewport);
-            } catch (Exception e) {
+            try { l.onResize(state.realWidth, state.realHeight, state.viewport); }
+            catch (Exception e) {
                 LOG.warning("ResizeListener threw: " + e.getMessage());
             }
         }

@@ -2,10 +2,9 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Graficos.Renderable;
-
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
+import Game.Engine.Render.Renderable;
 import java.awt.image.BufferedImage;
 
 /**
@@ -107,6 +106,22 @@ public class SpriteRenderer extends Component implements Renderable {
 
     // ── Render ───────────────────────────────────────────────────────────
 
+    /**
+     * Dibuja el sprite en la posición de pantalla del objeto.
+     *
+     * ── COMPORTAMIENTO SUB-PIXEL (truncamiento) ──────────────────────────
+     * El cast (int)(worldX - camera.getX()) trunca hacia cero.
+     * Para coordenadas positivas (el mundo opera en [0, worldWidth]):
+     *   truncamiento = floor → correcto, sin artefactos.
+     * Para coordenadas negativas (fuera del mundo normal):
+     *   -0.7 → 0 en lugar de -1 → posible error de 1px, pero este caso
+     *   no ocurre en el uso normal del juego.
+     *
+     * El truncamiento es intencional: es más rápido que Math.round() y
+     * no produce diferencia visible a 30fps con objetos en movimiento.
+     * Si en el futuro se requiere sub-pixel accuracy (interpolación,
+     * slow-motion), reemplazar el cast por (int)Math.floor(...).
+     */
     @Override
     public void render(RenderContext ctx, Camera camera) {
         if (sprite == null) return;

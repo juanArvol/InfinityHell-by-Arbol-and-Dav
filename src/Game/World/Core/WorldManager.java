@@ -1,35 +1,37 @@
 package Game.World.Core;
 
+import Game.Engine.Camera.CameraController;
+import Game.Engine.Camera.FollowCameraController;
+import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameObjects;
+import Game.Engine.Systems.DebugSettings;
 import Game.World.Generator.WorldGenerator;
-import Main.Debug.DebugGameSettings;
-
 import java.awt.Graphics2D;
 
 /**
  * Gestiona los mundos del juego: cache, generación y transiciones.
  *
- * REFACTORIZACIONES:
+ * ── HRFC-001: WorldManager como coordinador de cámara ───────────────────
  *
- * 1. ELIMINADO SINGLETON:
- *    WorldManager ya no tiene instance estático ni init()/getInstance().
- *    Se instancia normalmente y se inyecta donde se necesita (GameState).
- *    Justificación: el singleton impedía testear GameState de forma aislada
- *    y bloqueaba el camino hacia multiplayer (múltiples instancias de juego).
+ * WorldManager es ahora el punto de composición entre:
+ *   - El mundo actual (World) — expone getTrackedPosition().
+ *   - La cámara del Engine (GameCamera) — servicio de primer nivel.
+ *   - El controlador de cámara (CameraController) — comportamiento de seguimiento.
  *
- * 2. ELIMINADO instanceof Player:
- *    La detección de qué objeto es el "jugador" es responsabilidad del llamador
- *    (WorldTransitionService). WorldManager no debe conocer tipos de gameplay.
- *    Se introduce el concepto de "tracked object" para la cámara/prewarming.
+ * WorldManager es la capa de composición correcta para este wiring porque:
+ *   - Conoce cuál es el mundo actual (transiciones).
+ *   - Conoce cuál es el objeto rastreado (trackedObject).
+ *   - Sabe cuándo hay un cambio de mundo (debe reposicionar la cámara).
  *
- * 3. ELIMINADO draw(Graphics2D):
- *    WorldManager ya no sabe dibujar. Quien necesite dibujar el mundo usa
- *    WorldRenderer directamente sobre getCurrentWorld().
- *    Esto separa coordinación (WorldManager) de presentación (WorldRenderer).
+ * GameState no necesita conocer la cámara directamente; la obtiene de
+ * WorldManager cuando la necesita (por ejemplo, para UIBootstrap).
  *
- * 4. DELEGADO WorldTransitionService:
- *    La lógica de transferencia de objetos entre mundos vive en WorldTransitionService.
- *    WorldManager solo coordina: detecta vecinos a precargar y delega transferencias.
+ * ── Refactorizaciones anteriores conservadas ─────────────────────────────
+ *
+ * 1. ELIMINADO SINGLETON.
+ * 2. ELIMINADO instanceof Player (trackedObject es GameObjects).
+ * 3. DELEGADO WorldTransitionService.
+ * 4. draw() delega en WorldRenderer con la cámara del Engine.
  */
 public class WorldManager {
 
@@ -40,12 +42,17 @@ public class WorldManager {
     private final WorldTransitionService  transitionService;
     private final WorldRenderer           renderer;
 
+    /** Cámara del Engine — entidad de primer nivel. */
+    private final GameCamera camera;
+
+    /** Controlador de comportamiento de cámara actual. Intercambiable en runtime. */
+    private CameraController cameraController;
+
     private WorldCoordinator currentCoord;
     private int logicalWidth;
     private int logicalHeight;
 
-    // El objeto rastreado para prewarming de vecinos (generalmente el player).
-    // WorldManager NO sabe que es un Player; solo sabe que tiene un Transform.
+    // El objeto rastreado para prewarming de vecinos y seguimiento de cámara.
     private GameObjects trackedObject;
 
     private final java.util.concurrent.ExecutorService bgExecutor =
@@ -59,12 +66,17 @@ public class WorldManager {
     /**
      * Constructor principal — todos los colaboradores inyectados.
      *
-     * @param width      ancho lógico de cada mundo
-     * @param height     alto lógico de cada mundo
-     * @param generator  generador de mundos (inyectable para tests o custom config)
-     * @param settings   configuración del juego (para DebugRenderSystem via WorldRenderer)
+     * @param width         ancho lógico de cada mundo
+     * @param height        alto lógico de cada mundo
+     * @param virtualWidth  ancho virtual del juego (para GameCamera)
+     * @param virtualHeight alto virtual del juego (para GameCamera)
+     * @param generator     generador de mundos (inyectable para tests o custom config)
+     * @param settings      interfaz DebugSettings del Engine
      */
-    public WorldManager(int width, int height, WorldGenerator generator, DebugGameSettings settings) {
+    public WorldManager(int width, int height,
+                        int virtualWidth, int virtualHeight,
+                        WorldGenerator generator,
+                        DebugSettings settings) {
         this.logicalWidth  = width;
         this.logicalHeight = height;
         this.generator     = generator;
@@ -73,12 +85,16 @@ public class WorldManager {
         this.transitionService = new WorldTransitionService(cache, generator);
         this.currentCoord  = new WorldCoordinator(0, 0);
 
+        // Crear la cámara del Engine con los límites del mundo.
+        this.camera = new GameCamera(virtualWidth, virtualHeight);
+        this.camera.setWorldBounds(width, height);
+
         regenerateAll();
     }
 
     /** Constructor de conveniencia con generador por defecto. */
-    public WorldManager(int width, int height, DebugGameSettings settings) {
-        this(width, height, new WorldGenerator(), settings);
+    public WorldManager(int width, int height, DebugSettings settings) {
+        this(width, height, width, height, new WorldGenerator(), settings);
     }
 
     // ── Acceso al mundo actual ─────────────────────────────────────────────────
@@ -92,17 +108,44 @@ public class WorldManager {
         }
     }
 
+    // ── Cámara del Engine ─────────────────────────────────────────────────────
+
+    /**
+     * Devuelve la cámara del Engine.
+     *
+     * La cámara es una entidad de primer nivel del Engine. UIBootstrap,
+     * CrossHairHUD y cualquier sistema que necesite la posición de la vista
+     * deben usarla a través de este método.
+     */
+    public GameCamera getCamera() {
+        return camera;
+    }
+
+    /**
+     * Reemplaza el controlador de comportamiento de cámara.
+     *
+     * Permite cambiar de seguimiento a libre, a cinemático, etc. en runtime.
+     * null desactiva el controlador (la cámara no se mueve automáticamente).
+     */
+    public void setCameraController(CameraController controller) {
+        this.cameraController = controller;
+    }
+
     // ── Update ────────────────────────────────────────────────────────────────
 
     /**
-     * Actualiza el mundo actual, pre-genera vecinos y procesa transferencias.
-     *
-     * La coordinación de qué mundo es "actual" ocurre aquí cuando
-     * WorldTransitionService reporta que el objeto rastreado cruzó un borde.
+     * Actualiza el mundo actual, la cámara y pre-genera vecinos.
      */
     public void update(int virtualWidth, int virtualHeight) {
         World world = getCurrentWorld();
         world.update();
+
+        // Actualizar la cámara a través del controlador.
+        // deltaTime fijo basado en el targetFps del game loop (30fps por defecto).
+        // En el futuro se puede pasar desde GameLoop si se necesita deltaTime real.
+        if (cameraController != null) {
+            cameraController.update(camera, 1.0 / 30.0);
+        }
 
         if (trackedObject != null) {
             prewarmNeighbors(trackedObject);
@@ -114,27 +157,60 @@ public class WorldManager {
 
         if (nextCoord != null) {
             currentCoord = nextCoord;
+            World nextWorld = getCurrentWorld();
+            // Al cambiar de mundo, registrar el target en el nuevo mundo
+            // y reposicionar la cámara con snap (sin lerp) para evitar
+            // que la transición produzca un lerp visual largo.
+            if (trackedObject != null) {
+                nextWorld.setTrackTarget(trackedObject);
+                var pos = trackedObject.getTransform().getPosition();
+                camera.centerOn(pos.getX(), pos.getY());
+                camera.setWorldBounds(logicalWidth, logicalHeight);
+            }
         }
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
     /**
-     * Dibuja el mundo actual.
-     * Delegado a WorldRenderer para separar coordinación de presentación.
+     * Dibuja el mundo actual usando la cámara del Engine.
      */
     public void draw(Graphics2D g) {
-        renderer.draw(getCurrentWorld(), g);
+        renderer.draw(getCurrentWorld(), camera, g);
     }
 
-    // ── Seguimiento de objeto (para prewarming) ────────────────────────────────
+    // ── Seguimiento de objeto ─────────────────────────────────────────────────
 
     /**
-     * Registra el objeto a rastrear para prewarming de vecinos (típicamente el player).
-     * WorldManager NO sabe que es un Player — solo usa su Transform.
+     * Registra el objeto a rastrear para prewarming y cámara.
+     *
+     * Configura automáticamente un FollowCameraController si no hay ninguno.
+     * Si ya existe un controlador, no se reemplaza — solo se actualiza el target.
      */
     public void setTrackedObject(GameObjects obj) {
         this.trackedObject = obj;
+        getCurrentWorld().setTrackTarget(obj);
+
+        // Configurar controlador de seguimiento por defecto si no hay ninguno.
+        if (cameraController == null && obj != null) {
+            cameraController = new FollowCameraController(
+                () -> {
+                    // Obtener la posición del objeto rastreado en el mundo actual.
+                    GameObjects tracked = getCurrentWorld().getTrackTarget();
+                    if (tracked == null) return null;
+                    var pos = tracked.getTransform().getPosition();
+                    return new Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D(pos.getX(), pos.getY());
+                },
+                0.10f   // lerp factor: seguimiento suave (10% por tick)
+            );
+        }
+
+        // Snap inicial: colocar la cámara directamente sobre el objeto
+        // para no empezar con un lerp largo desde (0,0).
+        if (obj != null) {
+            var pos = obj.getTransform().getPosition();
+            camera.centerOn(pos.getX(), pos.getY());
+        }
     }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
@@ -143,15 +219,27 @@ public class WorldManager {
         if (newWidth <= 0 || newHeight <= 0) return;
         this.logicalWidth  = newWidth;
         this.logicalHeight = newHeight;
+        camera.setWorldBounds(newWidth, newHeight);
     }
 
     /** Alias para compatibilidad con llamadas existentes desde GameState. */
     public void onVirtualResize(int newVirtualWidth, int newVirtualHeight) {
         resize(newVirtualWidth, newVirtualHeight);
+        camera.onVirtualResolutionChanged(newVirtualWidth, newVirtualHeight);
     }
 
     public void shutdown() {
         bgExecutor.shutdown();
+        try {
+            if (!bgExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                bgExecutor.shutdownNow();
+                java.util.logging.Logger.getLogger(WorldManager.class.getName())
+                    .warning("WorldManager: bgExecutor did not terminate in 2s — forced shutdown.");
+            }
+        } catch (InterruptedException e) {
+            bgExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     // ── Prewarming de vecinos ──────────────────────────────────────────────────

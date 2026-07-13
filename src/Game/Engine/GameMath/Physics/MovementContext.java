@@ -1,7 +1,5 @@
 package Game.Engine.GameMath.Physics;
 
-import Game.World.Surface.SurfaceMaterial;
-
 /**
  * Snapshot inmutable del estado del objeto físico en un frame.
  *

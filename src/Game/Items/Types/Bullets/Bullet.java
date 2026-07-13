@@ -1,22 +1,20 @@
 package Game.Items.Types.Bullets;
 
-import Game.Engine.GameObjects;
+import Game.Enemys.Enemy;
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
-import Game.Engine.GameMath.Physics.Implementation.BulletPhysics;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.World.WorldObjects.BlockWorld;
-import Game.Enemys.Enemy;
-
+import Game.World.WorldObjects.WorldObjectsContainer;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
-public class Bullet extends GameObjects {
+public class Bullet extends GameObjects implements WorldObjectsContainer.Destroyable {
 
     private final BulletBehavior behavior;
     private final double damage;
@@ -79,12 +77,16 @@ public class Bullet extends GameObjects {
     @Override
     public void update() {
 
-        if (!bulletLife.isAlive())
+        if (!bulletLife.tick())
             return;
 
-        // FIX BUG-06: behavior.update() delega en BulletPhysics.update() que ya
-        // aplica gravedad internamente (si hasGravity=true). NO aplicar gravedad
-        // de nuevo aqui — causaria que las balas caigan al doble de velocidad.
+        // Aplicar gravedad al vector de velocidad antes de mover,
+        // solo si este behavior tiene gravedad habilitada.
+        // applyGravity() solo modifica velocity.y — no mueve la posición.
+        if (behavior.hasGravity()) {
+            getPhysics().applyGravity(false);
+        }
+
         behavior.update(this);
 
         moveByPhysics();
@@ -94,6 +96,12 @@ public class Bullet extends GameObjects {
 
     public BulletLife getBulletLife() {
         return bulletLife;
+    }
+
+    /** Implementa Destroyable — WorldObjectsContainer elimina la bala cuando muere. */
+    @Override
+    public boolean isPendingDestruction() {
+        return !bulletLife.isAlive();
     }
 
     public double getDamage() {
@@ -112,12 +120,13 @@ public class Bullet extends GameObjects {
     // ================= COLLISIONS =================
 
     @Override
-    public void onCollisionWith(Enemy enemy) {
-        enemy.damage((int) damage);
-        bulletLife.setDead();
-    }
-
-    @Override
-    public void onCollisionWith(BlockWorld block) {
+    public void onCollisionWith(GameObjects other) {
+        if (other instanceof Enemy e) {
+            e.damage((int) damage);
+            bulletLife.setDead();
+        }
+        // BlockWorld: la bala simplemente para (no hace daño al bloque)
+        // El bulletLife no se marca como dead aquí — el movimiento
+        // ya se detiene por CollisionsSystem al resolver el SweptAABB.
     }
 }

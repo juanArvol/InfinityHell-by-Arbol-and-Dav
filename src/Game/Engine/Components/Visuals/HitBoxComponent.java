@@ -2,8 +2,9 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.UI.POV.*;
-
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.DebugRenderable;
+import Game.Engine.Render.RenderContext;
 import java.awt.Color;
 import java.awt.Rectangle;
 
@@ -24,11 +25,24 @@ import java.awt.Rectangle;
  * para dibujarlos. Sin lógica de colisión propia.
  *
  * Si no usás debug mode, no necesitás este componente en producción.
+ *
+ * ── CORRECCIÓN: camera offset aplicado ──────────────────────────────────
+ * Problema anterior:
+ *   debugRender() obtenía los bounds del ColliderComponent (coordenadas de
+ *   mundo absolutas) y los pasaba directamente a ctx.drawHitbox() sin
+ *   aplicar el offset de cámara. La hitbox aparecía desplazada respecto
+ *   al sprite, que sí aplica el offset vía SpriteRenderer.render().
+ *
+ * Solución:
+ *   debugRender(RenderContext, Camera) recibe la cámara y aplica el offset
+ *   antes de dibujar. La firma de DebugRenderable se actualiza para aceptar
+ *   Camera como segundo parámetro, igual que Renderable.render(ctx, camera).
+ *   Esto mantiene consistencia entre los dos contratos visuales del Engine.
  */
 public class HitBoxComponent extends Component implements DebugRenderable {
 
-    private boolean visible   = true;
-    private Color debugColor  = Color.RED;
+    private boolean visible  = true;
+    private Color debugColor = Color.RED;
 
     public HitBoxComponent() {}
 
@@ -37,15 +51,17 @@ public class HitBoxComponent extends Component implements DebugRenderable {
     }
 
     @Override
-    public void debugRender(RenderContext ctx) {
+    public void debugRender(RenderContext ctx, Camera camera) {
         if (!visible) return;
 
         ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
         if (col == null) return;
 
         Rectangle bounds = col.getBounds();
-        int x = (int)(bounds.x );
-        int y = (int)(bounds.y );
+
+        // Aplicar camera offset para que la hitbox coincida con el sprite en pantalla.
+        int x = (int)(bounds.x - camera.getX());
+        int y = (int)(bounds.y - camera.getY());
 
         ctx.drawHitbox(new Rectangle(x, y, bounds.width, bounds.height), debugColor);
     }
@@ -54,5 +70,4 @@ public class HitBoxComponent extends Component implements DebugRenderable {
     public boolean isVisible()           { return visible; }
     public void setDebugColor(Color c)   { this.debugColor = c; }
     public Color getDebugColor()         { return debugColor; }
-
 }

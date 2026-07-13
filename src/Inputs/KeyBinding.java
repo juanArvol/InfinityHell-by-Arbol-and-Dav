@@ -13,7 +13,8 @@ package Inputs;
  *
  *  stateKey  — nombre semántico del estado continuo que expone esta tecla,
  *              o null si la tecla solo produce edge (ej. F3, F11, ESCAPE).
- *              Se usa para rellenar KeyBoard.states y para el reset en focusLost.
+ *              Se usa para rellenar el mapa de estados de la instancia KeyBoard
+ *              y para el reset en focusLost.
  *
  *  edgeAction — acción semántica disparada en edge (rising edge), o null si
  *               la tecla solo alimenta un estado continuo sin edge propio.

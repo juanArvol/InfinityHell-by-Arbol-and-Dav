@@ -2,10 +2,9 @@ package Game.Engine.Systems;
 
 import Game.Engine.Component;
 import Game.Engine.GameObjects;
-import Game.UI.POV.Camera;
-import Game.UI.POV.RenderContext;
-import Graficos.Renderable;
-
+import Game.Engine.Render.Camera;
+import Game.Engine.Render.RenderContext;
+import Game.Engine.Render.Renderable;
 import java.util.List;
 
 /**

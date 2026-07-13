@@ -1,9 +1,10 @@
 package Game.Items.Types.Weapons.Modifiers;
 
-import Game.Enemys.Components.StatusEffectComponent;
+import Game.Enemys.Enemy;
+import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Enemys.Enemy;
 
 /**
  * Modificador de veneno — las balas aplican DoT al impactar.
@@ -77,12 +78,14 @@ public class PoisonModifier extends WeaponModifier {
         }
 
         @Override
-        public boolean tick(Enemy enemy) {
+        public boolean tick(GameObjects entity) {
             if (remaining <= 0) return false;
             remaining--;
             timer--;
             if (timer <= 0) {
-                enemy.damage(dmgPerTick);
+                if (entity instanceof Enemy enemy) {
+                    enemy.damage(dmgPerTick);
+                }
                 timer = interval;
             }
             return remaining > 0;
