@@ -58,6 +58,21 @@ public final class GameLoop implements Runnable {
     private Thread        thread;
     private volatile boolean running = false;
 
+    /**
+     * Número máximo de updates de catch-up por ciclo de loop.
+     *
+     * Si el sistema se retrasa (GC pause, OS preemption, depurador), delta
+     * puede acumularse más allá de un frame. Sin un límite, el loop
+     * ejecutaría tantos updates como delta acumulado, produciendo un sprint
+     * de lógica sin renders intercalados que puede durar cientos de ms.
+     *
+     * Con este límite, tras un lag spike el juego "pierde" esos frames de
+     * lógica en lugar de intentar recuperarlos todos de golpe. Para un juego
+     * de acción esto es el comportamiento correcto: la simulación avanza de
+     * forma continua aunque pierda frames durante el spike.
+     */
+    private static final double MAX_DELTA_CATCH_UP = 5.0;
+
     public GameLoop(RenderGateway renderGateway,
                     GameState gameState,
                     KeyBoard keyboard,
@@ -79,7 +94,11 @@ public final class GameLoop implements Runnable {
 
     public void stop() {
         running = false;
-        try { thread.join(); } catch (InterruptedException e) {
+        Thread t = thread;
+        if (t == null) return;
+        try {
+            t.join(5_000); // espera máximo 5 segundos para shutdown limpio
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
     }
@@ -96,6 +115,12 @@ public final class GameLoop implements Runnable {
             delta += (now - lastTime) / targetTime;
             timer += (now - lastTime);
             lastTime = now;
+
+            // Limitar el catch-up para evitar sprints de lógica ilimitados
+            // tras lag spikes (GC pause, depurador, OS preemption).
+            if (delta > MAX_DELTA_CATCH_UP) {
+                delta = MAX_DELTA_CATCH_UP;
+            }
 
             if (delta >= 1) {
                 update();

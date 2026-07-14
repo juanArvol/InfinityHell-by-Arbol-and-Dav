@@ -205,6 +205,41 @@ public final class RenderSurface {
     int               getVirtualHeight()  { return virtualHeight;  }
     DisplayBackground getBackground()     { return background;     }
 
+    /**
+     * Crea una nueva RenderSurface que comparte la misma BufferStrategy,
+     * framebuffer y viewport, pero con un fondo diferente.
+     *
+     * Usado exclusivamente por el pipeline para implementar ChangeBackground
+     * sin recrear la BufferStrategy. La surface original debe ser descartada
+     * con markDisposed() DESPUÉS de publicar la nueva — el dispose inmediato
+     * de markDisposed() destruiría la BS compartida, por lo que esta operación
+     * es solo válida si la surface original no se usa ya más por el GameLoop.
+     *
+     * PRECONDICIÓN: la surface original debe haber sido retirada de publishedRef
+     * mediante un swap atómico ANTES de llamar markDisposed() sobre ella.
+     * El flujo correcto es:
+     *   1. newSurface = existing.withBackground(bg)
+     *   2. publishedRef.getAndSet(newSurface)  → retorna oldSurface
+     *   3. oldSurface.markDisposed()           → llamar DESPUÉS del swap
+     *
+     * ADVERTENCIA: no llamar markDisposed() sobre oldSurface si newSurface
+     * comparte su BufferStrategy — markDisposed() destruiría el peer AWT.
+     * El swap de fondo debe hacerse via publishBackground(), que maneja este
+     * protocolo correctamente.
+     *
+     * Package-private: solo para uso desde SurfacePublisher.publishBackground().
+     */
+    RenderSurface withBackground(DisplayBackground newBackground) {
+        return new RenderSurface(
+            this.bufferStrategy,
+            this.framebuffer,
+            this.viewport,
+            this.virtualWidth,
+            this.virtualHeight,
+            newBackground != null ? newBackground : this.background
+        );
+    }
+
     // ── Privados ──────────────────────────────────────────────────────────────
 
     /**

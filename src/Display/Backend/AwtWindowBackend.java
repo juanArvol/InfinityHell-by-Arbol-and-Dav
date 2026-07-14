@@ -221,6 +221,7 @@ public final class AwtWindowBackend {
         frame.pack();                               // peer recreado
         frame.setVisible(true);
         frame.validate();
+        frame.getContentPane().validate();
 
         LOG.info("AwtWindowBackend: exited fullscreen → WINDOWED.");
     }
@@ -463,6 +464,7 @@ public final class AwtWindowBackend {
         device.setFullScreenWindow(frame);
         frame.setVisible(true);
         frame.validate();
+        frame.getContentPane().validate();
 
         LOG.info("AwtWindowBackend: entered FULLSCREEN_EXCLUSIVE.");
     }

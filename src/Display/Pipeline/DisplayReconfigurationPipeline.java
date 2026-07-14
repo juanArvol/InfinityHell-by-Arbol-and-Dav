@@ -160,9 +160,10 @@ public final class DisplayReconfigurationPipeline
     public void execute(DisplayCommand command) {
         assertEDT();
         switch (command) {
-            case DisplayCommand.ResizeCanvas rc    -> { executeResize(rc);  return; }
-            case DisplayCommand.SuspendRendering s -> { executeSuspend(s);  return; }
-            case DisplayCommand.ResumeRendering r  -> { executeResume(r);   return; }
+            case DisplayCommand.ResizeCanvas rc       -> { executeResize(rc);           return; }
+            case DisplayCommand.SuspendRendering s    -> { executeSuspend(s);           return; }
+            case DisplayCommand.ResumeRendering r     -> { executeResume(r);            return; }
+            case DisplayCommand.ChangeBackground cb   -> { executeChangeBackground(cb); return; }
             default -> {}
         }
         executeFullPipeline(command);
@@ -174,6 +175,27 @@ public final class DisplayReconfigurationPipeline
         LOG.fine("Pipeline: SuspendRendering — closing gate");
         surfacePublisher.closeGate();
         publishTransientState(SurfaceState.SUSPENDED);
+    }
+
+    // ── ChangeBackground ──────────────────────────────────────────────────────
+
+    /**
+     * Actualiza el fondo activo sin reconstruir la BufferStrategy.
+     *
+     * Actualiza this.background para futuras reconstrucciones y propaga el
+     * nuevo fondo a la surface publicada mediante SurfacePublisher.publishBackground(),
+     * que hace un swap atómico sin destruir la BufferStrategy existente.
+     *
+     * El nuevo fondo se aplica en getLayerGraphics(WORLD_BACKGROUND) al inicio
+     * del siguiente frame: la gate no se cierra y el GameLoop no experimenta
+     * ninguna interrupción.
+     *
+     * EDT únicamente.
+     */
+    private void executeChangeBackground(DisplayCommand.ChangeBackground cmd) {
+        this.background = cmd.background();
+        surfacePublisher.publishBackground(this.background);
+        LOG.info("Pipeline: background changed to " + cmd.background());
     }
 
     // ── ResumeRendering ───────────────────────────────────────────────────────
@@ -370,7 +392,7 @@ public final class DisplayReconfigurationPipeline
                             + " — snapshot not usable after request: " + usable.summary()
                             + " — attempting emergency path");
                 // No hacer return inmediato: intentar recuperación de emergencia.
-                attemptEmergencyRecovery(command, snapshot);
+                attemptEmergencyRecovery(command);
                 return;
             }
 
@@ -402,7 +424,7 @@ public final class DisplayReconfigurationPipeline
         } catch (Exception e) {
             LOG.warning("Pipeline: exception during "
                         + command.getClass().getSimpleName() + ": " + e.getMessage());
-            attemptEmergencyRecovery(command, backend.readSnapshot());
+            attemptEmergencyRecovery(command);
 
         } finally {
             // FASE 11 + 12: siempre
@@ -421,8 +443,7 @@ public final class DisplayReconfigurationPipeline
      * El estado publicado siempre proviene del snapshot leído en ese instante,
      * nunca de una suposición sobre lo que debería haber ocurrido.
      */
-    private void attemptEmergencyRecovery(DisplayCommand failedCommand,
-                                          DisplaySnapshot contextSnapshot) {
+    private void attemptEmergencyRecovery(DisplayCommand failedCommand) {
         LOG.warning("Pipeline: emergency recovery after failed "
                     + failedCommand.getClass().getSimpleName());
         try {
@@ -513,8 +534,9 @@ public final class DisplayReconfigurationPipeline
                 LOG.fine("Pipeline: explicit surface rebuild (unpublish phase 4, rebuild phase 9)");
 
             case DisplayCommand.ChangeBackground cmd -> {
-                this.background = cmd.background();
-                LOG.info("Pipeline: background changed to " + cmd.background());
+                // ChangeBackground es manejado por executeChangeBackground() antes de
+                // llegar aquí. Si llega a applyRequest(), es un error de programación.
+                throw new IllegalStateException("ChangeBackground should not reach applyRequest()");
             }
 
             case DisplayCommand.ResizeCanvas ignored ->
@@ -627,7 +649,7 @@ public final class DisplayReconfigurationPipeline
                 DisplayTransitionState.RECONFIGURING_DISPLAY;
 
             case DisplayCommand.ChangeBackground ignored ->
-                DisplayTransitionState.RECONFIGURING_DISPLAY;
+                throw new AssertionError("ChangeBackground should not reach resolveTransition()");
 
             case DisplayCommand.ResizeCanvas ignored ->
                 throw new AssertionError("ResizeCanvas should not reach resolveTransition()");

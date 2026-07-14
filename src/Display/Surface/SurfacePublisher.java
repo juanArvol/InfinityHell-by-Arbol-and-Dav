@@ -1,5 +1,6 @@
 package Display.Surface;
 
+import Display.Background.DisplayBackground;
 import Display.Settings.ScalingMode;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
@@ -231,6 +232,42 @@ public final class SurfacePublisher implements RenderGateway {
      */
     public boolean isGateOpen() {
         return gate.isOpen();
+    }
+
+    /**
+     * Actualiza el fondo de la surface publicada sin recrear la BufferStrategy.
+     *
+     * Crea una nueva RenderSurface que comparte la BS de la surface actual,
+     * reemplazando solo el background. El framebuffer se limpiará con el nuevo
+     * fondo al inicio del siguiente frame (en getLayerGraphics(WORLD_BACKGROUND)).
+     *
+     * Si no hay surface publicada, no hace nada — el nuevo fondo se aplicará
+     * cuando se construya la próxima surface completa.
+     *
+     * IMPORTANTE: la surface anterior NO se marca disposed porque comparte su
+     * BufferStrategy con la nueva. El refCount de la antigua se abandona sin
+     * llamar markDisposed(). Esto es seguro porque:
+     *   - La BS sigue siendo válida y es la misma.
+     *   - La surface antigua queda con refCount >= 0 sin sentinel → el GC la
+     *     recogerá. disposeNow() nunca se llamará sobre ella porque el sentinel
+     *     nunca se aplica, pero eso es correcto: no queremos destruir la BS.
+     *
+     * EDT únicamente.
+     *
+     * @return true si se actualizó la surface; false si no había surface publicada.
+     */
+    public boolean publishBackground(DisplayBackground newBackground) {
+        RenderSurface current = publishedRef.get();
+        if (current == null) {
+            LOG.fine("SurfacePublisher.publishBackground(): no surface published — background deferred");
+            return false;
+        }
+
+        RenderSurface updated = current.withBackground(newBackground);
+        // Swap atómico: reemplazar sin marcar disposed la anterior (comparten BS).
+        publishedRef.compareAndSet(current, updated);
+        LOG.fine("SurfacePublisher.publishBackground(): background updated in-place");
+        return true;
     }
 
     // ── RenderGateway (GameLoop thread) ───────────────────────────────────────

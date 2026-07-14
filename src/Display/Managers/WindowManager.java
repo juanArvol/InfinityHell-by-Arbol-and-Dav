@@ -53,8 +53,8 @@ public final class WindowManager {
     private volatile boolean suppressResize = false;
     private boolean visible = false;
 
-    private int lastNotifiedWidth  = -1;
-    private int lastNotifiedHeight = -1;
+    private volatile int lastNotifiedWidth  = -1;
+    private volatile int lastNotifiedHeight = -1;
 
     public WindowManager(AwtWindowBackend backend, DisplaySettings settings) {
         this.backend     = backend;

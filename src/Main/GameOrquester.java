@@ -74,7 +74,7 @@ public class GameOrquester {
             .useInterpolation(false)
             .targetFps(30)
             .fillColor(Color.BLACK)
-            .background(SolidColorBackground.WHITE)
+            .background(SolidColorBackground.BLACK)
             .build();
 
         display = new DisplayManager(settings);
