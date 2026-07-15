@@ -1,9 +1,9 @@
 package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.RenderContext;
-import Game.Engine.Render.Renderable;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.Renderable;
 import java.awt.Color;
 
 /**
@@ -44,7 +44,7 @@ public class RectRenderer extends Component implements Renderable {
     }
 
     @Override
-    public void render(RenderContext ctx, Camera camera) {
+    public void render(RenderContext ctx, RenderCamera camera) {
         var pos = gameObject.getTransform().getPosition();
 
         int x = (int)(pos.getX() - camera.getX()) + offsetX;

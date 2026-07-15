@@ -2,9 +2,9 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.RenderContext;
-import Game.Engine.Render.Renderable;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.Renderable;
 
 /**
  * Componente de sombra proyectada para objetos con altura Z.
@@ -41,7 +41,7 @@ public class ShadowComponent extends Component implements Renderable {
     }
 
     @Override
-    public void render(RenderContext ctx, Camera camera) {
+    public void render(RenderContext ctx, RenderCamera camera) {
         if (!(gameObject.getTransform() instanceof Transform3D t3d)) {
             return; // sin Z, sin sombra
         }

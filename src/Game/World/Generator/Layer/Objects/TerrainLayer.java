@@ -3,8 +3,7 @@ package Game.World.Generator.Layer.Objects;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
-import Graficos.Around.Blocks.BlocksAssets;
-
+import Sprites.Around.Blocks.BlocksAssets;
 import java.util.Random;
 
 /**
@@ -55,7 +54,7 @@ public class TerrainLayer implements WorldLayer {
             width,
             groundY,
             groundHeight,
-            BlocksAssets.suelo.getSprite()
+            BlocksAssets.getSueloImage()
         ));
     }
 }

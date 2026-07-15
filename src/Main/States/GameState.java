@@ -91,7 +91,7 @@ public class GameState {
 
     public void update() {
         Mechanics.updateMechanics(player);
-        worldManager.update(virtualWidth, virtualHeight);
+        worldManager.update();
         uiManager.update();
     }
 
@@ -142,5 +142,19 @@ public class GameState {
      */
     public void registerMouseInput(MouseInput mouse) {
         mouse.addMouseActionListener(player.getCombat());
+    }
+
+    /**
+     * Desregistra el combat del player como listener de eventos de ratón.
+     * Debe llamarse desde GameOrquester antes de destruir GameState o al
+     * cambiar de estado, para evitar que el antiguo PlayerCombat siga
+     * recibiendo eventos de click después de que el estado fue reemplazado.
+     *
+     * CONTRATO:
+     *   registerMouseInput(mouse)   → al activar el GameState
+     *   unregisterMouseInput(mouse) → al desactivar o destruir el GameState
+     */
+    public void unregisterMouseInput(MouseInput mouse) {
+        mouse.removeMouseActionListener(player.getCombat());
     }
 }

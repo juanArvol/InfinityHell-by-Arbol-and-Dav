@@ -6,7 +6,6 @@ import Game.Items.Creation.ItemRegistry;
 import Game.Player.Player;
 import Game.World.Core.World;
 import Game.World.Core.WorldManager;
-import Graficos.Player.PlayerAssets;
 
 /**
  * Bootstrap del mundo de juego.
@@ -52,7 +51,9 @@ public final class GameWorldBootstrap {
         );
 
         // ── Player ───────────────────────────────────────────────────────────
-        player = new Player(spawnPos, PlayerAssets.idle.getSprite(), world::add);
+        // HRFC-002: Player ya no recibe BufferedImage — obtiene su SpriteHandle
+        // de PlayerAssets internamente. El Gameplay nunca conoce la imagen.
+        player = new Player(spawnPos, world::add);
         world.add(player);
 
         // ── Cámara y tracking ─────────────────────────────────────────────────

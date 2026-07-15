@@ -3,7 +3,7 @@ package Game.Items.Types.Bullets;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
-import Graficos.Bullets.BulletAssets;
+import Sprites.Bullets.BulletAssets;
 
 /**
  * Extensión de BulletFactory — añade createBulletWithBehavior() para
@@ -38,7 +38,7 @@ public class BulletFactory {
 
         return new Bullet(
             spawn,
-            BulletAssets.bala.getSprite(),
+            BulletAssets.balaHandle.resolveDefault().getImage(),
             comport,
             xSpeed,
             ySpeed,
@@ -88,7 +88,7 @@ public class BulletFactory {
 
         return new Bullet(
             spawn,
-            BulletAssets.bala.getSprite(),
+            BulletAssets.balaHandle.resolveDefault().getImage(),
             behavior,
             xSpeed,
             ySpeed,

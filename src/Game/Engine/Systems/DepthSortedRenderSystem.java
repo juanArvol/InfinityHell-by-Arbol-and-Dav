@@ -3,9 +3,9 @@ package Game.Engine.Systems;
 import Game.Engine.Component;
 import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
 import Game.Engine.GameObjects;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.RenderContext;
-import Game.Engine.Render.Renderable;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.Renderable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -72,7 +72,7 @@ public class DepthSortedRenderSystem {
      */
     public void render(List<GameObjects> objects,
                        RenderContext ctx,
-                       Camera camera) {
+                       RenderCamera camera) {
 
         // Buffer local: stateless, reentrante, sin retención de memoria entre frames.
         List<GameObjects> sortBuffer = new ArrayList<>(objects);

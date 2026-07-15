@@ -4,12 +4,13 @@ import Display.Background.SolidColorBackground;
 import Display.Managers.DisplayManager;
 import Display.Settings.DisplaySettings;
 import Display.Settings.ScalingMode;
-import Graficos.Assets;
 import Inputs.KeyBoard;
 import Inputs.Listeners.KeyActionListener;
 import Inputs.MouseInput;
 import Main.Debug.DebugGameSettings;
 import Main.States.GameState;
+import Sprites.Assets;
+
 import java.awt.Color;
 
 /**
@@ -74,7 +75,7 @@ public class GameOrquester {
             .useInterpolation(false)
             .targetFps(30)
             .fillColor(Color.BLACK)
-            .background(SolidColorBackground.BLACK)
+            .background(SolidColorBackground.WHITE)
             .build();
 
         display = new DisplayManager(settings);
@@ -104,6 +105,13 @@ public class GameOrquester {
         state = new GameState(
             display.getVirtualWidth(),
             display.getVirtualHeight()
+        );
+
+        // Conectar cambios de resolución virtual al GameState.
+        // Si se envía DisplayCommand.ChangeResolution, GameState, WorldManager
+        // y GameCamera se actualizan con las nuevas dimensiones virtuales.
+        display.addVirtualResolutionListener((w, h) ->
+            state.onVirtualDimensionsChanged(w, h)
         );
 
         // ── 8. Game Loop ──────────────────────────────────────────────────────

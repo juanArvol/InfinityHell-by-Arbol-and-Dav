@@ -2,9 +2,9 @@ package Game.Engine.GameMath.Physics.Types.Physics3D;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Physics3DComponent;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.RenderContext;
-import Game.Engine.Render.Renderable;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.Renderable;
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;
@@ -53,7 +53,7 @@ public class ShadowComponent3D extends Component implements Renderable {
     }
 
     @Override
-    public void render(RenderContext ctx, Camera camera) {
+    public void render(RenderContext ctx, RenderCamera camera) {
         var pos = gameObject.getTransform().getPosition();
 
         // Posición base de la sombra (en el suelo, bajo el objeto)
@@ -84,19 +84,29 @@ public class ShadowComponent3D extends Component implements Renderable {
 
         Graphics2D g = ctx.getGraphics2D();
 
-        // Guardar estado del graphics
-        Composite original = g.getComposite();
-        Object hint = g.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
+        // Guardar estado completo del graphics antes de modificarlo.
+        // Es imprescindible restaurar: composite, color Y el hint de antialiasing,
+        // porque este componente accede directamente al Graphics2D base del contexto.
+        // Un estado no restaurado contamina todos los Renderable posteriores del frame.
+        Composite originalComposite = g.getComposite();
+        Color     originalColor     = g.getColor();
+        Object    originalHint      = g.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
         g.setColor(Color.BLACK);
         g.fill(new Ellipse2D.Double(ex, ey, ellipseW, ellipseH));
 
-        // Restaurar estado
-        g.setComposite(original);
-        if (hint != null) {
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, hint);
+        // Restaurar estado completo.
+        // Si originalHint es null, se elimina el hint explícitamente para no dejar
+        // un antialias forzado activo en el contexto base entre renderizables.
+        g.setComposite(originalComposite);
+        g.setColor(originalColor);
+        if (originalHint != null) {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, originalHint);
+        } else {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                               RenderingHints.VALUE_ANTIALIAS_DEFAULT);
         }
     }
 }

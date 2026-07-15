@@ -2,9 +2,9 @@ package Game.Engine.Systems;
 
 import Game.Engine.Component;
 import Game.Engine.GameObjects;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.DebugRenderable;
-import Game.Engine.Render.RenderContext;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.DebugRenderable;
 import java.util.List;
 
 /**
@@ -15,7 +15,7 @@ import java.util.List;
  * Esto elimina la única dependencia que quedaba del Engine hacia Main.*.
  *
  * El wiring (pasar la instancia concreta) es responsabilidad de la capa
- * de composición (WorldRenderer). DebugGameSettings implementa DebugSettings.
+ * de composición (SceneRenderer). DebugGameSettings implementa DebugSettings.
  */
 public class DebugRenderSystem {
 
@@ -25,7 +25,7 @@ public class DebugRenderSystem {
         this.settings = settings;
     }
 
-    public void render(List<GameObjects> objects, RenderContext ctx, Camera camera) {
+    public void render(List<GameObjects> objects, RenderContext ctx, RenderCamera camera) {
         if (!settings.isDebugEnabled()) return;
 
         for (GameObjects obj : objects) {

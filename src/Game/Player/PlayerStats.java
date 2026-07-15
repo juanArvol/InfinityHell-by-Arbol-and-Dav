@@ -109,11 +109,15 @@ public class PlayerStats implements HealthView {
     /**
      * HP actual del jugador.
      * Delega en HealthComponent — fuente de verdad de la salud.
+     *
+     * CORRECCIÓN F-01: la versión anterior calculaba (int)(maxHP * healthPercent),
+     * que es un roundtrip double innecesario. HealthComponent.getCurrent() ya
+     * devuelve el valor entero exacto, sin pérdida de precisión.
      */
     @Override
     public int getLife() {
         if (healthComponent == null) return 0;
-        return (int)(healthComponent.getMaxHP() * healthComponent.getHealthPercent());
+        return healthComponent.getCurrent();
     }
 
     /**

@@ -3,8 +3,8 @@ package Game.Player;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.HealthComponent;
-import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.Components.Visuals.AnimationController;
 import Game.Engine.Components.Visuals.HitBoxComponent;
 import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
@@ -12,8 +12,8 @@ import Game.Engine.MovingObjects;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Bullets.Bullet;
+import Sprites.Player.PlayerAssets;
 import java.awt.Color;
-import java.awt.image.BufferedImage;
 import java.util.function.Consumer;
 
 /**
@@ -65,25 +65,36 @@ public class Player extends MovingObjects {
     // Configuración de salud del jugador
     // BASE_HP     = vida con la que el jugador comienza la partida
     // BASE_HP_MAX = vida máxima que puede tener (techo de curación)
-    private static final int BASE_HP     = 100;
-    private static final int BASE_HP_MAX = 200;
+    private static final int    BASE_HP      = 100;
+    private static final int    BASE_HP_MAX  = 200;
+
+    /** Gravedad aplicada a la física del jugador (píxeles virtuales/frame²). */
+    private static final double BASE_GRAVITY = 0.78;
 
     private final PlayerController controller;
     private final PlayerCombat     combat;
     private final PlayerStats      stats;
     private final PlayerState      state;
-    private final Physics2DComponent pc;
 
     private final Inventory     inventory;
     private final EquippedItems equippedItems;
 
     /**
+     * ── HRFC-002 ──────────────────────────────────────────────────────────
+     * El constructor ya NO recibe BufferedImage. El Player obtiene su handle
+     * de PlayerAssets directamente. GameWorldBootstrap no necesita conocer
+     * la imagen del jugador — solo su posición de spawn.
+     *
      * @param spawn         posición inicial
-     * @param texture       textura del sprite
      * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
      */
-    public Player(Vector2D spawn, BufferedImage texture, Consumer<Bullet> bulletSpawner) {
-        super(spawn, texture, new PlayerPhysics(0.78), SizeSyncMode.NONE);
+    public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner) {
+        // Imagen inicial para el SpriteRenderer base (null-safe — AnimationController
+        // toma el control desde el primer update() y setea el frame correcto).
+        super(spawn,
+              PlayerAssets.handle.resolveDefault().getImage(),
+              new PlayerPhysics(BASE_GRAVITY),
+              SizeSyncMode.NONE);
 
         // ── Componentes de gameplay (Entity) ─────────────────────────────
         // HealthComponent gestiona la salud — PlayerStats ya no lo hace.
@@ -131,9 +142,10 @@ public class Player extends MovingObjects {
         }
 
         addComponent(new HitBoxComponent(Color.RED));
+        // AnimationController ANTES que PlayerRenderer: PlayerRenderer.start()
+        // busca AnimationController en el mismo objeto.
+        addComponent(new AnimationController(PlayerAssets.handle));
         addComponent(new PlayerRenderer(state));
-
-        pc = physicsComponent;
 
         // ── Inventario y equipamiento ─────────────────────────────────────
         // getMaxInventorySlots() es la única fuente de verdad para el tamaño del inventario.
@@ -153,8 +165,8 @@ public class Player extends MovingObjects {
         // onGround lo establece CollisionsSystem (FASE 0) en el frame anterior;
         // aquí solo lo copiamos a PlayerState para que el controlador y las
         // animaciones puedan consultarlo sin acceder directamente a la física.
-        if (pc != null) {
-            state.setEnElSuelo(pc.getPhysics().getOnGround());
+        if (physicsComponent != null) {
+            state.setEnElSuelo(physicsComponent.getPhysics().getOnGround());
         }
 
         controller.update();
@@ -166,7 +178,13 @@ public class Player extends MovingObjects {
         // el valor de onGround del frame anterior. Ver CollisionsSystem.java.
 
         super.update(); // actualiza todos los Component (HealthComponent, StatusEffectComponent, etc.)
-        stats.update(); // actualiza frames de invulnerabilidad
+
+        // PlayerStats no es un Component (no encaja en el ciclo de vida del engine:
+        // no necesita start(), no se añade/quita en runtime, gestiona lógica de gameplay
+        // pura). Se actualiza manualmente aquí, después de los Component, para que los
+        // frames de invulnerabilidad decremente DESPUÉS de que el daño del frame actual
+        // ya fue procesado por HealthComponent.
+        stats.update();
     }
 
     // ── API de daño con invulnerabilidad ──────────────────────────────────

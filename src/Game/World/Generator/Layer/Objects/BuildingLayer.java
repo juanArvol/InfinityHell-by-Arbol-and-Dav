@@ -3,8 +3,7 @@ package Game.World.Generator.Layer.Objects;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
-import Graficos.Obstacles.ObstaclesAssets;
-
+import Sprites.Obstacles.ObstaclesAssets;
 import java.util.Random;
 
 /**
@@ -64,7 +63,7 @@ public class BuildingLayer implements WorldLayer {
     }
 
     private void placeBuilding(World world, int ox, int oy) {
-        var spr = ObstaclesAssets.mondongo.getSprite(); // Reemplazar con WallAsset cuando exista
+        var spr = ObstaclesAssets.getMondongoImage(); // Reemplazar con WallAsset cuando exista
 
         // Pared superior
         world.add(WorldObjectFactory.obstacle(ox, oy, buildingW, wallThickness, spr));

@@ -4,6 +4,7 @@ import Game.Engine.Camera.CameraController;
 import Game.Engine.Camera.FollowCameraController;
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameObjects;
+import Game.Engine.RenderEngine.Scene.SceneRenderer;
 import Game.Engine.Systems.DebugSettings;
 import Game.World.Generator.WorldGenerator;
 import java.awt.Graphics2D;
@@ -11,36 +12,42 @@ import java.awt.Graphics2D;
 /**
  * Gestiona los mundos del juego: cache, generación y transiciones.
  *
- * ── HRFC-001: WorldManager como coordinador de cámara ───────────────────
+ * ── Responsabilidades ────────────────────────────────────────────────────
  *
- * WorldManager es ahora el punto de composición entre:
+ * WorldManager es el punto de composición entre:
  *   - El mundo actual (World) — expone getTrackedPosition().
  *   - La cámara del Engine (GameCamera) — servicio de primer nivel.
  *   - El controlador de cámara (CameraController) — comportamiento de seguimiento.
  *
- * WorldManager es la capa de composición correcta para este wiring porque:
+ * Es la capa de composición correcta para este wiring porque:
  *   - Conoce cuál es el mundo actual (transiciones).
  *   - Conoce cuál es el objeto rastreado (trackedObject).
  *   - Sabe cuándo hay un cambio de mundo (debe reposicionar la cámara).
  *
  * GameState no necesita conocer la cámara directamente; la obtiene de
  * WorldManager cuando la necesita (por ejemplo, para UIBootstrap).
- *
- * ── Refactorizaciones anteriores conservadas ─────────────────────────────
- *
- * 1. ELIMINADO SINGLETON.
- * 2. ELIMINADO instanceof Player (trackedObject es GameObjects).
- * 3. DELEGADO WorldTransitionService.
- * 4. draw() delega en WorldRenderer con la cámara del Engine.
  */
 public class WorldManager {
 
     private static final int PREWARM_THRESHOLD = 300;
 
+    /**
+     * Delta de tiempo fijo pasado al CameraController en cada tick.
+     *
+     * Debe coincidir con el targetFps configurado en DisplaySettings y GameLoop.
+     * El valor actual (1/30) corresponde a 30 fps, que es el targetFps configurado
+     * en GameOrquester.
+     *
+     * Si el targetFps cambia en GameOrquester, este valor debe actualizarse.
+     * El lugar correcto a largo plazo es recibir targetFps como parámetro de
+     * constructor e inicializar esta constante como campo: 1.0 / targetFps.
+     */
+    private static final double CAMERA_DELTA_TIME = 1.0 / 30.0;
+
     private final WorldCache              cache;
     private final WorldGenerator          generator;
     private final WorldTransitionService  transitionService;
-    private final WorldRenderer           renderer;
+    private final SceneRenderer           renderer;
 
     /** Cámara del Engine — entidad de primer nivel. */
     private final GameCamera camera;
@@ -81,7 +88,7 @@ public class WorldManager {
         this.logicalHeight = height;
         this.generator     = generator;
         this.cache         = new WorldCache();
-        this.renderer      = new WorldRenderer(settings);
+        this.renderer      = new SceneRenderer(settings);
         this.transitionService = new WorldTransitionService(cache, generator);
         this.currentCoord  = new WorldCoordinator(0, 0);
 
@@ -136,15 +143,12 @@ public class WorldManager {
     /**
      * Actualiza el mundo actual, la cámara y pre-genera vecinos.
      */
-    public void update(int virtualWidth, int virtualHeight) {
+    public void update() {
         World world = getCurrentWorld();
         world.update();
 
-        // Actualizar la cámara a través del controlador.
-        // deltaTime fijo basado en el targetFps del game loop (30fps por defecto).
-        // En el futuro se puede pasar desde GameLoop si se necesita deltaTime real.
         if (cameraController != null) {
-            cameraController.update(camera, 1.0 / 30.0);
+            cameraController.update(camera, CAMERA_DELTA_TIME);
         }
 
         if (trackedObject != null) {
@@ -174,9 +178,14 @@ public class WorldManager {
 
     /**
      * Dibuja el mundo actual usando la cámara del Engine.
+     *
+     * Las dimensiones virtuales se obtienen de GameCamera, que las recibió
+     * en el constructor y las mantiene actualizadas via onVirtualResolutionChanged().
+     * Son las mismas que las del Display: width×height del framebuffer virtual.
      */
     public void draw(Graphics2D g) {
-        renderer.draw(getCurrentWorld(), camera, g);
+        renderer.draw(getCurrentWorld(), camera, g,
+                      camera.getVirtualWidth(), camera.getVirtualHeight());
     }
 
     // ── Seguimiento de objeto ─────────────────────────────────────────────────

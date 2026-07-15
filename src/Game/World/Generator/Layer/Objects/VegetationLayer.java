@@ -3,8 +3,7 @@ package Game.World.Generator.Layer.Objects;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
-import Graficos.Obstacles.ObstaclesAssets;
-
+import Sprites.Obstacles.ObstaclesAssets;
 import java.util.Random;
 
 /**
@@ -56,7 +55,7 @@ public class VegetationLayer implements WorldLayer {
             world.add(WorldObjectFactory.obstacle(
                 x, y,
                 vegW, vegH,
-                ObstaclesAssets.mondongo.getSprite()
+                ObstaclesAssets.getMondongoImage()
             ));
         }
     }

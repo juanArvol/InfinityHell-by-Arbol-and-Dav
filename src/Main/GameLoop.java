@@ -122,11 +122,21 @@ public final class GameLoop implements Runnable {
                 delta = MAX_DELTA_CATCH_UP;
             }
 
-            if (delta >= 1) {
+            // Desacoplar lógica de render:
+            // Ejecutar todos los ticks de lógica del catch-up primero,
+            // y renderizar solo UNA vez al final, con el estado más reciente.
+            // Esto evita renders intermedios innecesarios que acumulan frames
+            // sin beneficio visual y saturan la CPU durante lag spikes.
+            boolean needsRender = false;
+            while (delta >= 1) {
                 update();
-                render();
                 delta--;
                 frames++;
+                needsRender = true;
+            }
+
+            if (needsRender) {
+                render();
             }
 
             long frameTime = System.nanoTime() - now;

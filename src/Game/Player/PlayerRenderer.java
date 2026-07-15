@@ -2,54 +2,41 @@ package Game.Player;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
-import Graficos.Player.PlayerAssets;
-
-import java.awt.image.BufferedImage;
+import Game.Engine.Components.Visuals.AnimationController;
 
 /**
- * Renderizador del jugador — animación de movimiento e idle.
+ * PlayerRenderer — controla qué animación se reproduce según el estado del jugador.
  *
- * ── REFACTOR: CACHEAR REFERENCIAS DE COMPONENTES ─────────────────────────
+ * ── HRFC-002: MIGRACIÓN A ANIMACIONES ORIENTADAS A DATOS ─────────────────
  *
- * PROBLEMA ORIGINAL:
- *   update() llamaba getComponent(PhysicsComponent.class) cada frame:
+ * ANTES:
+ *   - Accedía directamente a PlayerAssets.walkDere.getFrames() cada frame.
+ *   - Llamaba SpriteRenderer.setSprite(BufferedImage) directamente.
+ *   - Mantenía frame y animTick como estado local.
+ *   - El Gameplay conocía BufferedImage.
  *
- *     double velocityX =
- *         gameObject
- *             .getComponent(PhysicsComponent.class)  // ← búsqueda lineal O(n)
- *             .getPhysics()
- *             .getVelocity()
- *             .getX();
+ * AHORA:
+ *   - Obtiene AnimationController (el que gestiona el estado de frames).
+ *   - Llama animController.play("walk_right") / play("walk_left") / play("idle").
+ *   - El tick y el frameIndex los gestiona AnimationController internamente.
+ *   - El Gameplay no conoce ni BufferedImage ni SpriteFrame.
  *
- *   getComponent() itera la lista de componentes en cada llamada. Para
- *   un componente que no cambia de frame a frame, esta búsqueda es trabajo
- *   innecesario que se ejecuta 60 veces por segundo.
+ * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ *   PlayerRenderer   → DECIDE qué animación reproducir (lógica de gameplay)
+ *   AnimationController → AVANZA los frames y notifica a SpriteRenderer
+ *   SpriteRenderer   → DIBUJA el frame actual
  *
- * SOLUCIÓN:
- *   Cachear PhysicsComponent en start(), que se llama una sola vez al
- *   agregarse el componente al objeto. Es seguro cachear aquí porque el
- *   ciclo de vida garantiza que los componentes no se añaden ni eliminan
- *   durante el update.
- *
- *   Si physicsComponent es null en start() (orden de addComponent incorrecto),
- *   update() lo gestiona con un null-check.
- *
- * BENEFICIO:
- *   - update() es O(1) en lugar de O(n) para el acceso a física.
- *   - Código más limpio: la cadena de llamadas queda encapsulada en un campo.
- *   - Patrón correcto: start() para inicializar, update() para ejecutar.
+ * ── CICLO DE VIDA ─────────────────────────────────────────────────────────
+ * start() cachea las referencias a Physics2DComponent y AnimationController.
+ * update() lee la velocidad y delega la decisión de animación.
  */
 public class PlayerRenderer extends Component {
 
     private final PlayerState state;
 
-    private int frame;
-    private int animTick;
-
-    // Cacheados en start() — no cambiarán durante la vida del componente
-    private SpriteRenderer   baseRenderer;
-    private Physics2DComponent physicsComponent;
+    // Cacheados en start() — no cambian durante la vida del componente
+    private AnimationController  animController;
+    private Physics2DComponent   physicsComponent;
 
     public PlayerRenderer(PlayerState state) {
         this.state = state;
@@ -57,13 +44,19 @@ public class PlayerRenderer extends Component {
 
     @Override
     public void start() {
-        baseRenderer     = gameObject.getComponent(SpriteRenderer.class);
+        animController   = gameObject.getComponent(AnimationController.class);
         physicsComponent = gameObject.getComponent(Physics2DComponent.class);
+
+        if (animController == null) {
+            System.err.println("[PlayerRenderer] AnimationController no encontrado. "
+                + "Asegurarse de añadir addComponent(new AnimationController(PlayerAssets.handle)) "
+                + "antes de PlayerRenderer en el constructor de Player.");
+        }
     }
 
     @Override
     public void update() {
-        if (baseRenderer == null || physicsComponent == null) return;
+        if (animController == null || physicsComponent == null) return;
 
         double velocityX = physicsComponent
             .getPhysics()
@@ -72,27 +65,15 @@ public class PlayerRenderer extends Component {
 
         boolean isMoving = Math.abs(velocityX) > 0.5;
 
-        BufferedImage spriteToUse;
-
         if (isMoving) {
-            animTick++;
-            if (animTick >= 10) {
-                frame++;
-                animTick = 0;
+            // play() es idempotente — no reinicia si ya está reproduciéndose
+            if (state.isDer()) {
+                animController.play("walk_right");
+            } else {
+                animController.play("walk_left");
             }
-
-            BufferedImage[] frames = state.isDer()
-                ? PlayerAssets.walkDere.getFrames()
-                : PlayerAssets.walkHiz.getFrames();
-
-            frame %= frames.length;
-            spriteToUse = frames[frame];
-
         } else {
-            frame       = 0;
-            spriteToUse = PlayerAssets.idle.getSprite();
+            animController.play("idle");
         }
-
-        baseRenderer.setSprite(spriteToUse);
     }
 }

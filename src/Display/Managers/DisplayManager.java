@@ -140,7 +140,8 @@ public final class DisplayManager {
                 currentState = state;
                 notifyResizeListenersIfNeeded(state);
             },
-            () -> enqueue(new DisplayCommand.RecreateBufferStrategy())
+            () -> enqueue(new DisplayCommand.RecreateBufferStrategy()),
+            this::notifyVirtualResolutionChanged
         );
 
         // ── Window event wiring ────────────────────────────────────────────
@@ -344,6 +345,48 @@ public final class DisplayManager {
 
     public void addResizeListener(ResizeListener l)    { resizeListeners.add(l);    }
     public void removeResizeListener(ResizeListener l) { resizeListeners.remove(l); }
+
+    // ── Virtual resolution listeners ──────────────────────────────────────────
+
+    /**
+     * Listener para cambios de resolución virtual (DisplayCommand.ChangeResolution).
+     *
+     * A diferencia de ResizeListener (que notifica cambios del canvas real),
+     * este listener se invoca únicamente cuando el framebuffer virtual cambia
+     * de tamaño. Los sistemas que dependen de las dimensiones virtuales
+     * (GameCamera, WorldManager, GameState) deben registrarse aquí.
+     *
+     * Se invoca desde el EDT, justo después de que el pipeline aplica el cambio.
+     */
+    @FunctionalInterface
+    public interface VirtualResolutionListener {
+        void onVirtualResolutionChanged(int newVirtualWidth, int newVirtualHeight);
+    }
+
+    private final List<VirtualResolutionListener> virtualResolutionListeners =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public void addVirtualResolutionListener(VirtualResolutionListener l) {
+        virtualResolutionListeners.add(l);
+    }
+
+    public void removeVirtualResolutionListener(VirtualResolutionListener l) {
+        virtualResolutionListeners.remove(l);
+    }
+
+    /**
+     * Invocado por el pipeline cuando se procesa un ChangeResolution.
+     * Notifica a todos los listeners registrados de la nueva resolución virtual.
+     * EDT únicamente.
+     */
+    public void notifyVirtualResolutionChanged(int newW, int newH) {
+        for (VirtualResolutionListener l : virtualResolutionListeners) {
+            try { l.onVirtualResolutionChanged(newW, newH); }
+            catch (Exception e) {
+                LOG.warning("VirtualResolutionListener threw: " + e.getMessage());
+            }
+        }
+    }
 
     // ── Privados ──────────────────────────────────────────────────────────────
 

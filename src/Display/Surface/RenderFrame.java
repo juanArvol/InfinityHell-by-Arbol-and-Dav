@@ -156,36 +156,73 @@ public final class RenderFrame {
     /**
      * Compone todas las capas activas sobre el framebuffer en orden ordinal.
      * Debe llamarse ANTES de present(). Idempotente.
+     *
+     * ── Invariantes de limpieza ───────────────────────────────────────────
+     *
+     * WORLD_BACKGROUND: siempre se aplica el background sobre el framebuffer
+     * al inicio de flush, independientemente de si fue solicitada o no.
+     * Esto garantiza que el framebuffer esté limpio al inicio de cada frame
+     * y nunca acumule píxeles de frames anteriores.
+     *
+     * Capas no-background: solo se compositan las capas que fueron realmente
+     * solicitadas en este frame (presentes en layerGraphics). Los BufferedImage
+     * de capas no solicitadas no se compositan, evitando render acumulativo
+     * de contenido fantasma del frame anterior.
+     *
+     * Después de componer, el Graphics2D de cada capa se dispone y el buffer
+     * se limpia con AlphaComposite.Clear listo para el próximo frame.
      */
     public void flushLayers() {
+        // Obtener o crear el contexto base del framebuffer.
+        // Si WORLD_BACKGROUND fue solicitada en este frame, su Graphics2D ya
+        // aplicó el background (clearRect). Si NO fue solicitada, debemos
+        // aplicar el background ahora para garantizar que el framebuffer esté
+        // limpio — sin esto, el framebuffer retiene píxeles del frame anterior.
         Graphics2D base;
         if (layerGraphics.containsKey(LayerIndex.WORLD_BACKGROUND)) {
             base = layerGraphics.get(LayerIndex.WORLD_BACKGROUND);
         } else {
+            // WORLD_BACKGROUND no fue solicitada este frame: limpiar el framebuffer
+            // explícitamente para evitar ghost frames del frame anterior.
             base = surface.getFramebuffer().createGraphics();
             applyRenderHints(base);
+            surface.getBackground().apply(base,
+                surface.getVirtualWidth(), surface.getVirtualHeight());
             layerGraphics.put(LayerIndex.WORLD_BACKGROUND, base);
         }
 
         for (LayerIndex layer : LayerIndex.values()) {
             if (layer == LayerIndex.WORLD_BACKGROUND) continue;
+
+            // Solo componer capas que fueron solicitadas en este frame.
+            // Si layerGraphics no contiene la capa, no fue usada y su
+            // BufferedImage puede tener contenido del frame anterior — no componer.
+            Graphics2D layerG = layerGraphics.remove(layer);
+            if (layerG == null) continue;
+
+            layerG.dispose();
+
             BufferedImage buf = layerBuffers.get(layer);
             if (buf == null) continue;
-
-            Graphics2D layerG = layerGraphics.remove(layer);
-            if (layerG != null) layerG.dispose();
 
             base.setComposite(AlphaComposite.SrcOver);
             base.drawImage(buf, 0, 0, null);
 
+            // Limpiar el buffer de la capa para el próximo frame.
             Graphics2D clearG = buf.createGraphics();
-            clearG.setComposite(AlphaComposite.Clear);
-            clearG.fillRect(0, 0, surface.getVirtualWidth(), surface.getVirtualHeight());
-            clearG.dispose();
+            try {
+                clearG.setComposite(AlphaComposite.Clear);
+                clearG.fillRect(0, 0, surface.getVirtualWidth(), surface.getVirtualHeight());
+            } finally {
+                clearG.dispose();
+            }
         }
 
         layerGraphics.remove(LayerIndex.WORLD_BACKGROUND);
-        if (base != null) base.dispose();
+        if (base != null) {
+            base.setComposite(AlphaComposite.SrcOver); // restaurar composite antes de dispose
+            base.dispose();
+        }
     }
 
     // ── Presentación: API principal ───────────────────────────────────────────

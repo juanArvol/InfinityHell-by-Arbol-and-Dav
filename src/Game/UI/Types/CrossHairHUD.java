@@ -72,6 +72,8 @@ public class CrossHairHUD implements UIElement {
                                       .getCurrentWeapon();
         if (weapon == null) return;
 
+        Color prevColor = g.getColor();
+
         // Color según estado del arma
         if (weapon.isReloading()) {
             g.setColor(Color.YELLOW);
@@ -124,6 +126,8 @@ public class CrossHairHUD implements UIElement {
             if (stats.hasGravity()) vy += gravity;
             g.fillOval((int) px, (int) py, 4, 4);
         }
+
+        g.setColor(prevColor);
     }
 
     private void recalcPosition(int virtualWidth, int virtualHeight) {

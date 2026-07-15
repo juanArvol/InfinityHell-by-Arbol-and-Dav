@@ -2,43 +2,62 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.RenderContext;
-import Game.Engine.Render.Renderable;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.Renderable;
+import Sprites.Core.SpriteFrame;
+import Sprites.Core.SpriteHandle;
 import java.awt.image.BufferedImage;
 
 /**
- * Dibuja un sprite en la posición del objeto.
+ * SpriteRenderer — dibuja un sprite en la posición del objeto.
  *
- * ── SizeSyncMode ───────────────────────────────────────────────────────────
+ * ── HRFC-002: SOPORTE DUAL ────────────────────────────────────────────────
+ * Acepta tanto SpriteHandle (nuevo sistema) como BufferedImage (compatibilidad).
+ * Durante la migración ambos modos coexisten. El objetivo final es que todo
+ * el Gameplay use SpriteHandle y BufferedImage desaparezca de los constructores.
  *
- * Permite declarar explícitamente cómo se relacionan el sprite y el collider.
- * La sincronización se aplica UNA SOLA VEZ en start(), cuando el componente
- * ya tiene acceso al gameObject y a su ColliderComponent.
+ * Modo SpriteHandle:
+ *   El frame actual es resuelto por el handle. AnimationController llama
+ *   setCurrentFrame() cada tick para actualizar el frame animado.
  *
- * No hay dependencias circulares ni efectos secundarios ocultos.
- * El resultado es predecible: lo que configurás en el constructor es lo
- * que obtenés en pantalla.
+ * Modo BufferedImage (legacy):
+ *   Comportamiento idéntico al anterior — se mantiene para no romper
+ *   BlockWorld, Obstacle y Bullet que todavía pasan BufferedImage.
  *
- * Ejemplos de uso:
+ * ── SizeSyncMode ─────────────────────────────────────────────────────────
+ * Sin cambios. El sync collider↔sprite sigue funcionando igual en start().
  *
- *   // Bloque de mundo: hitbox = tamaño del sprite
- *   new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE)
- *
- *   // Jugador: sprite escala al tamaño de la hitbox (15x24)
- *   new SpriteRenderer(texture, SizeSyncMode.SPRITE_TO_COLLIDER)
- *
- *   // Jugador con collider offseteado: sprite alineado al collider
- *   new SpriteRenderer(texture, SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET)
- *
- *   // Control total manual
- *   new SpriteRenderer(texture)  // o SizeSyncMode.NONE
- *   renderer.setRenderSize(32, 48);
- *   renderer.setOffset(-4, 0);
+ * ── RENDER ────────────────────────────────────────────────────────────────
+ * render() resuelve el frame en este orden:
+ *   1. currentFrame (seteado por AnimationController) → tiene prioridad
+ *   2. legacySprite (BufferedImage pasado al constructor)
+ *   3. handle.resolveDefault() (frame por defecto del SpriteHandle)
+ *   Si ninguno tiene imagen, no dibuja nada.
  */
 public class SpriteRenderer extends Component implements Renderable {
 
-    private BufferedImage sprite;
+    // ── Estado del frame actual ───────────────────────────────────────────
+
+    /** Frame actual (lo setea AnimationController cada tick). */
+    private SpriteFrame currentFrame;
+
+    /**
+     * Handle del sprite (modo nuevo).
+     * Si está presente, currentFrame se resuelve desde aquí cuando no
+     * hay AnimationController activo.
+     */
+    private SpriteHandle handle;
+
+    /**
+     * Imagen legacy (modo compatibilidad).
+     * Solo se usa si handle es null. Permite que BlockWorld, Obstacle y
+     * Bullet sigan funcionando sin cambios hasta que migren a SpriteHandle.
+     */
+    private BufferedImage legacySprite;
+
+    // ── Tamaño y offset de render ─────────────────────────────────────────
+
     private int renderWidth;
     private int renderHeight;
     private int offsetX = 0;
@@ -48,54 +67,72 @@ public class SpriteRenderer extends Component implements Renderable {
 
     // ── Constructores ────────────────────────────────────────────────────
 
-    /** Sin sincronización (control manual). */
+    /**
+     * Constructor con SpriteHandle (modo nuevo — Gameplay desacoplado).
+     * El frame por defecto se resuelve desde el handle.
+     */
+    public SpriteRenderer(SpriteHandle handle) {
+        this(handle, SizeSyncMode.NONE);
+    }
+
+    /**
+     * Constructor con SpriteHandle y modo de sync.
+     */
+    public SpriteRenderer(SpriteHandle handle, SizeSyncMode syncMode) {
+        this.handle   = handle;
+        this.syncMode = syncMode;
+        // Inicializar tamaño desde el frame por defecto del handle
+        if (handle != null && handle.isValid()) {
+            SpriteFrame def = handle.resolveDefault();
+            renderWidth  = def.getWidth();
+            renderHeight = def.getHeight();
+        }
+    }
+
+    /**
+     * Constructor con BufferedImage (modo legacy — compatibilidad).
+     * Usado por BlockWorld, Obstacle, Bullet y MovingObjects mientras migran.
+     */
     public SpriteRenderer(BufferedImage sprite) {
         this(sprite, SizeSyncMode.NONE);
     }
 
-    /** Con modo de sincronización declarativo. */
+    /**
+     * Constructor con BufferedImage y modo de sync (modo legacy).
+     */
     public SpriteRenderer(BufferedImage sprite, SizeSyncMode syncMode) {
-        this.sprite   = sprite;
-        this.syncMode = syncMode;
+        this.legacySprite = sprite;
+        this.syncMode     = syncMode;
         if (sprite != null) {
             renderWidth  = sprite.getWidth();
             renderHeight = sprite.getHeight();
         }
     }
 
-    // ── Ciclo de vida ────────────────────────────────────────────────────
+    // ── Ciclo de vida ─────────────────────────────────────────────────────
 
-    /**
-     * Se llama una vez al agregar el componente al objeto.
-     * Aplica la sincronización si el modo no es NONE.
-     * Requiere que ColliderComponent ya esté en el mismo objeto.
-     */
     @Override
     public void start() {
         if (syncMode == SizeSyncMode.NONE) return;
 
         ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
-        if (col == null) return;  // Sin collider, no hay nada que sincronizar.
+        if (col == null) return;
 
         switch (syncMode) {
 
             case COLLIDER_TO_SPRITE -> {
                 // El collider copia el tamaño del sprite.
-                // Útil para bloques: hitbox exacta al sprite.
-                if (sprite != null) {
-                    col.setSize(sprite.getWidth(), sprite.getHeight());
-                }
+                int w = renderWidth;
+                int h = renderHeight;
+                if (w > 0 && h > 0) col.setSize(w, h);
             }
 
             case SPRITE_TO_COLLIDER -> {
-                // El sprite se escala al tamaño del collider.
-                // Útil cuando la hitbox define el gameplay y el sprite debe seguirla.
                 renderWidth  = col.getWidth();
                 renderHeight = col.getHeight();
             }
 
             case SPRITE_TO_COLLIDER_WITH_OFFSET -> {
-                // Como SPRITE_TO_COLLIDER, pero además alinea el sprite al offset del collider.
                 renderWidth  = col.getWidth();
                 renderHeight = col.getHeight();
                 offsetX      = col.getOffsetX();
@@ -104,49 +141,87 @@ public class SpriteRenderer extends Component implements Renderable {
         }
     }
 
-    // ── Render ───────────────────────────────────────────────────────────
+    // ── Render ────────────────────────────────────────────────────────────
 
     /**
-     * Dibuja el sprite en la posición de pantalla del objeto.
+     * Dibuja el frame actual en la posición de pantalla del objeto.
      *
-     * ── COMPORTAMIENTO SUB-PIXEL (truncamiento) ──────────────────────────
-     * El cast (int)(worldX - camera.getX()) trunca hacia cero.
-     * Para coordenadas positivas (el mundo opera en [0, worldWidth]):
-     *   truncamiento = floor → correcto, sin artefactos.
-     * Para coordenadas negativas (fuera del mundo normal):
-     *   -0.7 → 0 en lugar de -1 → posible error de 1px, pero este caso
-     *   no ocurre en el uso normal del juego.
-     *
-     * El truncamiento es intencional: es más rápido que Math.round() y
-     * no produce diferencia visible a 30fps con objetos en movimiento.
-     * Si en el futuro se requiere sub-pixel accuracy (interpolación,
-     * slow-motion), reemplazar el cast por (int)Math.floor(...).
+     * Resolución del frame (en orden de prioridad):
+     *   1. currentFrame (animación activa vía AnimationController)
+     *   2. legacySprite (BufferedImage directa — modo compatibilidad)
+     *   3. handle.resolveDefault() (frame por defecto del SpriteHandle)
      */
     @Override
-    public void render(RenderContext ctx, Camera camera) {
-        if (sprite == null) return;
+    public void render(RenderContext ctx, RenderCamera camera) {
+        BufferedImage imageToDraw = resolveImage();
+        if (imageToDraw == null) return;
 
         var pos = gameObject.getTransform().getPosition();
         int x = (int)(pos.getX() - camera.getX()) + offsetX;
         int y = (int)(pos.getY() - camera.getY()) + offsetY;
 
-        ctx.drawImage(sprite, x, y, renderWidth, renderHeight);
+        ctx.drawImage(imageToDraw, x, y, renderWidth, renderHeight);
+    }
+
+    /**
+     * Resuelve la imagen a dibujar este frame.
+     * Orden: currentFrame → legacySprite → handle default.
+     */
+    private BufferedImage resolveImage() {
+        // 1. Frame animado activo
+        if (currentFrame != null && currentFrame.isValid()) {
+            return currentFrame.getImage();
+        }
+        // 2. Imagen legacy directa
+        if (legacySprite != null) {
+            return legacySprite;
+        }
+        // 3. Frame por defecto del handle
+        if (handle != null && handle.isValid()) {
+            SpriteFrame def = handle.resolveDefault();
+            return def.isValid() ? def.getImage() : null;
+        }
+        return null;
     }
 
     // ── API pública ──────────────────────────────────────────────────────
 
     /**
-     * Cambia el sprite (para animaciones).
-     * El tamaño de render NO cambia automáticamente si hay un syncMode activo,
-     * para que las animaciones no rompan el tamaño configurado.
-     * Si necesitás que el tamaño cambie con el sprite, llamá setRenderSize() explícitamente.
+     * Actualiza el frame actual (llamado por AnimationController cada tick).
+     * Reemplaza tanto el legacySprite como el frame por defecto del handle
+     * mientras el AnimationController esté activo.
+     */
+    public void setCurrentFrame(SpriteFrame frame) {
+        this.currentFrame = frame;
+        // Actualizar tamaño si estamos en modo NONE y el frame tiene dimensiones
+        if (syncMode == SizeSyncMode.NONE && frame != null && frame.isValid()) {
+            // Solo actualizar si no hay tamaño forzado (renderWidth/Height en 0)
+            if (renderWidth == 0)  renderWidth  = frame.getWidth();
+            if (renderHeight == 0) renderHeight = frame.getHeight();
+        }
+    }
+
+    /**
+     * Cambia el sprite con BufferedImage directa (compatibilidad legacy).
+     * Úsalo solo desde código que todavía no migró a AnimationController.
      */
     public void setSprite(BufferedImage sprite) {
-        this.sprite = sprite;
-        // Solo actualizar tamaño si es NONE (sin sync), para no romper lo configurado en start().
+        this.legacySprite = sprite;
+        this.currentFrame = null; // el legacy toma precedencia
         if (syncMode == SizeSyncMode.NONE && sprite != null) {
             renderWidth  = sprite.getWidth();
             renderHeight = sprite.getHeight();
+        }
+    }
+
+    /** Cambia el handle del sprite. Resetea currentFrame. */
+    public void setHandle(SpriteHandle handle) {
+        this.handle       = handle;
+        this.currentFrame = null;
+        if (handle != null && handle.isValid()) {
+            SpriteFrame def = handle.resolveDefault();
+            if (renderWidth  == 0) renderWidth  = def.getWidth();
+            if (renderHeight == 0) renderHeight = def.getHeight();
         }
     }
 
@@ -162,9 +237,22 @@ public class SpriteRenderer extends Component implements Renderable {
         this.offsetY = oy;
     }
 
-    public BufferedImage getSprite()  { return sprite; }
-    public int getRenderWidth()       { return renderWidth; }
-    public int getRenderHeight()      { return renderHeight; }
-    public SizeSyncMode getSyncMode() { return syncMode; }
+    // ── Getters ──────────────────────────────────────────────────────────
 
+    /**
+     * Devuelve la BufferedImage actualmente activa (legacy + compatibilidad).
+     * Preferir resolveDefault() del handle cuando sea posible.
+     */
+    public BufferedImage getSprite() {
+        if (currentFrame != null && currentFrame.isValid()) return currentFrame.getImage();
+        if (legacySprite != null) return legacySprite;
+        if (handle != null && handle.isValid()) return handle.resolveDefault().getImage();
+        return null;
+    }
+
+    public SpriteHandle    getHandle()       { return handle;       }
+    public SpriteFrame     getCurrentFrame() { return currentFrame; }
+    public int             getRenderWidth()  { return renderWidth;  }
+    public int             getRenderHeight() { return renderHeight; }
+    public SizeSyncMode    getSyncMode()     { return syncMode;     }
 }

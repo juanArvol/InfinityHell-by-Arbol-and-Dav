@@ -12,7 +12,7 @@ import java.awt.geom.AffineTransform;
  * rotación. Es un servicio del Engine que cualquier subsistema puede consultar.
  *
  * NO pertenece al dominio del gameplay (World no la posee).
- * NO pertenece al renderer (WorldRenderer solo la lee para construir la vista).
+ * NO pertenece al renderer (SceneRenderer solo la lee para construir la vista).
  * PERTENECE al Engine como entidad independiente con identidad propia.
  *
  * ── Responsabilidades ────────────────────────────────────────────────────

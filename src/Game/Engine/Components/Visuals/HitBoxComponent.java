@@ -2,9 +2,9 @@ package Game.Engine.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Render.Camera;
-import Game.Engine.Render.DebugRenderable;
-import Game.Engine.Render.RenderContext;
+import Game.Engine.RenderEngine.Context.RenderCamera;
+import Game.Engine.RenderEngine.Context.RenderContext;
+import Game.Engine.RenderEngine.Contracts.DebugRenderable;
 import java.awt.Color;
 import java.awt.Rectangle;
 
@@ -51,7 +51,7 @@ public class HitBoxComponent extends Component implements DebugRenderable {
     }
 
     @Override
-    public void debugRender(RenderContext ctx, Camera camera) {
+    public void debugRender(RenderContext ctx, RenderCamera camera) {
         if (!visible) return;
 
         ColliderComponent col = gameObject.getComponent(ColliderComponent.class);

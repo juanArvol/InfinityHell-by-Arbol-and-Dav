@@ -44,8 +44,14 @@ public final class FpsOverlay {
 
         g.setFont(prevFont);
         g.setColor(prevColor);
+        // Restaurar el hint siempre: si no había ninguno configurado,
+        // revertir a DEFAULT para no dejar antialiasing forzado activo
+        // sobre el contexto de la capa OVERLAY.
         if (prevAA != null) {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, prevAA);
+        } else {
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                               RenderingHints.VALUE_TEXT_ANTIALIAS_DEFAULT);
         }
     }
 }

@@ -18,6 +18,7 @@ import Display.Surface.SurfacePublisher;
 import Display.Transition.DisplayTransitionMachine;
 import Display.Transition.DisplayTransitionState;
 import Display.ViewportInfo;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
@@ -89,6 +90,14 @@ public final class DisplayReconfigurationPipeline
     private final Consumer<DisplayState>   statePublisher;
     private final Runnable                 onBuildFailed;
 
+    /**
+     * Callback invocado cuando se procesa un ChangeResolution.
+     * Permite notificar a GameCamera, WorldManager y GameState de la nueva
+     * resolución virtual sin que el Pipeline conozca esos subsistemas.
+     * BiConsumer<Integer, Integer> = (newVirtualWidth, newVirtualHeight).
+     */
+    private final BiConsumer<Integer, Integer> onVirtualResolutionChanged;
+
     /** Fondo activo. EDT únicamente. */
     private DisplayBackground background;
 
@@ -107,18 +116,41 @@ public final class DisplayReconfigurationPipeline
             DisplayState initialState,
             Consumer<DisplayState> statePublisher,
             Runnable onBuildFailed) {
+        this(backend, fullscreenManager, viewportManager, surfaceBuilder, surfacePublisher,
+             windowManager, background, transitionMachine, initialState, statePublisher,
+             onBuildFailed, null);
+    }
 
-        this.backend           = backend;
-        this.fullscreenManager = fullscreenManager;
-        this.viewportManager   = viewportManager;
-        this.surfaceBuilder    = surfaceBuilder;
-        this.surfacePublisher  = surfacePublisher;
-        this.windowManager     = windowManager;
-        this.background        = background;
-        this.transitionMachine = transitionMachine;
-        this.statePublisher    = statePublisher;
-        this.onBuildFailed     = onBuildFailed != null ? onBuildFailed : () -> {};
-        this.currentState      = initialState;
+    public DisplayReconfigurationPipeline(
+            AwtWindowBackend backend,
+            FullscreenManager fullscreenManager,
+            ViewportManager viewportManager,
+            SurfaceBuilder surfaceBuilder,
+            SurfacePublisher surfacePublisher,
+            WindowManager windowManager,
+            DisplayBackground background,
+            DisplayTransitionMachine transitionMachine,
+            DisplayState initialState,
+            Consumer<DisplayState> statePublisher,
+            Runnable onBuildFailed,
+            BiConsumer<Integer, Integer> onVirtualResolutionChanged) {
+
+        this.backend                     = backend;
+        this.fullscreenManager           = fullscreenManager;
+        this.viewportManager             = viewportManager;
+        this.surfaceBuilder              = surfaceBuilder;
+        this.surfacePublisher            = surfacePublisher;
+        this.windowManager               = windowManager;
+        this.background                  = background;
+        this.transitionMachine           = transitionMachine;
+        this.statePublisher              = statePublisher;
+        this.onBuildFailed               = onBuildFailed != null ? onBuildFailed : () -> {};
+        if (onVirtualResolutionChanged != null) {
+            this.onVirtualResolutionChanged = onVirtualResolutionChanged;
+        } else {
+            this.onVirtualResolutionChanged = (w, h) -> {};
+        }
+        this.currentState                = initialState;
     }
 
     // ── Inicialización ────────────────────────────────────────────────────────
@@ -521,6 +553,10 @@ public final class DisplayReconfigurationPipeline
                     cmd.resolution().width, cmd.resolution().height);
                 viewportManager.onVirtualResolutionChanged(
                     cmd.resolution().width, cmd.resolution().height);
+                // Notificar a los listeners de resolución virtual registrados
+                // (GameCamera, WorldManager, GameState) para que actualicen
+                // sus cálculos basados en las dimensiones virtuales.
+                onVirtualResolutionChanged.accept(cmd.resolution().width, cmd.resolution().height);
                 LOG.info("Pipeline: virtual resolution changed to " + cmd.resolution());
             }
 
