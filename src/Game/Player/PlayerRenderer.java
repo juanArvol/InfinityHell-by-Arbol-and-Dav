@@ -3,40 +3,41 @@ package Game.Player;
 import Game.Engine.Component;
 import Game.Engine.Components.Physics2DComponent;
 import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.SpriteRenderer;
 
 /**
- * PlayerRenderer — controla qué animación se reproduce según el estado del jugador.
+ * PlayerRenderer — decide qué animación reproducir y gestiona el flip.
  *
- * ── HRFC-002: MIGRACIÓN A ANIMACIONES ORIENTADAS A DATOS ─────────────────
- *
- * ANTES:
- *   - Accedía directamente a PlayerAssets.walkDere.getFrames() cada frame.
- *   - Llamaba SpriteRenderer.setSprite(BufferedImage) directamente.
- *   - Mantenía frame y animTick como estado local.
- *   - El Gameplay conocía BufferedImage.
- *
- * AHORA:
- *   - Obtiene AnimationController (el que gestiona el estado de frames).
- *   - Llama animController.play("walk_right") / play("walk_left") / play("idle").
- *   - El tick y el frameIndex los gestiona AnimationController internamente.
- *   - El Gameplay no conoce ni BufferedImage ni SpriteFrame.
+ * ── HRFC-003.6: MIGRACIÓN A SPRITESHEET ──────────────────────────────────
+ * El jugador ahora usa un único SpriteSheet. No existe animación "walk_left":
+ * el movimiento hacia la izquierda reutiliza los frames de "walk_right"
+ * aplicando flipH=true en el SpriteRenderer vía TransformData.
  *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
- *   PlayerRenderer   → DECIDE qué animación reproducir (lógica de gameplay)
- *   AnimationController → AVANZA los frames y notifica a SpriteRenderer
- *   SpriteRenderer   → DIBUJA el frame actual
+ *   PlayerRenderer   → DECIDE qué animación reproducir y en qué dirección
+ *   AnimationController → AVANZA los frames y notifica al SpriteRenderer
+ *   SpriteRenderer   → DIBUJA el frame con el TransformData activo
+ *
+ * ── LÓGICA DE ANIMACIÓN ───────────────────────────────────────────────────
+ *   Parado        → play("idle"),  flipH = según última dirección conocida
+ *   Moviendo dcha → play("walk_right"), flipH = false
+ *   Moviendo izda → play("walk_right"), flipH = true   ← mismo anim, flip
+ *
+ * El flip se aplica sobre el SpriteRenderer vía setFlipH(). Este método
+ * actualiza el TransformData internamente y propaga el cambio en el siguiente
+ * render a través de SpriteDrawer → FlipStrategy.
  *
  * ── CICLO DE VIDA ─────────────────────────────────────────────────────────
- * start() cachea las referencias a Physics2DComponent y AnimationController.
- * update() lee la velocidad y delega la decisión de animación.
+ * start() cachea AnimationController, SpriteRenderer y Physics2DComponent.
+ * update() lee la velocidad y delega la decisión de animación + flip.
  */
 public class PlayerRenderer extends Component {
 
     private final PlayerState state;
 
-    // Cacheados en start() — no cambian durante la vida del componente
-    private AnimationController  animController;
-    private Physics2DComponent   physicsComponent;
+    private AnimationController animController;
+    private SpriteRenderer      spriteRenderer;
+    private Physics2DComponent  physicsComponent;
 
     public PlayerRenderer(PlayerState state) {
         this.state = state;
@@ -45,12 +46,17 @@ public class PlayerRenderer extends Component {
     @Override
     public void start() {
         animController   = gameObject.getComponent(AnimationController.class);
+        spriteRenderer   = gameObject.getComponent(SpriteRenderer.class);
         physicsComponent = gameObject.getComponent(Physics2DComponent.class);
 
         if (animController == null) {
             System.err.println("[PlayerRenderer] AnimationController no encontrado. "
-                + "Asegurarse de añadir addComponent(new AnimationController(PlayerAssets.handle)) "
+                + "Asegurarse de añadir addComponent(new AnimationController(...)) "
                 + "antes de PlayerRenderer en el constructor de Player.");
+        }
+        if (spriteRenderer == null) {
+            System.err.println("[PlayerRenderer] SpriteRenderer no encontrado. "
+                + "El flip horizontal no tendrá efecto.");
         }
     }
 
@@ -66,13 +72,20 @@ public class PlayerRenderer extends Component {
         boolean isMoving = Math.abs(velocityX) > 0.5;
 
         if (isMoving) {
-            // play() es idempotente — no reinicia si ya está reproduciéndose
-            if (state.isDer()) {
-                animController.play("walk_right");
-            } else {
-                animController.play("walk_left");
+            boolean goingRight = velocityX > 0;
+
+            // Ambas direcciones usan la misma animación "walk_right".
+            // El flip horizontal produce el efecto visual de ir a la izquierda.
+            animController.play("walk_right");
+
+            if (spriteRenderer != null) {
+                // flipH=false → frames originales (derecha)
+                // flipH=true  → frames reflejados (izquierda)
+                spriteRenderer.setFlipH(!goingRight);
             }
         } else {
+            // Parado: idle. El flip mantiene el valor anterior (última dirección
+            // conocida) para que el jugador mire hacia donde caminó por última vez.
             animController.play("idle");
         }
     }

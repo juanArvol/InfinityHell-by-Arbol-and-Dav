@@ -8,6 +8,7 @@ import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.Physics.Types.Physics2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Sprites.Core.SpriteHandle;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 
@@ -60,7 +61,53 @@ public abstract class MovingObjects extends Entity {
 
     protected final Physics2DComponent physicsComponent;
 
-    // ── Constructor base ──────────────────────────────────────────────────
+    // ── Constructores con SpriteHandle (HRFC-004 — sin legacySprite) ──────
+
+    /**
+     * Constructor preferido: usa SpriteHandle para crear un SpriteRenderer limpio.
+     * El SpriteRenderer no tiene legacySprite — el AnimationController toma el
+     * control desde start(). Elimina el bug donde el renderer mostraba el sprite
+     * de otra entidad durante el primer frame.
+     */
+    public MovingObjects(Vector2D position, SpriteHandle handle, Physics2D physics) {
+        this(position, handle, physics, SizeSyncMode.NONE);
+    }
+
+    public MovingObjects(Vector2D position,
+                         SpriteHandle handle,
+                         Physics2D physics,
+                         SizeSyncMode syncMode) {
+        getTransform().setPosition(position);
+        addComponent(new ColliderComponent());
+        addComponent(new SpriteRenderer(handle, syncMode));
+        physicsComponent = new Physics2DComponent(physics);
+        addComponent(physicsComponent);
+    }
+
+    protected MovingObjects(Transform2D transform,
+                            Vector2D position,
+                            SpriteHandle handle,
+                            Physics2D physics) {
+        this(transform, position, handle, physics, SizeSyncMode.NONE);
+    }
+
+    protected MovingObjects(Transform2D transform,
+                            Vector2D position,
+                            SpriteHandle handle,
+                            Physics2D physics,
+                            SizeSyncMode syncMode) {
+        super(transform);
+        getTransform().setPosition(position);
+        addComponent(new ColliderComponent());
+        addComponent(new SpriteRenderer(handle, syncMode));
+        physicsComponent = new Physics2DComponent(physics);
+        addComponent(physicsComponent);
+    }
+
+    // ── Constructores legacy con BufferedImage (compatibilidad) ───────────
+    //
+    // Mantenidos para Bullet, Obstacle, BlockWorld y cualquier subclase que
+    // no haya migrado a SpriteHandle todavía. No usar para entidades nuevas.
 
     public MovingObjects(Vector2D position, BufferedImage texture, Physics2D physics) {
         this(position, texture, physics, SizeSyncMode.NONE);

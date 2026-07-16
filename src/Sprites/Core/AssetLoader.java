@@ -1,5 +1,6 @@
 package Sprites.Core;
 
+import Sprites.Core.Extractors.SpriteExtractors;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -106,8 +107,24 @@ public final class AssetLoader {
     }
 
     /**
-     * Carga una SpriteSheet (hoja de sprites en cuadrícula).
+     * Carga una SpriteSheet usando el extractor indicado.
      * Cachea la imagen fuente internamente.
+     *
+     * @param path      path relativo al classpath
+     * @param extractor estrategia de extracción (ej: SpriteExtractors.grid(24, 24))
+     * @return SpriteSheet lista para acceder a frames, o null si falló la carga
+     */
+    public static SpriteSheet loadSheet(String path, SpriteExtractor extractor) {
+        BufferedImage img = loadRaw(path);
+        if (img == null) return null;
+        return SpriteSheet.load(img, extractor);
+    }
+
+    /**
+     * Carga una SpriteSheet en cuadrícula uniforme.
+     * Cachea la imagen fuente internamente.
+     *
+     * Equivale a {@code loadSheet(path, SpriteExtractors.grid(frameWidth, frameHeight))}.
      *
      * @param path        path relativo al classpath
      * @param frameWidth  ancho de cada frame en píxeles
@@ -115,9 +132,7 @@ public final class AssetLoader {
      * @return SpriteSheet lista para extraer frames, o null si falló la carga
      */
     public static SpriteSheet loadSheet(String path, int frameWidth, int frameHeight) {
-        BufferedImage img = loadRaw(path);
-        if (img == null) return null;
-        return new SpriteSheet(img, frameWidth, frameHeight);
+        return loadSheet(path, SpriteExtractors.grid(frameWidth, frameHeight));
     }
 
     /**

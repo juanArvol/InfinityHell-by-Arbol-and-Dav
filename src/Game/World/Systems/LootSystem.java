@@ -1,6 +1,6 @@
 package Game.World.Systems;
 
-import Game.Enemys.OnEnemyDeathEvent;
+import Game.Enemys.Core.Events.OnEnemyDeathEvent;
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
@@ -9,7 +9,6 @@ import Game.Items.Creation.ItemRegistry;
 import Game.Items.Savement.ItemStack;
 import Game.World.WorldObjects.WorldItem;
 import Game.World.WorldObjects.WorldObjectFactory;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;

@@ -4,7 +4,7 @@ import Game.Enemys.AI.Actions.FollowSteeringCommand;
 import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.AI.EnemyComport;
 import Game.Enemys.AI.EnemyContext;
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 
 /**
  * Comportamiento de vuelo — persigue al objetivo con steering suave.

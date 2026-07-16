@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets.BulletComport;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Player.Player;
 import Game.World.WorldObjects.BlockWorld;

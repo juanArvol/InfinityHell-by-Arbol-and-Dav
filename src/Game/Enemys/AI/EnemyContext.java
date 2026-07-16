@@ -5,31 +5,24 @@ import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 /**
  * Contexto de IA — abstracción del "objetivo" que persigue/ataca el enemigo.
  *
+ * ── HRFC-005 ─────────────────────────────────────────────────────────────
+ * Actualizado para referenciar Game.Enemys.Core.Enemy en el factory method
+ * of(Enemy target). El contrato y la lógica son idénticos.
+ *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────
- * El sistema original pasaba `Player player` directamente a EnemyAI.update(),
- * EnemyComport.decideAction(), y constructores de Behaviors (FlyingBehavior).
+ * Desacopla los comportamientos de IA de tipos concretos (Player, Enemy).
+ * FlyingBehavior, AggressiveBehavior, etc. leen ctx.getPosition() sin
+ * saber si el objetivo es un Player, otro Enemy o un punto fijo.
  *
- * Eso significa:
- *   - Los comportamientos no se pueden testear sin un Player real.
- *   - Un enemigo no puede perseguir otro enemigo (boss → minion).
- *   - EnemyComport queda acoplado a Player, no a "algo que tiene posición".
- *
- * Con EnemyContext:
- *   - FlyingBehavior recibe EnemyContext, no Player.
- *   - AggressiveBehavior lee ctx.getPosition(), no player.getPosition().
- *   - Para un Player: EnemyContext.of(player).
- *   - Para un punto fijo de patrulla: EnemyContext.fixed(x, y).
- *   - Para otro Enemy (boss target): EnemyContext.of(otherEnemy).
- *
- * Retro-compatible: EnemyContext.of(player) produce el mismo resultado
- * que el código anterior que usaba player directamente.
+ * ── Factory methods ──────────────────────────────────────────────────────
+ *   EnemyContext.of(player)         — objetivo: jugador.
+ *   EnemyContext.of(enemy)          — objetivo: otro Enemy (boss → minion).
+ *   EnemyContext.fixed(x, y)        — objetivo: posición estática (patrulla).
+ *   EnemyContext.dynamic(supplier)  — objetivo: posición dinámica arbitraria.
  */
 public final class EnemyContext {
 
-    /** Posición actual del objetivo (llamada cada frame, puede cambiar). */
     private final java.util.function.Supplier<Vector2D> positionSupplier;
-
-    /** Centro del objetivo (para steering). Puede ser mismo que posición. */
     private final java.util.function.Supplier<Vector2D> centerSupplier;
 
     private EnemyContext(
@@ -49,8 +42,8 @@ public final class EnemyContext {
         );
     }
 
-    /** Objetivo: otro Enemy (boss persiguiendo a un minion, por ejemplo). */
-    public static EnemyContext of(Game.Enemys.Enemy target) {
+    /** Objetivo: otro Enemy del framework Core. */
+    public static EnemyContext of(Game.Enemys.Core.Enemy target) {
         return new EnemyContext(
             () -> target.getTransform().getPosition(),
             target::getCenter

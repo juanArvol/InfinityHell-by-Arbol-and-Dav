@@ -1,11 +1,11 @@
 package Game.Enemys.AI.Behaviors;
 
+import Game.Enemys.AI.Actions.IdleCommand;
+import Game.Enemys.AI.Actions.MoveCommand;
 import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.AI.EnemyComport;
 import Game.Enemys.AI.EnemyContext;
-import Game.Enemys.AI.Actions.IdleCommand;
-import Game.Enemys.AI.Actions.MoveCommand;
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 
 /**
  * Comportamiento agresivo — persigue al objetivo en el eje X.

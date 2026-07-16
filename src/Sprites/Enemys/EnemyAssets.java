@@ -10,14 +10,10 @@ import Sprites.Core.SpriteHandle;
 /**
  * EnemyAssets — definición de todos los recursos visuales de los enemigos.
  *
- * ── CAMBIO ARQUITECTÓNICO ────────────────────────────────────────────────
- * ANTES:  Dos clases separadas (EnemyNormal, EnemyFlying) con arrays de
- *         BufferedImage cargados individualmente. EnemyFactory elegía un
- *         frame aleatorio al crear cada enemigo (sin sistema de animación).
- *
- * AHORA:  Una sola clase orientada a datos. Cada tipo de enemigo tiene un
- *         SpriteHandle con todas sus animaciones. EnemyFactory obtiene el
- *         handle correcto por tipo; AnimationController maneja la animación.
+ * ── HRFC-004: ELIMINADO EL PATH LEGACY ───────────────────────────────────
+ * Los enemigos ya no usan BufferedImage como puente. SpriteHandle se pasa
+ * directamente al constructor de Enemy → MovingObjects → SpriteRenderer.
+ * No hay legacySprite, no hay frame incorrecto en el primer tick.
  *
  * ── CLAVES DE HANDLE ─────────────────────────────────────────────────────
  *   "enemy.normal"  → enemigo terrestre (zotopias)
@@ -49,22 +45,33 @@ public final class EnemyAssets {
             "/Sprites/Source/enemies/zotopia4.png"
         );
 
+        // Construir la animación idle via Builder para consistencia con el nuevo sistema.
+        // El banco de frames son los 4 sprites individuales cargados arriba.
+        Animation normalIdle = Animation.builder(normalFrames)
+            .frame(0, 3)       // frames 0..3 inclusive
+            .defaultDuration(12)
+            .loop()
+            .build();
+
         SpriteDefinition normalDef = new SpriteDefinition(normalFrames[0])
-            .addAnimation("idle", Animation.loop(normalFrames, 12));
+            .addAnimation("idle", normalIdle);
 
         normalHandle = new SpriteHandle(normalDef, "enemy.normal");
         AssetRegistry.getInstance().register("enemy.normal", normalHandle);
 
         // ── Enemigo volador (misma imagen repetida — se reemplazará con sprites reales) ─
+        // gato.jpg se cachea una sola vez por AssetLoader.
         SpriteFrame flyingFrame = AssetLoader.loadFrame("/Sprites/Source/gato.jpg");
+        SpriteFrame[] flyingFrames = new SpriteFrame[]{ flyingFrame, flyingFrame, flyingFrame, flyingFrame };
 
-        // Todos los frames apuntan al mismo recurso (gato.jpg se cachea una vez).
-        SpriteFrame[] flyingFrames = new SpriteFrame[]{
-            flyingFrame, flyingFrame, flyingFrame, flyingFrame
-        };
+        Animation flyingIdle = Animation.builder(flyingFrames)
+            .frame(0, 3)
+            .defaultDuration(12)
+            .loop()
+            .build();
 
         SpriteDefinition flyingDef = new SpriteDefinition(flyingFrame)
-            .addAnimation("idle", Animation.loop(flyingFrames, 12));
+            .addAnimation("idle", flyingIdle);
 
         flyingHandle = new SpriteHandle(flyingDef, "enemy.flying");
         AssetRegistry.getInstance().register("enemy.flying", flyingHandle);

@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Physics2DComponent;

@@ -1,17 +1,16 @@
 package Game.Enemys.AI;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 
 /**
  * Comportamiento de IA de un enemigo.
  *
- * CAMBIO vs. original: el segundo parámetro era `Player player`.
- * Ahora es `EnemyContext ctx` — abstracción del objetivo.
+ * ── HRFC-005 ─────────────────────────────────────────────────────────────
+ * Actualizado para operar sobre Game.Enemys.Core.Enemy.
  *
- * Retro-compatible: todo código que pasaba `player` solo necesita
- * pasarlo envuelto en `EnemyContext.of(player)`.
- *
- * Ver EnemyContext para los factory methods disponibles.
+ * EnemyComport decide QUÉ acción ejecutar dado el estado del Enemy
+ * y el contexto del objetivo actual. La acción resultante la ejecuta
+ * EnemyAIController — que es quien llama decideAction() cada frame.
  */
 public interface EnemyComport {
 

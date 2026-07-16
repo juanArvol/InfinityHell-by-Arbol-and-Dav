@@ -1,10 +1,9 @@
 package Game.Items.Types.Weapons.Modifiers;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-
 import java.util.List;
 import java.util.function.Supplier;
 

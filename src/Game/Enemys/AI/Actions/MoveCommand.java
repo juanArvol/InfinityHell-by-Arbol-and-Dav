@@ -1,7 +1,7 @@
 package Game.Enemys.AI.Actions;
 
 import Game.Enemys.AI.EnemyAction;
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 
 /** Mueve al enemigo en el eje X. Sin cambios respecto al original. */
 public class MoveCommand implements EnemyAction {

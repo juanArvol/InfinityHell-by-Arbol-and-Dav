@@ -1,6 +1,6 @@
 package Main.Bootstrap;
 
-import Game.Enemys.Spawner.EnemySpawner;
+import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
 import Game.Player.Player;
@@ -62,7 +62,7 @@ public final class GameWorldBootstrap {
         worldManager.setTrackedObject(player);
 
         // ── Initial enemy spawn ──────────────────────────────────────────────
-        new EnemySpawner().spawn(world, 5);
+        new EnemySpawner().spawn(world, 1);
     }
 
     /** El Player creado durante el bootstrap. */

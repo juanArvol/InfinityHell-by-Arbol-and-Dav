@@ -118,13 +118,11 @@ public class SceneRenderer {
      */
     public void draw(World world, GameCamera camera, Graphics2D g,
                      int virtualWidth, int virtualHeight) {
-        // RenderCamera: snapshot (x, y) de solo lectura para el pipeline de render.
-        // Ver limitación de zoom/rotación en el Javadoc de clase.
-        RenderCamera renderCamera = new RenderCamera(camera);
+        // Propagar dimensiones virtuales a los sistemas de render para culling.
+        renderSystem.setVirtualSize(virtualWidth, virtualHeight);
+        depthRenderSystem.setVirtualSize(virtualWidth, virtualHeight);
 
-        // RenderContext recibe las dimensiones VIRTUALES del Display, no las del mundo.
-        // Con zoom ≠ 1, RenderContext.withCamera(GameCamera) las usa para centrar
-        // la transformación de escala en el centro de la pantalla virtual.
+        RenderCamera renderCamera = new RenderCamera(camera);
         RenderContext ctx = new RenderContext(g, virtualWidth, virtualHeight);
 
         if (useDepthSort) {

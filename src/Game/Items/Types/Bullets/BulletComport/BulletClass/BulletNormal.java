@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.World.WorldObjects.Visuals.BackGround;

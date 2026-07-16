@@ -12,20 +12,19 @@ import Sprites.Core.SpriteHandle;
  * Mantiene el estado de la animación actual (qué animación, qué frame,
  * qué tick) y notifica al SpriteRenderer con el frame correcto cada update.
  *
+ * ── HRFC-004: DURACIÓN POR FRAME ─────────────────────────────────────────
+ * AnimationController ahora respeta las duraciones individuales por frame
+ * definidas en Animation.Builder con .frameDuration(pos, ticks).
+ *
+ * El tick acumulado se compara con Animation.ticksForFrame(frameIndex) en
+ * lugar del defaultTicksPerFrame global. Esto soporta animaciones donde
+ * ciertos frames duran más (hitboxes extendidas, énfasis visual, pauses).
+ *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- *   Animation         → define CÓMO avanza una animación (inmutable, datos)
+ *   Animation           → define CÓMO avanza una animación (inmutable, datos)
  *   AnimationController → mantiene EL ESTADO de reproducción por entidad
- *   SpriteRenderer    → DIBUJA el frame que le pasa AnimationController
- *
- * ── USO ───────────────────────────────────────────────────────────────────
- *
- *   // En el constructor de la entidad:
- *   addComponent(new AnimationController(PlayerAssets.handle));
- *
- *   // En el Renderer de la entidad (ejemplo: PlayerRenderer):
- *   animController.play("walk_right");
- *   animController.play("idle");
+ *   SpriteRenderer      → DIBUJA el frame que le pasa AnimationController
  *
  * ── TRANSICIÓN DE ANIMACIONES ─────────────────────────────────────────────
  * play(key) es idempotente: si se llama con la misma clave que ya está
@@ -35,10 +34,18 @@ import Sprites.Core.SpriteHandle;
  * ── ANIMACIÓN NO ENCONTRADA ───────────────────────────────────────────────
  * Si la clave no existe en el handle, se mantiene la animación actual.
  * Nunca lanza excepción. Loguea warning en stderr.
+ *
+ * ── PING-PONG ─────────────────────────────────────────────────────────────
+ * En LoopMode.PING_PONG, AnimationController gestiona la dirección interna
+ * (pingPongForward). Llama a nextIndex() en avance y nextIndexReverse() en
+ * retroceso. Al alcanzar un extremo, invierte la dirección.
  */
 public class AnimationController extends Component {
 
     private final SpriteHandle handle;
+
+    /** Clave que se reproduce automáticamente en start(). null = no auto-play. */
+    private String autoPlayKey = null;
 
     /** Clave de la animación actualmente en reproducción. */
     private String currentKey = null;
@@ -49,22 +56,41 @@ public class AnimationController extends Component {
     /** Índice del frame actual dentro de la animación. */
     private int frameIndex = 0;
 
-    /** Tick acumulado dentro del frame actual. */
+    /**
+     * Tick acumulado dentro del frame actual.
+     * Se compara con Animation.ticksForFrame(frameIndex) — no con un global.
+     */
     private int tick = 0;
+
+    /**
+     * Dirección de avance para PING_PONG.
+     * true = avanzando (índice creciente), false = retrocediendo.
+     */
+    private boolean pingPongForward = true;
 
     /** Referencia cacheada al SpriteRenderer del mismo objeto. */
     private SpriteRenderer renderer;
 
-    // ── Constructor ──────────────────────────────────────────────────────
+    // ── Constructores ────────────────────────────────────────────────────
 
     /**
-     * @param handle handle del sprite con todas las animaciones disponibles
+     * @param handle      handle del sprite con todas las animaciones disponibles
+     * @param autoPlayKey clave de animación a reproducir automáticamente en start().
+     *                    Si null, no hay auto-play (el caller llama play() manualmente).
      */
-    public AnimationController(SpriteHandle handle) {
+    public AnimationController(SpriteHandle handle, String autoPlayKey) {
         if (handle == null) {
             throw new IllegalArgumentException("AnimationController: handle no puede ser null");
         }
-        this.handle = handle;
+        this.handle      = handle;
+        this.autoPlayKey = autoPlayKey;
+    }
+
+    /**
+     * Constructor sin auto-play. El caller llama play() explícitamente.
+     */
+    public AnimationController(SpriteHandle handle) {
+        this(handle, null);
     }
 
     // ── Ciclo de vida ────────────────────────────────────────────────────
@@ -77,9 +103,11 @@ public class AnimationController extends Component {
                 + gameObject.getClass().getSimpleName()
                 + ". AnimationController no tiene efecto.");
         }
-        // Actualizar el handle en el renderer para que los tamaños queden correctos
         if (renderer != null) {
             renderer.setHandle(handle);
+        }
+        if (autoPlayKey != null) {
+            play(autoPlayKey);
         }
     }
 
@@ -87,14 +115,13 @@ public class AnimationController extends Component {
     public void update() {
         if (currentAnimation == null || renderer == null) return;
 
-        // Avanzar el tick
+        // Duración efectiva del frame actual (individual o base)
+        int frameTicks = currentAnimation.ticksForFrame(frameIndex);
+
         tick++;
-        if (tick >= currentAnimation.getTicksPerFrame()) {
+        if (tick >= frameTicks) {
             tick = 0;
-            // Avanzar frame (Animation maneja el loop/once/pingpong)
-            if (!currentAnimation.isFinished(frameIndex)) {
-                frameIndex = currentAnimation.nextIndex(frameIndex, currentAnimation.getTicksPerFrame() - 1);
-            }
+            advanceFrame();
         }
 
         // Empujar el frame actual al SpriteRenderer
@@ -102,20 +129,64 @@ public class AnimationController extends Component {
         renderer.setCurrentFrame(frame);
     }
 
+    // ── Avance de frame ──────────────────────────────────────────────────
+
+    /**
+     * Avanza al siguiente frame según el LoopMode y la dirección ping-pong.
+     */
+    private void advanceFrame() {
+        if (currentAnimation.isFinished(frameIndex)) return;
+
+        switch (currentAnimation.getLoopMode()) {
+            case LOOP, ONCE -> {
+                frameIndex = currentAnimation.nextIndex(frameIndex);
+            }
+            case PING_PONG -> {
+                int effectiveEnd   = resolveLoopEnd();
+                int effectiveStart = resolveLoopStart();
+
+                if (pingPongForward) {
+                    if (frameIndex >= effectiveEnd) {
+                        pingPongForward = false;
+                        frameIndex = currentAnimation.nextIndexReverse(frameIndex);
+                    } else {
+                        frameIndex = currentAnimation.nextIndex(frameIndex);
+                    }
+                } else {
+                    if (frameIndex <= effectiveStart) {
+                        pingPongForward = true;
+                        frameIndex = currentAnimation.nextIndex(frameIndex);
+                    } else {
+                        frameIndex = currentAnimation.nextIndexReverse(frameIndex);
+                    }
+                }
+            }
+        }
+    }
+
+    private int resolveLoopEnd() {
+        int le = currentAnimation.getLoopEnd();
+        return (le >= 0 && le < currentAnimation.getFrameCount())
+            ? le : currentAnimation.getFrameCount() - 1;
+    }
+
+    private int resolveLoopStart() {
+        int ls = currentAnimation.getLoopStart();
+        return (ls >= 0 && ls < currentAnimation.getFrameCount()) ? ls : 0;
+    }
+
     // ── API pública ──────────────────────────────────────────────────────
 
     /**
      * Inicia o continúa la reproducción de la animación con la clave dada.
      *
-     * Idempotente: si ya se está reproduciendo esta animación, no resetea
+     * Idempotente: si ya se está reproduciéndose esta animación, no resetea
      * el frame ni el tick. Seguro llamarlo cada frame desde el Renderer.
      *
      * @param key clave de la animación (ej: "idle", "walk_right")
      */
     public void play(String key) {
         if (key == null) return;
-
-        // Si ya está reproduciéndose esta animación, no interrumpir
         if (key.equals(currentKey)) return;
 
         Animation anim = handle.getAnimation(key);
@@ -129,8 +200,8 @@ public class AnimationController extends Component {
         currentAnimation = anim;
         frameIndex       = 0;
         tick             = 0;
+        pingPongForward  = true;
 
-        // Actualizar inmediatamente para no mostrar el frame anterior un tick
         if (renderer != null) {
             renderer.setCurrentFrame(anim.getFirstFrame());
         }
@@ -141,8 +212,9 @@ public class AnimationController extends Component {
      * Útil para animaciones ONCE que necesitan reproducirse de nuevo.
      */
     public void restart() {
-        frameIndex = 0;
-        tick       = 0;
+        frameIndex      = 0;
+        tick            = 0;
+        pingPongForward = true;
         if (currentAnimation != null && renderer != null) {
             renderer.setCurrentFrame(currentAnimation.getFirstFrame());
         }
@@ -156,6 +228,7 @@ public class AnimationController extends Component {
         currentAnimation = null;
         frameIndex       = 0;
         tick             = 0;
+        pingPongForward  = true;
         if (renderer != null) {
             renderer.setCurrentFrame(handle.resolveDefault());
         }

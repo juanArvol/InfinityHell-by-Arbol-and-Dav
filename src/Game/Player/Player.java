@@ -89,10 +89,12 @@ public class Player extends MovingObjects {
      * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
      */
     public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner) {
-        // Imagen inicial para el SpriteRenderer base (null-safe — AnimationController
-        // toma el control desde el primer update() y setea el frame correcto).
+        // ── HRFC-004: constructor con SpriteHandle — sin legacySprite ────────
+        // MovingObjects crea SpriteRenderer(handle) directamente.
+        // No se pasa BufferedImage: elimina el frame incorrecto que podía
+        // mostrarse durante el primer tick antes de AnimationController.start().
         super(spawn,
-              PlayerAssets.handle.resolveDefault().getImage(),
+              PlayerAssets.handle,
               new PlayerPhysics(BASE_GRAVITY),
               SizeSyncMode.NONE);
 

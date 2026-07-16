@@ -1,6 +1,6 @@
 package Game.Items.Types.Weapons.Modifiers;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Engine.Components.StatusEffectComponent;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.Bullet;

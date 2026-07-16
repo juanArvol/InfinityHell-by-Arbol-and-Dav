@@ -1,9 +1,8 @@
 package Game.Engine.Events;
 
-import Game.Enemys.Enemy;
+import Game.Enemys.Core.Enemy;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
-import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Weapons.Modifiers.WeaponModifier;
 import Game.Player.Player;
 
@@ -21,7 +20,7 @@ import Game.Player.Player;
  *
  * NOTA sobre OnEnemyDeathEvent y OnPickupEvent:
  *   Tienen sus propios archivos standalone en sus paquetes naturales:
- *     Game.Enemys.OnEnemyDeathEvent
+ *     Game.Enemys.Core.Events.OnEnemyDeathEvent
  *     Game.Items.OnPickupEvent
  *   Usar siempre esos, no definir records duplicados aquí.
  *

@@ -1,6 +1,9 @@
 package Game.Engine.RenderEngine.Context;
 
 import Game.Engine.Camera.GameCamera;
+import Game.Engine.RenderEngine.Strategies.SpriteDrawer;
+import Game.Engine.RenderEngine.Transform.TransformData;
+import Sprites.Core.SpriteFrame;
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;
@@ -143,6 +146,35 @@ public class RenderContext {
         g.fillOval(x, y, w, h);
         g.setComposite(originalComposite);
         g.setColor(originalColor);
+    }
+
+    // ── API de sprites con TransformData ──────────────────────────────────────
+
+    /**
+     * Dibuja un SpriteFrame con las transformaciones del TransformData.
+     *
+     * Este es el método principal del pipeline de render para HRFC-003.
+     * Delega en SpriteDrawer que orquesta todas las estrategias de render:
+     * flip, escala, rotación, alpha, tinte, blend.
+     *
+     * @param frame       frame a dibujar (debe ser válido)
+     * @param x           posición X en pantalla (con offset de cámara ya aplicado)
+     * @param y           posición Y en pantalla
+     * @param w           ancho de render
+     * @param h           alto de render
+     * @param transform   transformaciones a aplicar (IDENTITY si no hay)
+     */
+    public void drawSprite(SpriteFrame frame, int x, int y, int w, int h, TransformData transform) {
+        if (frame == null || !frame.isValid()) return;
+        SpriteDrawer.INSTANCE.draw(g, frame, x, y, w, h,
+            transform != null ? transform : TransformData.IDENTITY);
+    }
+
+    /**
+     * Variante simplificada: dibuja un SpriteFrame sin transformaciones.
+     */
+    public void drawSprite(SpriteFrame frame, int x, int y, int w, int h) {
+        drawSprite(frame, x, y, w, h, TransformData.IDENTITY);
     }
 
     /** Acceso directo para operaciones avanzadas no cubiertas por el wrapper. */
