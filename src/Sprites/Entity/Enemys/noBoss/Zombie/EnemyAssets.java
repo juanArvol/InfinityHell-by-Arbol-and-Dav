@@ -1,4 +1,4 @@
-package Sprites.Enemys;
+package Sprites.Entity.Enemys.noBoss.Zombie;
 
 import Sprites.Core.Animation;
 import Sprites.Core.AssetLoader;
@@ -39,10 +39,10 @@ public final class EnemyAssets {
 
         // ── Enemigo normal (4 frames individuales) ────────────────────────
         SpriteFrame[] normalFrames = AssetLoader.loadFrames(
-            "/Sprites/Source/enemies/zotopia1.png",
-            "/Sprites/Source/enemies/zotopia2.png",
-            "/Sprites/Source/enemies/zotopia3.png",
-            "/Sprites/Source/enemies/zotopia4.png"
+            "/Sprites/Source/Entity/Enemys/noBoss/Zombie/zotopia1.png",
+            "/Sprites/Source/Entity/Enemys/noBoss/Zombie/zotopia2.png",
+            "/Sprites/Source/Entity/Enemys/noBoss/Zombie/zotopia3.png",
+            "/Sprites/Source/Entity/Enemys/noBoss/Zombie/zotopia4.png"
         );
 
         // Construir la animación idle via Builder para consistencia con el nuevo sistema.

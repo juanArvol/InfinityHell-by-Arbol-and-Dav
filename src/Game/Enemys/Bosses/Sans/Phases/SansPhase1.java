@@ -1,30 +1,30 @@
 package Game.Enemys.Bosses.Sans.Phases;
 
 import Game.Enemys.Bosses.Sans.AI.SansDodgeBehavior;
+import Game.Enemys.Bosses.Sans.Movement.SansMovement;
 import Game.Enemys.Bosses.Sans.Patterns.BoneBarragePattern;
 import Game.Enemys.Bosses.Sans.Variables.SansVariables;
 import Game.Enemys.Core.Contracts.EnemyPhase;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.Core.Movement.FlyingMovement;
-import Game.Enemys.Core.Variables.EnemyVariables;
 
 /**
  * Fase 1 de Sans — El perezoso.
  *
- * ── Descripción ──────────────────────────────────────────────────────────
- * Sans está tranquilo. Ataca con cadencia lenta, se teleporta sin urgencia,
- * y su rango de "espacio personal" es pequeño.
+ * ── HRFC-006 ──────────────────────────────────────────────────────────────
+ * Migrado de EnemyVariables a EnemyStats / EnemyFlags.
  *
- * ── Lo que configura al entrar ───────────────────────────────────────────
- *   Movimiento : FlyingMovement (sans flota, sin gravedad)
- *   IA         : SansDodgeBehavior (esquiva si el jugador se acerca)
- *   Ataques    : BoneBarragePattern con cooldown lento (120 frames)
- *   Variables  : cooldown=120, teleport_range=300, damage=4
+ *   Velocidad          → enemy.getStats().setSpeed()
+ *   Daño               → enemy.getStats().setDamage()
+ *   Cooldown de ataque → enemy.getStats().setAttackCooldown()
+ *   Rango de teleporte → enemy.getStats().setTeleportRange()
+ *   Invulnerabilidad   → enemy.getFlags().setInvincible()
+ *   Movimiento         → SansMovement (ya no FlyingMovement)
+ *
+ * ── Descripción ──────────────────────────────────────────────────────────
+ * Sans está tranquilo. Ataca con cadencia lenta, se teleporta sin urgencia.
  *
  * ── Transición a Fase 2 ──────────────────────────────────────────────────
- * La condición de transición la define el EnemyPhaseController del Assembler.
- * Sans tiene 1 HP — la transición a Fase 2 es por tiempo (TimedTransition),
- * no por HP. Fase 2 comienza cuando el jugador demuestra persistencia.
+ * Condición definida en SansAssembler: TimedTransition(600 frames).
  */
 public final class SansPhase1 implements EnemyPhase {
 
@@ -33,8 +33,9 @@ public final class SansPhase1 implements EnemyPhase {
 
     @Override
     public void onEnter(Enemy enemy) {
-        // ── Movimiento: flota sin gravedad ────────────────────────────────
-        enemy.getMovementController().setStrategy(new FlyingMovement(), enemy);
+        // ── Movimiento: SansMovement propio ───────────────────────────────
+        // onActivate() activa EnemyFlags.isFlying y EnemyState.setFlying.
+        enemy.getMovementController().setStrategy(new SansMovement(), enemy);
 
         // ── IA: esquiva perezosa ──────────────────────────────────────────
         enemy.getAIController().setBehavior(new SansDodgeBehavior());
@@ -43,11 +44,14 @@ public final class SansPhase1 implements EnemyPhase {
         enemy.getAttackController().clearPatterns();
         enemy.getAttackController().addPattern(new BoneBarragePattern());
 
-        // ── Variables: fase 1 ─────────────────────────────────────────────
-        enemy.getVariables()
-            .set(SansVariables.ATK_COOLDOWN,         SansVariables.PHASE1_ATK_COOLDOWN)
-            .set(SansVariables.TELEPORT_RANGE,       SansVariables.PHASE1_TELEPORT_RANGE)
-            .set(SansVariables.INVINCIBLE,           false)
-            .set(EnemyVariables.Keys.DAMAGE, SansVariables.PHASE1_DAMAGE);
+        // ── Stats: valores de fase 1 ──────────────────────────────────────
+        enemy.getStats()
+            .setSpeed(SansVariables.PHASE1_SPEED)
+            .setDamage(SansVariables.PHASE1_DAMAGE)
+            .setAttackCooldown(SansVariables.PHASE1_ATK_COOLDOWN)
+            .setTeleportRange(SansVariables.PHASE1_TELEPORT_RANGE);
+
+        // ── Flags: fase 1 ─────────────────────────────────────────────────
+        enemy.getFlags().setInvincible(false);
     }
 }

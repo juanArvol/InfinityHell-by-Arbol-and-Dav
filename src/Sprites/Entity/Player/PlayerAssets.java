@@ -1,4 +1,4 @@
-package Sprites.Player;
+package Sprites.Entity.Player;
 
 import Sprites.Core.Animation;
 import Sprites.Core.AssetLoader;
@@ -39,7 +39,7 @@ import Sprites.Core.SpriteSheet;
 public final class PlayerAssets {
 
     private static final String SHEET_PATH =
-        "/Sprites/Source/player/Player Spritesheet.png";
+        "/Sprites/Source/Entity/Player/Player Spritesheet.png";
 
     /**
      * Ancho de cada celda del spritesheet.

@@ -6,77 +6,89 @@ import Game.Enemys.EnemyTypes.Zombie.ZombieAssembler;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 
 /**
- * Fábrica de enemigos del nuevo framework.
+ * Fábrica de enemigos — delega completamente en EnemyRegistry.
  *
- * ── HRFC-005 ─────────────────────────────────────────────────────────────
- * Reemplaza Game.Enemys.EnemyFactory (legacy).
+ * ── HRFC-006 — EnemyFactory deja de crecer ───────────────────────────────
+ * EnemyFactory ya no contiene ningún switch. Agregar un nuevo tipo de enemy
+ * no requiere modificar este archivo.
  *
- * ── Diferencia con el legacy ─────────────────────────────────────────────
- * La fábrica legacy conocía cada tipo concreto (EnemyNormal, EnemyFlying)
- * y los instanciaba directamente. Agregar un nuevo tipo requería modificar
- * la fábrica — violación directa de OCP.
+ * EnemyFactory únicamente:
+ *   1. Pre-registra los tipos base del juego en EnemyRegistry al inicializar.
+ *   2. Expone create(EnemyId, position) como API de conveniencia tipada.
+ *   3. Expone create(EnemyAssembler, position) para assemblers custom.
  *
- * La nueva fábrica solo conoce Assemblers. Agregar un nuevo tipo de enemy
- * significa crear un nuevo Assembler. La fábrica no se modifica.
+ * ── Añadir un nuevo tipo de enemy ────────────────────────────────────────
+ * NO modificar este archivo. En su lugar, registrar el assembler donde
+ * corresponda (inicializador de módulo de contenido, nivel, o mod):
  *
- * ── Punto de extensión ───────────────────────────────────────────────────
- * Para agregar un nuevo tipo (ej: Spinner):
- *   1. Crear SpinnerAssembler extends EnemyAssembler en EnemyTypes/Spinner/.
- *   2. Añadir SPINNER al enum EnemyId.
- *   3. Añadir el case en create().
- *   Solo eso. El Core no cambia.
+ *   EnemyRegistry.register("spinner", SpinnerAssembler::new);
+ *   EnemyRegistry.register("sans",    SansAssembler::new);
  *
- * ── EnemyId vs EnemyType (legacy) ────────────────────────────────────────
- * EnemyType era un enum en Game.Enemys.Types que obligaba a tener subclases
- * para cada tipo. EnemyId vive en el Core y solo sirve como clave de lookup
- * para el Assembler correcto — no implica ninguna jerarquía.
+ * Después, crear con:
+ *   EnemyRegistry.create("spinner", position);
+ *
+ * ── EnemyId (enum tipado) ─────────────────────────────────────────────────
+ * EnemyId sigue disponible para los tipos base del juego. Su único rol es
+ * proveer autocompletado e impedir typos en el código que conoce los tipos
+ * de antemano. No implica ninguna jerarquía de clases.
  */
 public final class EnemyFactory {
 
-    private EnemyFactory() {}
+    // ── IDs de los tipos base ─────────────────────────────────────────────
 
-    /**
-     * Identificadores de tipos de enemy disponibles.
-     *
-     * Agregar aquí un nuevo ID no modifica ningún contrato del Core.
-     */
+    /** Identificadores de los tipos de enemy base del juego. */
     public enum EnemyId {
-        ZOMBIE,
-        FLYING,
-        HYBRID
+        ZOMBIE  ("zombie"),
+        FLYING  ("flying"),
+        HYBRID  ("hybrid");
+
+        public final String registryId;
+
+        EnemyId(String registryId) {
+            this.registryId = registryId;
+        }
     }
 
+    // ── Inicialización ────────────────────────────────────────────────────
+
+    static {
+        // Registrar los tipos base en EnemyRegistry al cargar la clase.
+        // Tipos adicionales (Bosses, enemigos de contenido externo) se registran
+        // en sus propios módulos de inicialización.
+        EnemyRegistry.register(EnemyId.ZOMBIE.registryId, ZombieAssembler::new);
+        EnemyRegistry.register(EnemyId.FLYING.registryId, FlyingEnemyAssembler::new);
+        EnemyRegistry.register(EnemyId.HYBRID.registryId, HybridAssembler::new);
+    }
+
+    private EnemyFactory() {}
+
+    // ── API tipada (enum) ─────────────────────────────────────────────────
+
     /**
-     * Crea un Enemy completamente ensamblado en la posición dada.
+     * Crea un Enemy del tipo indicado por enum.
      *
-     * Delega en el Assembler correspondiente al tipo solicitado.
-     * El Assembler es el único que conoce la configuración concreta.
+     * Garantiza que el tipo ha sido registrado (el bloque static lo hace
+     * al cargar la clase). Usar para tipos base conocidos en tiempo de compilación.
      *
-     * @param id       identificador del tipo de enemy.
+     * @param id       identificador tipado del tipo de enemy.
      * @param position posición inicial en el mundo.
      * @return Enemy listo para añadir al mundo.
      */
     public static Enemy create(EnemyId id, Vector2D position) {
-        EnemyAssembler assembler = switch (id) {
-            case ZOMBIE  -> new ZombieAssembler();
-            case FLYING  -> new FlyingEnemyAssembler();
-            case HYBRID  -> new HybridAssembler();
-        };
-        return assembler.assemble(position);
+        return EnemyRegistry.create(id.registryId, position);
     }
 
     /**
-     * Variante de conveniencia que acepta un Assembler externo.
+     * Crea un Enemy usando un Assembler externo.
      *
-     * Permite crear enemies con assemblers custom (tests, eventos especiales,
-     * Bosses que construyen minions con configuración diferente) sin
-     * necesidad de registrarlos en el enum.
+     * Permite crear enemies con assemblers custom (Bosses, tests, minions con
+     * configuración especial) sin necesidad de registrarlos globalmente.
      *
      * @param assembler assembler a usar.
      * @param position  posición inicial en el mundo.
      * @return Enemy listo para añadir al mundo.
      */
     public static Enemy create(EnemyAssembler assembler, Vector2D position) {
-        return assembler.assemble(position);
+        return EnemyRegistry.create(assembler, position);
     }
 }

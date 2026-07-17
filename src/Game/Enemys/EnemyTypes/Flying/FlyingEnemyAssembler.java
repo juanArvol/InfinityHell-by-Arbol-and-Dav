@@ -1,30 +1,31 @@
 package Game.Enemys.EnemyTypes.Flying;
 
+import Game.Enemys.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.FlyingMovement;
-import Game.Enemys.Core.Variables.EnemyVariables;
-import Game.Enemys.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.EnemyPhysicsConfig;
 import Game.Engine.Components.Visuals.AnimationController;
 import Game.Engine.Components.Visuals.ShadowComponent;
-import Sprites.Enemys.EnemyAssets;
+import Game.Living.Attributes.EntityAttributes;
+import Game.Living.Combat.AttackSource;
+import Game.Living.Combat.AttackSources;
+import Game.Living.Flags.EntityFlags;
+import Game.Living.Stats.EntityStats;
+import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**
  * Ensamblador del enemigo volador.
  *
- * Reemplaza la cadena EnemyFlying → FlyingTypeEnemy → Enemy (legacy).
+ * ── HRFC-007 — Living Entity Core ────────────────────────────────────────
+ * Migrado a los tipos genéricos del Living Entity Core:
+ *   EnemyStats       → EntityStats
+ *   EnemyFlags       → EntityFlags
+ *   EnemyAttributes  → EntityAttributes
+ *   AttackSource/s   → Game.Living.Combat
  *
- * ── Lo que configura ─────────────────────────────────────────────────────
- *   Movimiento : FlyingMovement (activa flag flying, sin gravedad)
- *   IA         : FlyingBehavior (steering suave hacia el objetivo)
- *   Variables  : speed=3.0, steering_force=0.15
- *   Visual     : ShadowComponent + AnimationController "idle"
- *
- * ── Física ───────────────────────────────────────────────────────────────
- *   EnemyPhysicsConfig.flyingStandard() — gravity=0, sin aceleración terrestre.
- *   El steering de FlyingBehavior maneja todo el desplazamiento.
+ * Fuente de ataque: NATURAL (embestida aérea, picoteo, garras).
  */
 public final class FlyingEnemyAssembler extends EnemyAssembler {
 
@@ -39,25 +40,42 @@ public final class FlyingEnemyAssembler extends EnemyAssembler {
             .health(MAX_HEALTH)
             .physics(EnemyPhysicsConfig.flyingStandard())
             .collider(24, 30)
+            .shadow(18, 7)
+            .animation("idle")
             .build();
     }
 
     @Override
-    protected void configure(Enemy enemy) {
-        // ── Movimiento ────────────────────────────────────────────────────
-        enemy.getMovementController().setStrategy(new FlyingMovement());
+    protected void configureStats(EntityStats stats) {
+        stats.setSpeed(MAX_SPEED);
+    }
 
-        // ── IA ────────────────────────────────────────────────────────────
+    @Override
+    protected void configureFlags(EntityFlags flags) {
+        flags.setFlying(true);
+    }
+
+    @Override
+    protected void configureAttributes(EntityAttributes attributes) {
+        attributes.setFaction(EntityAttributes.Faction.MONSTER)
+                  .setEntityClass(EntityAttributes.EntityClass.COMMON);
+    }
+
+    @Override
+    protected void configureAttackSources(AttackSources sources) {
+        sources.add(AttackSource.NATURAL);
+    }
+
+    @Override
+    protected void configureMovement(Enemy enemy) {
+        enemy.getMovementController().setStrategy(new FlyingMovement());
         enemy.getAIController().setBehavior(
             new FlyingBehavior(MAX_SPEED, STEERING_FORCE)
         );
+    }
 
-        // ── Variables ─────────────────────────────────────────────────────
-        enemy.getVariables()
-            .set(EnemyVariables.Keys.SPEED, MAX_SPEED)
-            .set("steering_force", STEERING_FORCE);
-
-        // ── Visual ────────────────────────────────────────────────────────
+    @Override
+    protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new ShadowComponent(18, 7));
         enemy.addComponent(new AnimationController(EnemyAssets.flyingHandle, "idle"));
     }

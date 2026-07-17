@@ -1,10 +1,10 @@
 package Sprites;
 
-import Sprites.Around.AroundAssets;
-import Sprites.Bullets.BulletAssets;
-import Sprites.Enemys.EnemyAssets;
-import Sprites.Obstacles.ObstaclesAssets;
-import Sprites.Player.PlayerAssets;
+import Sprites.Entity.Bullets.BulletAssets;
+import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
+import Sprites.Entity.Player.PlayerAssets;
+import Sprites.Enviroment.Around.AroundAssets;
+import Sprites.Enviroment.Obstacles.ObstaclesAssets;
 
 /**
  * Assets — punto de entrada único del sistema de recursos gráficos.

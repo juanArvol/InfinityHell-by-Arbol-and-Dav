@@ -3,7 +3,7 @@ package Game.Items.Types.Bullets;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
-import Sprites.Bullets.BulletAssets;
+import Sprites.Entity.Bullets.BulletAssets;
 
 /**
  * Extensión de BulletFactory — añade createBulletWithBehavior() para

@@ -1,28 +1,25 @@
 package Game.Enemys.Bosses.Sans.Phases;
 
 import Game.Enemys.Bosses.Sans.AI.SansDodgeBehavior;
+import Game.Enemys.Bosses.Sans.Movement.SansMovement;
 import Game.Enemys.Bosses.Sans.Patterns.BoneBarragePattern;
 import Game.Enemys.Bosses.Sans.Variables.SansVariables;
 import Game.Enemys.Core.Contracts.EnemyPhase;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.Core.Movement.FlyingMovement;
-import Game.Enemys.Core.Variables.EnemyVariables;
 
 /**
  * Fase 2 de Sans — La determinación.
  *
- * ── Descripción ──────────────────────────────────────────────────────────
- * Sans deja de ser vago. Ataca más rápido, se teleporta con mayor rango
- * y el daño de sus huesos aumenta. Sigue usando el mismo patrón de ataque
- * y el mismo comportamiento de esquiva — solo cambian los valores.
+ * ── HRFC-006 ──────────────────────────────────────────────────────────────
+ * Migrado de EnemyVariables a EnemyStats / EnemyFlags.
+ * Movimiento cambiado de FlyingMovement a SansMovement.
  *
  * ── Principio de composición en práctica ────────────────────────────────
- * Fase 2 no crea nuevas clases de IA ni nuevos patrones.
- * Reutiliza SansDodgeBehavior y BoneBarragePattern con variables distintas.
- * La variación de comportamiento surge de EnemyVariables, no de herencia.
+ * Fase 2 reutiliza SansDodgeBehavior y BoneBarragePattern.
+ * La variación de comportamiento surge de EnemyStats, no de herencia.
  *
  * ── Transición ───────────────────────────────────────────────────────────
- * Fase final — no hay transición de salida. Sans pelea hasta el final.
+ * Fase final — sin transición de salida.
  */
 public final class SansPhase2 implements EnemyPhase {
 
@@ -31,23 +28,26 @@ public final class SansPhase2 implements EnemyPhase {
 
     @Override
     public void onEnter(Enemy enemy) {
-        // ── Movimiento: sigue flotando ────────────────────────────────────
-        // FlyingMovement ya está activo desde Fase 1. setStrategy() con el
-        // mismo tipo activa onDeactivate + onActivate, limpiando el estado.
-        enemy.getMovementController().setStrategy(new FlyingMovement(), enemy);
+        // ── Movimiento: SansMovement — reinicia el estado para la fase 2 ──
+        // setStrategy con un nuevo SansMovement llama onDeactivate + onActivate,
+        // reseteando el ángulo de órbita para la fase más agresiva.
+        enemy.getMovementController().setStrategy(new SansMovement(), enemy);
 
-        // ── IA: misma esquiva, ahora más urgente (rango mayor en variables) ──
+        // ── IA: misma esquiva, ahora con mayor rango (definido en stats) ──
         enemy.getAIController().setBehavior(new SansDodgeBehavior());
 
         // ── Ataques: mismo patrón, cooldown reducido → más agresivo ───────
         enemy.getAttackController().clearPatterns();
         enemy.getAttackController().addPattern(new BoneBarragePattern());
 
-        // ── Variables: fase 2 — más rápido y más daño ────────────────────
-        enemy.getVariables()
-            .set(SansVariables.ATK_COOLDOWN,         SansVariables.PHASE2_ATK_COOLDOWN)
-            .set(SansVariables.TELEPORT_RANGE,       SansVariables.PHASE2_TELEPORT_RANGE)
-            .set(SansVariables.INVINCIBLE,           false)
-            .set(EnemyVariables.Keys.DAMAGE, SansVariables.PHASE2_DAMAGE);
+        // ── Stats: valores de fase 2 ──────────────────────────────────────
+        enemy.getStats()
+            .setSpeed(SansVariables.PHASE2_SPEED)
+            .setDamage(SansVariables.PHASE2_DAMAGE)
+            .setAttackCooldown(SansVariables.PHASE2_ATK_COOLDOWN)
+            .setTeleportRange(SansVariables.PHASE2_TELEPORT_RANGE);
+
+        // ── Flags: reiniciar invulnerabilidad al entrar en fase 2 ─────────
+        enemy.getFlags().setInvincible(false);
     }
 }

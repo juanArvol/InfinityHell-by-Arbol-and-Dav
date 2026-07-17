@@ -1,4 +1,4 @@
-package Sprites.Around.Blocks;
+package Sprites.Enviroment.Around.Blocks;
 
 import Sprites.Core.AssetLoader;
 import Sprites.Core.AssetRegistry;
@@ -28,7 +28,7 @@ public final class BlocksAssets {
 
     public static void init() {
 
-        SpriteFrame sueloFrame = AssetLoader.loadFrame("/Sprites/Source/ambiente/pasto.png");
+        SpriteFrame sueloFrame = AssetLoader.loadFrame("/Sprites/Source/Objects/Enviroments/pasto.png");
         SpriteDefinition sueloDef = new SpriteDefinition(sueloFrame);
 
         sueloHandle = new SpriteHandle(sueloDef, "world.suelo");

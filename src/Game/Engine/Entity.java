@@ -162,10 +162,24 @@ public abstract class Entity extends GameObjects {
     }
 
     /**
-     * Retorna true si hay un efecto activo del tipo indicado.
+     * Retorna true si hay un efecto activo del tipo dado.
+     * Consulta completamente tipada — sin Strings como clave lógica.
+     *
+     * @param type clase del tipo de efecto.
      */
-    public boolean hasEffect(String effectId) {
+    public <T extends StatusEffectComponent.StatusEffect> boolean hasEffect(Class<T> type) {
         StatusEffectComponent fx = getStatusEffects();
-        return fx != null && fx.hasEffect(effectId);
+        return fx != null && fx.hasEffect(type);
+    }
+
+    /**
+     * Elimina todos los efectos activos del tipo dado.
+     * Llama onExpire() en cada efecto eliminado.
+     *
+     * @param type clase del tipo de efecto.
+     */
+    public <T extends StatusEffectComponent.StatusEffect> void removeEffects(Class<T> type) {
+        StatusEffectComponent fx = getStatusEffects();
+        if (fx != null) fx.removeAll(type);
     }
 }

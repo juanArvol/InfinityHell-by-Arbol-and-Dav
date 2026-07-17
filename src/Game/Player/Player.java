@@ -12,7 +12,8 @@ import Game.Engine.MovingObjects;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Bullets.Bullet;
-import Sprites.Player.PlayerAssets;
+import Sprites.Entity.Player.PlayerAssets;
+
 import java.awt.Color;
 import java.util.function.Consumer;
 

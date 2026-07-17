@@ -1,4 +1,4 @@
-package Sprites.Bullets;
+package Sprites.Entity.Bullets;
 
 import Sprites.Core.AssetLoader;
 import Sprites.Core.AssetRegistry;
@@ -33,14 +33,14 @@ public final class BulletAssets {
     public static void init() {
 
         // ── Bala estándar ─────────────────────────────────────────────────
-        SpriteFrame balaFrame = AssetLoader.loadFrame("/Sprites/Source/bullets/bala.png");
+        SpriteFrame balaFrame = AssetLoader.loadFrame("/Sprites/Source/Entity/Bullets/bala.png");
         SpriteDefinition balaDef = new SpriteDefinition(balaFrame);
 
         balaHandle = new SpriteHandle(balaDef, "bullet.bala");
         AssetRegistry.getInstance().register("bullet.bala", balaHandle);
 
         // ── Bala cometa ───────────────────────────────────────────────────
-        SpriteFrame cometaFrame = AssetLoader.loadFrame("/Sprites/Source/bullets/cometa.png");
+        SpriteFrame cometaFrame = AssetLoader.loadFrame("/Sprites/Source/Entity/Bullets/cometa.png");
         SpriteDefinition cometaDef = new SpriteDefinition(cometaFrame);
 
         cometaHandle = new SpriteHandle(cometaDef, "bullet.cometa");

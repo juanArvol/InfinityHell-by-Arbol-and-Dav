@@ -1,29 +1,29 @@
 package Game.Enemys.EnemyTypes.Zombie;
 
+import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.GroundMovement;
-import Game.Enemys.Core.Variables.EnemyVariables;
-import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.EnemyPhysicsConfig;
 import Game.Engine.Components.Visuals.AnimationController;
-import Sprites.Enemys.EnemyAssets;
+import Game.Living.Attributes.EntityAttributes;
+import Game.Living.Combat.AttackSource;
+import Game.Living.Combat.AttackSources;
+import Game.Living.Stats.EntityStats;
+import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**
  * Ensamblador del Zombie — enemigo terrestre estándar.
  *
- * Reemplaza la cadena EnemyNormal → GroundTypeEnemy → Enemy (legacy).
+ * ── HRFC-007 — Living Entity Core ────────────────────────────────────────
+ * Migrado a los tipos genéricos del Living Entity Core:
+ *   EnemyStats       → EntityStats
+ *   EnemyAttributes  → EntityAttributes
+ *   AttackSource/s   → Game.Living.Combat
  *
- * ── Lo que configura ────────────────────────────────────────────────────
- *   Movimiento : GroundMovement (sincroniza enElSuelo desde física)
- *   IA         : AggressiveBehavior (persigue al jugador en eje X)
- *   Variables  : speed=1.0, damage=10, detection_range=400, attack_range=50
- *   Visual     : AnimationController con "idle"
- *
- * ── Lo que NO hace ───────────────────────────────────────────────────────
- *   No tiene fases ni patrones de ataque — es un enemigo simple.
- *   No participa en el ciclo de vida después de retornar el Enemy.
+ * Fuente de ataque: NATURAL. El Zombie es un muerto viviente que ataca
+ * únicamente con su cuerpo.
  */
 public final class ZombieAssembler extends EnemyAssembler {
 
@@ -40,27 +40,41 @@ public final class ZombieAssembler extends EnemyAssembler {
             .health(MAX_HEALTH)
             .physics(EnemyPhysicsConfig.groundStandard())
             .collider(24, 30)
+            .animation("idle")
+            .animation("walk")
+            .lootTable("zombie_drops")
             .build();
     }
 
     @Override
-    protected void configure(Enemy enemy) {
-        // ── Movimiento ────────────────────────────────────────────────────
-        enemy.getMovementController().setStrategy(new GroundMovement());
+    protected void configureStats(EntityStats stats) {
+        stats.setSpeed(MOVE_SPEED)
+             .setDamage(DAMAGE)
+             .setVisionRange(DETECTION_RANGE)
+             .setAttackRange(ATTACK_RANGE);
+    }
 
-        // ── IA ────────────────────────────────────────────────────────────
+    @Override
+    protected void configureAttributes(EntityAttributes attributes) {
+        attributes.setFaction(EntityAttributes.Faction.UNDEAD)
+                  .setEntityClass(EntityAttributes.EntityClass.COMMON);
+    }
+
+    @Override
+    protected void configureAttackSources(AttackSources sources) {
+        sources.add(AttackSource.NATURAL);
+    }
+
+    @Override
+    protected void configureMovement(Enemy enemy) {
+        enemy.getMovementController().setStrategy(new GroundMovement());
         enemy.getAIController().setBehavior(
             new AggressiveBehavior(DETECTION_RANGE, ATTACK_RANGE, MOVE_SPEED)
         );
+    }
 
-        // ── Variables ─────────────────────────────────────────────────────
-        enemy.getVariables()
-            .set(EnemyVariables.Keys.SPEED,           MOVE_SPEED)
-            .set(EnemyVariables.Keys.DAMAGE,          DAMAGE)
-            .set(EnemyVariables.Keys.DETECTION_RANGE, DETECTION_RANGE)
-            .set(EnemyVariables.Keys.ATTACK_RANGE,    ATTACK_RANGE);
-
-        // ── Visual ────────────────────────────────────────────────────────
+    @Override
+    protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new AnimationController(EnemyAssets.normalHandle, "idle"));
     }
 }

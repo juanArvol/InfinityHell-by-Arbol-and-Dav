@@ -1,4 +1,4 @@
-package Sprites.Obstacles;
+package Sprites.Enviroment.Obstacles;
 
 import Sprites.Core.AssetLoader;
 import Sprites.Core.AssetRegistry;

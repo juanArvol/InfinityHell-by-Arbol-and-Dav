@@ -1,34 +1,29 @@
 package Game.Enemys.EnemyTypes.Hybrid;
 
+import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.GroundMovement;
-import Game.Enemys.Core.Variables.EnemyVariables;
-import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.EnemyPhysicsConfig;
 import Game.Engine.Components.Visuals.AnimationController;
-import Sprites.Enemys.EnemyAssets;
+import Game.Living.Attributes.EntityAttributes;
+import Game.Living.Combat.AttackSource;
+import Game.Living.Combat.AttackSources;
+import Game.Living.Stats.EntityStats;
+import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**
  * Ensamblador del enemigo híbrido tierra/vuelo.
  *
- * Reemplaza HybridFlyGroundTypeEnemy (legacy).
+ * ── HRFC-007 — Living Entity Core ────────────────────────────────────────
+ * Migrado a los tipos genéricos del Living Entity Core:
+ *   EnemyStats       → EntityStats
+ *   EnemyAttributes  → EntityAttributes
+ *   AttackSource/s   → Game.Living.Combat
  *
- * ── Diferencia con el legacy ─────────────────────────────────────────────
- * El legacy usaba un flag booleano flyingMode y subclaseaba Enemy.
- * En el nuevo framework, cambiar de modo terrestre a aéreo es simplemente:
- *
- *   enemy.getMovementController().setStrategy(new FlyingMovement(), enemy);
- *   enemy.getAIController().setBehavior(new FlyingBehavior());
- *
- * Una fase o un EnemyComponent pueden hacer esa transición en runtime sin
- * conocer la clase concreta del enemy. El Enemy es siempre el mismo objeto.
- *
- * ── Configuración inicial ────────────────────────────────────────────────
- *   Empieza en modo terrestre. La lógica de juego (una fase, un trigger de
- *   gameplay) puede llamar setStrategy(new FlyingMovement()) en cualquier
- *   momento para activar el modo vuelo.
+ * Fuente de ataque: NATURAL (criatura orgánica que ataca cuerpo a cuerpo
+ * en ambos modos de movimiento).
  */
 public final class HybridAssembler extends EnemyAssembler {
 
@@ -45,28 +40,42 @@ public final class HybridAssembler extends EnemyAssembler {
             .health(MAX_HEALTH)
             .physics(EnemyPhysicsConfig.groundStandard())
             .collider(24, 30)
+            .animation("idle")
+            .animation("fly")
             .build();
     }
 
     @Override
-    protected void configure(Enemy enemy) {
-        // ── Movimiento inicial: terrestre ─────────────────────────────────
-        enemy.getMovementController().setStrategy(new GroundMovement());
+    protected void configureStats(EntityStats stats) {
+        stats.setSpeed(MOVE_SPEED)
+             .setDamage(DAMAGE)
+             .setVisionRange(DETECTION_RANGE)
+             .setAttackRange(ATTACK_RANGE);
+    }
 
-        // ── IA: persecución agresiva ──────────────────────────────────────
+    @Override
+    protected void configureAttributes(EntityAttributes attributes) {
+        attributes.setFaction(EntityAttributes.Faction.MONSTER)
+                  .setEntityClass(EntityAttributes.EntityClass.ELITE);
+    }
+
+    @Override
+    protected void configureAttackSources(AttackSources sources) {
+        sources.add(AttackSource.NATURAL);
+    }
+
+    @Override
+    protected void configureMovement(Enemy enemy) {
+        // Comienza en modo terrestre.
+        // Una fase o EnemyComponent puede transicionar a FlyingMovement en runtime.
+        enemy.getMovementController().setStrategy(new GroundMovement());
         enemy.getAIController().setBehavior(
             new AggressiveBehavior(DETECTION_RANGE, ATTACK_RANGE, MOVE_SPEED)
         );
+    }
 
-        // ── Variables ─────────────────────────────────────────────────────
-        enemy.getVariables()
-            .set(EnemyVariables.Keys.SPEED,           MOVE_SPEED)
-            .set(EnemyVariables.Keys.DAMAGE,          DAMAGE)
-            .set(EnemyVariables.Keys.DETECTION_RANGE, DETECTION_RANGE)
-            .set(EnemyVariables.Keys.ATTACK_RANGE,    ATTACK_RANGE)
-            .set("can_fly", true);  // indica capacidad de vuelo al sistema de fases
-
-        // ── Visual ────────────────────────────────────────────────────────
+    @Override
+    protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new AnimationController(EnemyAssets.normalHandle, "idle"));
     }
 }

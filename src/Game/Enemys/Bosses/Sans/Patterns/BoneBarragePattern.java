@@ -1,30 +1,28 @@
 package Game.Enemys.Bosses.Sans.Patterns;
 
 import Game.Enemys.AI.EnemyContext;
-import Game.Enemys.Bosses.Sans.Variables.SansVariables;
 import Game.Enemys.Core.Contracts.AttackPattern;
 import Game.Enemys.Core.Enemy;
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.GameEvents;
+import Game.Engine.Events.SpawnProjectileEvent;
 
 /**
  * Patrón de ataque de Sans — lluvia de huesos.
  *
+ * ── HRFC-006 ──────────────────────────────────────────────────────────────
+ * Migrado de EnemyVariables + OnWeaponFireEvent a EnemyStats + SpawnProjectileEvent.
+ *
+ *   Cooldown    → enemy.getStats().getAttackCooldownInt()
+ *   Invencible  → enemy.getFlags().isInvincible()
+ *   Evento      → SpawnProjectileEvent en lugar de OnWeaponFireEvent
+ *
+ * OnWeaponFireEvent está diseñado para el sistema de armas del jugador.
+ * SpawnProjectileEvent es el canal genérico para cualquier entidad del mundo.
+ *
  * ── Descripción ──────────────────────────────────────────────────────────
- * Sans lanza una serie de huesos en dirección al jugador con un cooldown
- * configurable. El patrón lee el cooldown actual desde EnemyVariables,
- * lo que permite que las fases ajusten la cadencia sin modificar el patrón.
- *
- * ── Reutilización ────────────────────────────────────────────────────────
  * BoneBarragePattern es stateful solo en su cooldown interno.
- * Si otra entidad necesitara el mismo patrón, puede instanciarlo directamente.
- *
- * ── Integración con proyectiles ──────────────────────────────────────────
- * execute() emite un GameEvents.OnWeaponFireEvent("sans.bone").
- * El sistema de proyectiles del juego escucha este evento y genera los huesos.
- * Esto evita que el módulo Boss conozca BulletFactory directamente.
- * Cuando ProjectileFactory esté disponible, se integrará aquí usando
- * enemy.getCenter() y ctx.getCenter() como origen y destino.
+ * El cooldown actual lo lee de EnemyStats cada vez que se ejecuta,
+ * lo que permite a las fases cambiar la cadencia sin modificar el patrón.
  */
 public final class BoneBarragePattern implements AttackPattern {
 
@@ -41,19 +39,23 @@ public final class BoneBarragePattern implements AttackPattern {
     @Override
     public boolean canExecute(Enemy enemy, EnemyContext ctx) {
         if (cooldownTimer > 0) return false;
-        // No atacar si Sans está en modo invulnerable (dodge)
-        return !enemy.getVariables().getBoolean(SansVariables.INVINCIBLE);
+        // No atacar mientras Sans está en modo invulnerable (post-teleporte)
+        return !enemy.getFlags().isInvincible();
     }
 
     @Override
     public void execute(Enemy enemy, EnemyContext ctx) {
-        int cooldown = enemy.getVariables().getInt(SansVariables.ATK_COOLDOWN, 120);
-        cooldownTimer = cooldown;
+        // Aplicar el cooldown configurado en EnemyStats para esta fase
+        cooldownTimer = enemy.getStats().getAttackCooldownInt();
 
-        // Emitir evento de disparo — el sistema de proyectiles lo procesa.
+        // Emitir SpawnProjectileEvent — el sistema de proyectiles lo procesa.
         // "sans.bone" identifica el tipo de proyectil a instanciar.
-        // origin: enemy.getCenter()  /  target: ctx.getCenter()
-        // disponibles para integración futura con ProjectileFactory.
-        GameEventBus.GLOBAL.post(new GameEvents.OnWeaponFireEvent(null, "sans.bone"));
+        // origin: centro del enemy / target: centro del jugador.
+        GameEventBus.GLOBAL.post(new SpawnProjectileEvent(
+            "sans.bone",
+            enemy.getTransform().getPosition(),
+            ctx.getPosition(),
+            enemy
+        ));
     }
 }

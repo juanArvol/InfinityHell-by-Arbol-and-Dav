@@ -2,7 +2,6 @@ package Game.Enemys.Core.Controllers;
 
 import Game.Enemys.Core.Contracts.EnemyComponent;
 import Game.Enemys.Core.Enemy;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -103,7 +102,19 @@ public final class EnemyComponentRegistry {
         return null;
     }
 
-    public boolean has(Class<? extends EnemyComponent> type) {
+    /**
+     * Devuelve true si existe al menos un componente del tipo indicado.
+     * Alias semántico de has() — ambos nombres son válidos.
+     *
+     * @param type tipo del componente a buscar.
+     */
+    public boolean contains(Class<? extends EnemyComponent> type) {
         return get(type) != null;
+    }
+
+    /** @deprecated Usar contains() o get() != null. Mantenido por compatibilidad. */
+    @Deprecated
+    public boolean has(Class<? extends EnemyComponent> type) {
+        return contains(type);
     }
 }

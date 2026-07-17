@@ -1,7 +1,7 @@
-package Sprites.Around;
+package Sprites.Enviroment.Around;
 
-import Sprites.Around.BackGrounds.BackGroundAssets;
-import Sprites.Around.Blocks.BlocksAssets;
+import Sprites.Enviroment.Around.BackGrounds.BackGroundAssets;
+import Sprites.Enviroment.Around.Blocks.BlocksAssets;
 
 /**
  * AroundAssets — inicializa los recursos visuales del entorno del mundo.

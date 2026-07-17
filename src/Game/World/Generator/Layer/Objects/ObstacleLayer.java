@@ -3,7 +3,7 @@ package Game.World.Generator.Layer.Objects;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
-import Sprites.Obstacles.ObstaclesAssets;
+import Sprites.Enviroment.Obstacles.ObstaclesAssets;
 import java.util.Random;
 
 /**

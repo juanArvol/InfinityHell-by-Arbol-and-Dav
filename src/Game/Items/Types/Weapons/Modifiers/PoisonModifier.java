@@ -91,7 +91,7 @@ public class PoisonModifier extends WeaponModifier {
             return remaining > 0;
         }
 
-        @Override
-        public String effectId() { return "poison"; }
+        /* @Override
+        public String effectId() { return "poison"; } */
     }
 }
