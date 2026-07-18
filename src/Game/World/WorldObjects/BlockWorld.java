@@ -1,13 +1,13 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Visuals.HitBoxComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.Physics.SurfaceMaterial;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.Engine.GameObjects;
+import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
@@ -55,7 +55,7 @@ public class BlockWorld extends GameObjects implements SurfaceMaterial {
         // ================= RENDER =================
 
         if (texture != null) {
-            addComponent(new SpriteRenderer(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
+            addComponent(new SpriteRendererComponent(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
         }
     }
 

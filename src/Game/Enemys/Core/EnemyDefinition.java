@@ -2,9 +2,9 @@ package Game.Enemys.Core;
 
 import Game.Enemys.EnemyPhysics;
 import Game.Enemys.EnemyPhysicsConfig;
-import Game.Living.Attributes.EntityAttributes;
-import Game.Living.Flags.EntityFlags;
-import Game.Living.Stats.EntityStats;
+import Game.Engine.Entity.Attributes.EntityAttributes;
+import Game.Engine.Entity.Flags.EntityFlags;
+import Game.Engine.Entity.Stats.EntityStats;
 import Sprites.Core.SpriteHandle;
 import java.util.ArrayList;
 import java.util.Collections;

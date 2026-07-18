@@ -1,7 +1,7 @@
 package Game.Engine.GameMath.Physics.Types.Physics3D;
 
 import Game.Engine.Component;
-import Game.Engine.Components.Physics3DComponent;
+import Game.Engine.Entity.Components.Physics3DComponent;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
 import Game.Engine.RenderEngine.Contracts.Renderable;

@@ -1,8 +1,8 @@
 package Game.Engine.Systems;
 
 import Game.Engine.Component;
-import Game.Engine.Components.Visuals.SpriteRenderer;
-import Game.Engine.Components.Visuals.SpriteSkeletonComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteSkeletonComponent;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
@@ -26,7 +26,7 @@ public class RenderSystem {
     public void render(List<GameObjects> objects, RenderContext ctx, RenderCamera camera) {
         for (GameObjects obj : objects) {
             for (Component c : obj.getComponents()) {
-                if (c instanceof SpriteRenderer sr) {
+                if (c instanceof SpriteRendererComponent sr) {
                     sr.setVirtualSize(virtualWidth, virtualHeight);
                 } else if (c instanceof SpriteSkeletonComponent sc) {
                     sc.setVirtualSize(virtualWidth, virtualHeight);

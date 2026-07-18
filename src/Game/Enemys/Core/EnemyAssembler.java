@@ -5,12 +5,12 @@ import Game.Enemys.Core.Controllers.EnemyAttackController;
 import Game.Enemys.Core.Controllers.EnemyComponentRegistry;
 import Game.Enemys.Core.Controllers.EnemyMovementController;
 import Game.Enemys.Core.Controllers.EnemyPhaseController;
-import Game.Engine.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Attributes.EntityAttributes;
+import Game.Engine.Entity.Combat.AttackSources;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Flags.EntityFlags;
+import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-import Game.Living.Attributes.EntityAttributes;
-import Game.Living.Combat.AttackSources;
-import Game.Living.Flags.EntityFlags;
-import Game.Living.Stats.EntityStats;
 
 /**
  * Contrato base del ensamblador de Enemy.

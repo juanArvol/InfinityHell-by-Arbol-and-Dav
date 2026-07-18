@@ -1,8 +1,7 @@
 package Game.Engine.Colisions;
 
 import Game.Engine.GameObjects;
-import Game.Engine.Components.Collisions.ColliderComponent;
-
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import java.awt.Rectangle;
 import java.util.*;
 

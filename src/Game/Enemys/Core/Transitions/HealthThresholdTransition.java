@@ -1,8 +1,8 @@
 package Game.Enemys.Core.Transitions;
 
 import Game.Enemys.Core.Contracts.PhaseTransition;
+import Game.Engine.Entity.Components.HealthComponent;
 import Game.Enemys.Core.Enemy;
-import Game.Engine.Components.HealthComponent;
 
 /**
  * Transición de fase por umbral de vida.

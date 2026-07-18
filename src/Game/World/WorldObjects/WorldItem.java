@@ -1,8 +1,8 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Items.Savement.ItemStack;
@@ -48,7 +48,7 @@ public class WorldItem extends GameObjects implements WorldObjectsContainer.Dest
 
         // Render: usa el ícono del ítem como sprite
         if (icon != null) {
-            addComponent(new SpriteRenderer(icon));
+            addComponent(new SpriteRendererComponent(icon));
         }
 
         // Collider trigger para detectar al jugador

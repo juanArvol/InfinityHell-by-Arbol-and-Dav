@@ -1,11 +1,11 @@
 package Game.Player;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.HealthComponent;
-import Game.Engine.Components.StatusEffectComponent;
-import Game.Engine.Components.Visuals.AnimationControllerComponent;
-import Game.Engine.Components.Visuals.HitBoxComponent;
+import Game.Engine.Entity.Components.HealthComponent;
+import Game.Engine.Entity.Components.StatusEffectComponent;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
+import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;

@@ -1,8 +1,8 @@
 package Game.Engine;
 
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.Physics.Types.Physics2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
@@ -79,7 +79,7 @@ public abstract class MovingObjects extends noEntity {
                          SizeSyncMode syncMode) {
         getTransform().setPosition(position);
         addComponent(new ColliderComponent());
-        addComponent(new SpriteRenderer(handle, syncMode));
+        addComponent(new SpriteRendererComponent(handle, syncMode));
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
     }
@@ -99,7 +99,7 @@ public abstract class MovingObjects extends noEntity {
         super(transform);
         getTransform().setPosition(position);
         addComponent(new ColliderComponent());
-        addComponent(new SpriteRenderer(handle, syncMode));
+        addComponent(new SpriteRendererComponent(handle, syncMode));
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
     }
@@ -123,7 +123,7 @@ public abstract class MovingObjects extends noEntity {
         getTransform().setPosition(position);
 
         addComponent(new ColliderComponent());
-        addComponent(new SpriteRenderer(texture, syncMode));
+        addComponent(new SpriteRendererComponent(texture, syncMode));
 
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
@@ -155,7 +155,7 @@ public abstract class MovingObjects extends noEntity {
         getTransform().setPosition(position);
 
         addComponent(new ColliderComponent());
-        addComponent(new SpriteRenderer(texture, syncMode));
+        addComponent(new SpriteRendererComponent(texture, syncMode));
 
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
@@ -169,7 +169,7 @@ public abstract class MovingObjects extends noEntity {
      */
     protected void syncRendererToCollider() {
         ColliderComponent col = getComponent(ColliderComponent.class);
-        SpriteRenderer    ren = getComponent(SpriteRenderer.class);
+        SpriteRendererComponent    ren = getComponent(SpriteRendererComponent.class);
         if (col == null || ren == null) return;
 
         ren.setRenderSize(col.getWidth(), col.getHeight());
@@ -207,3 +207,4 @@ public abstract class MovingObjects extends noEntity {
         return new Rectangle((int) pos.getX(), (int) pos.getY(), 0, 0);
     }
 }
+

@@ -1,9 +1,9 @@
 package Game.Player;
 
 import Game.Engine.Component;
-import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.AnimationControllerComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 
 /**
  * PlayerRenderer — decide qué animación reproducir y gestiona el flip.
@@ -36,7 +36,7 @@ public class PlayerRenderer extends Component {
     private final PlayerState state;
 
     private AnimationControllerComponent animController;
-    private SpriteRenderer      spriteRenderer;
+    private SpriteRendererComponent      spriteRenderer;
     private Physics2DComponent  physicsComponent;
 
     public PlayerRenderer(PlayerState state) {
@@ -46,7 +46,7 @@ public class PlayerRenderer extends Component {
     @Override
     public void start() {
         animController   = gameObject.getComponent(AnimationControllerComponent.class);
-        spriteRenderer   = gameObject.getComponent(SpriteRenderer.class);
+        spriteRenderer   = gameObject.getComponent(SpriteRendererComponent.class);
         physicsComponent = gameObject.getComponent(Physics2DComponent.class);
 
         if (animController == null) {

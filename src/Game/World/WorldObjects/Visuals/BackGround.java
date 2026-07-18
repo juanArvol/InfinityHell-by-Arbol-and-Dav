@@ -1,9 +1,8 @@
 package Game.World.WorldObjects.Visuals;
 
-import Game.Engine.GameObjects;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
-
+import Game.Engine.GameObjects;
 import java.awt.image.BufferedImage;
 
 public class BackGround extends GameObjects {
@@ -16,7 +15,7 @@ public class BackGround extends GameObjects {
         getTransform().setPosition(position);
 
         if (texture != null) {
-            addComponent(new SpriteRenderer(texture));
+            addComponent(new SpriteRendererComponent(texture));
         }
 
     }

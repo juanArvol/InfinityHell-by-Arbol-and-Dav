@@ -1,7 +1,7 @@
 package Game.Engine;
 
-import Game.Engine.Components.HealthComponent;
-import Game.Engine.Components.StatusEffectComponent;
+import Game.Engine.Entity.Components.HealthComponent;
+import Game.Engine.Entity.Components.StatusEffectComponent;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
 
 /**

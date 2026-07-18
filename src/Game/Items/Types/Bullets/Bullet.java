@@ -2,10 +2,10 @@ package Game.Items.Types.Bullets;
 
 import Game.Enemys.Core.Enemy;
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Components.Collisions.ColliderComponent;
-import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.HitBoxComponent;
-import Game.Engine.Components.Visuals.SpriteRenderer;
+import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
@@ -41,7 +41,7 @@ public class Bullet extends GameObjects implements WorldObjectsContainer.Destroy
         // ================= RENDER =================
 
         if (texture != null) {
-            addComponent(new SpriteRenderer(texture));
+            addComponent(new SpriteRendererComponent(texture));
         }
 
         // ================= COLLIDER =================

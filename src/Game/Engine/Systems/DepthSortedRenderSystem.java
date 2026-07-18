@@ -1,8 +1,8 @@
 package Game.Engine.Systems;
 
 import Game.Engine.Component;
-import Game.Engine.Components.Visuals.SpriteRenderer;
-import Game.Engine.Components.Visuals.SpriteSkeletonComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.Entity.Components.Visuals.SpriteSkeletonComponent;
 import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Context.RenderCamera;
@@ -64,7 +64,7 @@ public class DepthSortedRenderSystem {
         for (GameObjects obj : sortBuffer) {
             for (Component c : obj.getComponents()) {
                 // Propagar virtual size a componentes que hacen culling
-                if (c instanceof SpriteRenderer sr) {
+                if (c instanceof SpriteRendererComponent sr) {
                     sr.setVirtualSize(virtualWidth, virtualHeight);
                 } else if (c instanceof SpriteSkeletonComponent sc) {
                     sc.setVirtualSize(virtualWidth, virtualHeight);

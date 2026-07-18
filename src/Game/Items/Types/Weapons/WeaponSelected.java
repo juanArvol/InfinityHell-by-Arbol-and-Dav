@@ -1,12 +1,11 @@
 package Game.Items.Types.Weapons;
 
-import java.util.List;
-
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
+import java.util.List;
 
 public class WeaponSelected {
 

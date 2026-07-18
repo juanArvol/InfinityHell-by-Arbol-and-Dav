@@ -1,8 +1,6 @@
 package Game.Items.Types.Weapons;
 
 import Game.Items.Creation.ItemRarity;
-import Game.Items.Types.Weapons.WeaponType.WeaponComport;
-
 import java.util.*;
 
 /**

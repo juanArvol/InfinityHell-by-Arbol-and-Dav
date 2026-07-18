@@ -1,8 +1,8 @@
 package Game.Items.Types.Weapons.Modifiers;
 
 import Game.Enemys.Core.Enemy;
-import Game.Engine.Components.StatusEffectComponent;
 import Game.Engine.GameObjects;
+import Game.Engine.Entity.Components.StatusEffectComponent;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 
@@ -95,3 +95,4 @@ public class PoisonModifier extends WeaponModifier {
         public String effectId() { return "poison"; } */
     }
 }
+

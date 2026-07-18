@@ -6,11 +6,11 @@ import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.GroundMovement;
 import Game.Enemys.EnemyPhysicsConfig;
-import Game.Engine.Components.Visuals.AnimationControllerComponent;
-import Game.Living.Attributes.EntityAttributes;
-import Game.Living.Combat.AttackSource;
-import Game.Living.Combat.AttackSources;
-import Game.Living.Stats.EntityStats;
+import Game.Engine.Entity.Attributes.EntityAttributes;
+import Game.Engine.Entity.Combat.AttackSource;
+import Game.Engine.Entity.Combat.AttackSources;
+import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
+import Game.Engine.Entity.Stats.EntityStats;
 import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**

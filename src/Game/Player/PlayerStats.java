@@ -1,6 +1,6 @@
 package Game.Player;
 
-import Game.Engine.Components.HealthComponent;
+import Game.Engine.Entity.Components.HealthComponent;
 import Game.UI.HealthView;
 
 /**
