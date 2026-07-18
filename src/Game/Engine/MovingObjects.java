@@ -57,7 +57,7 @@ import java.awt.image.BufferedImage;
  * No contiene lógica de gameplay. Eso es responsabilidad de Entity y sus
  * subclases concretas.
  */
-public abstract class MovingObjects extends noEntity {
+public abstract class MovingObjects extends AbstractEntity {
 
     protected final Physics2DComponent physicsComponent;
 
@@ -207,4 +207,3 @@ public abstract class MovingObjects extends noEntity {
         return new Rectangle((int) pos.getX(), (int) pos.getY(), 0, 0);
     }
 }
-

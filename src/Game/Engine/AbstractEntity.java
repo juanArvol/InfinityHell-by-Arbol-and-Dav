@@ -73,19 +73,19 @@ import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
  * - BuffComponent     → addBuff(), getActiveBuffs()
  * - TagComponent      → hasTag("boss"), hasTag("destructible")
  */
-public abstract class noEntity extends GameObjects {
+public abstract class AbstractEntity extends GameObjects {
 
     /**
      * Constructor con transform inyectable.
      * Propaga hacia GameObjects para soporte de Transform3D en la jerarquía.
      * Solo deben usarlo subclases que necesiten un Transform3D (ej. objetos 2.5D).
      */
-    protected noEntity(Transform2D transform) {
+    protected AbstractEntity(Transform2D transform) {
         super(transform);
     }
 
     /** Constructor por defecto — delega a GameObjects(), que usa Transform2D. */
-    protected noEntity() {
+    protected AbstractEntity() {
         super();
     }
 
