@@ -9,12 +9,29 @@ package Game.Engine.Entity.Stats;
  * modificadores: RuntimeStats lo usa para despachar cada StatModifier
  * a la categoría de stats correcta.
  *
+ * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ───────────────
+ * Añadidas entradas HEALTH_* para los campos modificables de HealthStats:
+ *   HEALTH_MAX_HP                 — vida máxima (buffs de HP)
+ *   HEALTH_HEALTH_REGEN           — regeneración de vida por frame
+ *   HEALTH_HEALING_MULTIPLIER     — multiplicador de curación recibida
+ *   HEALTH_INCOMING_DAMAGE_MULT   — multiplicador de daño entrante
+ *
+ * Nota: currentHp, shield, barrier NO tienen StatTarget porque son estado
+ * de runtime directo, no "estadísticas" que los modificadores amplíen.
+ * Los modificadores de HP máximo sí tienen sentido (ítem +50 maxHP).
+ *
  * ── Extensión ─────────────────────────────────────────────────────────────
  * Añadir una nueva estadística = añadir una entrada aquí + el campo en
  * la CategoryStats correspondiente + la lógica de aplicación en RuntimeStats.
  * Ningún otro archivo del Core necesita cambiar.
  */
 public enum StatTarget {
+
+    // ── HealthStats ───────────────────────────────────────────────────────
+    HEALTH_MAX_HP,
+    HEALTH_HEALTH_REGEN,
+    HEALTH_HEALING_MULTIPLIER,
+    HEALTH_INCOMING_DAMAGE_MULT,
 
     // ── MovementStats ─────────────────────────────────────────────────────
     MOVEMENT_SPEED,

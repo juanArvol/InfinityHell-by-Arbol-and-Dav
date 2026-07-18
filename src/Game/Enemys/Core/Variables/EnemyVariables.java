@@ -1,118 +1,94 @@
 package Game.Enemys.Core.Variables;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
- * Contenedor de variables numéricas del enemigo.
+ * Punto de extensión para variables exclusivas de cada familia de enemigos.
  *
- * Enemy nunca define valores concretos hardcodeados.
- * Enemy únicamente declara que dichos conceptos existen.
- * Las implementaciones concretas (assemblers, fases) asignan los valores.
+ * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ───────────────
  *
- * ── Qué se almacena aquí ─────────────────────────────────────────────────
- *   "speed"          — velocidad base de movimiento.
- *   "damage"         — daño base de ataques.
- *   "hp"             — vida máxima (usada por assembler al construir).
- *   "detection_range"— rango de detección del jugador.
- *   "attack_range"   — rango de ataque.
- *   "defense"        — reducción de daño recibido (%).
- *   etc.
+ * CAMBIO ARQUITECTÓNICO:
+ *   EnemyVariables era un Map<String, Double> con claves String.
+ *   Ese diseño permitía duplicar en EnemyVariables conceptos que ya
+ *   pertenecen al dominio Entity (hp, speed, damage, defense...).
+ *   El Map basado en Strings ha sido eliminado completamente.
  *
- * ── Por qué un Map en lugar de campos ────────────────────────────────────
- * Los campos fijos no pueden ser modificados por fases o efectos sin
- * conocer la clase concreta. Un Map permite que cualquier fase, componente
- * o efecto lea/escriba variables sin acoplamiento.
+ * NUEVA RESPONSABILIDAD:
+ *   EnemyVariables es ahora una clase base abstracta.
+ *   Su único propósito es servir como contrato común para las variables
+ *   que son exclusivas del comportamiento particular de un tipo de enemigo
+ *   y que no tienen cabida en el dominio genérico Entity/*.
  *
- * Los valores por defecto garantizan que siempre hay un valor seguro.
+ * ── Qué NO pertenece aquí ─────────────────────────────────────────────────
  *
- * ── Acceso tipado ────────────────────────────────────────────────────────
- *   variables.getDouble("speed")          — lectura con default 0.0
- *   variables.getDouble("speed", 2.0)     — lectura con default personalizado
- *   variables.set("speed", 3.0)           — escritura
- *   variables.modify("speed", v -> v * 2) — modificación funcional
+ *   hp, maxHp, speed, damage, defense, attackRange, attackCooldown,
+ *   resistances, visionRange, critChance, regen, flags, attributes...
+ *
+ *   Todos esos conceptos pertenecen exclusivamente a:
+ *     Entity.Stats.EntityStats  → valores base
+ *     Entity.Stats.RuntimeStats → valores efectivos con modificadores
+ *     Entity.Flags.EntityFlags  → flags booleanos
+ *
+ * ── Qué SÍ pertenece aquí ────────────────────────────────────────────────
+ *
+ *   Variables cuya existencia depende completamente de una implementación
+ *   concreta y que no tendría sentido añadir al Engine genérico.
+ *
+ *   Ejemplos:
+ *
+ *   SansVariables:
+ *     teleportFrames, autoDodgeCooldown, invulnerabilityFrames
+ *
+ *   SpiderVariables:
+ *     webLifetime, maxAttachedThreads, jumpCount
+ *
+ *   NecromancerVariables:
+ *     maxSummons, summonInterval, graveRadius
+ *
+ *   DragonVariables:
+ *     fireBreathDuration, wingFlapForce, landingDelay
+ *
+ * ── Jerarquía de implementaciones ────────────────────────────────────────
+ *
+ *   EnemyVariables (abstracta — este archivo)
+ *       ▲
+ *       ├── SansVariables      — variables exclusivas de Sans
+ *       ├── ZombieVariables    — variables exclusivas del Zombie
+ *       ├── FlyingVariables    — variables exclusivas del FlyingEnemy
+ *       └── ...
+ *
+ * ── API ───────────────────────────────────────────────────────────────────
+ *
+ *   La API concreta la define cada implementación con campos y métodos
+ *   completamente tipados. No existen Strings, Maps ni claves dinámicas.
+ *
+ *   Ejemplo correcto:
+ *     enemy.getVariables().getTeleportFrames()
+ *     enemy.getVariables().getAutoDodgeCooldown()
+ *
+ *   Ejemplo incorrecto (eliminado):
+ *     enemy.getVariables().getDouble("teleportFrames")
+ *     enemy.getVariables().set("hp", 100)
+ *
+ * ── Relación con Entity/* ─────────────────────────────────────────────────
+ *
+ *   Entity/* responde: ¿cuánta vida tiene?, ¿cuál es su velocidad efectiva?
+ *   EnemyVariables responde: ¿cuántos frames dura el teleporte de Sans?
+ *
+ *   Ambos modelos son complementarios y no se solapan.
+ *   Entity nunca conoce EnemyVariables.
+ *   EnemyVariables puede leer de Entity para implementar comportamientos.
+ *
+ * ── Uso desde Enemy ───────────────────────────────────────────────────────
+ *
+ *   Enemy expone getVariables() que retorna EnemyVariables.
+ *   Los sistemas de IA y comportamiento hacen cast al tipo concreto:
+ *
+ *     SansVariables vars = (SansVariables) enemy.getVariables();
+ *     int frames = vars.getTeleportFrames();
+ *
+ *   Los Assemblers inyectan la implementación correcta durante construcción.
  */
-public final class EnemyVariables {
-
-    private final Map<String, Double> values = new HashMap<>();
-
-    // ── Lectura ───────────────────────────────────────────────────────────
-
-    public double getDouble(String key) {
-        return values.getOrDefault(key, 0.0);
-    }
-
-    public double getDouble(String key, double defaultValue) {
-        return values.getOrDefault(key, defaultValue);
-    }
-
-    public int getInt(String key) {
-        return (int) getDouble(key);
-    }
-
-    public int getInt(String key, int defaultValue) {
-        return (int) getDouble(key, defaultValue);
-    }
-
-    public boolean getBoolean(String key) {
-        return getDouble(key) != 0.0;
-    }
-
-    public boolean has(String key) {
-        return values.containsKey(key);
-    }
-
-    // ── Escritura ─────────────────────────────────────────────────────────
-
-    public EnemyVariables set(String key, double value) {
-        values.put(key, value);
-        return this;
-    }
-
-    public EnemyVariables set(String key, int value) {
-        values.put(key, (double) value);
-        return this;
-    }
-
-    public EnemyVariables set(String key, boolean value) {
-        values.put(key, value ? 1.0 : 0.0);
-        return this;
-    }
-
-    /**
-     * Modifica el valor existente aplicando una función.
-     * Si la clave no existe, la función recibe el valor por defecto 0.0.
-     *
-     * Ejemplo: variables.modify("speed", v -> v * 1.5)
-     */
-    public EnemyVariables modify(String key, java.util.function.DoubleUnaryOperator fn) {
-        values.put(key, fn.applyAsDouble(getDouble(key)));
-        return this;
-    }
-
-    /**
-     * Establece el valor solo si la clave no existe todavía.
-     * Útil para configurar defaults sin sobreescribir configuraciones previas.
-     */
-    public EnemyVariables setIfAbsent(String key, double value) {
-        values.putIfAbsent(key, value);
-        return this;
-    }
-
-    // ── Claves estándar ───────────────────────────────────────────────────
-
-    /**
-     * Constantes para las claves más comunes.
-     * Usar estas constantes en lugar de strings literales para evitar typos.
-     */
-    public static final class Keys {
-        public static final String SPEED           = "speed";
-        public static final String DAMAGE          = "damage";
-        public static final String HP              = "hp";
-        public static final String DEFENSE         = "defense";
-        public static final String DETECTION_RANGE = "detection_range";
-        public static final String ATTACK_RANGE    = "attack_range";
-
-        private Keys() {}
-    }
+public abstract class EnemyVariables {
+    // Clase base intencionalemnte vacía.
+    // Las implementaciones concretas declaran únicamente los campos
+    // y métodos que describen su mecánica particular.
 }

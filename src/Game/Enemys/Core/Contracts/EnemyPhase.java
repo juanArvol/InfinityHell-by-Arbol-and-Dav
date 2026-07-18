@@ -34,7 +34,7 @@ import Game.Enemys.Core.Enemy;
  *           enemy.getMovementController().setStrategy(new FlyingMovement());
  *           enemy.getAttackController().clearPatterns();
  *           enemy.getAttackController().addPattern(new SpreadBulletPattern());
- *           enemy.getVariables().set("speed", 5.0);
+ *           enemy.getStats().setSpeed(5.0);   // velocidad vive en EntityStats
  *       }
  *       ...
  *   }

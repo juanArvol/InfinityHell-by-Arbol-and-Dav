@@ -57,8 +57,15 @@ import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
  *
  * ── CONTRATOS DE SUBCLASE ────────────────────────────────────────────────
  *
- * Las subclases que quieren salud llaman en su constructor:
- *   addComponent(new HealthComponent(maxHp));
+ * Las subclases que quieren salud configuran un EntityStats y lo pasan
+ * al constructor enlazado de HealthComponent:
+ *
+ *   EntityStats es = new EntityStats();
+ *   es.setMaxHp(100);
+ *   addComponent(new HealthComponent(es));
+ *
+ * Para objetos simples sin EntityStats (cajas destructibles, trampas):
+ *   addComponent(new HealthComponent(maxHp));  // modo standalone
  *
  * Opcionalmente, para efectos de estado:
  *   addComponent(new StatusEffectComponent());

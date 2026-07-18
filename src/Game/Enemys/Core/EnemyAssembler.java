@@ -77,11 +77,23 @@ public abstract class EnemyAssembler {
         configureAttributes(attributes);
         configureAttackSources(attackSources);
 
-        // ── 4. Construir Enemy con todos los módulos inyectados ───────────
+        // ── 4. Inicializar HP máximo ─────────────────────────────────────────
+        // La fuente de verdad del HP es def.maxHealth (declarado en definition()).
+        // Si configureStats() sobreescribió el HP mediante stats.setMaxHp(n),
+        // ese valor ya está en stats — no se pisa. Si no lo sobreescribió,
+        // el HP queda en el default de HealthStats (1) y aquí se inicializa
+        // con el valor de la definición.
+        // setMaxHp() inicializa también currentHp al máximo.
+        if (stats.health().getMaxHp() <= 1) {
+            stats.setMaxHp(def.maxHealth);
+        }
+
+        // ── 5. Construir Enemy con todos los módulos inyectados ───────────
+        // maxHealth ya NO se pasa al constructor. HealthComponent lo lee desde
+        // stats.health(), que fue inicializado en el paso 4.
         Enemy enemy = new Enemy(
             position,
             def.sprite,
-            def.maxHealth,
             def.physics,
             aiController,
             movementController,
@@ -94,13 +106,13 @@ public abstract class EnemyAssembler {
             attackSources
         );
 
-        // ── 5. Ajustar collider ───────────────────────────────────────────
+        // ── 6. Ajustar collider ───────────────────────────────────────────
         ColliderComponent col = enemy.getComponent(ColliderComponent.class);
         if (col != null) {
             col.setSize(def.colliderW, def.colliderH);
         }
 
-        // ── 6. Configurar comportamiento (requiere enemy ya construido) ────
+        // ── 7. Configurar comportamiento (requiere enemy ya construido) ────
         configureMovement(enemy);
         configureCombat(enemy);
         configureComponents(enemy);

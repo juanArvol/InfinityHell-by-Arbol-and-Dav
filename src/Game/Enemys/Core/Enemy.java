@@ -11,10 +11,11 @@ import Game.Enemys.Core.Variables.EnemyVariables;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.HealthComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.StatusEffectComponent;
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.EntityInfoProvider;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
@@ -41,10 +42,13 @@ import Sprites.Core.SpriteHandle;
  * Enemy sigue siendo un esqueleto completamente agnóstico. No instancia
  * ningún módulo — todos llegan ya construidos desde EnemyAssembler.
  *
- * ── HRFC-009 — Consolidación RPG ─────────────────────────────────────────
- * - hasEffect(String) eliminado. Consulta tipada: hasEffect(Class<T>).
- * - removeEffects(Class<T>) para limpieza tipada de efectos.
- * - getEffectsComponent() para acceso directo al componente completo.
+ * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ──────────────
+ * - Enemy implementa EntityInfoProvider: el contrato Living del Engine.
+ * - EnemyVariables reemplazada por clase abstracta tipada. El campo
+ *   variables es null por defecto; los Assemblers inyectan la implementación
+ *   concreta mediante setVariables() para enemigos con mecánicas únicas.
+ * - HealthComponent construido con EntityStats — ya no posee estado propio.
+ * - maxHealth eliminado del constructor: vive en stats.health().
  *
  * ── Módulos inyectados ────────────────────────────────────────────────────
  *   EnemyAIController         — qué decide hacer cada frame
@@ -67,7 +71,7 @@ import Sprites.Core.SpriteHandle;
  *   6. ComponentRegistry actualiza todos los EnemyComponents opcionales.
  *   7. super.update() — Components del engine (health, physics, renderer…).
  */
-public final class Enemy extends MovingObjects implements WorldObjectsContainer.Destroyable {
+public final class Enemy extends MovingObjects implements EntityInfoProvider, WorldObjectsContainer.Destroyable {
 
     // ── Controladores — inyectados por EnemyAssembler ─────────────────────
     private final EnemyAIController         aiController;
@@ -86,8 +90,10 @@ public final class Enemy extends MovingObjects implements WorldObjectsContainer.
     // ── Estado de animación/física (interno al engine) ────────────────────
     private final EnemyState state;
 
-    // ── Compatibilidad — mantenido hasta migración completa ───────────────
-    private final EnemyVariables variables;
+    // ── Variables específicas del enemigo concreto ────────────────────────
+    // Null para enemigos sin variables propias. El Assembler inyecta la
+    // implementación concreta mediante setVariables() después de construir.
+    private EnemyVariables variables = null;
 
     // ── Components del engine ─────────────────────────────────────────────
     private final HealthComponent       health;
@@ -102,10 +108,14 @@ public final class Enemy extends MovingObjects implements WorldObjectsContainer.
      * Constructor completo de Enemy.
      * Llamado exclusivamente por EnemyAssembler.assemble().
      * Enemy no instancia ningún módulo.
+     *
+     * ── HRFC-013 ──────────────────────────────────────────────────────────
+     * maxHealth eliminado del constructor. La vida máxima ya vive en
+     * stats.health() (configurada por el Assembler antes de llamar aquí).
+     * HealthComponent recibe EntityStats en lugar de un int.
      */
     public Enemy(Vector2D position,
                  SpriteHandle handle,
-                 int maxHealth,
                  Game.Enemys.EnemyPhysics physics,
                  EnemyAIController aiController,
                  EnemyMovementController movementController,
@@ -141,10 +151,9 @@ public final class Enemy extends MovingObjects implements WorldObjectsContainer.
         this.attributes    = attributes;
         this.attackSources = attackSources;
 
-        this.state     = new EnemyState();
-        this.variables = new EnemyVariables();
+        this.state = new EnemyState();
 
-        this.health  = new HealthComponent(maxHealth);
+        this.health  = new HealthComponent(stats);
         this.effects = new StatusEffectComponent();
 
         addComponent(health);
@@ -291,10 +300,27 @@ public final class Enemy extends MovingObjects implements WorldObjectsContainer.
     public EnemyState getState() { return state; }
 
     /**
-     * @deprecated Usar getStats() / getFlags() / getAttributes() / getRuntimeStats().
+     * Variables exclusivas del tipo de enemigo concreto.
+     *
+     * Retorna null si este enemigo no tiene variables específicas.
+     * Los sistemas que necesiten variables concretas hacen cast al subtipo:
+     *
+     *   if (enemy.getVariables() instanceof SansVariables sv) {
+     *       int frames = sv.getTeleportFrames();
+     *   }
+     *
+     * Los Assemblers inyectan la implementación mediante setVariables().
      */
-    @Deprecated
     public EnemyVariables getVariables() { return variables; }
+
+    /**
+     * Inyecta las variables específicas del enemigo concreto.
+     * Llamar desde el Assembler después de construir el Enemy.
+     *
+     * @param variables implementación concreta. Puede ser null para enemigos
+     *                  sin variables propias.
+     */
+    public void setVariables(EnemyVariables variables) { this.variables = variables; }
 
     // ── Components del engine ─────────────────────────────────────────────
 

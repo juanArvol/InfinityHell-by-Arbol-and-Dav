@@ -6,21 +6,28 @@ import Game.Engine.Entity.Stats.Modifier.ModifierWriter;
 /**
  * Estadísticas efectivas de una entidad viva en tiempo de ejecución.
  *
- * ── HRFC-012 — API declarativa mediante ModifierWriter ───────────────────
+ * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ───────────────
  *
- * CAMBIOS RESPECTO A HRFC-011A:
+ * CAMBIOS RESPECTO A HRFC-012:
  *
- *   INTERNAMENTE MODIFICADO:
- *     apply(StatContributor) — ya no llama getContributions() ni itera
- *                              un array. Crea un ModifierWriter, llama
- *                              contributor.contribute(writer) y añade los
- *                              modificadores escritos al container.
+ *   AÑADIDO:
+ *     healthView (HealthStats pre-alocada) + recomputeHealth() para los
+ *     4 campos modificables de HealthStats: maxHp, healthRegen,
+ *     healingMultiplier, incomingDamageMultiplier.
  *
- *   SIN CAMBIOS EN LA API PÚBLICA:
- *     apply(StatContributor) / revoke(StatContributor) — contrato idéntico.
- *     addModifier(StatModifier) — modificadores permanentes sin fuente.
- *     clearModifiers() / onBaseStatsChanged() — sin cambios.
+ *     getHealth() — vista de HealthStats con modificadores aplicados.
+ *     Shortcuts de conveniencia: getMaxHp(), getHealthRegen(),
+ *     getHealingMultiplier(), getIncomingDamageMultiplier().
+ *
+ *   SIN CAMBIOS EN LA API EXISTENTE:
+ *     apply/revoke/addModifier/clearModifiers/onBaseStatsChanged — idénticos.
  *     getMovement/getCombat/getPerception/getResistance — sin cambios.
+ *
+ * ── Nota sobre currentHp ──────────────────────────────────────────────────
+ *   currentHp NO pasa por RuntimeStats. Es estado de gameplay puro que
+ *   HealthComponent escribe directamente en EntityStats.health().
+ *   RuntimeStats solo gestiona los campos que los modificadores pueden ampliar
+ *   (maxHp, regen, multiplicadores). Nunca currentHp, shield ni barrier.
  *
  * ── Flujo único ───────────────────────────────────────────────────────────
  *   Todo objeto del dominio que modifica estadísticas implementa StatContributor.
@@ -91,6 +98,7 @@ public class RuntimeStats {
     private final ModifierContainer container;
 
     // ── Vistas pre-alocadas — nunca se vuelven a crear ───────────────────
+    private final HealthStats     healthView     = new HealthStats();
     private final MovementStats   movementView   = new MovementStats();
     private final CombatStats     combatView     = new CombatStats();
     private final PerceptionStats perceptionView = new PerceptionStats();
@@ -200,6 +208,19 @@ public class RuntimeStats {
     // ── Vistas de categorías — CERO ALLOCATIONS ───────────────────────────
 
     /**
+     * Vista de HealthStats con modificadores aplicados (maxHp, regen, multiplicadores).
+     * Devuelve siempre la misma instancia pre-alocada.
+     * O(1) si no hubo cambios; O(T) en el primer acceso tras un cambio.
+     *
+     * <p>Nota: currentHp, shield y barrier NO están en esta vista —
+     * son estado de gameplay que vive directamente en EntityStats.health().
+     */
+    public HealthStats getHealth() {
+        if (dirty) recompute();
+        return healthView;
+    }
+
+    /**
      * Vista de MovementStats con modificadores aplicados.
      * Devuelve siempre la misma instancia pre-alocada.
      * O(1) si no hubo cambios; O(T) en el primer acceso tras un cambio.
@@ -228,6 +249,18 @@ public class RuntimeStats {
     }
 
     // ── Accesos directos de conveniencia ──────────────────────────────────
+
+    /** HP máximo efectivo (con modificadores). */
+    public int    getMaxHp()                    { return (int) eval(base.health().getMaxHp(), StatTarget.HEALTH_MAX_HP); }
+
+    /** Regeneración de vida efectiva por frame. */
+    public double getHealthRegen()              { return eval(base.health().getHealthRegen(), StatTarget.HEALTH_HEALTH_REGEN); }
+
+    /** Multiplicador de curación efectivo. */
+    public double getHealingMultiplier()        { return eval(base.health().getHealingMultiplier(), StatTarget.HEALTH_HEALING_MULTIPLIER); }
+
+    /** Multiplicador de daño entrante efectivo. */
+    public double getIncomingDamageMultiplier() { return eval(base.health().getIncomingDamageMultiplier(), StatTarget.HEALTH_INCOMING_DAMAGE_MULT); }
 
     /** Velocidad efectiva. Equivalente a getMovement().getSpeed(). */
     public double getSpeed()             { return getMovement().getSpeed(); }
@@ -284,11 +317,22 @@ public class RuntimeStats {
      * Toda la matemática reside en las implementaciones de ModifierOperation.
      */
     private void recompute() {
+        recomputeHealth();
         recomputeMovement();
         recomputeCombat();
         recomputePerception();
         recomputeResistance();
         dirty = false;
+    }
+
+    private void recomputeHealth() {
+        HealthStats b = base.health();
+        // Solo los campos que tiene sentido ampliar con modificadores.
+        // currentHp, shield y barrier son estado de runtime directo — no se recomputan.
+        healthView.setMaxHp(              (int) eval(b.getMaxHp(),                    StatTarget.HEALTH_MAX_HP));
+        healthView.setHealthRegen(              eval(b.getHealthRegen(),              StatTarget.HEALTH_HEALTH_REGEN));
+        healthView.setHealingMultiplier(        eval(b.getHealingMultiplier(),        StatTarget.HEALTH_HEALING_MULTIPLIER));
+        healthView.setIncomingDamageMultiplier( eval(b.getIncomingDamageMultiplier(), StatTarget.HEALTH_INCOMING_DAMAGE_MULT));
     }
 
     private void recomputeMovement() {

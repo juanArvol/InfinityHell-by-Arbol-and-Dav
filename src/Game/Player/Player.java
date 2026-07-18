@@ -1,11 +1,12 @@
 package Game.Player;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.HealthComponent;
 import Game.Engine.Entity.Components.StatusEffectComponent;
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
 import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
+import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
@@ -19,29 +20,15 @@ import java.util.function.Consumer;
 /**
  * Jugador.
  *
- * ── REFACTOR: SALUD MIGRADA A HealthComponent ─────────────────────────────
+ * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ───────────────
  *
- * PROBLEMA ORIGINAL:
- *   Player usaba PlayerStats para la salud (life, lifeMax, receiveDamage,
- *   isDead). PlayerStats duplicaba exactamente la responsabilidad de
- *   HealthComponent. Había dos sistemas de salud para el mismo objeto.
+ * Player ahora posee un EntityStats propio que actúa como fuente de verdad
+ * para su estado de salud, igual que Enemy. HealthComponent se construye en
+ * modo enlazado: new HealthComponent(entityStats). Ya no usa el constructor
+ * standalone (int maxHp).
  *
- * SOLUCIÓN:
- *   Player ahora añade HealthComponent como componente en su constructor.
- *   PlayerStats queda solo con los atributos complementarios (speedMultiplier,
- *   damageMultiplier, invulnerabilidad post-golpe).
- *
- *   La salud es accesible a través de los shortcuts de Entity (heredados
- *   via MovingObjects → Entity):
- *     player.damage(10)           → delega a HealthComponent
- *     player.heal(5)              → delega a HealthComponent
- *     player.isDead()             → delega a HealthComponent
- *     player.getHealthPercent()   → delega a HealthComponent
- *     player.getHealth()          → retorna HealthComponent directamente
- *
- *   Para daño con invulnerabilidad (específico del Player):
- *     player.receiveDamage(10)    → verifica PlayerStats.isInvulnerable()
- *                                   luego llama damage() y triggerInvulnerability()
+ * El EntityStats del Player es local — Player aún no tiene un Assembler
+ * dedicado. La configuración inicial se hace en el propio constructor.
  *
  * ── FLUJO DE DAÑO ────────────────────────────────────────────────────────
  *
@@ -51,7 +38,7 @@ import java.util.function.Consumer;
  *   player.receiveDamage(amount);
  *
  *   // Sin invulnerabilidad (daño de efecto de estado, caída):
- *   player.damage(amount);  // shortcut de Entity → HealthComponent directo
+ *   player.damage(amount);  // shortcut de Entity → HealthComponent → HealthStats
  *
  * ── JERARQUÍA EN EFECTO ───────────────────────────────────────────────────
  *
@@ -62,7 +49,7 @@ import java.util.function.Consumer;
  */
 public class Player extends MovingObjects {
 
-    // Configuración de salud del jugador
+    // ── Configuración base de salud ───────────────────────────────────────
     // BASE_HP     = vida con la que el jugador comienza la partida
     // BASE_HP_MAX = vida máxima que puede tener (techo de curación)
     private static final int    BASE_HP      = 100;
@@ -70,6 +57,11 @@ public class Player extends MovingObjects {
 
     /** Gravedad aplicada a la física del jugador (píxeles virtuales/frame²). */
     private static final double BASE_GRAVITY = 0.78;
+
+    // ── Módulos del dominio Entity ────────────────────────────────────────
+    // EntityStats es la fuente de verdad para el estado genérico del Player.
+    // HealthComponent delega sobre entityStats.health() — sin estado propio.
+    private final EntityStats entityStats;
 
     private final PlayerController controller;
     private final PlayerCombat     combat;
@@ -89,18 +81,21 @@ public class Player extends MovingObjects {
      * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
      */
     public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner) {
-        // ── HRFC-004: constructor con SpriteHandle — sin legacySprite ────────
-        // MovingObjects crea SpriteRenderer(handle) directamente.
-        // No se pasa BufferedImage: elimina el frame incorrecto que podía
-        // mostrarse durante el primer tick antes de AnimationController.start().
         super(spawn,
               PlayerAssets.handle,
               new PlayerPhysics(BASE_GRAVITY),
               SizeSyncMode.NONE);
 
+        // ── HRFC-013: EntityStats — fuente de verdad del estado del Player ─
+        // Configurar la salud base ANTES de crear HealthComponent.
+        // setMaxHp() inicializa también currentHp al máximo.
+        entityStats = new EntityStats();
+        entityStats.setMaxHp(BASE_HP_MAX);
+
         // ── Componentes de gameplay (Entity) ─────────────────────────────
-        // HealthComponent gestiona la salud — PlayerStats ya no lo hace.
-        addComponent(new HealthComponent(BASE_HP_MAX) {
+        // HealthComponent en modo enlazado: delega sobre entityStats.health().
+        // Ya no almacena estado propio.
+        addComponent(new HealthComponent(entityStats) {
             @Override
             protected void onDeath() {
                 // Punto de extensión: notificar muerte del Player al bus de eventos,
@@ -144,18 +139,15 @@ public class Player extends MovingObjects {
         }
 
         addComponent(new HitBoxComponent(Color.RED));
-        // AnimationController ANTES que PlayerRenderer: PlayerRenderer.start()
-        // busca AnimationController en el mismo objeto.
         addComponent(new AnimationControllerComponent(PlayerAssets.handle));
         addComponent(new PlayerRenderer(state));
 
         // ── Inventario y equipamiento ─────────────────────────────────────
-        // getMaxInventorySlots() es la única fuente de verdad para el tamaño del inventario.
         inventory     = new Inventory(stats.getMaxInventorySlots());
         equippedItems = new EquippedItems();
 
-        // Establecer HP inicial (HealthComponent arranca en max; queremos BASE_HP).
-        // initCurrentHP() fija el valor directamente sin disparar onDamage ni onDeath.
+        // Establecer HP inicial — el jugador arranca con BASE_HP, no BASE_HP_MAX.
+        // initCurrentHP escribe directamente en HealthStats sin disparar hooks.
         if (BASE_HP < BASE_HP_MAX) {
             getHealth().initCurrentHP(BASE_HP);
         }
@@ -206,12 +198,13 @@ public class Player extends MovingObjects {
 
     // ── Getters ───────────────────────────────────────────────────────────
 
-    public Vector2D         getPosition()    { return getTransform().getPosition(); }
-    public PlayerState      getState()       { return state; }
-    public PlayerController getController()  { return controller; }
-    public PlayerCombat     getCombat()      { return combat; }
-    public PlayerStats      getStats()       { return stats; }
-    public Inventory        getInventory()   { return inventory; }
+    public Vector2D         getPosition()      { return getTransform().getPosition(); }
+    public EntityStats      getEntityStats()   { return entityStats; }
+    public PlayerState      getState()         { return state; }
+    public PlayerController getController()    { return controller; }
+    public PlayerCombat     getCombat()        { return combat; }
+    public PlayerStats      getStats()         { return stats; }
+    public Inventory        getInventory()     { return inventory; }
     public EquippedItems    getEquippedItems() { return equippedItems; }
 
     // ── Colisiones ────────────────────────────────────────────────────────
