@@ -48,7 +48,7 @@ import java.awt.image.BufferedImage;
  * Se verifica visibilidad antes de cualquier draw. Los sprites completamente
  * fuera del viewport se omiten sin ningún draw.
  */
-public class SpriteRenderer extends Component implements Renderable {
+public class SpriteRendererComponent extends Component implements Renderable {
 
     // ── Estado del frame actual ───────────────────────────────────────────
 
@@ -99,12 +99,12 @@ public class SpriteRenderer extends Component implements Renderable {
     // ── Constructores ─────────────────────────────────────────────────────
 
     /** Constructor con SpriteHandle (modo nuevo — Gameplay desacoplado). */
-    public SpriteRenderer(SpriteHandle handle) {
+    public SpriteRendererComponent(SpriteHandle handle) {
         this(handle, SizeSyncMode.NONE);
     }
 
     /** Constructor con SpriteHandle y modo de sync. */
-    public SpriteRenderer(SpriteHandle handle, SizeSyncMode syncMode) {
+    public SpriteRendererComponent(SpriteHandle handle, SizeSyncMode syncMode) {
         this.handle   = handle;
         this.syncMode = syncMode;
         if (handle != null && handle.isValid()) {
@@ -115,12 +115,12 @@ public class SpriteRenderer extends Component implements Renderable {
     }
 
     /** Constructor con BufferedImage (modo legacy — compatibilidad). */
-    public SpriteRenderer(BufferedImage sprite) {
+    public SpriteRendererComponent(BufferedImage sprite) {
         this(sprite, SizeSyncMode.NONE);
     }
 
     /** Constructor con BufferedImage y modo de sync (modo legacy). */
-    public SpriteRenderer(BufferedImage sprite, SizeSyncMode syncMode) {
+    public SpriteRendererComponent(BufferedImage sprite, SizeSyncMode syncMode) {
         this.legacySprite = sprite;
         this.syncMode     = syncMode;
         if (sprite != null) {

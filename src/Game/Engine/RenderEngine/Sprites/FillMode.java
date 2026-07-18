@@ -1,4 +1,4 @@
-package Game.Engine.Components.Visuals;
+package Game.Engine.RenderEngine.Sprites;
 
 /**
  * FillMode — cómo escala y posiciona el sprite dentro del área de render.

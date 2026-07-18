@@ -9,7 +9,7 @@ import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Transitions.TimedTransition;
 import Game.Enemys.EnemyPhysicsConfig;
-import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.AnimationControllerComponent;
 import Game.Living.Attributes.EntityAttributes;
 import Game.Living.Combat.AttackSource;
 import Game.Living.Combat.AttackSources;
@@ -99,7 +99,7 @@ public final class SansAssembler extends EnemyAssembler {
     @Override
     protected void configureVisual(Enemy enemy) {
         // Placeholder hasta que SansAssets esté disponible.
-        enemy.addComponent(new AnimationController(EnemyAssets.flyingHandle, "idle"));
+        enemy.addComponent(new AnimationControllerComponent(EnemyAssets.flyingHandle, "idle"));
     }
 
     @Override

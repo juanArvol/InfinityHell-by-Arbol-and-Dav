@@ -21,7 +21,7 @@ import java.awt.Color;
  *   desplazamiento visual respecto a la posición del objeto, sin afectar
  *   al collider ni a la física.
  */
-public class RectRenderer extends Component implements Renderable {
+public class RectRendererComponent extends Component implements Renderable {
 
     private int   width;
     private int   height;
@@ -30,14 +30,14 @@ public class RectRenderer extends Component implements Renderable {
     private int   offsetY = 0;
 
     /** Sin offset (comportamiento original). */
-    public RectRenderer(int width, int height, Color color) {
+    public RectRendererComponent(int width, int height, Color color) {
         this.width  = width;
         this.height = height;
         this.color  = color;
     }
 
     /** Con offset visual respecto a la posición del objeto. */
-    public RectRenderer(int width, int height, Color color, int offsetX, int offsetY) {
+    public RectRendererComponent(int width, int height, Color color, int offsetX, int offsetY) {
         this(width, height, color);
         this.offsetX = offsetX;
         this.offsetY = offsetY;

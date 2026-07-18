@@ -1,4 +1,4 @@
-package Game.Engine.Components.Visuals;
+package Game.Engine.RenderEngine.Sprites;
 
 /**
  * Modo de sincronización de tamaño entre SpriteRenderer y ColliderComponent.

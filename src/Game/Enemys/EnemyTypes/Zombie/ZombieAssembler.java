@@ -6,7 +6,7 @@ import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.GroundMovement;
 import Game.Enemys.EnemyPhysicsConfig;
-import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.AnimationControllerComponent;
 import Game.Living.Attributes.EntityAttributes;
 import Game.Living.Combat.AttackSource;
 import Game.Living.Combat.AttackSources;
@@ -75,6 +75,6 @@ public final class ZombieAssembler extends EnemyAssembler {
 
     @Override
     protected void configureVisual(Enemy enemy) {
-        enemy.addComponent(new AnimationController(EnemyAssets.normalHandle, "idle"));
+        enemy.addComponent(new AnimationControllerComponent(EnemyAssets.normalHandle, "idle"));
     }
 }

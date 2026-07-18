@@ -2,12 +2,12 @@ package Game.Engine;
 
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.Physics.Types.Physics2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Sprites.Core.SpriteHandle;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
@@ -57,7 +57,7 @@ import java.awt.image.BufferedImage;
  * No contiene lógica de gameplay. Eso es responsabilidad de Entity y sus
  * subclases concretas.
  */
-public abstract class MovingObjects extends Entity {
+public abstract class MovingObjects extends noEntity {
 
     protected final Physics2DComponent physicsComponent;
 

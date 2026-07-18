@@ -1,4 +1,4 @@
-package Game.Engine.Components.Visuals;
+package Game.Engine.RenderEngine.Sprites;
 
 /**
  * Alignment — alineación del sprite dentro del área de render.

@@ -4,16 +4,15 @@ import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Components.Collisions.ColliderComponent;
 import Game.Engine.Components.HealthComponent;
 import Game.Engine.Components.StatusEffectComponent;
-import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.AnimationControllerComponent;
 import Game.Engine.Components.Visuals.HitBoxComponent;
-import Game.Engine.Components.Visuals.SizeSyncMode;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
+import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Bullets.Bullet;
 import Sprites.Entity.Player.PlayerAssets;
-
 import java.awt.Color;
 import java.util.function.Consumer;
 
@@ -147,7 +146,7 @@ public class Player extends MovingObjects {
         addComponent(new HitBoxComponent(Color.RED));
         // AnimationController ANTES que PlayerRenderer: PlayerRenderer.start()
         // busca AnimationController en el mismo objeto.
-        addComponent(new AnimationController(PlayerAssets.handle));
+        addComponent(new AnimationControllerComponent(PlayerAssets.handle));
         addComponent(new PlayerRenderer(state));
 
         // ── Inventario y equipamiento ─────────────────────────────────────

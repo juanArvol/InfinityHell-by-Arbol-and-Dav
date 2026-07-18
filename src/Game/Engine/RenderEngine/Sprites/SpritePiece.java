@@ -1,4 +1,4 @@
-package Game.Engine.Components.Visuals;
+package Game.Engine.RenderEngine.Sprites;
 
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
@@ -54,7 +54,7 @@ import Sprites.Core.SpriteHandle;
  * Un ShadowStrategy puede adjuntarse al componente para dibujar una sombra
  * antes del sprite. Se activa con withShadow(strategy).
  */
-public final class SpriteComponent implements Renderable {
+public final class SpritePiece implements Renderable {
 
     // ── Identificación ────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ public final class SpriteComponent implements Renderable {
      * @param handle handle del sprite
      * @param partId identificador de la parte (ej: "head", "body", "weapon")
      */
-    public SpriteComponent(SpriteHandle handle, String partId) {
+    public SpritePiece(SpriteHandle handle, String partId) {
         this.handle = handle;
         this.partId = partId != null ? partId : "part";
         resolveDefaultFrame();
@@ -125,40 +125,40 @@ public final class SpriteComponent implements Renderable {
     /**
      * Constructor sin ID explícito.
      */
-    public SpriteComponent(SpriteHandle handle) {
+    public SpritePiece(SpriteHandle handle) {
         this(handle, "sprite");
     }
 
     // ── Builder fluido ────────────────────────────────────────────────────────
 
-    public SpriteComponent withOffset(int ox, int oy) {
+    public SpritePiece withOffset(int ox, int oy) {
         this.offsetX = ox;
         this.offsetY = oy;
         return this;
     }
 
-    public SpriteComponent withLayer(int layer) {
+    public SpritePiece withLayer(int layer) {
         this.layer = layer;
         return this;
     }
 
-    public SpriteComponent withTransform(TransformData transform) {
+    public SpritePiece withTransform(TransformData transform) {
         this.transform = transform != null ? transform : TransformData.IDENTITY;
         return this;
     }
 
-    public SpriteComponent withRenderSize(int w, int h) {
+    public SpritePiece withRenderSize(int w, int h) {
         this.renderWidth  = w;
         this.renderHeight = h;
         return this;
     }
 
-    public SpriteComponent withShadow(ShadowStrategy strategy) {
+    public SpritePiece withShadow(ShadowStrategy strategy) {
         this.shadowStrategy = strategy;
         return this;
     }
 
-    public SpriteComponent withVirtualSize(int vw, int vh) {
+    public SpritePiece withVirtualSize(int vw, int vh) {
         this.virtualWidth  = vw;
         this.virtualHeight = vh;
         return this;

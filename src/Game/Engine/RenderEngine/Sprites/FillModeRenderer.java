@@ -1,4 +1,4 @@
-package Game.Engine.Components.Visuals;
+package Game.Engine.RenderEngine.Sprites;
 
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;

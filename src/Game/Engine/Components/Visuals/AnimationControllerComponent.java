@@ -40,7 +40,7 @@ import Sprites.Core.SpriteHandle;
  * (pingPongForward). Llama a nextIndex() en avance y nextIndexReverse() en
  * retroceso. Al alcanzar un extremo, invierte la dirección.
  */
-public class AnimationController extends Component {
+public class AnimationControllerComponent extends Component {
 
     private final SpriteHandle handle;
 
@@ -78,7 +78,7 @@ public class AnimationController extends Component {
      * @param autoPlayKey clave de animación a reproducir automáticamente en start().
      *                    Si null, no hay auto-play (el caller llama play() manualmente).
      */
-    public AnimationController(SpriteHandle handle, String autoPlayKey) {
+    public AnimationControllerComponent(SpriteHandle handle, String autoPlayKey) {
         if (handle == null) {
             throw new IllegalArgumentException("AnimationController: handle no puede ser null");
         }
@@ -89,7 +89,7 @@ public class AnimationController extends Component {
     /**
      * Constructor sin auto-play. El caller llama play() explícitamente.
      */
-    public AnimationController(SpriteHandle handle) {
+    public AnimationControllerComponent(SpriteHandle handle) {
         this(handle, null);
     }
 

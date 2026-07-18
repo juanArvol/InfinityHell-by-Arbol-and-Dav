@@ -6,7 +6,7 @@ import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Movement.FlyingMovement;
 import Game.Enemys.EnemyPhysicsConfig;
-import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.AnimationControllerComponent;
 import Game.Engine.Components.Visuals.ShadowComponent;
 import Game.Living.Attributes.EntityAttributes;
 import Game.Living.Combat.AttackSource;
@@ -77,6 +77,6 @@ public final class FlyingEnemyAssembler extends EnemyAssembler {
     @Override
     protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new ShadowComponent(18, 7));
-        enemy.addComponent(new AnimationController(EnemyAssets.flyingHandle, "idle"));
+        enemy.addComponent(new AnimationControllerComponent(EnemyAssets.flyingHandle, "idle"));
     }
 }

@@ -4,6 +4,7 @@ import Game.Engine.Component;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
 import Game.Engine.RenderEngine.Contracts.Renderable;
+import Game.Engine.RenderEngine.Sprites.SpritePiece;
 import Game.Engine.RenderEngine.Transform.TransformData;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -62,15 +63,15 @@ import java.util.Map;
  * para que el culling funcione correctamente. Se inyecta con
  * setVirtualSize(vw, vh) desde el sistema de render o desde la entidad.
  */
-public final class SpriteComposite extends Component implements Renderable {
+public final class SpriteSkeletonComponent extends Component implements Renderable {
 
     // ── Partes ────────────────────────────────────────────────────────────────
 
     /** Mapa de partId → SpriteComponent para lookup O(1). */
-    private final Map<String, SpriteComponent> partsMap = new LinkedHashMap<>();
+    private final Map<String, SpritePiece> partsMap = new LinkedHashMap<>();
 
     /** Lista ordenada por layer (se recalcula cuando cambia el conjunto de partes). */
-    private List<SpriteComponent> sortedParts = new ArrayList<>();
+    private List<SpritePiece> sortedParts = new ArrayList<>();
 
     /** Flag: la lista ordenada necesita recalcularse. */
     private boolean sortDirty = true;
@@ -96,7 +97,7 @@ public final class SpriteComposite extends Component implements Renderable {
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    public SpriteComposite() {}
+    public SpriteSkeletonComponent() {}
 
     // ── Gestión de partes ─────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ public final class SpriteComposite extends Component implements Renderable {
      * @param part SpriteComponent a añadir
      * @return this (para encadenamiento fluido)
      */
-    public SpriteComposite addPart(SpriteComponent part) {
+    public SpriteSkeletonComponent addPart(SpritePiece part) {
         if (part == null) return this;
         partsMap.put(part.getPartId(), part);
         part.withVirtualSize(virtualWidth, virtualHeight);
@@ -121,7 +122,7 @@ public final class SpriteComposite extends Component implements Renderable {
      * @param part     la parte a añadir
      * @param parentId ID de la parte padre
      */
-    public SpriteComposite addPart(SpriteComponent part, String parentId) {
+    public SpriteSkeletonComponent addPart(SpritePiece part, String parentId) {
         if (part == null) return this;
         addPart(part);
         if (parentId != null && partsMap.containsKey(parentId)) {
@@ -147,7 +148,7 @@ public final class SpriteComposite extends Component implements Renderable {
      *
      * @param partId ID de la parte
      */
-    public SpriteComponent getPart(String partId) {
+    public SpritePiece getPart(String partId) {
         return partsMap.get(partId);
     }
 
@@ -199,7 +200,7 @@ public final class SpriteComposite extends Component implements Renderable {
     public void setVirtualSize(int vw, int vh) {
         this.virtualWidth  = vw;
         this.virtualHeight = vh;
-        for (SpriteComponent p : partsMap.values()) {
+        for (SpritePiece p : partsMap.values()) {
             p.withVirtualSize(vw, vh);
         }
     }
@@ -209,7 +210,7 @@ public final class SpriteComposite extends Component implements Renderable {
     @Override
     public void update() {
         // Actualizar animaciones de todas las partes
-        for (SpriteComponent part : partsMap.values()) {
+        for (SpritePiece part : partsMap.values()) {
             part.updateAnimation();
         }
     }
@@ -232,7 +233,7 @@ public final class SpriteComposite extends Component implements Renderable {
         }
 
         // Propagar posición base y renderizar cada parte en orden de capa
-        for (SpriteComponent part : sortedParts) {
+        for (SpritePiece part : sortedParts) {
             if (!part.isVisible()) continue;
 
             // Calcular posición base con jerarquía padre-hijo
@@ -241,7 +242,7 @@ public final class SpriteComposite extends Component implements Renderable {
 
             String parentId = parentMap.get(part.getPartId());
             if (parentId != null) {
-                SpriteComponent parent = partsMap.get(parentId);
+                SpritePiece parent = partsMap.get(parentId);
                 if (parent != null) {
                     // El hijo hereda el offset del padre (simplificado)
                     // En una jerarquía completa se acumularía el transform del padre
@@ -265,14 +266,14 @@ public final class SpriteComposite extends Component implements Renderable {
 
     private void rebuildSortedParts() {
         sortedParts = new ArrayList<>(partsMap.values());
-        sortedParts.sort(Comparator.comparingInt(SpriteComponent::getLayer));
+        sortedParts.sort(Comparator.comparingInt(SpritePiece::getLayer));
     }
 
     /**
      * Combina el transform local de la parte con el transform global del composite,
      * luego renderiza. Se hace de forma no destructiva (no modifica la parte).
      */
-    private void applyGlobalTransformAndRender(SpriteComponent part,
+    private void applyGlobalTransformAndRender(SpritePiece part,
                                                RenderContext ctx,
                                                RenderCamera camera) {
         TransformData local  = part.getTransform();

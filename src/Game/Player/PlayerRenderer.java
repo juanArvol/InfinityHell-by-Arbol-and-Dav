@@ -2,7 +2,7 @@ package Game.Player;
 
 import Game.Engine.Component;
 import Game.Engine.Components.Physics2DComponent;
-import Game.Engine.Components.Visuals.AnimationController;
+import Game.Engine.Components.Visuals.AnimationControllerComponent;
 import Game.Engine.Components.Visuals.SpriteRenderer;
 
 /**
@@ -35,7 +35,7 @@ public class PlayerRenderer extends Component {
 
     private final PlayerState state;
 
-    private AnimationController animController;
+    private AnimationControllerComponent animController;
     private SpriteRenderer      spriteRenderer;
     private Physics2DComponent  physicsComponent;
 
@@ -45,7 +45,7 @@ public class PlayerRenderer extends Component {
 
     @Override
     public void start() {
-        animController   = gameObject.getComponent(AnimationController.class);
+        animController   = gameObject.getComponent(AnimationControllerComponent.class);
         spriteRenderer   = gameObject.getComponent(SpriteRenderer.class);
         physicsComponent = gameObject.getComponent(Physics2DComponent.class);
 
