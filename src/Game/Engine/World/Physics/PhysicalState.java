@@ -1,6 +1,5 @@
 package Game.Engine.World.Physics;
 
-import Game.Engine.World.Components.MaterialComponent;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -9,98 +8,79 @@ import java.util.Map;
 /**
  * Fuente de verdad del estado físico de un objeto.
  *
- * ── HRFC-017 — Consolidación Definitiva del Modelo Declarativo ────────────
+ * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
  *
  * ── FILOSOFÍA ─────────────────────────────────────────────────────────────
- * PhysicalState unifica en un único punto todo el estado físico de un objeto.
+ * PhysicalState es un mapa plano de identificador de propiedad → valor numérico.
  *
- * En el modelo anterior, el estado estaba disperso en componentes separados:
- *   ThermalComponent    → temperatura
- *   ElectricalComponent → carga
- *   FluidComponent      → humedad
- *   PressureComponent   → presión
+ * No hay genéricos de dominio. No hay PhysicalQuantity<D>. No hay CoreDomains.
+ * No hay distinción entre "propiedad física" y "propiedad de material".
+ * Todo es un double identificado por un string.
  *
- * Cada componente era un silo independiente. El Engine necesitaba conocer
- * cada silo por nombre para acceder al estado. Añadir una nueva propiedad
- * requería añadir un nuevo componente y enseñar al Engine a conocerlo.
+ * El PhysicsSolver lee y escribe valores a través de este mapa.
+ * LawContext es la vista que las leyes reciben sobre este estado.
+ * PhysicalState nunca es accedido directamente por las leyes.
  *
- * PhysicalState reemplaza ese modelo: es un mapa de dominio → PhysicalQuantity
- * completamente genérico. El Engine no necesita conocer los dominios por nombre.
- * El PhysicsSolver recorre todas las propiedades registradas de forma uniforme.
+ * ── ESTRUCTURA ────────────────────────────────────────────────────────────
+ * PhysicalState contiene dos mapas paralelos:
  *
- * ── DISEÑO ────────────────────────────────────────────────────────────────
- * PhysicalState es un mapa de identificador de propiedad → PhysicalQuantity.
- * La clave es el id textual de la PhysicalProperty, no la clase del dominio,
- * para soportar múltiples propiedades del mismo dominio en el mismo objeto
- * si el diseño del juego lo requiere.
+ *   values      → Map<String, Double> — los valores actuales de las propiedades.
+ *   descriptors → Map<String, PropertyDescriptor> — los metadatos (rango, default).
  *
- * El acceso por dominio (getByDomain) retorna todas las cantidades registradas
- * bajo ese dominio, en orden de inserción.
+ * El Solver solo trabaja con el mapa de valores.
+ * Los descriptores se usan para:
+ *   - Clampear valores al aplicar deltas (si la propiedad está acotada).
+ *   - Proveer el valor por defecto al crear el estado.
+ *   - Introspección y depuración.
  *
- * ── INVARIANTE FUNDAMENTAL ───────────────────────────────────────────────
- * Toda modificación al estado físico de un objeto debe producirse
- * exclusivamente a través de:
+ * ── PROPIEDADES DE MATERIAL ───────────────────────────────────────────────
+ * Las propiedades de material (conductividad, capacidad calorífica, etc.)
+ * también se almacenan en PhysicalState bajo sus descriptores.
  *
- *   1. PhysicsSolver.solve()  — resolución de ecuaciones y restricciones.
- *   2. InfluenceSystem        — modificaciones directas externas (magia, auras).
- *   3. WorldFieldSystem       — campos espaciales.
+ * Esto elimina la distinción entre MaterialComponent y PhysicalState:
+ * ambos son simplemente conjuntos de propiedades con valores numéricos.
+ * Un objeto puede tener temperature, thermal_conductivity, humidity, y
+ * hardness registrados en el mismo PhysicalState, y el Solver los trata
+ * exactamente igual — son valores en un mapa.
  *
- * Ningún sistema de Gameplay puede modificar directamente PhysicalState.
- * Gameplay únicamente observa el estado resultante.
+ * ── API DE ESCRITURA ──────────────────────────────────────────────────────
+ * El único punto de escritura es:
  *
- * ── COMPATIBILIDAD CON LOS COMPONENTES EXISTENTES ─────────────────────────
- * PhysicalState no elimina ThermalComponent, ElectricalComponent, etc.
- * durante la transición. Los componentes existentes se mantienen como
- * adaptadores hasta que se complete la migración completa.
+ *   add(id, delta)   → suma delta al valor actual, clampea si la propiedad
+ *                      tiene límites.
+ *   set(id, value)   → establece el valor directamente (sin delta).
  *
- * El método registerFromComponent() permite registrar la PhysicalQuantity
- * de un componente existente en el PhysicalState, de forma que el Solver
- * opere sobre la misma instancia que el componente.
+ * Los sistemas externos (WorldFieldSystem, InfluenceSystem) usan set() o add()
+ * directamente. El PhysicsSolver usa add() exclusivamente a través de LawContext.
  *
- * ── USO ───────────────────────────────────────────────────────────────────
+ * ── COMPATIBILIDAD CON EL MODELO ANTERIOR ────────────────────────────────
+ * Los componentes legacy (ElectricalComponent, FluidComponent, PressureComponent)
+ * que subsisten durante la transición se mantienen como facades sobre las
+ * propiedades de PhysicalState del objeto, sin duplicar el dato.
  *
- *   // Construir el estado de un objeto
- *   PhysicalState state = PhysicalState.builder()
- *       .register(PhysicalProperties.TEMPERATURE, 20.0)
- *       .register(PhysicalProperties.CHARGE, 0.0)
- *       .register(PhysicalProperties.HUMIDITY, 0.0)
- *       .register(PhysicalProperties.PRESSURE, 0.0)
- *       .material(new MaterialComponent.Builder().thermalConductivity(0.5).build())
- *       .build();
- *
- *   // Leer el estado (Gameplay)
- *   double temp = state.get(PhysicalProperties.TEMPERATURE);
- *   boolean hasCharge = state.has(PhysicalProperties.CHARGE);
+ * ── INVARIANTE ────────────────────────────────────────────────────────────
+ *   ✗ Ningún parámetro de tipo de dominio.
+ *   ✗ Ninguna referencia a CoreDomains ni PhysicalDomain.
+ *   ✗ Ninguna distinción entre propiedad física y propiedad de material.
+ *   ✓ Toda propiedad es un string → double.
+ *   ✓ El Solver escribe exclusivamente mediante add().
  *
  * ── THREAD SAFETY ────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
  */
 public final class PhysicalState {
 
-    /**
-     * Mapa de id de propiedad → PhysicalQuantity<?>.
-     * LinkedHashMap para preservar el orden de inserción (determinismo).
-     */
-    private final Map<String, PhysicalQuantity<?>> quantities;
+    /** Valores actuales por id de propiedad. */
+    private final Map<String, Double>             values;
 
-    /**
-     * Mapa secundario de id de propiedad → PhysicalProperty<?>.
-     * Permite al Solver conocer los metadatos de cada propiedad registrada
-     * (dominio, equilibrio, límites) sin necesidad de un registro global.
-     */
-    private final Map<String, PhysicalProperty<?>> properties;
-
-    /** Material del objeto. Nunca null. */
-    private MaterialComponent material;
+    /** Descriptores por id de propiedad (metadatos: rango, default). */
+    private final Map<String, PropertyDescriptor> descriptors;
 
     // ── Constructor privado — usar Builder ────────────────────────────────
 
     private PhysicalState(Builder b) {
-        this.quantities = Collections.unmodifiableMap(
-            new LinkedHashMap<>(b.quantities));
-        this.properties = Collections.unmodifiableMap(
-            new LinkedHashMap<>(b.properties));
-        this.material   = b.material != null ? b.material : MaterialComponent.DEFAULT;
+        this.values      = new LinkedHashMap<>(b.values);
+        this.descriptors = Collections.unmodifiableMap(new LinkedHashMap<>(b.descriptors));
     }
 
     // ── Factory ───────────────────────────────────────────────────────────
@@ -108,201 +88,196 @@ public final class PhysicalState {
     /** Punto de entrada del Builder. */
     public static Builder builder() { return new Builder(); }
 
-    /** Estado vacío sin propiedades. Útil para objetos sin simulación física. */
+    /** Estado vacío sin propiedades. */
     public static PhysicalState empty() { return builder().build(); }
 
-    // ── Acceso a cantidades ───────────────────────────────────────────────
+    // ── Acceso a valores ──────────────────────────────────────────────────
 
     /**
      * True si el objeto tiene la propiedad registrada.
      *
-     * @param property descriptor de la propiedad.
-     * @return true si existe una PhysicalQuantity para esta propiedad.
+     * @param propertyId identificador de la propiedad.
+     * @return true si existe un valor para este id.
      */
-    public boolean has(PhysicalProperty<?> property) {
-        return property != null && quantities.containsKey(property.getId());
+    public boolean has(String propertyId) {
+        return propertyId != null && values.containsKey(propertyId);
     }
 
     /**
-     * Retorna el valor numérico actual de la propiedad, o 0.0 si no existe.
+     * Valor numérico actual de la propiedad.
+     * Retorna 0.0 si el objeto no tiene esa propiedad.
      *
-     * @param property descriptor de la propiedad.
-     * @return valor actual, o 0.0 si el objeto no tiene esa propiedad.
+     * @param propertyId identificador de la propiedad.
+     * @return valor actual, o 0.0 si no existe.
      */
-    public double get(PhysicalProperty<?> property) {
-        if (property == null) return 0.0;
-        PhysicalQuantity<?> q = quantities.get(property.getId());
-        return q != null ? q.getValue() : 0.0;
+    public double get(String propertyId) {
+        if (propertyId == null) return 0.0;
+        Double v = values.get(propertyId);
+        return v != null ? v : 0.0;
     }
 
     /**
-     * Retorna la PhysicalQuantity mutable de la propiedad.
-     * El PhysicsSolver usa este método para aplicar deltas.
-     * Retorna null si el objeto no tiene la propiedad.
+     * Descriptor de la propiedad dado su id.
      *
-     * @param property descriptor de la propiedad.
-     * @param <D>      dominio físico.
-     * @return PhysicalQuantity mutable, o null.
+     * @param propertyId identificador de la propiedad.
+     * @return descriptor, o null si no está registrado.
      */
-    @SuppressWarnings("unchecked")
-    public <D extends PhysicalDomain> PhysicalQuantity<D> getQuantity(
-            PhysicalProperty<D> property) {
-        if (property == null) return null;
-        return (PhysicalQuantity<D>) quantities.get(property.getId());
-    }
-
-    /**
-     * Retorna la PhysicalQuantity mutable por id de propiedad.
-     * Usar cuando no se dispone del descriptor pero sí del id.
-     *
-     * @param propertyId id de la propiedad.
-     * @return PhysicalQuantity sin tipo específico, o null.
-     */
-    public PhysicalQuantity<?> getQuantityById(String propertyId) {
+    public PropertyDescriptor getDescriptor(String propertyId) {
         if (propertyId == null) return null;
-        return quantities.get(propertyId);
-    }
-
-    /**
-     * Retorna el descriptor de la propiedad dado su id.
-     *
-     * @param propertyId id de la propiedad.
-     * @return descriptor, o null si no existe.
-     */
-    public PhysicalProperty<?> getProperty(String propertyId) {
-        if (propertyId == null) return null;
-        return properties.get(propertyId);
+        return descriptors.get(propertyId);
     }
 
     /**
      * Colección de todos los descriptores de propiedades registradas.
-     * En orden de inserción. Vista inmutable.
+     * Vista inmutable en orden de inserción.
      *
-     * El PhysicsSolver itera sobre esta colección para recorrer todas las
-     * propiedades del objeto sin conocer sus nombres.
-     *
-     * @return colección inmutable de PhysicalProperty<?>.
+     * @return colección de descriptores.
      */
-    public Collection<PhysicalProperty<?>> registeredProperties() {
-        return properties.values();
+    public Collection<PropertyDescriptor> registeredDescriptors() {
+        return descriptors.values();
     }
 
     /**
-     * Colección de todos los pares (id → cantidad) registrados.
-     * Vista inmutable del mapa interno.
+     * Conjunto de todos los ids de propiedades registradas.
+     * Vista inmutable.
      *
-     * @return colección inmutable de entradas.
+     * @return conjunto de ids.
      */
-    public Collection<Map.Entry<String, PhysicalQuantity<?>>> entries() {
-        return quantities.entrySet();
+    public Collection<String> registeredIds() {
+        return descriptors.keySet();
     }
 
-    /** Número de propiedades registradas en este estado. */
-    public int size() { return quantities.size(); }
+    /** Número de propiedades registradas. */
+    public int size() { return values.size(); }
 
     /** True si no hay propiedades registradas. */
-    public boolean isEmpty() { return quantities.isEmpty(); }
+    public boolean isEmpty() { return values.isEmpty(); }
 
-    // ── Acceso al material ────────────────────────────────────────────────
-
-    /**
-     * Material del objeto. Nunca null.
-     *
-     * @return material del objeto.
-     */
-    public MaterialComponent getMaterial() { return material; }
+    // ── Escritura ─────────────────────────────────────────────────────────
 
     /**
-     * Actualiza el material del objeto.
-     * Solo llamar desde sistemas que gestionan cambios de material en runtime
-     * (p.ej. cambio de fase: sólido → líquido).
+     * Suma un delta al valor actual de la propiedad.
+     * Si la propiedad tiene límites (descriptor acotado), el resultado
+     * se clampea automáticamente.
+     * No hace nada si la propiedad no existe.
      *
-     * @param material nuevo material. Si null, se usa MaterialComponent.DEFAULT.
+     * @param propertyId identificador de la propiedad.
+     * @param delta      valor a añadir. Negativo = restar.
      */
-    public void setMaterial(MaterialComponent material) {
-        this.material = material != null ? material : MaterialComponent.DEFAULT;
+    public void add(String propertyId, double delta) {
+        if (propertyId == null || !values.containsKey(propertyId)) return;
+        double current = values.get(propertyId);
+        double next    = current + delta;
+        PropertyDescriptor desc = descriptors.get(propertyId);
+        if (desc != null && desc.isBounded()) {
+            next = desc.clamp(next);
+        }
+        values.put(propertyId, next);
+    }
+
+    /**
+     * Establece el valor de la propiedad directamente.
+     * Si la propiedad tiene límites, el valor se clampea.
+     * No hace nada si la propiedad no existe.
+     *
+     * @param propertyId identificador de la propiedad.
+     * @param value      nuevo valor.
+     */
+    public void set(String propertyId, double value) {
+        if (propertyId == null || !values.containsKey(propertyId)) return;
+        PropertyDescriptor desc = descriptors.get(propertyId);
+        values.put(propertyId, desc != null && desc.isBounded() ? desc.clamp(value) : value);
+    }
+
+    /**
+     * Establece el valor de una propiedad aunque no esté registrada en los
+     * descriptores. Útil para actualizar propiedades dinámicas en runtime.
+     * No aplica clamp — el llamador es responsable de los rangos.
+     *
+     * @param propertyId identificador.
+     * @param value      nuevo valor.
+     */
+    public void setRaw(String propertyId, double value) {
+        if (propertyId != null) values.put(propertyId, value);
     }
 
     // ── Object ────────────────────────────────────────────────────────────
 
     @Override
     public String toString() {
-        return "PhysicalState[" + quantities.size() + " properties]";
+        return "PhysicalState[" + values.size() + " properties]";
     }
 
     // ── Builder ───────────────────────────────────────────────────────────
 
     /**
      * Builder de PhysicalState.
-     * Permite registrar propiedades con sus valores iniciales y el material.
      */
     public static final class Builder {
 
-        private final Map<String, PhysicalQuantity<?>> quantities = new LinkedHashMap<>();
-        private final Map<String, PhysicalProperty<?>> properties = new LinkedHashMap<>();
-        private MaterialComponent material;
+        private final Map<String, Double>             values      = new LinkedHashMap<>();
+        private final Map<String, PropertyDescriptor> descriptors = new LinkedHashMap<>();
 
         private Builder() {}
 
         /**
-         * Registra una propiedad con el valor de equilibrio de la propia propiedad
-         * como valor inicial.
+         * Registra una propiedad con el valor por defecto del descriptor.
          *
-         * @param property descriptor de la propiedad.
-         * @param <D>      dominio físico.
-         * @return this (para encadenado).
+         * @param descriptor descriptor de la propiedad.
+         * @return this.
          */
-        public <D extends PhysicalDomain> Builder register(PhysicalProperty<D> property) {
-            return register(property, property.getEquilibrium());
+        public Builder register(PropertyDescriptor descriptor) {
+            if (descriptor == null) return this;
+            return register(descriptor, descriptor.getDefaultValue());
         }
 
         /**
          * Registra una propiedad con un valor inicial explícito.
+         * Si el descriptor está acotado, el valor se clampea al rango.
          *
-         * @param property     descriptor de la propiedad.
+         * @param descriptor   descriptor de la propiedad.
          * @param initialValue valor inicial.
-         * @param <D>          dominio físico.
-         * @return this (para encadenado).
+         * @return this.
          */
-        public <D extends PhysicalDomain> Builder register(
-                PhysicalProperty<D> property,
-                double initialValue) {
-            if (property == null) return this;
-            quantities.put(property.getId(), property.createQuantity(initialValue));
-            properties.put(property.getId(), property);
+        public Builder register(PropertyDescriptor descriptor, double initialValue) {
+            if (descriptor == null) return this;
+            double v = descriptor.isBounded() ? descriptor.clamp(initialValue) : initialValue;
+            values.put(descriptor.getId(), v);
+            descriptors.put(descriptor.getId(), descriptor);
             return this;
         }
 
         /**
-         * Registra la PhysicalQuantity de un componente existente en el estado.
-         * Usa la misma instancia que el componente — las modificaciones del Solver
-         * se reflejan automáticamente en el componente.
+         * Registra una propiedad por id y valor sin descriptor.
+         * Útil para propiedades dinámicas o de acceso rápido sin metadatos.
+         * El valor no se clampea.
          *
-         * Usar durante la transición para mantener compatibilidad con los
-         * componentes de estado existentes (ThermalComponent, etc.).
-         *
-         * @param property descriptor de la propiedad.
-         * @param quantity instancia de PhysicalQuantity del componente.
-         * @param <D>      dominio físico.
-         * @return this (para encadenado).
+         * @param propertyId   identificador.
+         * @param initialValue valor inicial.
+         * @return this.
          */
-        public <D extends PhysicalDomain> Builder registerExisting(
-                PhysicalProperty<D> property,
-                PhysicalQuantity<D> quantity) {
-            if (property == null || quantity == null) return this;
-            quantities.put(property.getId(), quantity);
-            properties.put(property.getId(), property);
+        public Builder registerRaw(String propertyId, double initialValue) {
+            if (propertyId == null) return this;
+            values.put(propertyId, initialValue);
             return this;
         }
 
         /**
-         * Define el material del objeto.
+         * Registra todas las propiedades de material de un MaterialComponent.
+         * Equivale a llamar registerInto(this) sobre el material.
          *
-         * @param material material del objeto.
+         * Uso:
+         *   PhysicalState.builder()
+         *       .register(CoreProperties.TEMPERATURE, 20.0)
+         *       .registerMaterial(mat)
+         *       .build();
+         *
+         * @param material el material cuyas propiedades se registran.
+         *                 Ignorado si null.
          * @return this (para encadenado).
          */
-        public Builder material(MaterialComponent material) {
-            this.material = material;
+        public Builder registerMaterial(Game.Engine.World.Components.MaterialComponent material) {
+            if (material != null) material.registerInto(this);
             return this;
         }
 

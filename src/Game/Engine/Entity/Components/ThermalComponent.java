@@ -122,9 +122,9 @@ public final class ThermalComponent extends Component {
         @Deprecated public Builder conductivity(double v)      { this.conductivity = v; return this; }
         /** @deprecated → MaterialComponent.Builder.heatCapacity() */
         @Deprecated public Builder heatCapacity(double v)      { this.heatCapacity = v; return this; }
-        /** @deprecated → PhysicsSolver + CoreEquations.thermalDissipation() */
+        /** @deprecated → PhysicsSolver + LawRegistry (ley de disipación térmica) */
         @Deprecated public Builder ignitionThreshold(double v) { this.ignitionThreshold = v; return this; }
-        /** @deprecated → PhysicsSolver + CoreEquations.thermalDissipation() */
+        /** @deprecated → PhysicsSolver + LawRegistry (ley de disipación térmica) */
         @Deprecated public Builder freezingThreshold(double v) { this.freezingThreshold = v; return this; }
 
         public ThermalComponent build() { return new ThermalComponent(temperature); }

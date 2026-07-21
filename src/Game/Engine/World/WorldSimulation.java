@@ -3,48 +3,40 @@ package Game.Engine.World;
 import Game.Engine.GameObjects;
 import Game.Engine.World.Fields.WorldFieldSystem;
 import Game.Engine.World.Influences.InfluenceSystem;
-import Game.Engine.World.Physics.PhysicsConstraint;
-import Game.Engine.World.Physics.PhysicsEquation;
-import Game.Engine.World.Solver.CoreEquations;
-import Game.Engine.World.Solver.PairEquation;
+import Game.Engine.World.Physics.PhysicsLaw;
+import Game.Engine.World.Solver.CoreLaws;
+import Game.Engine.World.Solver.LawRegistry;
 import Game.Engine.World.Solver.PhysicsSolver;
 import java.util.List;
 
 /**
  * Orquestador del World Simulation Core.
  *
- * ── HRFC-017 — Consolidación Definitiva del Modelo Declarativo ────────────
+ * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
  *
- * ── FILOSOFÍA ─────────────────────────────────────────────────────────────
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * WorldSimulation coordina el ciclo de simulación física del mundo.
- * No contiene lógica física. No conoce fenómenos. No conoce dominios concretos.
+ * No contiene lógica física. No conoce fenómenos. No conoce propiedades.
+ * No conoce leyes concretas.
  *
- * Su única responsabilidad es ejecutar, en orden garantizado, los cuatro
+ * Su única responsabilidad es ejecutar, en orden garantizado, los tres
  * sistemas que producen el estado físico de cada frame:
  *
  *   [1] InfluenceSystem   — modificaciones directas (magia, auras, poderes)
  *   [2] WorldFieldSystem  — campos espaciales continuos
  *   [3] PhysicsSolver     — resolución declarativa del estado físico
  *
- * El conocimiento físico del mundo reside exclusivamente en los datos
- * registrados en PhysicsSolver: ecuaciones, ecuaciones de par y restricciones.
- * WorldSimulation no necesita ningún cambio cuando se añade un nuevo fenómeno.
- *
  * ── FLUJO DEFINITIVO ──────────────────────────────────────────────────────
  *
- *   PhysicsSolver
+ *   LawRegistry (instancias de PhysicsLaw)
  *       ↓
- *   lee PhysicalProperty   (qué propiedades tiene cada objeto)
+ *   PhysicsSolver.registerAll(registry)
  *       ↓
- *   lee MaterialProperty   (constantes físicas del material)
+ *   para cada frame → solver.solve(objects, deltaTime):
+ *       for (PhysicsLaw law : laws)
+ *           law.solve(worldContext)
  *       ↓
- *   aplica PhysicsEquation (leyes físicas intra-objeto)
- *       ↓
- *   aplica PairEquation    (transferencias entre pares de objetos)
- *       ↓
- *   aplica PhysicsConstraint (correcciones de equilibrio y disipación)
- *       ↓
- *   actualiza PhysicalState  (única fuente de verdad)
+ *   PhysicalState actualizado — única fuente de verdad
  *       ↓
  *   Gameplay observa el estado resultante
  *
@@ -55,32 +47,39 @@ import java.util.List;
  *
  * ── COMPOSICIÓN ──────────────────────────────────────────────────────────
  * WorldSimulation no impone ninguna configuración concreta. Todo se inyecta
- * mediante el Builder. Un mundo sin una propiedad concreta simplemente no
- * registra las ecuaciones de esa propiedad.
+ * mediante el Builder. Un mundo puede registrar cualquier combinación de leyes
+ * de cualquier catálogo (CoreLaws, GameplayLaws, BossLaws, ModLaws...).
  *
+ *   // Mundo con las 10 leyes físicas fundamentales
+ *   WorldSimulation sim = WorldSimulation.withDefaults();
+ *
+ *   // Mundo vacío (sin simulación física activa)
+ *   WorldSimulation sim = WorldSimulation.empty();
+ *
+ *   // Mundo con física personalizada
  *   WorldSimulation sim = WorldSimulation.builder()
- *       .addEquation(CoreEquations.thermalExpansion(0.05))
- *       .addPairEquation(CoreEquations.thermalTransfer())
- *       .addPairEquation(CoreEquations.electricalTransfer())
- *       .addPairEquation(CoreEquations.fluidTransfer())
- *       .addConstraint(CoreEquations.thermalAmbientDissipation(0.0, 0.05))
- *       .addConstraint(CoreEquations.electricalAmbientDissipation(0.02))
- *       .addConstraint(CoreEquations.fluidAmbientDissipation(0.0, 0.005))
- *       .addConstraint(CoreEquations.thermalDissipation(500.0, 0.1))
- *       .addConstraint(CoreEquations.chargeDissipation(10.0, 0.08))
- *       .addConstraint(CoreEquations.fluidSaturationRelease(0.6, 0.05))
+ *       .registerAll(new LawRegistry().registerAll(CoreLaws.all()))
+ *       .register(gravityLaw)
+ *       .register(magnetismLaw)
+ *       .build();
+ *
+ *   // Mundo con leyes de un mod
+ *   WorldSimulation sim = WorldSimulation.builder()
+ *       .registerAll(new LawRegistry().registerAll(CoreLaws.all()))
+ *       .registerAll(new LawRegistry().registerAll(ModLaws.all()))
  *       .build();
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Añadir un nuevo fenómeno físico:
- *   1. Definir una PhysicalProperty en un catálogo propio.
- *   2. Registrar las ecuaciones y restricciones correspondientes.
- *   3. Añadirlas al Builder de WorldSimulation.
- *   → WorldSimulation no cambia. PhysicsSolver no cambia. El Engine no aprende nada nuevo.
+ * Añadir un fenómeno nuevo (radiación, magnetismo, gravedad, plasma,
+ * superconductividad, efectos cuánticos, radio de Schwarzschild...):
  *
- * ── INTEGRACIÓN ──────────────────────────────────────────────────────────
- * WorldSimulation implementa Runnable para integrarse con el game loop.
- * update(objects) es el único método de entrada.
+ *   1. Definir un PropertyDescriptor con el id de la nueva propiedad.
+ *   2. Registrar ese PropertyDescriptor en el PhysicalState del objeto.
+ *   3. Crear una PhysicsLaw con la ecuación del fenómeno.
+ *   4. Registrarla en el Builder o en runtime via solver().
+ *
+ *   WorldSimulation no cambia. PhysicsSolver no cambia.
+ *   El Engine no aprende ningún concepto nuevo.
  *
  * ── THREAD SAFETY ────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
@@ -105,51 +104,35 @@ public final class WorldSimulation {
     public static Builder builder() { return new Builder(); }
 
     /**
-     * WorldSimulation vacío — sin ecuaciones, pares ni restricciones.
-     * Útil para mundos sin simulación física activa (hubs, cutscenes).
+     * WorldSimulation vacío — sin leyes físicas registradas.
+     * Útil para mundos sin simulación física activa (hubs, cutscenes, menús).
      */
     public static WorldSimulation empty() {
         return builder().build();
     }
 
     /**
-     * WorldSimulation con las ecuaciones y restricciones fundamentales
-     * de los tres dominios físicos base: térmica, eléctrica y fluídica.
+     * WorldSimulation con las diez leyes físicas fundamentales de CoreLaws.
      *
-     * Ecuaciones intra-objeto registradas:
-     *   - thermalExpansion(0.05)         — temperatura → presión
+     * Las leyes registradas son:
+     *   [1]  Expansión volumétrica        temperatura → presión
+     *   [2]  Transferencia térmica        entre pares dentro de radio 32
+     *   [3]  Transferencia eléctrica      entre pares dentro de radio 32
+     *   [4]  Difusión fluídica            entre pares dentro de radio 32
+     *   [5]  Disipación térmica ambiental temperatura → equilibrio
+     *   [6]  Disipación eléctrica         carga → equilibrio
+     *   [7]  Disipación fluídica          humedad → equilibrio
+     *   [8]  Disipación de exceso térmico corrección energética umbral 500
+     *   [9]  Disipación de exceso eléctrico corrección de carga umbral 10
+     *   [10] Liberación en saturación     corrección fluídica umbral 0.6
      *
-     * Ecuaciones de par registradas:
-     *   - thermalTransfer()              — intercambio de temperatura entre vecinos
-     *   - electricalTransfer()           — propagación de carga entre conductores
-     *   - fluidTransfer()                — difusión de humedad entre vecinos
+     * Para configuración personalizada usar el Builder directamente.
      *
-     * Restricciones registradas:
-     *   - thermalAmbientDissipation      — temperatura converge hacia 0
-     *   - electricalAmbientDissipation   — carga converge hacia 0
-     *   - fluidAmbientDissipation        — humedad converge hacia ambiente seco
-     *   - thermalDissipation(500, 0.1)   — disipa exceso de energía acumulada
-     *   - chargeDissipation(10, 0.08)    — disipa exceso de carga acumulada
-     *   - fluidSaturationRelease(0.6, 0.05) — libera humedad en saturación
-     *
-     * Para mundos con configuración personalizada usar el Builder directamente.
+     * @return WorldSimulation configurado con las leyes físicas fundamentales.
      */
     public static WorldSimulation withDefaults() {
         return builder()
-            // ── Ecuaciones intra-objeto ───────────────────────────────────
-            .addEquation(CoreEquations.thermalExpansion(0.05))
-            // ── Ecuaciones de par ─────────────────────────────────────────
-            .addPairEquation(CoreEquations.thermalTransfer())
-            .addPairEquation(CoreEquations.electricalTransfer())
-            .addPairEquation(CoreEquations.fluidTransfer())
-            // ── Restricciones de disipación ambiental ─────────────────────
-            .addConstraint(CoreEquations.thermalAmbientDissipation(0.0, 0.05))
-            .addConstraint(CoreEquations.electricalAmbientDissipation(0.02))
-            .addConstraint(CoreEquations.fluidAmbientDissipation(0.0, 0.005))
-            // ── Restricciones de umbral ───────────────────────────────────
-            .addConstraint(CoreEquations.thermalDissipation(500.0, 0.1))
-            .addConstraint(CoreEquations.chargeDissipation(10.0, 0.08))
-            .addConstraint(CoreEquations.fluidSaturationRelease(0.6, 0.05))
+            .registerAll(new LawRegistry().registerAll(CoreLaws.all()))
             .build();
     }
 
@@ -163,12 +146,13 @@ public final class WorldSimulation {
      *   2. WorldFieldSystem — campos espaciales continuos sobre todos los objetos
      *   3. PhysicsSolver    — resolución declarativa del estado físico
      *
-     * @param objects lista de objetos activos en el mundo este frame.
+     * @param objects   lista de objetos activos en el mundo este frame.
+     * @param deltaTime tiempo transcurrido desde el último frame, en segundos.
      */
-    public void update(List<GameObjects> objects) {
+    public void update(List<GameObjects> objects, double deltaTime) {
         influenceSystem.update();
         fieldSystem.update(objects);
-        solver.solve(objects);
+        solver.solve(objects, deltaTime);
     }
 
     // ── Acceso a subsistemas ──────────────────────────────────────────────
@@ -193,8 +177,10 @@ public final class WorldSimulation {
 
     /**
      * El PhysicsSolver del mundo.
-     * Usar para registrar ecuaciones y restricciones adicionales en runtime
-     * (p.ej. al activar una zona especial, un jefe con física custom, etc.).
+     *
+     * Usar para registrar leyes adicionales en runtime:
+     *   world.solver().addLaw(gravityLaw);
+     *   world.solver().registerAll(bossPhysicsRegistry);
      *
      * @return el PhysicsSolver de este mundo.
      */
@@ -205,8 +191,9 @@ public final class WorldSimulation {
     /**
      * Elimina todos los campos e influencias activos.
      * Llamar al cambiar de mundo o escena para evitar estados persistentes.
-     * No elimina las ecuaciones ni restricciones del Solver — son la configuración
-     * fija del mundo y permanecen para el siguiente uso.
+     *
+     * No elimina las leyes del Solver — son la configuración fija del mundo
+     * y permanecen activas para el siguiente uso.
      */
     public void clearTransientState() {
         fieldSystem.clear();
@@ -220,9 +207,11 @@ public final class WorldSimulation {
     /**
      * Builder de WorldSimulation.
      *
-     * Permite componer el núcleo de simulación con exactamente las ecuaciones,
-     * pares y restricciones que cada mundo necesita.
-     * El conocimiento físico se inyecta como datos — no como clases de fenómeno.
+     * Permite componer el núcleo de simulación con exactamente las leyes
+     * físicas que cada mundo necesita, de cualquier catálogo.
+     *
+     * El conocimiento físico se inyecta exclusivamente como instancias de
+     * PhysicsLaw. El Builder no conoce fenómenos, dominios ni propiedades.
      */
     public static final class Builder {
 
@@ -231,35 +220,28 @@ public final class WorldSimulation {
         private Builder() {}
 
         /**
-         * Registra una ecuación física intra-objeto en el Solver.
+         * Registra una ley física individual en el Solver.
          *
-         * @param equation la ecuación declarativa. Ignorado si null.
+         * @param law la ley declarativa. Ignorado si null.
          * @return this (para encadenado).
          */
-        public Builder addEquation(PhysicsEquation<?, ?> equation) {
-            solver.addEquation(equation);
+        public Builder register(PhysicsLaw law) {
+            solver.addLaw(law);
             return this;
         }
 
         /**
-         * Registra una ecuación de transferencia entre pares de objetos en el Solver.
+         * Registra todas las leyes de un LawRegistry en el Solver.
          *
-         * @param pairEquation la ecuación de par declarativa. Ignorado si null.
+         * Ejemplo:
+         *   .registerAll(new LawRegistry().registerAll(CoreLaws.all()))
+         *   .registerAll(new LawRegistry().registerAll(GameplayLaws.all()))
+         *
+         * @param registry el registro de leyes. Ignorado si null o vacío.
          * @return this (para encadenado).
          */
-        public Builder addPairEquation(PairEquation<?> pairEquation) {
-            solver.addPairEquation(pairEquation);
-            return this;
-        }
-
-        /**
-         * Registra una restricción física en el Solver.
-         *
-         * @param constraint la restricción declarativa. Ignorado si null.
-         * @return this (para encadenado).
-         */
-        public Builder addConstraint(PhysicsConstraint<?> constraint) {
-            solver.addConstraint(constraint);
+        public Builder registerAll(LawRegistry registry) {
+            solver.registerAll(registry);
             return this;
         }
 

@@ -1,44 +1,78 @@
 package Game.Engine.World.Solver;
 
 import Game.Engine.Component;
+import Game.Engine.World.Physics.CoreProperties;
 import Game.Engine.World.Physics.PhysicalState;
+import Game.Engine.World.Physics.PropertyDescriptor;
 
 /**
- * Componente que expone el PhysicalState de un objeto al sistema de componentes.
+ * Componente que expone el PhysicalState de un objeto al PhysicsSolver.
  *
- * ── HRFC-017 — Consolidación Definitiva del Modelo Declarativo ────────────
+ * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
- * PhysicalStateComponent es el punto de entrada declarativo del sistema
- * físico para un objeto. El PhysicsSolver lo obtiene mediante
- * obj.getComponent(PhysicalStateComponent.class) para acceder al estado
- * físico del objeto sin conocer qué propiedades concretas tiene.
+ * PhysicalStateComponent es el único punto de acceso del PhysicsSolver al
+ * estado físico de un objeto. El Solver lo obtiene mediante:
  *
- * ── RELACIÓN CON LOS COMPONENTES EXISTENTES ──────────────────────────────
- * Este componente no reemplaza ThermalComponent, ElectricalComponent, etc.
- * en la fase de transición. Coexiste con ellos.
+ *   obj.getComponent(PhysicalStateComponent.class)
  *
- * Para migrar un objeto al nuevo modelo:
+ * y a partir de ahí opera exclusivamente sobre el PhysicalState que contiene,
+ * sin conocer qué propiedades concretas tiene el objeto.
  *
- *   // Opción A: estado completamente nuevo (sin componentes legacy)
+ * ── MODELO HRFC-019 ───────────────────────────────────────────────────────
+ * El estado físico de un objeto es un PhysicalState: un mapa plano de
+ * identificador de propiedad → valor numérico.
+ *
+ * No hay ThermalComponent, ElectricalComponent, FluidComponent ni
+ * PressureComponent separados. Todo el estado físico de un objeto vive
+ * en un único PhysicalState. Las propiedades de estado (temperatura, carga,
+ * humedad, presión) y las propiedades de material (conductividad, capacidad
+ * calorífica, compresibilidad...) son todas entradas en ese mismo mapa.
+ *
+ * ── USO EN ASSEMBLER ──────────────────────────────────────────────────────
+ *
+ *   // Objeto con física térmica, eléctrica y fluídica:
  *   PhysicalState state = PhysicalState.builder()
- *       .register(PhysicalProperties.TEMPERATURE, 0.0)
- *       .register(PhysicalProperties.CHARGE, 0.0)
- *       .material(mat)
+ *       // propiedades de estado
+ *       .register(CoreProperties.TEMPERATURE, 20.0)
+ *       .register(CoreProperties.CHARGE)
+ *       .register(CoreProperties.HUMIDITY)
+ *       .register(CoreProperties.PRESSURE)
+ *       // propiedades de material (las leyes las leen con get() igual que el estado)
+ *       .register(CoreProperties.THERMAL_CONDUCTIVITY, 0.8)
+ *       .register(CoreProperties.HEAT_CAPACITY, 500.0)
+ *       .register(CoreProperties.THERMAL_DIFFUSIVITY, 0.6)
+ *       .register(CoreProperties.ELECTRICAL_CONDUCTIVITY, 0.9)
+ *       .register(CoreProperties.HUMIDITY_ABSORPTION, 0.05)
+ *       .register(CoreProperties.COMPRESSIBILITY, 0.05)
  *       .build();
  *   addComponent(new PhysicalStateComponent(state));
  *
- *   // Opción B: puente con componentes existentes (mismas instancias)
- *   ThermalComponent thermal = new ThermalComponent(20.0);
+ *   // Objeto solo con física térmica:
  *   PhysicalState state = PhysicalState.builder()
- *       .registerExisting(PhysicalProperties.TEMPERATURE, thermal.getQuantity())
- *       .material(mat)
+ *       .register(CoreProperties.TEMPERATURE, 0.0)
+ *       .register(CoreProperties.THERMAL_CONDUCTIVITY, 0.5)
+ *       .register(CoreProperties.HEAT_CAPACITY, 1000.0)
+ *       .register(CoreProperties.THERMAL_DIFFUSIVITY, 0.1)
  *       .build();
- *   addComponent(thermal);                         // para el sistema legacy
- *   addComponent(new PhysicalStateComponent(state)); // para el PhysicsSolver
+ *   addComponent(new PhysicalStateComponent(state));
  *
- * En la Opción B, el Solver y el sistema legacy operan sobre la misma
- * PhysicalQuantity — las modificaciones son inmediatamente visibles en ambos.
+ *   // Objeto con propiedad completamente nueva (magnetismo):
+ *   PropertyDescriptor MAGNETIC_FIELD =
+ *       PropertyDescriptor.of("magnetic_field", 0.0, "Intensidad de campo magnético");
+ *   PhysicalState state = PhysicalState.builder()
+ *       .register(MAGNETIC_FIELD, 5.0)
+ *       .build();
+ *   addComponent(new PhysicalStateComponent(state));
+ *
+ * ── LECTURA DESDE GAMEPLAY ────────────────────────────────────────────────
+ *
+ *   PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
+ *   if (psc != null) {
+ *       double temp     = psc.getState().get(CoreProperties.TEMPERATURE.getId());
+ *       double charge   = psc.getState().get(CoreProperties.CHARGE.getId());
+ *       double humidity = psc.getState().get(CoreProperties.HUMIDITY.getId());
+ *   }
  *
  * ── DISEÑO ────────────────────────────────────────────────────────────────
  * PhysicalStateComponent es un envoltorio mínimo: solo almacena la referencia
@@ -61,7 +95,9 @@ public final class PhysicalStateComponent extends Component {
 
     /**
      * El estado físico del objeto.
+     *
      * El PhysicsSolver lee y escribe a través de este estado.
+     * Gameplay lo usa para observar el resultado de la simulación.
      *
      * @return el PhysicalState del objeto. Nunca null.
      */
