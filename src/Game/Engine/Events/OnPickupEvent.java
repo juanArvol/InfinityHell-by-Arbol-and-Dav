@@ -1,4 +1,4 @@
-package Game.Items;
+package Game.Engine.Events;
 
 import Game.Items.Creation.ItemDefinition;
 import Game.Player.Player;

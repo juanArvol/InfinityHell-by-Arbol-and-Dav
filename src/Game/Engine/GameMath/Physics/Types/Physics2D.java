@@ -32,6 +32,28 @@ import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
  *   friction — escala la aceleración ACTIVA (cuando hay input).
  *   drag     — amortiguación PASIVA de vx (cuando NO hay input).
  *              Se multiplica por el slide base de la subclase.
+ *
+ * ── Acumulación de fuerzas (HRFC-014 — GAP-5) ───────────────────────────
+ *
+ *   addForce()   aplica un impulso inmediato: velocity += F/mass.
+ *                Correcto para knockback puntual, saltos, explosiones.
+ *
+ *   accumulate() acumula fuerzas continuas (viento, gravedad personalizada,
+ *                campos magnéticos) que se integran en flushAccumulatedForces()
+ *                al inicio de cada step de física, ANTES de moveX().
+ *                Todas las fuerzas acumuladas se suman y se aplican como
+ *                un único impulso: velocity += (ΣF / mass).
+ *                Después se limpian automáticamente para el siguiente frame.
+ *
+ *   Ejemplo de campo de viento continuo (sistema externo, sin modificar Physics):
+ *
+ *     // En WindZoneSystem.update():
+ *     for (GameObjects obj : objects) {
+ *         Physics2DComponent pc = obj.getComponent(Physics2DComponent.class);
+ *         if (pc != null) pc.getPhysics().accumulate(windFx, 0);
+ *     }
+ *     // Antes de CollisionsSystem o en CollisionsSystem.FASE 0.5:
+ *     physics.flushAccumulatedForces();
  */
 public class Physics2D {
 
@@ -57,6 +79,13 @@ public class Physics2D {
     protected double maxFallSpeed = 20.0;
 
     protected SurfaceMaterial currentSurface = SurfaceMaterial.DEFAULT;
+
+    // ── Acumulación de fuerzas por frame (HRFC-014 — GAP-5) ───────────────
+    // Fuerzas continuas declaradas por sistemas externos (viento, gravedad
+    // personalizada, campos magnéticos). Se integran como impulso único al
+    // inicio del step de física y se limpian automáticamente.
+    private double accumulatedFx = 0.0;
+    private double accumulatedFy = 0.0;
 
     // Pilas de modificadores acumulables (buff/debuff, zona, etc.)
     private final ModifierStack statusStack      = new ModifierStack();
@@ -236,6 +265,47 @@ public class Physics2D {
     public void addForce(double fx, double fy) {
         velocity.setX(velocity.getX() + (fx / mass));
         velocity.setY(velocity.getY() + (fy / mass));
+    }
+
+    /**
+     * Acumula una fuerza continua para ser integrada en el siguiente
+     * {@link #flushAccumulatedForces()}. Puede llamarse múltiples veces
+     * en el mismo frame desde distintos sistemas (viento, gravedad de zona,
+     * campo magnético) — todas se suman.
+     *
+     * @param fx fuerza en X (en unidades de fuerza, no velocidad)
+     * @param fy fuerza en Y (en unidades de fuerza, no velocidad)
+     */
+    public void accumulate(double fx, double fy) {
+        accumulatedFx += fx;
+        accumulatedFy += fy;
+    }
+
+    /**
+     * Aplica todas las fuerzas acumuladas como un único impulso (F/mass)
+     * y limpia el acumulador para el siguiente frame.
+     *
+     * Llamar desde CollisionsSystem FASE 0.5, después de applyGravity()
+     * y antes del SweptAABB, para que las fuerzas de zona se integren
+     * correctamente en el mismo step que la gravedad.
+     *
+     * No hace nada si no hay fuerzas acumuladas.
+     */
+    public void flushAccumulatedForces() {
+        if (accumulatedFx == 0.0 && accumulatedFy == 0.0) return;
+        velocity.setX(velocity.getX() + (accumulatedFx / mass));
+        velocity.setY(velocity.getY() + (accumulatedFy / mass));
+        accumulatedFx = 0.0;
+        accumulatedFy = 0.0;
+    }
+
+    /**
+     * Consulta si hay fuerzas acumuladas sin integrar este frame.
+     * Útil para debug y para que sistemas de diagnóstico eviten llamadas
+     * innecesarias a flushAccumulatedForces().
+     */
+    public boolean hasPendingForces() {
+        return accumulatedFx != 0.0 || accumulatedFy != 0.0;
     }
 
     // ── Debug ─────────────────────────────────────────────────────────────

@@ -199,6 +199,17 @@ public class StatusEffectComponent extends Component {
         return null;
     }
 
+    /**
+     * Devuelve el efecto en la posición {@code index} del array interno.
+     * Acceso por índice para iteración sin allocation (StatusEffectSystem).
+     *
+     * @param index índice en [0, activeCount()).
+     * @throws ArrayIndexOutOfBoundsException si index >= activeCount().
+     */
+    public StatusEffect getEffectAt(int index) {
+        return effects[index];
+    }
+
     /** Número de efectos activos. */
     public int activeCount() { return size; }
 

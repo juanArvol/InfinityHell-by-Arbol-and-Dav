@@ -1,7 +1,7 @@
 package Game.World.Systems;
 
 import Game.Engine.Events.GameEventBus;
-import Game.Items.OnPickupEvent;
+import Game.Engine.Events.OnPickupEvent;
 import Game.Items.Savement.ItemStack;
 import Game.Player.Player;
 import Game.World.WorldObjects.WorldItem;

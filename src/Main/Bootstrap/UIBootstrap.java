@@ -40,7 +40,7 @@ public final class UIBootstrap {
                        int virtualWidth,
                        int virtualHeight) {
 
-        uiManager.add(new LifeHUD(player.getStats(), virtualWidth, virtualHeight));
+        uiManager.add(new LifeHUD(player.getPlayerStats(), virtualWidth, virtualHeight));
         uiManager.add(new AmmoHUD(player.getCombat().getInventory(), virtualWidth, virtualHeight));
         uiManager.add(new CrossHairHUD(player, cameraSupplier, virtualWidth, virtualHeight));
     }

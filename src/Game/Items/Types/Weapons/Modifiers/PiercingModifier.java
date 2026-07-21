@@ -58,21 +58,17 @@ public class PiercingModifier extends WeaponModifier {
         }
 
         @Override
-        protected void onHitEnemy(Bullet bullet, Enemy enemy) {
+        protected void onHitEntity(Bullet bullet, Game.Engine.AbstractEntity entity) {
+            if (!(entity instanceof Enemy enemy)) return;
             int id = System.identityHashCode(enemy);
-            if (hitIds.contains(id)) return; // ya golpeado
+            if (hitIds.contains(id)) return;
 
             hitIds.add(id);
             pierceCount++;
 
-            // NO llamamos bullet.getBulletLife().setDead() — la bala sigue viva
-            // mientras no supere el límite. El inner (BulletNormal etc.) puede
-            // haber llamado setDead() — lo revertimos si todavía queda pierce.
             if (pierceCount < max) {
-                // Reabrir la bala (cancelar la muerte del inner)
                 bullet.getBulletLife().revive();
             }
-            // Si pierceCount >= max, la bala ya se murió normalmente via inner
         }
     }
 }

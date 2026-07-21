@@ -1,18 +1,33 @@
 package Game.Gameplay.Core.Dependencies;
 
+import Game.Engine.World.Graph.DependencyGraph;
+import Game.Engine.World.Graph.GraphEdge;
 import Game.Gameplay.Core.Properties.PropertyKey;
-
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Grafo dirigido de dependencias entre propiedades de gameplay.
+ *
+ * ── HRFC-016 — Consolidación del modelo emergente ────────────────────────
+ *
+ * ── CAMBIO RESPECTO A HRFC-015 ────────────────────────────────────────────
+ * PropertyDependencyGraph ya no contiene un motor de grafo propio.
+ * Toda la lógica de almacenamiento, recorrido y remoción está en
+ * {@link DependencyGraph}{@code <PropertyKey<?>>}.
+ *
+ * PropertyDependencyGraph es ahora una fachada de dominio que:
+ *   - Configura el motor genérico con la identidad de nodo correcta (PropertyKey::id).
+ *   - Expone la API familiar de alto nivel (addEdge, getDependenciesFrom, etc.).
+ *   - Traduce entre {@link PropertyDependency} (payload de arista) y
+ *     {@link GraphEdge}{@code <PropertyKey<?>>} (arista del motor).
+ *
+ * ── MOTOR SUBYACENTE ──────────────────────────────────────────────────────
+ * El motor es {@code DependencyGraph<PropertyKey<?>>}.
+ *   Nodo:    PropertyKey<?> — identificada por PropertyKey::id
+ *   Arista:  GraphEdge<PropertyKey<?>>
+ *   Payload: PropertyDependency (accedida via edge.getPayloadAs(PropertyDependency.class))
  *
  * ── RESPONSABILIDAD ÚNICA ─────────────────────────────────────────────────
  * PropertyDependencyGraph almacena y organiza las relaciones:
@@ -23,76 +38,27 @@ import java.util.Set;
  *   "¿Qué propiedades dependen de A?"
  *   "¿De qué propiedades depende B?"
  *   "¿Existe un ciclo entre A y B?"
- *   "¿Cuál es el orden topológico de resolución desde A?"
+ *   "¿Cuál es el orden de resolución desde A?"
  *
  * NO calcula valores.
  * NO aplica cambios.
  * NO conoce entidades del juego.
  *
- * Su única responsabilidad es la estructura del grafo: aristas dirigidas,
- * detección de ciclos, y consulta de dependencias.
- *
- * ── MODELO: GRAFO DIRIGIDO ────────────────────────────────────────────────
- * El grafo es un DAG (Directed Acyclic Graph) idealmente, pero soporta
- * ciclos — los detecta y los registra sin propagarlos.
- *
- * Ejemplo de grafo:
- *
- *   Temperature ──► MovementSpeed ──► AttackSpeed ──► AnimationSpeed
- *                        │
- *                        └──────────────────────────► ProjectileSpeed
- *
- * Cada flecha es una PropertyDependency (arista dirigida).
- * Una propiedad puede tener múltiples salidas (afecta múltiples propiedades).
- * Una propiedad puede tener múltiples entradas (recibe efectos de múltiples).
- *
- * ── DETECCIÓN DE CICLOS ──────────────────────────────────────────────────
- * Antes de añadir una arista A → B, el grafo verifica que B no sea ancestro
- * de A (lo que crearía un ciclo). Si lo es, la arista se rechaza con
- * excepción. Esto garantiza que el grafo estructural nunca tiene ciclos.
- *
- * Para casos donde los ciclos son inevitables en el diseño del juego,
- * existe addEdgeUnchecked() que omite la verificación. En ese caso,
- * el DependencyPropagator detecta ciclos en tiempo de propagación y los corta.
- *
- * ── SOPORTE DE CONVERGENCIA ──────────────────────────────────────────────
- * Una propiedad puede recibir influencia desde múltiples propiedades:
- *
- *   Temperature ──► Speed
- *   Mass        ──► Speed
- *   Fatigue     ──► Speed
- *
- * Speed tiene 3 aristas entrantes. El propagador las aplica todas.
- *
- * ── INSTANCIABILIDAD ─────────────────────────────────────────────────────
- * PropertyDependencyGraph es instanciable. No hay singleton global.
- * Cada entidad o sistema puede tener su propio grafo, o múltiples sistemas
- * pueden compartir uno pasado por referencia.
- *
- * ── THREAD SAFETY ────────────────────────────────────────────────────────
+ * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * No es thread-safe. Usar desde el game loop thread.
  *
  * @see PropertyDependency
  * @see DependencyPropagator
+ * @see DependencyGraph
  */
 public final class PropertyDependencyGraph {
 
     /**
-     * Índice de aristas salientes: clave del origen → lista de dependencias.
-     * Permite encontrar rápidamente qué propiedades dependen de una dada.
+     * Motor genérico de grafos con nodos PropertyKey<?>.
+     * La identidad de nodo es PropertyKey::id (String único por propiedad).
      */
-    private final Map<String, List<PropertyDependency>> outgoing = new HashMap<>();
-
-    /**
-     * Índice de aristas entrantes: clave del destino → lista de dependencias.
-     * Permite encontrar rápidamente de qué depende una propiedad.
-     */
-    private final Map<String, List<PropertyDependency>> incoming = new HashMap<>();
-
-    /**
-     * Índice plano de todas las aristas por tag, para dar de baja eficientemente.
-     */
-    private final Map<String, List<PropertyDependency>> byTag = new HashMap<>();
+    private final DependencyGraph<PropertyKey<?>> graph =
+        new DependencyGraph<>(PropertyKey::id);
 
     // ── Mutación ──────────────────────────────────────────────────────────
 
@@ -111,28 +77,15 @@ public final class PropertyDependencyGraph {
         if (dependency == null)
             throw new IllegalArgumentException("dependency no puede ser null.");
 
-        String srcId = dependency.getSourceKey().id();
-        String dstId = dependency.getTargetKey().id();
-
-        // Verificación de ciclo: ¿existe ya un camino de dst → src?
-        if (canReach(dstId, srcId)) {
-            throw new IllegalStateException(
-                "Ciclo de dependencia detectado: añadir '"
-                + srcId + " → " + dstId
-                + "' crearía un ciclo porque ya existe un camino '"
-                + dstId + " → " + srcId + "'."
-            );
-        }
-
-        insertEdge(dependency);
+        GraphEdge<PropertyKey<?>> edge = toGraphEdge(dependency);
+        graph.addEdge(edge);  // lanza IllegalStateException si hay ciclo
     }
 
     /**
      * Añade una dependencia al grafo sin verificación de ciclos.
      *
-     * Usar cuando el diseño del juego requiere dependencias cíclicas
-     * controladas. El DependencyPropagator cortará los ciclos en tiempo
-     * de propagación usando el conjunto de visitados del frame.
+     * Usar cuando el diseño del juego requiere dependencias cíclicas controladas.
+     * El DependencyPropagator cortará los ciclos en tiempo de propagación.
      *
      * @param dependency arista dirigida a añadir
      * @throws IllegalArgumentException si dependency es null
@@ -140,11 +93,11 @@ public final class PropertyDependencyGraph {
     public void addEdgeUnchecked(PropertyDependency dependency) {
         if (dependency == null)
             throw new IllegalArgumentException("dependency no puede ser null.");
-        insertEdge(dependency);
+        graph.addEdgeUnchecked(toGraphEdge(dependency));
     }
 
     /**
-     * Añade múltiples dependencias al grafo con verificación de ciclos.
+     * Añade múltiples dependencias con verificación de ciclos.
      *
      * @param dependencies aristas a añadir
      */
@@ -157,68 +110,44 @@ public final class PropertyDependencyGraph {
 
     /**
      * Elimina todas las dependencias registradas bajo el tag indicado.
-     * Si el tag no existe, la operación no tiene efecto.
      *
      * @param tag tag de las dependencias a eliminar
      */
     public void removeByTag(String tag) {
-        List<PropertyDependency> toRemove = byTag.remove(tag);
-        if (toRemove == null) return;
-        for (PropertyDependency dep : toRemove) {
-            String srcId = dep.getSourceKey().id();
-            String dstId = dep.getTargetKey().id();
-
-            List<PropertyDependency> out = outgoing.get(srcId);
-            if (out != null) out.removeIf(d -> d.getTag().equals(tag));
-
-            List<PropertyDependency> in = incoming.get(dstId);
-            if (in != null) in.removeIf(d -> d.getTag().equals(tag));
-        }
+        graph.removeByTag(tag);
     }
 
-    /**
-     * Elimina todas las dependencias del grafo.
-     */
+    /** Elimina todas las dependencias del grafo. */
     public void clear() {
-        outgoing.clear();
-        incoming.clear();
-        byTag.clear();
+        graph.clear();
     }
 
     // ── Consultas de aristas ──────────────────────────────────────────────
 
     /**
      * Retorna las dependencias que parten de la propiedad indicada,
-     * es decir, las propiedades que son afectadas cuando esta cambia.
-     * Ordenadas por prioridad ascendente.
+     * ordenadas por prioridad ascendente.
      *
      * @param sourceKey propiedad origen
      * @return lista ordenada de dependencias salientes (puede estar vacía)
      */
     public List<PropertyDependency> getDependenciesFrom(PropertyKey<?> sourceKey) {
         if (sourceKey == null) return Collections.emptyList();
-        List<PropertyDependency> deps = outgoing.get(sourceKey.id());
-        if (deps == null || deps.isEmpty()) return Collections.emptyList();
-        List<PropertyDependency> sorted = new ArrayList<>(deps);
-        sorted.sort(Comparator.comparingInt(PropertyDependency::getPriority));
-        return Collections.unmodifiableList(sorted);
+        List<GraphEdge<PropertyKey<?>>> edges = graph.getEdgesFrom(sourceKey);
+        return toDependencies(edges);
     }
 
     /**
      * Retorna las dependencias que llegan a la propiedad indicada,
-     * es decir, las propiedades de las que depende esta.
-     * Ordenadas por prioridad ascendente.
+     * ordenadas por prioridad ascendente.
      *
      * @param targetKey propiedad destino
      * @return lista ordenada de dependencias entrantes (puede estar vacía)
      */
     public List<PropertyDependency> getDependenciesTo(PropertyKey<?> targetKey) {
         if (targetKey == null) return Collections.emptyList();
-        List<PropertyDependency> deps = incoming.get(targetKey.id());
-        if (deps == null || deps.isEmpty()) return Collections.emptyList();
-        List<PropertyDependency> sorted = new ArrayList<>(deps);
-        sorted.sort(Comparator.comparingInt(PropertyDependency::getPriority));
-        return Collections.unmodifiableList(sorted);
+        List<GraphEdge<PropertyKey<?>>> edges = graph.getEdgesTo(targetKey);
+        return toDependencies(edges);
     }
 
     /**
@@ -227,9 +156,7 @@ public final class PropertyDependencyGraph {
      * @param sourceKey propiedad a consultar
      */
     public boolean hasDependenciesFrom(PropertyKey<?> sourceKey) {
-        if (sourceKey == null) return false;
-        List<PropertyDependency> deps = outgoing.get(sourceKey.id());
-        return deps != null && !deps.isEmpty();
+        return graph.hasEdgesFrom(sourceKey);
     }
 
     /**
@@ -238,9 +165,7 @@ public final class PropertyDependencyGraph {
      * @param targetKey propiedad a consultar
      */
     public boolean hasDependenciesTo(PropertyKey<?> targetKey) {
-        if (targetKey == null) return false;
-        List<PropertyDependency> deps = incoming.get(targetKey.id());
-        return deps != null && !deps.isEmpty();
+        return graph.hasEdgesTo(targetKey);
     }
 
     /**
@@ -249,107 +174,66 @@ public final class PropertyDependencyGraph {
      * @param tag tag a buscar
      */
     public boolean hasTag(String tag) {
-        return byTag.containsKey(tag) && !byTag.get(tag).isEmpty();
+        return graph.hasTag(tag);
     }
 
-    /**
-     * Número total de aristas en el grafo.
-     */
+    /** Número total de aristas en el grafo. */
     public int edgeCount() {
-        int total = 0;
-        for (List<PropertyDependency> deps : outgoing.values()) {
-            total += deps.size();
-        }
-        return total;
+        return graph.edgeCount();
     }
 
-    /**
-     * True si el grafo no tiene ninguna arista.
-     */
+    /** True si el grafo no tiene ninguna arista. */
     public boolean isEmpty() {
-        return outgoing.isEmpty();
+        return graph.isEmpty();
     }
 
-    // ── Consultas de alcanzabilidad ───────────────────────────────────────
+    // ── Acceso al motor subyacente ────────────────────────────────────────
 
     /**
-     * Retorna todas las propiedades alcanzables desde {@code sourceKey}
-     * siguiendo las aristas del grafo en profundidad (DFS).
+     * Acceso directo al motor genérico para consultas avanzadas o
+     * integración con otros sistemas del Engine.
      *
-     * Incluye los destinos directos y todos sus descendientes transitivos.
-     * No incluye la propiedad origen.
-     *
-     * @param sourceKey propiedad desde la que buscar alcanzabilidad
-     * @return conjunto de IDs de propiedades alcanzables (puede estar vacío)
+     * @return el DependencyGraph subyacente (nunca null).
      */
-    public Set<String> reachableFrom(PropertyKey<?> sourceKey) {
-        if (sourceKey == null || !outgoing.containsKey(sourceKey.id())) {
-            return Collections.emptySet();
-        }
-        Set<String> visited = new HashSet<>();
-        collectReachable(sourceKey.id(), visited);
-        visited.remove(sourceKey.id()); // no incluir el origen
-        return Collections.unmodifiableSet(visited);
+    public DependencyGraph<PropertyKey<?>> getGraph() {
+        return graph;
     }
 
+    // ── Soporte para DependencyPropagator ────────────────────────────────
+
     /**
-     * True si existe un camino dirigido desde {@code from} hasta {@code to}
-     * siguiendo las aristas del grafo.
+     * True si existe un camino dirigido desde {@code fromId} hasta {@code toId}.
+     * Usado por addEdge() para verificación de ciclos y por DependencyPropagator
+     * para detección de ciclos en propagación.
      *
-     * @param fromId ID de la propiedad origen
-     * @param toId   ID de la propiedad destino
-     * @return true si to es alcanzable desde from
+     * @param fromId id del nodo de inicio
+     * @param toId   id del nodo destino buscado
+     * @return true si existe camino
      */
     public boolean canReach(String fromId, String toId) {
-        if (fromId == null || toId == null) return false;
-        if (fromId.equals(toId)) return true; // trivialmente alcanzable
-        Set<String> visited = new HashSet<>();
-        return dfsCanReach(fromId, toId, visited);
+        return graph.canReach(fromId, toId);
     }
 
-    // ── Implementación interna ────────────────────────────────────────────
+    // ── Conversión PropertyDependency ↔ GraphEdge ─────────────────────────
 
-    private void insertEdge(PropertyDependency dependency) {
-        String srcId = dependency.getSourceKey().id();
-        String dstId = dependency.getTargetKey().id();
-        String tag   = dependency.getTag();
-
-        outgoing.computeIfAbsent(srcId, k -> new ArrayList<>()).add(dependency);
-        incoming.computeIfAbsent(dstId, k -> new ArrayList<>()).add(dependency);
-        byTag.computeIfAbsent(tag,   k -> new ArrayList<>()).add(dependency);
+    private static GraphEdge<PropertyKey<?>> toGraphEdge(PropertyDependency dep) {
+        return GraphEdge.of(
+            dep.getSourceKey(),
+            dep.getTargetKey(),
+            dep,
+            dep.getTag(),
+            dep.getPriority()
+        );
     }
 
-    private void collectReachable(String currentId, Set<String> visited) {
-        if (visited.contains(currentId)) return;
-        visited.add(currentId);
-        List<PropertyDependency> deps = outgoing.get(currentId);
-        if (deps != null) {
-            for (PropertyDependency dep : deps) {
-                collectReachable(dep.getTargetKey().id(), visited);
-            }
+    private static List<PropertyDependency> toDependencies(
+            List<GraphEdge<PropertyKey<?>>> edges) {
+        if (edges.isEmpty()) return Collections.emptyList();
+        List<PropertyDependency> result = new ArrayList<>(edges.size());
+        for (GraphEdge<PropertyKey<?>> edge : edges) {
+            result.add(edge.getPayloadAs(PropertyDependency.class));
         }
-    }
-
-    private boolean dfsCanReach(String currentId, String targetId, Set<String> visited) {
-        if (visited.contains(currentId)) return false;
-        visited.add(currentId);
-        List<PropertyDependency> deps = outgoing.get(currentId);
-        if (deps == null) return false;
-        for (PropertyDependency dep : deps) {
-            String nextId = dep.getTargetKey().id();
-            if (nextId.equals(targetId)) return true;
-            if (dfsCanReach(nextId, targetId, visited)) return true;
-        }
-        return false;
-    }
-
-    // ── Object ────────────────────────────────────────────────────────────
-
-    @Override
-    public String toString() {
-        return "PropertyDependencyGraph["
-            + "edges=" + edgeCount()
-            + ", origins=" + outgoing.size()
-            + "]";
+        // getEdgesFrom/To already return sorted by priority from DependencyGraph
+        return Collections.unmodifiableList(result);
     }
 }

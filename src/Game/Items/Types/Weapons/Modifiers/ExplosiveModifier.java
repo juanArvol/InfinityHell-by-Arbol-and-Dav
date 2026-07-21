@@ -2,6 +2,7 @@ package Game.Items.Types.Weapons.Modifiers;
 
 import Game.Enemys.Core.Enemy;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import java.util.List;
@@ -111,13 +112,13 @@ public class ExplosiveModifier extends WeaponModifier {
         }
 
         @Override
-        protected void onHitEnemy(Bullet bullet, Enemy enemy) {
+        protected void onHitEntity(Bullet bullet, Game.Engine.AbstractEntity entity) {
             applyAreaDamage(bullet.getTransform().getPosition(), bullet.getDamage() * mult);
         }
 
         @Override
-        protected void onHitBlock(Bullet bullet, Game.World.WorldObjects.BlockWorld block) {
-            // Explosión en pared hace splash con daño reducido
+        protected void onHitWorld(Bullet bullet, GameObjects other) {
+            // Explosión en objeto del mundo hace splash con daño reducido
             applyAreaDamage(bullet.getTransform().getPosition(), bullet.getDamage() * mult * 0.5);
         }
 

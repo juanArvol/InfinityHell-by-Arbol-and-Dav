@@ -35,7 +35,7 @@ package Game.UI;
  * ── USO ───────────────────────────────────────────────────────────────────
  *
  *   // Player
- *   uiManager.add(new LifeHUD(player.getStats(), vw, vh));
+ *   uiManager.add(new LifeHUD(player.getPlayerStats(), vw, vh));
  *                                ↑ PlayerStats implementa HealthView
  *
  *   // Enemy (futuro)

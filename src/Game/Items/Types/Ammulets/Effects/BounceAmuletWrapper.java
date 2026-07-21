@@ -1,6 +1,6 @@
 package Game.Items.Types.Ammulets.Effects;
 
-import Game.Enemys.Core.Enemy;
+import Game.Engine.AbstractEntity;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.Modifiers.BulletBehaviorWrapper;
@@ -8,21 +8,10 @@ import Game.Items.Types.Weapons.Modifiers.BulletBehaviorWrapper;
 /**
  * Wrapper de rebote para amuletos — "Piedra del Eco".
  *
- * Al impactar un enemigo, busca el enemigo más cercano dentro de un radio
- * y redirige la bala hacia él. Cada copia del amuleto añade +1 salto.
+ * Al impactar una entidad, busca la entidad más cercana dentro de un radio
+ * y redirige la bala hacia ella. Cada copia del amuleto añade +1 salto.
  *
- * ── IMPLEMENTACIÓN ────────────────────────────────────────────────────────
- * La lógica de búsqueda del enemigo más cercano requiere acceso al World
- * (lista de objetos activos). Hay dos opciones:
- *
- *   A) Pasar la referencia al World en el constructor (recomendado).
- *   B) Usar el GameEventBus para disparar un evento "BulletBounceRequest"
- *      que el World escucha y resuelve.
- *
- * Por ahora es un stub que no hace nada. Implementar cuando el sistema
- * de world-query esté disponible.
- *
- * TODO: implementar onHitEnemy con búsqueda del enemigo más cercano.
+ * ── HRFC-014 — GAP-2: Migrado a onHitEntity(Bullet, AbstractEntity) ──────
  */
 public class BounceAmuletWrapper extends BulletBehaviorWrapper {
 
@@ -35,16 +24,17 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
     }
 
     @Override
-    protected void onHitEnemy(Bullet bullet, Enemy enemy) {
+    protected void onHitEntity(Bullet bullet, AbstractEntity entity) {
         if (bounceCount >= maxBounces) return;
         bounceCount++;
 
-        // TODO: buscar enemigo más cercano distinto al actual y redirigir la bala.
-        // Ejemplo aproximado:
-        //   Enemy target = world.findNearestEnemy(bullet.getPosition(), enemy, BOUNCE_RADIUS);
+        // TODO: buscar entidad más cercana distinta a la actual y redirigir la bala.
+        // Ejemplo:
+        //   AbstractEntity target = world.findNearest(bullet.getPosition(), entity, RADIUS);
         //   if (target != null) {
-        //       Vector2D dir = target.getPosition().subtract(bullet.getPosition()).normalize();
-        //       bullet.setVelocity(dir.scale(bullet.getSpeed()));
+        //       Vector2D dir = target.getCenter().subtract(bullet.getPosition()).normalize();
+        //       bullet.getPhysics().setXspeed(dir.getX() * speed);
+        //       bullet.getPhysics().setYspeed(dir.getY() * speed);
         //       bullet.getBulletLife().revive();
         //   }
     }

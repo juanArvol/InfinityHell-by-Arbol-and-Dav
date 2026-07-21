@@ -1,11 +1,10 @@
 package Game.UI.Types;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-
 import Game.UI.HealthView;
 import Game.UI.UIAnchor;
 import Game.UI.UIElement;
+import java.awt.Color;
+import java.awt.Graphics2D;
 
 /**
  * HUD de vida — muestra la salud de cualquier entidad que implemente HealthView.
@@ -32,7 +31,7 @@ import Game.UI.UIElement;
  * ── USO ───────────────────────────────────────────────────────────────────
  *
  *   // Player (UIBootstrap):
- *   new LifeHUD(player.getStats(), virtualWidth, virtualHeight)
+ *   new LifeHUD(player.getPlayerStats(), virtualWidth, virtualHeight)
  *                ↑ PlayerStats implements HealthView
  *
  *   // Futuro Enemy:

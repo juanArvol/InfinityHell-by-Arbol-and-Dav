@@ -4,8 +4,10 @@ import Game.Engine.Colisions.CollisionDetector;
 import Game.Engine.Colisions.CollisionDispatcher;
 import Game.Engine.Colisions.CollisionResult;
 import Game.Engine.Colisions.SweptAABB;
-import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Component;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Events.CollisionListenerEvent;
 import Game.Engine.GameMath.Physics.PhysicsStepper;
 import Game.Engine.GameMath.Physics.SurfaceMaterial;
 import Game.Engine.GameMath.Physics.Types.Physics2D;
@@ -14,43 +16,54 @@ import java.awt.Rectangle;
 import java.util.*;
 
 /**
- * Sistema de colisiones. Cuatro fases por frame.
+ * Sistema de colisiones. Cinco fases por frame.
  *
  * FASE 0 — Revalidación de contacto vertical
  *   Detecta si hay suelo debajo (2px margin). Actualiza onGround y surface.
- *   Sin esto, al caminar sobre el borde de un bloque onGround nunca se resetea.
  *
- * FASE 0.5 — Aplicar gravedad (después de actualizar onGround)
- *   Se aplica gravedad a todos los objetos con física que NO gestionen su
- *   propia gravedad (isGravityManagedExternally() == false).
- *
- *   CORRECCIÓN BUG-15:
- *   ANTES: Player.update() llamaba applyGravity(state.isEnElSuelo()) usando
- *   el valor de onGround del frame ANTERIOR, porque CollisionsSystem (FASE 0)
- *   aún no había actualizado onGround para el frame actual. En el frame del
- *   aterrizaje: onGround=false (viejo) → gravedad acumulada → CollisionsSystem
- *   detecta suelo → onGround=true. Un frame extra de gravedad acumulada.
- *
- *   SOLUCIÓN: applyGravity se aplica aquí (FASE 0.5), después de que FASE 0
- *   ya estableció el onGround correcto para este frame. Player.update() ya
- *   no llama applyGravity() manualmente.
- *
- *   El contrato isGravityManagedExternally() ya existía en Physics2D.
- *   BulletPhysics lo retorna true (gestiona su propia gravedad en Bullet.update()),
- *   por lo que las balas no se ven afectadas. PlayerPhysics retorna false
- *   (valor base de Physics2D), por lo que el Player recibe gravedad aquí.
+ * FASE 0.5 — Aplicar gravedad + fuerzas acumuladas
+ *   Aplica gravedad a objetos con física propia. Integra fuerzas continuas
+ *   registradas por sistemas de zona (Physics2D.accumulate()) mediante
+ *   flushAccumulatedForces(). Esto permite viento, campos magnéticos y
+ *   cualquier fuerza continua sin modificar Physics ni sus subclases.
  *
  * FASE 1 — Movimiento continuo (SweptAABB) eje por eje
- *   Eje X primero, luego Y con bounds ya actualizados.
- *   FIX: el broadphase en X excluye objetos que están SOLO debajo del objeto
- *   (sin solapamiento vertical en la trayectoria horizontal). Esto evita que
- *   el suelo bloquee el movimiento lateral cuando el jugador está parado encima.
+ *   Eje X primero, luego Y.
  *
  * FASE 2 + 3 — Detección AABB + Despacho de eventos
+ *
+ * FASE 4 — CollisionListener enter / stay / exit  (HRFC-014 — GAP-1)
+ *   Activa. Compara los contactos del frame actual con los del anterior
+ *   y llama onCollisionEnter / onCollisionStay / onCollisionExit (y sus
+ *   variantes onTrigger*) en los componentes del objeto que implementan
+ *   {@link CollisionListenerEvent}.
+ *
+ *   Esto habilita:
+ *     - Zonas de daño continuo (lava, gas, campo de fuerza).
+ *     - Triggers de área que activan/desactivan efectos al entrar/salir.
+ *     - Detectores de suelo/pared refinados.
+ *     - Cualquier lógica que dependa del ciclo de vida de una colisión,
+ *       no solo del instante de impacto.
+ *
+ *   Uso desde un Component:
+ *     public class DamageZone extends Component implements CollisionListenerEvent {
+ *         {@literal @}Override
+ *         public void onTriggerStay(GameObjects other) {
+ *             if (other instanceof AbstractEntity e) e.damage(1);
+ *         }
+ *     }
  */
 public class CollisionsSystem {
 
     private static final int GROUND_CHECK_MARGIN = 2;
+
+    /**
+     * Contactos activos del frame anterior, por objeto.
+     * Clave: identidad del objeto; Valor: conjunto de identidades de sus contactos.
+     * Usado en FASE 4 para calcular enter/stay/exit.
+     */
+    private final IdentityHashMap<GameObjects, Set<GameObjects>> previousContacts =
+            new IdentityHashMap<>();
 
     public void update(List<GameObjects> objects) {
 
@@ -58,11 +71,11 @@ public class CollisionsSystem {
 
         for (GameObjects obj : objects) {
 
-            Physics2DComponent  physComp = obj.getComponent(Physics2DComponent.class);
-            ColliderComponent colA     = obj.getComponent(ColliderComponent.class);
+            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+            ColliderComponent  colA     = obj.getComponent(ColliderComponent.class);
             if (physComp == null || colA == null || colA.isTrigger()) continue;
 
-            Physics2D   physics = physComp.getPhysics();
+            Physics2D physics = physComp.getPhysics();
             Rectangle bounds  = colA.getBounds();
 
             Rectangle groundCheck = new Rectangle(
@@ -98,7 +111,7 @@ public class CollisionsSystem {
             }
         }
 
-        // ── FASE 0.5: Aplicar gravedad ────────────────────────────────────
+        // ── FASE 0.5: Aplicar gravedad y fuerzas acumuladas ──────────────
         // onGround ya es el valor correcto para este frame (FASE 0 lo actualizó).
         // Solo aplicar a objetos que NO gestionan su propia gravedad.
         for (GameObjects obj : objects) {
@@ -107,19 +120,22 @@ public class CollisionsSystem {
             Physics2D physics = physComp.getPhysics();
             if (physics.isGravityManagedExternally()) continue;
             physics.applyGravity(physics.getOnGround());
+            // Integrar fuerzas continuas declaradas por sistemas de zona
+            // (viento, campos magnéticos, gravedad personalizada).
+            physics.flushAccumulatedForces();
         }
 
         // ── FASE 1: SweptAABB eje por eje ────────────────────────────────
 
         for (GameObjects obj : objects) {
 
-            Physics2DComponent  physComp = obj.getComponent(Physics2DComponent.class);
-            ColliderComponent colA     = obj.getComponent(ColliderComponent.class);
+            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+            ColliderComponent  colA     = obj.getComponent(ColliderComponent.class);
             if (physComp == null || colA == null || colA.isTrigger()) continue;
 
             Physics2D physics = physComp.getPhysics();
-            double  vx      = physics.getVelocity().getX();
-            double  vy      = physics.getVelocity().getY();
+            double    vx      = physics.getVelocity().getX();
+            double    vy      = physics.getVelocity().getY();
 
             if (vx == 0.0 && vy == 0.0) continue;
 
@@ -127,12 +143,11 @@ public class CollisionsSystem {
             if (vx != 0.0) {
                 Rectangle bounds = colA.getBounds();
 
-                // Broadphase horizontal: solo la franja lateral en la dirección del movimiento
                 Rectangle broadX = new Rectangle(
                         (int)(vx < 0 ? bounds.x + vx : bounds.x + bounds.width),
-                        bounds.y + 1,                          // +1: excluye el pixel del suelo
+                        bounds.y + 1,
                         (int)(Math.abs(vx) + 1),
-                        bounds.height - 2                      // -2: margen superior e inferior
+                        bounds.height - 2
                 );
 
                 double      nearestTimeX = 1.0;
@@ -146,14 +161,8 @@ public class CollisionsSystem {
                     if (!colA.canCollideWith(colB)) continue;
 
                     Rectangle ob = colB.getBounds();
-
-                    // FIX CLAVE: ignorar objetos que están COMPLETAMENTE por debajo
-                    // del objeto en movimiento. Sin esto, el bloque del suelo bloquea
-                    // el movimiento horizontal cuando el jugador está parado encima.
                     if (ob.y >= bounds.y + bounds.height) continue;
-                    // Ignorar objetos completamente por encima también
                     if (ob.y + ob.height <= bounds.y) continue;
-
                     if (!broadX.intersects(ob)) continue;
 
                     SweptAABB.Result r = SweptAABB.calculate(bounds, ob, vx, 0.0);
@@ -174,7 +183,7 @@ public class CollisionsSystem {
 
             // ── Eje Y ─────────────────────────────────────────────────────
             if (vy != 0.0) {
-                Rectangle bounds = colA.getBounds(); // re-leer: X ya fue actualizado
+                Rectangle bounds = colA.getBounds();
 
                 Rectangle broadY = new Rectangle(
                         bounds.x,
@@ -222,5 +231,100 @@ public class CollisionsSystem {
         for (CollisionResult pair : pairs) {
             CollisionDispatcher.dispatch(pair.a, pair.b);
         }
+
+        // ── FASE 4: CollisionListener enter / stay / exit ─────────────────
+        //
+        // Construye el mapa de contactos actuales a partir de los pares
+        // detectados en FASE 2. Luego, para cada objeto que tenga algún
+        // componente que implemente CollisionListenerEvent, calcula:
+        //
+        //   enter = actuales - anteriores  → onCollisionEnter / onTriggerEnter
+        //   stay  = actuales ∩ anteriores  → onCollisionStay  / onTriggerStay
+        //   exit  = anteriores - actuales  → onCollisionExit  / onTriggerExit
+
+        // Construir contactos actuales
+        IdentityHashMap<GameObjects, Set<GameObjects>> currentContacts =
+                new IdentityHashMap<>();
+
+        for (CollisionResult pair : pairs) {
+            currentContacts
+                .computeIfAbsent(pair.a, k -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                .add(pair.b);
+            currentContacts
+                .computeIfAbsent(pair.b, k -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                .add(pair.a);
+        }
+
+        // Despachar enter / stay / exit a componentes CollisionListenerEvent
+        for (GameObjects obj : objects) {
+            List<CollisionListenerEvent> listeners = collectListeners(obj);
+            if (listeners.isEmpty()) continue;
+
+            Set<GameObjects> current  = currentContacts.getOrDefault(obj, Set.of());
+            Set<GameObjects> previous = previousContacts.getOrDefault(obj, Set.of());
+            boolean          isTrigger = isTrigger(obj);
+
+            for (GameObjects contact : current) {
+                if (!previous.contains(contact)) {
+                    // enter
+                    for (CollisionListenerEvent listener : listeners) {
+                        if (isTrigger) listener.onTriggerEnter(contact);
+                        else           listener.onCollisionEnter(contact);
+                    }
+                } else {
+                    // stay
+                    for (CollisionListenerEvent listener : listeners) {
+                        if (isTrigger) listener.onTriggerStay(contact);
+                        else           listener.onCollisionStay(contact);
+                    }
+                }
+            }
+
+            for (GameObjects contact : previous) {
+                if (!current.contains(contact)) {
+                    // exit
+                    for (CollisionListenerEvent listener : listeners) {
+                        if (isTrigger) listener.onTriggerExit(contact);
+                        else           listener.onCollisionExit(contact);
+                    }
+                }
+            }
+        }
+
+        // Rotar contactos: actual → anterior para el siguiente frame
+        previousContacts.clear();
+        previousContacts.putAll(currentContacts);
+    }
+
+    /**
+     * Limpia el estado de contactos anteriores.
+     * Llamar al cambiar de mundo/escena para evitar enter/exit espurios
+     * en el primer frame del nuevo mundo.
+     */
+    public void clearContactHistory() {
+        previousContacts.clear();
+    }
+
+    // ── Helpers privados ──────────────────────────────────────────────────
+
+    /**
+     * Recoge todos los componentes del objeto que implementan CollisionListenerEvent.
+     * Retorna lista vacía si ninguno lo implementa (caso más común — sin coste).
+     */
+    private static List<CollisionListenerEvent> collectListeners(GameObjects obj) {
+        List<CollisionListenerEvent> result = null;
+        for (Component c : obj.getComponents()) {
+            if (c instanceof CollisionListenerEvent cle) {
+                if (result == null) result = new ArrayList<>(2);
+                result.add(cle);
+            }
+        }
+        return result != null ? result : List.of();
+    }
+
+    /** True si el objeto tiene un ColliderComponent de tipo TRIGGER. */
+    private static boolean isTrigger(GameObjects obj) {
+        ColliderComponent col = obj.getComponent(ColliderComponent.class);
+        return col != null && col.isTrigger();
     }
 }

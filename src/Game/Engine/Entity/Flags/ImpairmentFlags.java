@@ -1,48 +1,32 @@
 package Game.Engine.Entity.Flags;
 
 /**
- * Estados que limitan las capacidades de una entidad viva.
+ * Estado derivado de fenómenos de incapacitación activos en la entidad.
  *
- * ── HRFC-007 — Nueva categoría del Living Entity Core ────────────────────
- * ImpairmentFlags agrupa estados de incapacitación aplicados externamente
- * por StatusEffects, habilidades o trampas del entorno.
+ * ── HRFC-014 — GAP-11: Derived State, encapsulado por diseño ────────────
  *
- * ── Responsabilidad única ─────────────────────────────────────────────────
- * ImpairmentFlags NO implementa ninguna lógica.
- * La lógica vive en el StatusEffect correspondiente (FreezeEffect, StunEffect…).
- * ImpairmentFlags existe únicamente como representación rápida del estado:
+ * ImpairmentFlags representa fenómenos de incapacitación observables, no
+ * causas concretas. "isStunned" significa "la entidad presenta actualmente
+ * el fenómeno de estar aturdida", independientemente de si lo causó un
+ * StunEffect, StaggerEffect, ConcussionEffect, etc.
  *
- *   if (entity.getFlags().impairments().isStunned())
+ * ── Restricción de escritura — impuesta por diseño, no por convención ─────
  *
- * sin necesidad de iterar sobre todos los StatusEffects activos.
+ * Los setters son package-private. Solo EntityFlags (mismo paquete) puede
+ * invocarlos, a través de EntityFlags.synchronize(StatusEffectComponent).
+ * El código externo al paquete únicamente puede leer el estado derivado.
  *
- * ── Flujo correcto ────────────────────────────────────────────────────────
- *   StatusEffect
- *       ↓ cada frame
- *   actualiza RuntimeStats (StatModifiers)
- *       ↓
- *   actualiza ImpairmentFlags (setStunned, setFrozen…)
- *       ↓
- *   expira → revierte cambios
- *
- * ── Quién lee ImpairmentFlags ────────────────────────────────────────────
- *   EntityFlags.isAbleToMove()   — stunned || frozen || sleeping || rooted
- *   EntityFlags.isAbleToAttack() — stunned || frozen || sleeping || disarmed || silenced
- *   EntityFlags.isAbleToCast()   — silenced || confused
- *   AI                           — adapta su comportamiento a la entidad incapacitada
- *   AnimationSystem              — reproduce animación de estado (congelado, aturdido)
- *
- * ── Campos ────────────────────────────────────────────────────────────────
- *   stunned   — aturdido: no puede moverse ni atacar.
- *   rooted    — inmovilizado: no puede moverse, pero sí atacar.
- *   frozen    — congelado: no puede moverse ni atacar.
- *   silenced  — silenciado: no puede usar habilidades mágicas.
- *   confused  — movimiento y ataques invertidos o aleatorios.
- *   sleeping  — dormido: inactivo hasta recibir daño o estímulo.
- *   feared    — huye sin control en dirección opuesta al origen del miedo.
- *   disarmed  — desarmado: no puede ejecutar ataques físicos.
+ * ── Fenómenos representados ───────────────────────────────────────────────
+ *   stunned   — aturdido: no puede moverse ni atacar
+ *   rooted    — inmovilizado: no puede moverse, sí puede atacar
+ *   frozen    — congelado: no puede moverse ni atacar
+ *   silenced  — silenciado: no puede usar habilidades mágicas
+ *   confused  — confundido: movimiento/ataques invertidos o aleatorios
+ *   sleeping  — dormido: inactivo hasta recibir daño o estímulo
+ *   feared    — aterrado: huye sin control
+ *   disarmed  — desarmado: no puede ejecutar ataques físicos
  */
-public class ImpairmentFlags {
+public final class ImpairmentFlags {
 
     private boolean stunned  = false;
     private boolean rooted   = false;
@@ -53,44 +37,71 @@ public class ImpairmentFlags {
     private boolean feared   = false;
     private boolean disarmed = false;
 
-    public boolean isStunned()               { return stunned; }
-    public ImpairmentFlags setStunned(boolean v)  { stunned = v; return this; }
+    // ── Consultas públicas ────────────────────────────────────────────────
 
-    public boolean isRooted()                { return rooted; }
-    public ImpairmentFlags setRooted(boolean v)   { rooted = v; return this; }
+    /** True si la entidad presenta el fenómeno de aturdimiento activo. */
+    public boolean isStunned()  { return stunned; }
 
-    public boolean isFrozen()                { return frozen; }
-    public ImpairmentFlags setFrozen(boolean v)   { frozen = v; return this; }
+    /** True si la entidad presenta el fenómeno de inmovilización activa. */
+    public boolean isRooted()   { return rooted; }
 
-    public boolean isSilenced()              { return silenced; }
-    public ImpairmentFlags setSilenced(boolean v) { silenced = v; return this; }
+    /** True si la entidad presenta el fenómeno de congelación activa. */
+    public boolean isFrozen()   { return frozen; }
 
-    public boolean isConfused()              { return confused; }
-    public ImpairmentFlags setConfused(boolean v) { confused = v; return this; }
+    /** True si la entidad presenta el fenómeno de silencio activo. */
+    public boolean isSilenced() { return silenced; }
 
-    public boolean isSleeping()              { return sleeping; }
-    public ImpairmentFlags setSleeping(boolean v) { sleeping = v; return this; }
+    /** True si la entidad presenta el fenómeno de confusión activa. */
+    public boolean isConfused() { return confused; }
 
-    public boolean isFeared()                { return feared; }
-    public ImpairmentFlags setFeared(boolean v)   { feared = v; return this; }
+    /** True si la entidad presenta el fenómeno de sueño activo. */
+    public boolean isSleeping() { return sleeping; }
 
-    public boolean isDisarmed()              { return disarmed; }
-    public ImpairmentFlags setDisarmed(boolean v) { disarmed = v; return this; }
+    /** True si la entidad presenta el fenómeno de huida incontrolada. */
+    public boolean isFeared()   { return feared; }
 
-    // ── Consultas compuestas ──────────────────────────────────────────────
+    /** True si la entidad presenta el fenómeno de desarme activo. */
+    public boolean isDisarmed() { return disarmed; }
 
-    /** True si algún estado activo impide el movimiento. */
+    // ── Consultas compuestas por fenómeno ─────────────────────────────────
+
+    /**
+     * True si algún fenómeno activo impide el movimiento.
+     * Pregunta por el fenómeno, no por el efecto concreto que lo produce.
+     */
     public boolean isMovementInhibited() {
         return stunned || frozen || sleeping || rooted;
     }
 
-    /** True si algún estado activo impide ataques físicos. */
+    /**
+     * True si algún fenómeno activo impide ataques físicos.
+     */
     public boolean isAttackInhibited() {
         return stunned || frozen || sleeping || disarmed;
     }
 
-    /** True si algún estado activo impide el uso de habilidades mágicas. */
+    /**
+     * True si algún fenómeno activo impide el uso de habilidades mágicas.
+     */
     public boolean isCastInhibited() {
         return silenced || confused;
+    }
+
+    // ── Escritura — package-private ────────────────────────────────────────
+    // Solo EntityFlags puede invocar estos métodos (mismo paquete).
+    // El punto de entrada externo es EntityFlags.synchronize().
+
+    void setStunned(boolean v)  { stunned  = v; }
+    void setRooted(boolean v)   { rooted   = v; }
+    void setFrozen(boolean v)   { frozen   = v; }
+    void setSilenced(boolean v) { silenced = v; }
+    void setConfused(boolean v) { confused = v; }
+    void setSleeping(boolean v) { sleeping = v; }
+    void setFeared(boolean v)   { feared   = v; }
+    void setDisarmed(boolean v) { disarmed = v; }
+
+    void clearAll() {
+        stunned = rooted = frozen = silenced =
+        confused = sleeping = feared = disarmed = false;
     }
 }

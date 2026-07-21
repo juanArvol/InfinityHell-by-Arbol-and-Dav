@@ -6,9 +6,9 @@ import Game.Enemys.Core.Controllers.EnemyAttackController;
 import Game.Enemys.Core.Controllers.EnemyComponentRegistry;
 import Game.Enemys.Core.Controllers.EnemyMovementController;
 import Game.Enemys.Core.Controllers.EnemyPhaseController;
-import Game.Enemys.Core.Events.OnEnemyDeathEvent;
 import Game.Enemys.Core.Variables.EnemyVariables;
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.ContextualUpdatable;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
@@ -20,6 +20,7 @@ import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
 import Game.Engine.Events.GameEventBus;
+import Game.Engine.Events.OnEnemyDeathEvent;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
@@ -71,7 +72,7 @@ import Sprites.Core.SpriteHandle;
  *   6. ComponentRegistry actualiza todos los EnemyComponents opcionales.
  *   7. super.update() — Components del engine (health, physics, renderer…).
  */
-public final class Enemy extends MovingObjects implements EntityInfoProvider, WorldObjectsContainer.Destroyable {
+public final class Enemy extends MovingObjects implements EntityInfoProvider, WorldObjectsContainer.Destroyable, ContextualUpdatable {
 
     // ── Controladores — inyectados por EnemyAssembler ─────────────────────
     private final EnemyAIController         aiController;
@@ -201,6 +202,15 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Wo
 
     @Override
     public void update() { update(null); }
+
+    /**
+     * Implementa ContextualUpdatable — el contexto esperado es EnemyContext.
+     * Si se pasa null o un tipo incorrecto, degradar a update(null).
+     */
+    @Override
+    public void updateWithContext(Object context) {
+        update((context instanceof EnemyContext ctx) ? ctx : null);
+    }
 
     // ── Muerte ────────────────────────────────────────────────────────────
 

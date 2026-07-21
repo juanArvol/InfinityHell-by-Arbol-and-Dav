@@ -8,6 +8,15 @@ package Game.Gameplay.Core.Properties;
  * a todos los sistemas del juego. Son los "parámetros del universo" sobre
  * los cuales los modificadores operan.
  *
+ * ── HRFC-015 — World Simulation Core ──────────────────────────────────────
+ * Se añaden las claves del dominio físico del mundo. Estas claves representan
+ * propiedades físicas fundamentales — no fenómenos de gameplay.
+ *
+ * La distinción es esencial: TEMPERATURE no es "el personaje está quemado".
+ * Es la temperatura actual del objeto en el mundo. Los fenómenos observables
+ * (Burning, Frozen, Electrified…) emergen cuando los módulos de simulación
+ * evalúan cómo estas propiedades interactúan con el material de cada entidad.
+ *
  * ── CÓMO EXTENDER ────────────────────────────────────────────────────────
  * Nuevos sistemas declaran sus propias claves en su propio catálogo:
  *
@@ -77,13 +86,100 @@ public final class PropertyKeys {
     public static final PropertyKey<Double> LIFETIME =
         PropertyKey.of("Lifetime", Double.class, 0.0);
 
-    // ── Física avanzada ───────────────────────────────────────────────────
+    // ── Física / área ─────────────────────────────────────────────────────
 
     /** Radio de área de efecto en unidades lógicas. */
     public static final PropertyKey<Double> RADIUS =
         PropertyKey.of("Radius", Double.class, 0.0);
 
-    /** Temperatura — eje de efectos de calor/frío (negativo = frío, positivo = calor). */
+    // ── Propiedades térmicas — HRFC-015 ───────────────────────────────────
+    //
+    // Estas claves representan el estado térmico y las propiedades de
+    // transferencia de calor de un objeto. No son fenómenos de gameplay:
+    // son valores físicos puros que los módulos de simulación procesan.
+    //
+    // Un objeto con TEMPERATURE = 1500 no está "en llamas".
+    // Está a 1500 unidades de calor. Si su material es susceptible de
+    // combustión y la energía térmica supera el umbral de sus propiedades
+    // de material, el InteractionRegistry evaluará las consecuencias.
+
+    /**
+     * Temperatura actual del objeto.
+     * Unidad: grados arbitrarios del universo de Infinity Hell.
+     * Valores negativos = frío; positivos = calor; 0 = temperatura ambiente.
+     * Modificado por ThermalSimulation y WorldField de calor.
+     */
     public static final PropertyKey<Double> TEMPERATURE =
         PropertyKey.of("Temperature", Double.class, 0.0);
+
+    /**
+     * Conductividad térmica del material.
+     * Rango [0, 1]: 0 = aislante perfecto, 1 = conductor perfecto.
+     * Determina la velocidad a la que el objeto intercambia temperatura
+     * con entidades adyacentes o con campos térmicos del entorno.
+     * Propiedad intrínseca del material — no cambia en runtime salvo
+     * modificadores explícitos (daño al material, magia, etc.).
+     */
+    public static final PropertyKey<Double> THERMAL_CONDUCTIVITY =
+        PropertyKey.of("ThermalConductivity", Double.class, 0.1);
+
+    /**
+     * Capacidad calorífica del material.
+     * Energía necesaria para cambiar la temperatura del objeto 1 unidad.
+     * Mayor valor = más resistente a cambios térmicos.
+     * Rango (0, +∞). Valor típico: 1.0.
+     */
+    public static final PropertyKey<Double> HEAT_CAPACITY =
+        PropertyKey.of("HeatCapacity", Double.class, 1.0);
+
+    // ── Propiedades eléctricas — HRFC-015 ─────────────────────────────────
+    //
+    // Estado y propiedades de la interacción eléctrica.
+    // Un objeto con ELECTRICAL_CHARGE alto no está "electrificado" por regla.
+    // La simulación eléctrica evalúa la transferencia de carga según
+    // ELECTRICAL_RESISTANCE de cada material involucrado.
+
+    /**
+     * Carga eléctrica actual del objeto.
+     * Positiva = exceso de carga; negativa = déficit; 0 = neutro.
+     * Modificada por ElectricalSimulation y campos eléctricos.
+     */
+    public static final PropertyKey<Double> ELECTRICAL_CHARGE =
+        PropertyKey.of("ElectricalCharge", Double.class, 0.0);
+
+    /**
+     * Resistencia eléctrica del material.
+     * Rango [0, 1]: 0 = conductor perfecto, 1 = aislante perfecto.
+     * Determina la velocidad a la que la carga se transfiere a través
+     * de este material. Complementario a la conductividad eléctrica.
+     */
+    public static final PropertyKey<Double> ELECTRICAL_RESISTANCE =
+        PropertyKey.of("ElectricalResistance", Double.class, 0.5);
+
+    // ── Propiedades fluídicas / ambientales — HRFC-015 ────────────────────
+    //
+    // Humedad y presión representan el estado del fluido/gas que rodea
+    // o está contenido en el objeto. Interactúan con propiedades térmicas
+    // y eléctricas para producir efectos emergentes.
+
+    /**
+     * Humedad actual del objeto o del área local.
+     * Rango [0, 1]: 0 = completamente seco, 1 = saturado de agua.
+     * La humedad amplifica la conductividad eléctrica y reduce la
+     * velocidad de transferencia de calor por convección.
+     * Modificada por FluidSimulation y campos fluídicos.
+     */
+    public static final PropertyKey<Double> HUMIDITY =
+        PropertyKey.of("Humidity", Double.class, 0.0);
+
+    /**
+     * Presión local sobre o alrededor del objeto.
+     * Unidad: unidades arbitrarias de presión del universo del juego.
+     * 0 = presión ambiente; positivo = compresión; negativo = expansión/vacío.
+     * La presión interactúa con la temperatura (expansión/compresión adiabática)
+     * y con las fuerzas físicas (impulso en área).
+     * Modificada por PressureSimulation y campos de presión.
+     */
+    public static final PropertyKey<Double> PRESSURE =
+        PropertyKey.of("Pressure", Double.class, 0.0);
 }

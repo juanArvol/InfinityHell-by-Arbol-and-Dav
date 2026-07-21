@@ -2,55 +2,50 @@ package Game.World.WorldObjects;
 
 import Game.Engine.GameObjects;
 import Game.Engine.Systems.CollisionsSystem;
+import Game.Engine.Systems.StatusEffectSystem;
+import Game.Engine.World.WorldSimulation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Contenedor de objetos del mundo — refactorizado para eliminar instanceof Bullet.
+ * Contenedor de objetos del mundo.
  *
- * PROBLEMA ANTERIOR (violación Open/Closed):
- *   El contenedor detectaba `Bullet` con `instanceof` para eliminar balas muertas:
+ * ── HRFC-015 — World Simulation Core ──────────────────────────────────────
  *
- *     if (obj instanceof Bullet bullet) {
- *         if (!bullet.getBulletLife().isAlive()) pendingRemove.add(obj);
- *     }
+ * Se integra WorldSimulation como sistema opcional en el pipeline de update().
+ * Cuando está presente, se ejecuta en el orden correcto de la cadena causal:
  *
- *   Esto viola OCP: cada nuevo tipo destruible (granadas, trampas, partículas,
- *   efectos de fx) requeriría un nuevo instanceof aquí.
+ *   1. object.update()          — componentes de motor (HealthComponent, physics…)
+ *   2. StatusEffectSystem       — sincroniza ImpairmentFlags / DamageFlags
+ *   3. WorldSimulation          ← NUEVO: Influences → Fields → Simulations → Interactions
+ *   4. CollisionsSystem         — movimiento, colisiones físicas y triggers
  *
- * SOLUCIÓN — Destroyable:
- *   Se introduce la interfaz `Destroyable` que cualquier objeto puede implementar.
- *   WorldObjectsContainer solo conoce `Destroyable`, no `Bullet`.
+ * WorldSimulation se ejecuta ANTES de CollisionsSystem por dos razones:
+ *   a) Las fuerzas acumuladas por campos vectoriales (VectorField) necesitan
+ *      estar en Physics2D.accumulate() antes de que CollisionsSystem las integre
+ *      en FASE 0.5 (flushAccumulatedForces).
+ *   b) El InteractionRegistry resuelve relaciones físicas cuyo estado resultante
+ *      puede ser interpretado por el Gameplay (StatusEffects, GameplayEvents)
+ *      antes de que CollisionsSystem ejecute su frame.
  *
- *   Bullet implementa Destroyable:
- *     public class Bullet extends GameObjects implements Destroyable {
- *         public boolean isPendingDestruction() { return !getBulletLife().isAlive(); }
- *     }
+ * ── RETROCOMPATIBILIDAD TOTAL ─────────────────────────────────────────────
+ * Todos los constructores existentes siguen funcionando sin cambios.
+ * WorldSimulation es null por defecto — sin ningún impacto en el comportamiento
+ * de mundos que no lo usen.
  *
- *   WorldItem ya tiene `isPendingRemoval()` — puede implementar Destroyable trivialmente.
+ * Para activar la simulación del mundo, usar el constructor con WorldSimulation
+ * o el setter setWorldSimulation():
  *
- * OPEN/CLOSED después del cambio:
- *   Agregar un nuevo tipo destruible = implementar Destroyable.
- *   No hay que tocar WorldObjectsContainer.
+ *   // Constructor completo:
+ *   new WorldObjectsContainer(collisions, statusEffects, WorldSimulation.withDefaults())
  *
- * REFACTOR — CollisionsSystem inyectable:
- *   PROBLEMA ANTERIOR:
- *     private final CollisionsSystem collisionsSystem = new CollisionsSystem();
- *     El sistema de colisiones era instanciado internamente sin punto de control
- *     externo. No era posible:
- *     - Inyectar un mock para tests.
- *     - Deshabilitar colisiones para mundos sin física (hub area, cutscene).
- *     - Usar una variante con configuración diferente (sin gravedad, sin sweepAABB).
+ *   // Constructor default + setter (útil cuando la simulación se configura después):
+ *   var container = new WorldObjectsContainer();
+ *   container.setWorldSimulation(WorldSimulation.withDefaults());
  *
- *   SOLUCIÓN:
- *     Constructor secundario que acepta CollisionsSystem por parámetro.
- *     Constructor sin args mantiene el comportamiento original como conveniencia.
- *     No se rompe ningún caller existente.
- *
- * COMPATIBILIDAD:
- *   Bullet existente solo necesita implementar la interfaz Destroyable.
- *   El comportamiento de limpieza es idéntico.
+ * ── DESTROYABLE (sin cambios) ─────────────────────────────────────────────
+ * La interfaz Destroyable y su mecánica de limpieza permanecen idénticas.
  */
 public class WorldObjectsContainer {
 
@@ -74,7 +69,15 @@ public class WorldObjectsContainer {
     private final List<GameObjects> pendingAdd    = new ArrayList<>();
     private final List<GameObjects> pendingRemove = new ArrayList<>();
 
-    private final CollisionsSystem collisionsSystem;
+    private final CollisionsSystem   collisionsSystem;
+    private final StatusEffectSystem statusEffectSystem;
+
+    /**
+     * Núcleo de simulación del mundo (HRFC-015).
+     * Null = inactivo (mundos sin simulación física).
+     * Cuando está presente, se ejecuta entre StatusEffectSystem y CollisionsSystem.
+     */
+    private WorldSimulation worldSimulation;
 
     /**
      * Updater de objetos inyectable.
@@ -94,26 +97,59 @@ public class WorldObjectsContainer {
     // ── Constructores ─────────────────────────────────────────────────────────
 
     /**
-     * Constructor por defecto — crea su propio CollisionsSystem.
-     * Comportamiento original: retrocompatible con todo el código existente.
+     * Constructor por defecto — sin simulación del mundo activa.
+     * Retrocompatible con todo el código existente.
      */
     public WorldObjectsContainer() {
-        this(new CollisionsSystem());
+        this.collisionsSystem   = new CollisionsSystem();
+        this.statusEffectSystem = new StatusEffectSystem();
+        this.worldSimulation    = null;
     }
 
     /**
-     * Constructor con CollisionsSystem inyectado.
+     * Constructor con sistemas inyectados, sin simulación del mundo.
+     * Usar para tests, configuraciones especiales o mundos sin física.
      *
-     * Usar cuando se necesite:
-     *   - Un mock de colisiones en tests.
-     *   - Deshabilitar colisiones para mundos especiales (hub, cutscene).
-     *   - Una variante con configuración diferente (sin gravedad, broadphase extendido).
+     * @param collisionsSystem   sistema de colisiones; no puede ser null.
+     * @param statusEffectSystem sistema de sincronización de flags; no puede ser null.
+     */
+    public WorldObjectsContainer(CollisionsSystem collisionsSystem,
+                                  StatusEffectSystem statusEffectSystem) {
+        if (collisionsSystem   == null) throw new IllegalArgumentException("collisionsSystem no puede ser null");
+        if (statusEffectSystem == null) throw new IllegalArgumentException("statusEffectSystem no puede ser null");
+        this.collisionsSystem   = collisionsSystem;
+        this.statusEffectSystem = statusEffectSystem;
+        this.worldSimulation    = null;
+    }
+
+    /**
+     * Constructor completo con World Simulation Core (HRFC-015).
      *
-     * @param collisionsSystem sistema de colisiones a usar; no puede ser null.
+     * @param collisionsSystem   sistema de colisiones; no puede ser null.
+     * @param statusEffectSystem sistema de sincronización de flags; no puede ser null.
+     * @param worldSimulation    núcleo de simulación del mundo; null = inactivo.
+     */
+    public WorldObjectsContainer(CollisionsSystem collisionsSystem,
+                                  StatusEffectSystem statusEffectSystem,
+                                  WorldSimulation worldSimulation) {
+        if (collisionsSystem   == null) throw new IllegalArgumentException("collisionsSystem no puede ser null");
+        if (statusEffectSystem == null) throw new IllegalArgumentException("statusEffectSystem no puede ser null");
+        this.collisionsSystem   = collisionsSystem;
+        this.statusEffectSystem = statusEffectSystem;
+        this.worldSimulation    = worldSimulation;
+    }
+
+    /**
+     * Constructor de compatibilidad con CollisionsSystem solo.
+     * StatusEffectSystem se crea internamente. Sin simulación del mundo.
+     *
+     * @param collisionsSystem sistema de colisiones; no puede ser null.
      */
     public WorldObjectsContainer(CollisionsSystem collisionsSystem) {
         if (collisionsSystem == null) throw new IllegalArgumentException("collisionsSystem no puede ser null");
-        this.collisionsSystem = collisionsSystem;
+        this.collisionsSystem   = collisionsSystem;
+        this.statusEffectSystem = new StatusEffectSystem();
+        this.worldSimulation    = null;
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
@@ -121,22 +157,42 @@ public class WorldObjectsContainer {
     public void update() {
         flush();
 
+        // 1. Actualizar todos los objetos (Components: HealthComponent,
+        //    StatusEffectComponent.tick() + onExpire(), Physics, Animaciones…)
         objectUpdater.accept(objects);
 
-        // Recopilar los pendientes de destrucción ANTES de pasar al sistema de
-        // colisiones. Un objeto que murió en su update() (enemy.onDeath()) ya
-        // está marcado aquí; no tiene sentido que reciba eventos de colisión
-        // en el mismo frame en que murió (doble loot, doble daño, etc.).
+        // 2. StatusEffectSystem proyecta los flags derivados (ImpairmentFlags,
+        //    DamageFlags) desde StatusEffectComponent. Debe ejecutarse DESPUÉS
+        //    de que StatusEffectComponent.update() procesó los efectos del frame.
+        //    CollisionsSystem usa isAbleToMove() en FASE 0 → los flags deben
+        //    estar actualizados antes de que CollisionsSystem corra.
+        statusEffectSystem.update(objects);
+
+        // 3. World Simulation Core (HRFC-017) — opcional.
+        //    Orden de la cadena causal interna:
+        //      Influences → Fields → PhysicsSolver
+        //
+        //    Se ejecuta ANTES de CollisionsSystem porque:
+        //      a) VectorField acumula fuerzas en Physics2D.accumulate(); CollisionsSystem
+        //         las integra en FASE 0.5 (flushAccumulatedForces) en el mismo frame.
+        //      b) PhysicsSolver resuelve el estado físico; el estado resultante
+        //         es observado por Gameplay antes de que CollisionsSystem ejecute su frame.
+        if (worldSimulation != null) {
+            worldSimulation.update(objects);
+        }
+
+        // 4. Recopilar los pendientes de destrucción ANTES de pasar al sistema de
+        //    colisiones. Un objeto que murió en su update() (enemy.onDeath()) ya
+        //    está marcado aquí; no tiene sentido que reciba eventos de colisión
+        //    en el mismo frame en que murió (doble loot, doble daño, etc.).
         for (GameObjects obj : objects) {
             if (obj instanceof Destroyable d && d.isPendingDestruction()) {
                 pendingRemove.add(obj);
             }
         }
 
-        // Construir la lista de objetos vivos para el sistema de colisiones.
-        // Usar el mismo Set que pendingRemove evita instanciar una lista nueva
-        // cada frame: si pendingRemove está vacío (el caso más común), la lista
-        // activa ES objects y la comparación es barata.
+        // 5. Construir la lista de objetos vivos para CollisionsSystem.
+        //    Si pendingRemove está vacío (caso más común), evitamos allocations.
         if (pendingRemove.isEmpty()) {
             collisionsSystem.update(objects);
         } else {
@@ -163,6 +219,19 @@ public class WorldObjectsContainer {
     public List<GameObjects> getObjects() { return objects; }
 
     /**
+     * Limpia el historial de contactos del CollisionsSystem.
+     *
+     * Llamar al entrar a un nuevo mundo / escena para evitar que FASE 4
+     * (CollisionListener enter/stay/exit) genere eventos "exit" o "stay"
+     * espurios en el primer frame — todos los contactos deben ser "enter".
+     *
+     * WorldManager lo llama automáticamente después de cada transición de mundo.
+     */
+    public void clearCollisionContactHistory() {
+        collisionsSystem.clearContactHistory();
+    }
+
+    /**
      * Reemplaza el updater de objetos.
      * Llamar desde World cuando el player rastreado cambie, para que los
      * enemigos reciban EnemyContext correcto en cada update().
@@ -176,5 +245,35 @@ public class WorldObjectsContainer {
     public void setObjectUpdater(Consumer<List<GameObjects>> updater) {
         if (updater == null) throw new IllegalArgumentException("updater no puede ser null");
         this.objectUpdater = updater;
+    }
+
+    /**
+     * Establece o reemplaza el WorldSimulation activo (HRFC-015).
+     *
+     * Usar cuando la simulación del mundo se configure después de construir el
+     * contenedor, o para intercambiar configuraciones entre mundos distintos.
+     *
+     * Pasar null para desactivar la simulación (mundos sin física, cutscenes).
+     * Si se activa una nueva simulación al entrar a un mundo, llamar también a
+     * worldSimulation.clearTransientState() para limpiar campos e influencias
+     * que podrían haber persistido del mundo anterior.
+     *
+     * @param worldSimulation nueva instancia, o null para desactivar.
+     */
+    public void setWorldSimulation(WorldSimulation worldSimulation) {
+        this.worldSimulation = worldSimulation;
+    }
+
+    /**
+     * Acceso directo al WorldSimulation activo.
+     * Usar desde código de gameplay para registrar campos, influencias e interacciones:
+     *
+     *   container.getWorldSimulation().fields().add(myField);
+     *   container.getWorldSimulation().influences().add(influence, target);
+     *
+     * @return la instancia activa, o null si no hay simulación configurada.
+     */
+    public WorldSimulation getWorldSimulation() {
+        return worldSimulation;
     }
 }

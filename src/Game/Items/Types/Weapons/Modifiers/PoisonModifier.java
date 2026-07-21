@@ -1,8 +1,7 @@
 package Game.Items.Types.Weapons.Modifiers;
 
-import Game.Enemys.Core.Enemy;
-import Game.Engine.GameObjects;
 import Game.Engine.Entity.Components.StatusEffectComponent;
+import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 
@@ -50,12 +49,12 @@ public class PoisonModifier extends WeaponModifier {
         }
 
         @Override
-        protected void onHitEnemy(Bullet bullet, Enemy enemy) {
+        protected void onHitEntity(Bullet bullet, Game.Engine.AbstractEntity entity) {
+            if (!(entity instanceof Game.Enemys.Core.Enemy enemy)) return;
             StatusEffectComponent fx = enemy.getComponent(StatusEffectComponent.class);
             if (fx != null) {
                 fx.add(new PoisonEffect(dmg, interval, totalDuration));
             } else {
-                // Fallback: daño directo si el componente no está (compatibilidad)
                 enemy.damage(dmg * (totalDuration / interval));
             }
         }
@@ -83,8 +82,9 @@ public class PoisonModifier extends WeaponModifier {
             remaining--;
             timer--;
             if (timer <= 0) {
-                if (entity instanceof Enemy enemy) {
-                    enemy.damage(dmgPerTick);
+                // Usar AbstractEntity para ser agnóstico al tipo concreto
+                if (entity instanceof Game.Engine.AbstractEntity e) {
+                    e.damage(dmgPerTick);
                 }
                 timer = interval;
             }

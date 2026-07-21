@@ -1,34 +1,82 @@
 package Game.Engine.Entity.Flags;
 
+import Game.Engine.Entity.Components.StatusEffectComponent;
+import Game.Engine.Systems.StatusEffectSystem;
+
 /**
- * Contenedor de flags booleanos de cualquier entidad viva.
+ * Contenedor de flags de estado de cualquier entidad viva.
  *
- * ── HRFC-007 — Generalización al Living Entity Core ──────────────────────
- * Reemplaza a EnemyFlags como contenedor genérico reutilizable por Player,
- * Enemy, Boss, NPC, Pet, Summon, Companion, Turret y cualquier entidad viva.
- *
- * ── Arquitectura de flags por responsabilidad ─────────────────────────────
+ * ── Arquitectura de flags ─────────────────────────────────────────────────
  *
  *   EntityFlags
- *       ├── CapabilityFlags  — lo que la entidad ES CAPAZ de hacer (diseño)
- *       ├── StateFlags       — estados internos activos (vuelo, rabia, invencible)
- *       ├── ImpairmentFlags  — estados que LIMITAN capacidades (stun, freeze…)
- *       ├── DamageFlags      — estados de daño periódico (burn, poison, bleed…)
- *       └── UtilityFlags     — estados misceláneos (stealth, mark, channel…)
+ *       ├── CapabilityFlags   — lo que la entidad ES CAPAZ de hacer (diseño)
+ *       ├── StateFlags        — estados internos activos controlados por lógica
+ *       ├── ImpairmentFlags   — fenómenos de incapacitación (Derived State)
+ *       ├── DamageFlags       — fenómenos de daño periódico (Derived State)
+ *       └── UtilityFlags      — estados misceláneos (stealth, mark, channel…)
  *
- * ── Regla de consulta compuesta ──────────────────────────────────────────
+ * ── Categorías y quién puede escribirlas ─────────────────────────────────
  *
- *   boolean moverEsteFrame =
- *       flags.capabilities().canMove()          // capacidad de diseño
- *       && !flags.impairments().isMovementInhibited(); // sin incapacitaciones
+ *   CapabilityFlags → Assemblers y configuración estática.
+ *                     Representa el diseño de la entidad (¿puede atacar?).
  *
- * ── Shortcuts de conveniencia ────────────────────────────────────────────
- * EntityFlags expone los shortcuts más usados directamente para mantener
- * la API fluida en Assemblers, fases y componentes:
+ *   StateFlags      → Assemblers, Phases, MovementStrategies, Components.
+ *                     Estado activo de gameplay (invincible, flying, rage).
  *
- *   entity.getFlags().setInvincible(true)
- *   entity.getFlags().isAbleToMove()
- *   entity.getFlags().canAttack()
+ *   ImpairmentFlags → Solo via EntityFlags.synchronize(StatusEffectComponent).
+ *                     Estado DERIVADO de fenómenos de incapacitación.
+ *                     Setters son package-private — inaccesibles desde fuera.
+ *
+ *   DamageFlags     → Solo via EntityFlags.synchronize(StatusEffectComponent).
+ *                     Estado DERIVADO de fenómenos de daño periódico.
+ *                     Setters son package-private — inaccesibles desde fuera.
+ *
+ *   UtilityFlags    → Assemblers, StatusEffects, sistemas de gameplay.
+ *                     Estados misceláneos sin restricción adicional.
+ *
+ * ── Punto de sincronización de estado derivado (HRFC-014 — GAP-11) ────────
+ *
+ *   EntityFlags.synchronize(StatusEffectComponent) es el ÚNICO punto de
+ *   entrada para proyectar el estado de StatusEffectComponent sobre los
+ *   flags derivados (ImpairmentFlags, DamageFlags).
+ *
+ *   La restricción es estructural: los setters de ImpairmentFlags y
+ *   DamageFlags son package-private. Solo EntityFlags (mismo paquete)
+ *   puede invocarlos. El código externo no puede escribir esos flags
+ *   directamente, solo puede leerlos.
+ *
+ *   Flujo completo:
+ *
+ *     StatusEffectComponent          ← fuente de verdad
+ *             ↓
+ *     StatusEffectSystem             ← lee efectos activos
+ *             ↓
+ *     entity.getFlags().synchronize() ← único punto de escritura público
+ *             ↓
+ *     ImpairmentFlags / DamageFlags   ← estado derivado (pkg-private setters)
+ *             ↓
+ *     EntityFlags.isAbleToMove() etc. ← consultas del Engine
+ *
+ * ── Declaración de fenómenos en StatusEffects ─────────────────────────────
+ *
+ *   Para que synchronize() proyecte un fenómeno, el StatusEffect debe
+ *   implementar la interfaz marcadora correspondiente:
+ *
+ *     StatusEffectSystem.HasDamagePhenomenon
+ *     StatusEffectSystem.HasImpairmentPhenomenon
+ *
+ *   Ejemplo:
+ *
+ *     public class BurningEffect
+ *             implements StatusEffectComponent.StatusEffect,
+ *                        StatusEffectSystem.HasDamagePhenomenon {
+ *
+ *         {@literal @}Override
+ *         public StatusEffectSystem.DamagePhenomenon getDamagePhenomenon() {
+ *             return StatusEffectSystem.DamagePhenomenon.BURNING;
+ *         }
+ *         // tick(), onExpire()...
+ *     }
  */
 public class EntityFlags {
 
@@ -40,82 +88,136 @@ public class EntityFlags {
 
     // ── Acceso a sub-objetos ──────────────────────────────────────────────
 
-    /** Capacidades de diseño de la entidad (canMove, canAttack, canCast…). */
+    /** Capacidades de diseño: canMove, canAttack, canCast… */
     public CapabilityFlags capabilities() { return capabilities; }
 
-    /** Estados internos activos (invincible, flying, rageMode…). */
+    /** Estados activos de gameplay: invincible, flying, rageMode… */
     public StateFlags states()            { return states; }
 
-    /** Estados que limitan capacidades (stunned, frozen, silenced…). */
+    /**
+     * Fenómenos de incapacitación derivados: stunned, frozen, silenced…
+     * Solo lectura. Se actualiza vía {@link #synchronize(StatusEffectComponent)}.
+     */
     public ImpairmentFlags impairments()  { return impairments; }
 
-    /** Estados de daño periódico activos (burning, poisoned, bleeding…). */
+    /**
+     * Fenómenos de daño periódico derivados: burning, poisoned, bleeding…
+     * Solo lectura. Se actualiza vía {@link #synchronize(StatusEffectComponent)}.
+     */
     public DamageFlags damage()           { return damage; }
 
-    /** Estados misceláneos (stealthed, marked, channeling…). */
+    /** Estados misceláneos: stealthed, marked, channeling… */
     public UtilityFlags utility()         { return utility; }
+
+    // ── Sincronización de estado derivado (único punto de escritura) ──────
+
+    /**
+     * Proyecta el estado de {@code statusEffectComponent} sobre los flags
+     * derivados (ImpairmentFlags, DamageFlags).
+     *
+     * Este es el ÚNICO método externo autorizado a modificar ImpairmentFlags
+     * y DamageFlags. La restricción es estructural: sus setters son
+     * package-private y solo este método puede invocarlos.
+     *
+     * Debe llamarse desde {@link StatusEffectSystem} DESPUÉS de que
+     * StatusEffectComponent.update() haya procesado tick() y onExpire()
+     * de todos los efectos activos del frame actual.
+     *
+     * Si {@code statusEffectComponent} es null o está vacío, los flags
+     * derivados se resetean a false (sin fenómenos activos).
+     *
+     * @param sec el StatusEffectComponent de la entidad. Puede ser null.
+     */
+    public void synchronize(StatusEffectComponent sec) {
+        // Resetear todos los fenómenos derivados antes de re-proyectar
+        impairments.clearAll();
+        damage.clearAll();
+
+        if (sec == null || sec.isEmpty()) return;
+
+        int count = sec.activeCount();
+        for (int i = 0; i < count; i++) {
+            StatusEffectComponent.StatusEffect effect = sec.getEffectAt(i);
+            applyDamagePhenomenon(effect);
+            applyImpairmentPhenomenon(effect);
+        }
+    }
+
+    // ── Aplicación interna de fenómenos (acceso a setters pkg-private) ────
+
+    private void applyDamagePhenomenon(StatusEffectComponent.StatusEffect effect) {
+        if (!(effect instanceof StatusEffectSystem.HasDamagePhenomenon dp)) return;
+        switch (dp.getDamagePhenomenon()) {
+            case BURNING     -> damage.setBurning(true);
+            case POISONED    -> damage.setPoisoned(true);
+            case BLEEDING    -> damage.setBleeding(true);
+            case ELECTRIFIED -> damage.setElectrified(true);
+            case CORRODED    -> damage.setCorroded(true);
+            case CURSED      -> damage.setCursed(true);
+            case INFECTED    -> damage.setInfected(true);
+        }
+    }
+
+    private void applyImpairmentPhenomenon(StatusEffectComponent.StatusEffect effect) {
+        if (!(effect instanceof StatusEffectSystem.HasImpairmentPhenomenon ip)) return;
+        switch (ip.getImpairmentPhenomenon()) {
+            case STUNNED  -> impairments.setStunned(true);
+            case ROOTED   -> impairments.setRooted(true);
+            case FROZEN   -> impairments.setFrozen(true);
+            case SILENCED -> impairments.setSilenced(true);
+            case CONFUSED -> impairments.setConfused(true);
+            case SLEEPING -> impairments.setSleeping(true);
+            case FEARED   -> impairments.setFeared(true);
+            case DISARMED -> impairments.setDisarmed(true);
+        }
+    }
 
     // ── Shortcuts — CapabilityFlags ───────────────────────────────────────
 
-    public boolean canMove()                        { return capabilities.canMove(); }
-    public EntityFlags setCanMove(boolean v)        { capabilities.setCanMove(v); return this; }
+    public boolean canMove()                     { return capabilities.canMove(); }
+    public EntityFlags setCanMove(boolean v)     { capabilities.setCanMove(v); return this; }
 
-    public boolean canAttack()                      { return capabilities.canAttack(); }
-    public EntityFlags setCanAttack(boolean v)      { capabilities.setCanAttack(v); return this; }
+    public boolean canAttack()                   { return capabilities.canAttack(); }
+    public EntityFlags setCanAttack(boolean v)   { capabilities.setCanAttack(v); return this; }
 
-    public boolean canRotate()                      { return capabilities.canRotate(); }
-    public EntityFlags setCanRotate(boolean v)      { capabilities.setCanRotate(v); return this; }
+    public boolean canRotate()                   { return capabilities.canRotate(); }
+    public EntityFlags setCanRotate(boolean v)   { capabilities.setCanRotate(v); return this; }
 
-    public boolean canCast()                        { return capabilities.canCast(); }
-    public EntityFlags setCanCast(boolean v)        { capabilities.setCanCast(v); return this; }
+    public boolean canCast()                     { return capabilities.canCast(); }
+    public EntityFlags setCanCast(boolean v)     { capabilities.setCanCast(v); return this; }
 
-    public boolean canInteract()                    { return capabilities.canInteract(); }
-    public EntityFlags setCanInteract(boolean v)    { capabilities.setCanInteract(v); return this; }
+    public boolean canInteract()                 { return capabilities.canInteract(); }
+    public EntityFlags setCanInteract(boolean v) { capabilities.setCanInteract(v); return this; }
 
     // ── Shortcuts — StateFlags ────────────────────────────────────────────
+    // StateFlags son estado activo de gameplay, sus setters son públicos.
 
-    public boolean isInvincible()                   { return states.isInvincible(); }
-    public EntityFlags setInvincible(boolean v)     { states.setInvincible(v); return this; }
+    public boolean isInvincible()                { return states.isInvincible(); }
+    public EntityFlags setInvincible(boolean v)  { states.setInvincible(v); return this; }
 
-    public boolean isFlying()                       { return states.isFlying(); }
-    public EntityFlags setFlying(boolean v)         { states.setFlying(v); return this; }
+    public boolean isFlying()                    { return states.isFlying(); }
+    public EntityFlags setFlying(boolean v)      { states.setFlying(v); return this; }
 
-    public boolean isInvisible()                    { return states.isInvisible(); }
-    public EntityFlags setInvisible(boolean v)      { states.setInvisible(v); return this; }
+    public boolean isInvisible()                 { return states.isInvisible(); }
+    public EntityFlags setInvisible(boolean v)   { states.setInvisible(v); return this; }
 
-    public boolean isRageMode()                     { return states.isRageMode(); }
-    public EntityFlags setRageMode(boolean v)       { states.setRageMode(v); return this; }
+    public boolean isRageMode()                  { return states.isRageMode(); }
+    public EntityFlags setRageMode(boolean v)    { states.setRageMode(v); return this; }
 
-    // ── Shortcuts — ImpairmentFlags ───────────────────────────────────────
+    // ── Shortcuts — ImpairmentFlags (solo lectura) ────────────────────────
+    // No hay setters públicos. Solo synchronize() puede modificar estos valores.
 
-    public boolean isStunned()                      { return impairments.isStunned(); }
-    public EntityFlags setStunned(boolean v)        { impairments.setStunned(v); return this; }
-
-    public boolean isFrozen()                       { return impairments.isFrozen(); }
-    public EntityFlags setFrozen(boolean v)         { impairments.setFrozen(v); return this; }
-
-    public boolean isSleeping()                     { return impairments.isSleeping(); }
-    public EntityFlags setSleeping(boolean v)       { impairments.setSleeping(v); return this; }
-
-    public boolean isConfused()                     { return impairments.isConfused(); }
-    public EntityFlags setConfused(boolean v)       { impairments.setConfused(v); return this; }
-
-    // ── Shortcuts — DamageFlags ───────────────────────────────────────────
-
-    public boolean isBurning()                      { return damage.isBurning(); }
-    public EntityFlags setBurning(boolean v)        { damage.setBurning(v); return this; }
-
-    public boolean isPoisoned()                     { return damage.isPoisoned(); }
-    public EntityFlags setPoisoned(boolean v)       { damage.setPoisoned(v); return this; }
-
-    public boolean isBleeding()                     { return damage.isBleeding(); }
-    public EntityFlags setBleeding(boolean v)       { damage.setBleeding(v); return this; }
+    public boolean isStunned()  { return impairments.isStunned(); }
+    public boolean isFrozen()   { return impairments.isFrozen(); }
+    public boolean isSleeping() { return impairments.isSleeping(); }
+    public boolean isConfused() { return impairments.isConfused(); }
+    public boolean isRooted()   { return impairments.isRooted(); }
 
     // ── Consultas compuestas (capability + impairment) ────────────────────
 
     /**
      * True si la entidad puede moverse este frame.
-     * Combina la capacidad de diseño con los estados de incapacitación activos.
+     * Combina la capacidad de diseño con los fenómenos de incapacitación.
      */
     public boolean isAbleToMove() {
         return capabilities.canMove() && !impairments.isMovementInhibited();
@@ -123,7 +225,7 @@ public class EntityFlags {
 
     /**
      * True si la entidad puede atacar este frame.
-     * Combina la capacidad de diseño con los estados de incapacitación activos.
+     * Combina la capacidad de diseño con los fenómenos de incapacitación.
      */
     public boolean isAbleToAttack() {
         return capabilities.canAttack() && !impairments.isAttackInhibited();

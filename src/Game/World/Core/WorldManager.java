@@ -171,6 +171,10 @@ public class WorldManager {
                 camera.centerOn(pos.getX(), pos.getY());
                 camera.setWorldBounds(logicalWidth, logicalHeight);
             }
+            // Limpiar el historial de contactos del CollisionsSystem del nuevo
+            // mundo para que FASE 4 (enter/stay/exit) no genere eventos espurios
+            // en el primer frame — todos los contactos serían "enter", no "stay".
+            nextWorld.getObjectsContainer().clearCollisionContactHistory();
         }
     }
 

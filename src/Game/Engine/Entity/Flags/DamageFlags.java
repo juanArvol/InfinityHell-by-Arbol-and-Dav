@@ -1,32 +1,45 @@
 package Game.Engine.Entity.Flags;
 
 /**
- * Estados persistentes que producen daño o alteraciones periódicas.
+ * Estado derivado de fenómenos de daño periódico activos en la entidad.
  *
- * ── HRFC-007 — Nueva categoría del Living Entity Core ────────────────────
- * DamageFlags agrupa estados de daño continuo aplicados por StatusEffects.
+ * ── HRFC-014 — GAP-11: Derived State, encapsulado por diseño ────────────
  *
- * ── Responsabilidad única ─────────────────────────────────────────────────
- * DamageFlags NO implementa la lógica de daño por tick.
- * La lógica vive en el StatusEffect correspondiente (BurnEffect, PoisonEffect…).
- * Los flags existen únicamente como representación rápida:
+ * DamageFlags representa fenómenos observables, no causas concretas.
+ * "isBurning" significa "la entidad presenta actualmente el fenómeno de
+ * estar ardiendo", independientemente de si lo causó BurningEffect,
+ * HellFireEffect, LavaEffect, NapalmEffect, etc.
  *
- *   if (entity.getFlags().damage().isBurning())   → mostrar partículas de fuego
- *   if (entity.getFlags().damage().isPoisoned())  → tint verde en el renderer
+ * ── Restricción de escritura — impuesta por diseño, no por convención ─────
  *
- * ── Flujo correcto ────────────────────────────────────────────────────────
- *   StatusEffect aplica daño cada tick → actualiza DamageFlags → expira → limpia flags
+ * Los setters son package-private. Solo EntityFlags (mismo paquete) puede
+ * invocarlos, a través del método EntityFlags.synchronize(StatusEffectComponent).
  *
- * ── Campos ────────────────────────────────────────────────────────────────
- *   burning      — recibe daño por quemadura periódica.
- *   poisoned     — recibe daño por veneno periódico.
- *   bleeding     — recibe daño por sangrado continuo.
- *   electrified  — recibe daño eléctrico y puede transferirlo a adyacentes.
- *   corroded     — reducción de defensa por corrosión activa.
- *   cursed       — bajo efecto de maldición activa.
- *   infected     — bajo efecto de infección activa.
+ * Ningún código externo al paquete Game.Engine.Entity.Flags puede modificar
+ * estos valores directamente. La restricción es estructural, no documental.
+ *
+ * ── Diagrama de sincronización ────────────────────────────────────────────
+ *
+ *   StatusEffectComponent          ← fuente de verdad
+ *           ↓
+ *   StatusEffectSystem             ← lee StatusEffectComponent
+ *           ↓
+ *   entity.getFlags().synchronize() ← único punto de entrada público
+ *           ↓
+ *   DamageFlags (setters pkg-priv)  ← estado derivado, lectura pública
+ *           ↓
+ *   Render / Partículas / IA        ← consultas rápidas por fenómeno
+ *
+ * ── Fenómenos representados ───────────────────────────────────────────────
+ *   burning      — quemadura activa (cualquier fuente de fuego)
+ *   poisoned     — envenenamiento activo (cualquier fuente de veneno)
+ *   bleeding     — sangrado activo (cualquier fuente de sangrado)
+ *   electrified  — descarga eléctrica activa
+ *   corroded     — corrosión activa
+ *   cursed       — maldición activa
+ *   infected     — infección activa
  */
-public class DamageFlags {
+public final class DamageFlags {
 
     private boolean burning     = false;
     private boolean poisoned    = false;
@@ -36,29 +49,52 @@ public class DamageFlags {
     private boolean cursed      = false;
     private boolean infected    = false;
 
-    public boolean isBurning()                   { return burning; }
-    public DamageFlags setBurning(boolean v)     { burning = v; return this; }
+    // ── Consultas públicas ────────────────────────────────────────────────
+    // Cualquier sistema puede leer el estado derivado.
 
-    public boolean isPoisoned()                  { return poisoned; }
-    public DamageFlags setPoisoned(boolean v)    { poisoned = v; return this; }
+    /** True si la entidad presenta el fenómeno de quemadura activa. */
+    public boolean isBurning()     { return burning; }
 
-    public boolean isBleeding()                  { return bleeding; }
-    public DamageFlags setBleeding(boolean v)    { bleeding = v; return this; }
+    /** True si la entidad presenta el fenómeno de envenenamiento activo. */
+    public boolean isPoisoned()    { return poisoned; }
 
-    public boolean isElectrified()                   { return electrified; }
-    public DamageFlags setElectrified(boolean v)     { electrified = v; return this; }
+    /** True si la entidad presenta el fenómeno de sangrado activo. */
+    public boolean isBleeding()    { return bleeding; }
 
-    public boolean isCorroded()                  { return corroded; }
-    public DamageFlags setCorroded(boolean v)    { corroded = v; return this; }
+    /** True si la entidad presenta el fenómeno de descarga eléctrica activa. */
+    public boolean isElectrified() { return electrified; }
 
-    public boolean isCursed()                    { return cursed; }
-    public DamageFlags setCursed(boolean v)      { cursed = v; return this; }
+    /** True si la entidad presenta el fenómeno de corrosión activa. */
+    public boolean isCorroded()    { return corroded; }
 
-    public boolean isInfected()                  { return infected; }
-    public DamageFlags setInfected(boolean v)    { infected = v; return this; }
+    /** True si la entidad presenta el fenómeno de maldición activa. */
+    public boolean isCursed()      { return cursed; }
 
-    /** True si la entidad tiene al menos un efecto de daño periódico activo. */
+    /** True si la entidad presenta el fenómeno de infección activa. */
+    public boolean isInfected()    { return infected; }
+
+    /**
+     * True si hay al menos un fenómeno de daño periódico activo.
+     * Útil para que sistemas de render omitan procesamiento innecesario.
+     */
     public boolean hasAnyDamageOverTime() {
         return burning || poisoned || bleeding || electrified || infected;
+    }
+
+    // ── Escritura — package-private ────────────────────────────────────────
+    // Solo EntityFlags puede invocar estos métodos (mismo paquete).
+    // El punto de entrada externo es EntityFlags.synchronize().
+
+    void setBurning(boolean v)     { burning     = v; }
+    void setPoisoned(boolean v)    { poisoned    = v; }
+    void setBleeding(boolean v)    { bleeding    = v; }
+    void setElectrified(boolean v) { electrified = v; }
+    void setCorroded(boolean v)    { corroded    = v; }
+    void setCursed(boolean v)      { cursed      = v; }
+    void setInfected(boolean v)    { infected    = v; }
+
+    void clearAll() {
+        burning = poisoned = bleeding = electrified =
+        corroded = cursed = infected = false;
     }
 }

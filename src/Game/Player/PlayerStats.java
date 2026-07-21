@@ -56,9 +56,9 @@ import Game.UI.HealthView;
  * PlayerStats expone isInvulnerable() para que los sistemas de daño lo
  * consulten antes de llamar a player.damage():
  *
- *   if (!player.getStats().isInvulnerable()) {
+ *   if (!player.getPlayerStats().isInvulnerable()) {
  *       player.damage(amount);
- *       player.getStats().triggerInvulnerability();
+ *       player.getPlayerStats().triggerInvulnerability();
  *   }
  *
  * ── HealthView (RESTAURADO) ───────────────────────────────────────────────

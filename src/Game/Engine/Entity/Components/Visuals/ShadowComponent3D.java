@@ -1,4 +1,4 @@
-package Game.Engine.GameMath.Physics.Types.Physics3D;
+package Game.Engine.Entity.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Entity.Components.Physics3DComponent;
