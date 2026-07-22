@@ -6,9 +6,13 @@ import Game.Engine.GameObjects;
 import Game.Engine.World.Fields.FieldFalloff;
 import Game.Engine.World.Fields.ScalarField;
 import Game.Engine.World.Fields.VectorField;
-import Game.Engine.World.Physics.CoreProperties;
-import Game.Engine.World.Physics.PhysicsComponent;
-import Game.Engine.World.Solver.PhysicalStateComponent;
+import Game.Engine.World.Physics.Core.ElectricalProperties;
+import Game.Engine.World.Physics.Core.FluidProperties;
+import Game.Engine.World.Physics.Core.MechanicalProperties;
+import Game.Engine.World.Physics.Core.PropertyDescriptor;
+import Game.Engine.World.Physics.Runtime.PhysicsComponent;
+import Game.Engine.World.Physics.Core.ThermalProperties;
+import Game.Engine.World.Physics.Runtime.PhysicalStateComponent;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.
@@ -97,7 +101,7 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.QUADRATIC).source(source).applyToSource(false)
-            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.CHARGE, delta))
+            .applicator((obj, delta) -> applyProperty(obj, ElectricalProperties.CHARGE, delta))
             .build();
     }
 
@@ -115,7 +119,7 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.CONSTANT).source(source).applyToSource(true)
-            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.HUMIDITY, delta))
+            .applicator((obj, delta) -> applyProperty(obj, FluidProperties.HUMIDITY, delta))
             .build();
     }
 
@@ -133,7 +137,7 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.QUADRATIC).source(source).applyToSource(false)
-            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.PRESSURE, delta))
+            .applicator((obj, delta) -> applyProperty(obj, MechanicalProperties.PRESSURE, delta))
             .build();
     }
 
@@ -229,13 +233,13 @@ public final class WorldFieldPresets {
         // 1. PhysicsComponent (HRFC-021)
         PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
         if (pc != null) {
-            pc.getState().add(CoreProperties.TEMPERATURE, delta);
+            pc.getState().add(ThermalProperties.TEMPERATURE, delta);
             return;
         }
         // 2. PhysicalStateComponent (HRFC-019)
         PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
         if (psc != null) {
-            psc.getState().add(CoreProperties.TEMPERATURE, delta);
+            psc.getState().add(ThermalProperties.TEMPERATURE, delta);
             return;
         }
         // 3. ThermalComponent (legacy)

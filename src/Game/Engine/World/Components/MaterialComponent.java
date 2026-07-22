@@ -1,8 +1,11 @@
 package Game.Engine.World.Components;
 
 import Game.Engine.Component;
-import Game.Engine.World.Physics.CoreProperties;
+import Game.Engine.World.Physics.ElectricalProperties;
+import Game.Engine.World.Physics.FluidProperties;
+import Game.Engine.World.Physics.MechanicalProperties;
 import Game.Engine.World.Physics.PhysicalState;
+import Game.Engine.World.Physics.ThermalProperties;
 
 /**
  * Propiedades intrínsecas del material de un objeto.
@@ -147,18 +150,18 @@ public final class MaterialComponent extends Component {
      */
     public PhysicalState.Builder registerInto(PhysicalState.Builder builder) {
         if (builder == null) return null;
-        builder.register(CoreProperties.THERMAL_CONDUCTIVITY,   thermalConductivity);
-        builder.register(CoreProperties.HEAT_CAPACITY,          heatCapacity);
-        builder.register(CoreProperties.THERMAL_DIFFUSIVITY,    thermalDiffusivity);
-        builder.register(CoreProperties.MELTING_POINT,          meltingPoint);
-        builder.register(CoreProperties.BOILING_POINT,          boilingPoint);
-        builder.register(CoreProperties.ELECTRICAL_CONDUCTIVITY, electricalConductivity);
-        builder.register(CoreProperties.HUMIDITY_ABSORPTION,    humidityAbsorption);
-        builder.register(CoreProperties.VISCOSITY,              viscosity);
-        builder.register(CoreProperties.COMPRESSIBILITY,        compressibility);
-        builder.register(CoreProperties.ELASTICITY,             elasticity);
-        builder.register(CoreProperties.HARDNESS,               hardness);
-        builder.register(CoreProperties.DENSITY,                density);
+        builder.register(ThermalProperties.THERMAL_CONDUCTIVITY,    thermalConductivity);
+        builder.register(ThermalProperties.HEAT_CAPACITY,           heatCapacity);
+        builder.register(ThermalProperties.THERMAL_DIFFUSIVITY,     thermalDiffusivity);
+        builder.register(ThermalProperties.MELTING_POINT,           meltingPoint);
+        builder.register(ThermalProperties.BOILING_POINT,           boilingPoint);
+        builder.register(ElectricalProperties.ELECTRICAL_CONDUCTIVITY, electricalConductivity);
+        builder.register(FluidProperties.HUMIDITY_ABSORPTION,       humidityAbsorption);
+        builder.register(FluidProperties.VISCOSITY,                 viscosity);
+        builder.register(MechanicalProperties.COMPRESSIBILITY,      compressibility);
+        builder.register(MechanicalProperties.ELASTICITY,           elasticity);
+        builder.register(MechanicalProperties.HARDNESS,             hardness);
+        builder.register(MechanicalProperties.DENSITY,              density);
         return builder;
     }
 

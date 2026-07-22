@@ -6,8 +6,10 @@ import Game.Engine.World.Influences.InfluenceSystem;
 import Game.Engine.World.Physics.PhysicalRelation;
 import Game.Engine.World.Physics.PhysicsCoordinator;
 import Game.Engine.World.Physics.PropertyDependencyGraph;
-import Game.Engine.World.Solver.CoreRelations;
+import Game.Engine.World.Solver.ElectricalRelations;
+import Game.Engine.World.Solver.FluidRelations;
 import Game.Engine.World.Solver.RelationRegistry;
+import Game.Engine.World.Solver.ThermalRelations;
 import java.util.List;
 
 /**
@@ -56,13 +58,17 @@ import java.util.List;
  *
  *   // Mundo con física personalizada
  *   WorldSimulation sim = WorldSimulation.builder()
- *       .registerAll(new RelationRegistry().registerAll(CoreRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
  *       .register(gravityRelation)
  *       .build();
  *
  *   // Mundo con relaciones de un mod
  *   WorldSimulation sim = WorldSimulation.builder()
- *       .registerAll(new RelationRegistry().registerAll(CoreRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
+ *       .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
  *       .registerAll(new RelationRegistry().registerAll(ModRelations.all()))
  *       .build();
  *
@@ -109,25 +115,20 @@ public final class WorldSimulation {
     }
 
     /**
-     * WorldSimulation con las diez relaciones físicas fundamentales de CoreRelations.
+     * WorldSimulation con las relaciones físicas fundamentales distribuidas por dominio.
      *
      * Las relaciones registradas son:
-     *   [1]  Expansión volumétrica        temperatura → presión
-     *   [2]  Conducción térmica           temperatura entre pares (radio 32)
-     *   [3]  Transferencia eléctrica      carga entre pares (radio 32)
-     *   [4]  Difusión fluídica            humedad entre pares (radio 32)
-     *   [5]  Disipación térmica ambiental temperatura → equilibrio
-     *   [6]  Disipación eléctrica         carga → equilibrio
-     *   [7]  Disipación fluídica          humedad → equilibrio
-     *   [8]  Corrección exceso térmico    temperatura excess > 500
-     *   [9]  Corrección exceso eléctrico  carga excess > 10
-     *   [10] Liberación en saturación     humedad excess > 0.6
+     *   Dominio térmico    → ThermalRelations (5 relaciones)
+     *   Dominio eléctrico  → ElectricalRelations (4 relaciones)
+     *   Dominio fluídico   → FluidRelations (3 relaciones)
      *
      * @return WorldSimulation configurado con las relaciones físicas fundamentales.
      */
     public static WorldSimulation withDefaults() {
         return builder()
-            .registerAll(new RelationRegistry().registerAll(CoreRelations.all()))
+            .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
+            .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
+            .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
             .build();
     }
 
@@ -248,7 +249,9 @@ public final class WorldSimulation {
          * Registra todas las relaciones de un RelationRegistry.
          *
          * Ejemplo:
-         *   .registerAll(new RelationRegistry().registerAll(CoreRelations.all()))
+         *   .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
+         *   .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
+         *   .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
          *   .registerAll(new RelationRegistry().registerAll(GameplayRelations.all()))
          *
          * @param registry el registro de relaciones. Ignorado si null o vacío.
