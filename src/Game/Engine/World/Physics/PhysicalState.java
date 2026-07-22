@@ -2,84 +2,89 @@ package Game.Engine.World.Physics;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * Fuente de verdad del estado físico de un objeto.
  *
- * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
+ * ── HRFC-020 — Consolidación Definitiva del Modelo Declarativo ────────────
  *
  * ── FILOSOFÍA ─────────────────────────────────────────────────────────────
- * PhysicalState es un mapa plano de identificador de propiedad → valor numérico.
+ * PhysicalState es la única fuente de verdad del estado físico de un objeto.
  *
- * No hay genéricos de dominio. No hay PhysicalQuantity<D>. No hay CoreDomains.
- * No hay distinción entre "propiedad física" y "propiedad de material".
- * Todo es un double identificado por un string.
- *
- * El PhysicsSolver lee y escribe valores a través de este mapa.
- * LawContext es la vista que las leyes reciben sobre este estado.
- * PhysicalState nunca es accedido directamente por las leyes.
+ * Toda propiedad es identificada exclusivamente mediante un PropertyDescriptor.
+ * No existe ningún mecanismo de acceso por String.
+ * No pueden existir duplicados semánticos: la misma magnitud física no puede
+ * aparecer bajo dos nombres distintos porque el identificador ES el descriptor,
+ * no el texto que contiene.
  *
  * ── ESTRUCTURA ────────────────────────────────────────────────────────────
- * PhysicalState contiene dos mapas paralelos:
+ * PhysicalState utiliza dos mapas indexados por identidad de descriptor:
  *
- *   values      → Map<String, Double> — los valores actuales de las propiedades.
- *   descriptors → Map<String, PropertyDescriptor> — los metadatos (rango, default).
+ *   values      → IdentityHashMap<PropertyDescriptor, Double>
+ *                 Los valores actuales de cada propiedad.
+ *                 Indexado por identidad (referencia) del descriptor,
+ *                 no por el contenido del id.
  *
- * El Solver solo trabaja con el mapa de valores.
- * Los descriptores se usan para:
- *   - Clampear valores al aplicar deltas (si la propiedad está acotada).
- *   - Proveer el valor por defecto al crear el estado.
- *   - Introspección y depuración.
+ *   descriptors → Map<PropertyDescriptor, PropertyDescriptor> (ordered set)
+ *                 Registro canónico de todas las propiedades registradas.
+ *                 Usado para introspección y para el Builder.
  *
- * ── PROPIEDADES DE MATERIAL ───────────────────────────────────────────────
- * Las propiedades de material (conductividad, capacidad calorífica, etc.)
- * también se almacenan en PhysicalState bajo sus descriptores.
+ * ── POR QUÉ IdentityHashMap ───────────────────────────────────────────────
+ * El uso de identidad de referencia (==) como clave garantiza que:
  *
- * Esto elimina la distinción entre MaterialComponent y PhysicalState:
- * ambos son simplemente conjuntos de propiedades con valores numéricos.
- * Un objeto puede tener temperature, thermal_conductivity, humidity, y
- * hardness registrados en el mismo PhysicalState, y el Solver los trata
- * exactamente igual — son valores en un mapa.
+ *   1. Dos descriptores distintos con el mismo id textual NO colisionan.
+ *      (Esto previene accidentes de autor en catálogos de mods o extensiones.)
+ *
+ *   2. El acceso es O(1) sin cálculo de hashCode sobre strings.
+ *
+ *   3. Una propiedad registrada con CoreProperties.TEMPERATURE es accesible
+ *      ÚNICAMENTE con CoreProperties.TEMPERATURE — no con ningún otro objeto,
+ *      aunque su id textual coincida.
+ *
+ * El contrato es: quien registra el descriptor es quien debe conservar la
+ * referencia para acceder al estado. Los catálogos (CoreProperties, etc.)
+ * son constantes estáticas que cumplen ese contrato de forma natural.
  *
  * ── API DE ESCRITURA ──────────────────────────────────────────────────────
- * El único punto de escritura es:
  *
- *   add(id, delta)   → suma delta al valor actual, clampea si la propiedad
- *                      tiene límites.
- *   set(id, value)   → establece el valor directamente (sin delta).
+ *   add(descriptor, delta)   → suma delta al valor actual, clampea si acotado.
+ *   set(descriptor, value)   → establece valor directamente, clampea si acotado.
  *
- * Los sistemas externos (WorldFieldSystem, InfluenceSystem) usan set() o add()
- * directamente. El PhysicsSolver usa add() exclusivamente a través de LawContext.
- *
- * ── COMPATIBILIDAD CON EL MODELO ANTERIOR ────────────────────────────────
- * Los componentes legacy (ElectricalComponent, FluidComponent, PressureComponent)
- * que subsisten durante la transición se mantienen como facades sobre las
- * propiedades de PhysicalState del objeto, sin duplicar el dato.
+ * Nunca:
+ *   add("temperature", delta)   ← PROHIBIDO — no existe este método.
+ *   set("temperature", value)   ← PROHIBIDO — no existe este método.
  *
  * ── INVARIANTE ────────────────────────────────────────────────────────────
- *   ✗ Ningún parámetro de tipo de dominio.
- *   ✗ Ninguna referencia a CoreDomains ni PhysicalDomain.
- *   ✗ Ninguna distinción entre propiedad física y propiedad de material.
- *   ✓ Toda propiedad es un string → double.
- *   ✓ El Solver escribe exclusivamente mediante add().
+ *   ✗ Ningún método acepta String como identificador de propiedad.
+ *   ✗ Ningún Map<String, ...> interno.
+ *   ✓ Todo acceso es exclusivamente mediante PropertyDescriptor.
+ *   ✓ IdentityHashMap garantiza identidad fuerte de la clave.
+ *   ✓ Imposible representar la misma magnitud bajo dos nombres distintos.
  *
- * ── THREAD SAFETY ────────────────────────────────────────────────────────
+ * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
  */
 public final class PhysicalState {
 
-    /** Valores actuales por id de propiedad. */
-    private final Map<String, Double>             values;
+    /**
+     * Valores actuales por descriptor.
+     * Indexado por identidad de referencia (IdentityHashMap).
+     */
+    private final IdentityHashMap<PropertyDescriptor, Double> values;
 
-    /** Descriptores por id de propiedad (metadatos: rango, default). */
-    private final Map<String, PropertyDescriptor> descriptors;
+    /**
+     * Descriptores registrados en orden de inserción.
+     * LinkedHashMap usado como conjunto ordenado (clave == valor).
+     */
+    private final Map<PropertyDescriptor, PropertyDescriptor> descriptors;
 
     // ── Constructor privado — usar Builder ────────────────────────────────
 
     private PhysicalState(Builder b) {
-        this.values      = new LinkedHashMap<>(b.values);
+        this.values      = new IdentityHashMap<>(b.values);
         this.descriptors = Collections.unmodifiableMap(new LinkedHashMap<>(b.descriptors));
     }
 
@@ -96,35 +101,24 @@ public final class PhysicalState {
     /**
      * True si el objeto tiene la propiedad registrada.
      *
-     * @param propertyId identificador de la propiedad.
-     * @return true si existe un valor para este id.
+     * @param descriptor descriptor de la propiedad.
+     * @return true si existe un valor para este descriptor.
      */
-    public boolean has(String propertyId) {
-        return propertyId != null && values.containsKey(propertyId);
+    public boolean has(PropertyDescriptor descriptor) {
+        return descriptor != null && values.containsKey(descriptor);
     }
 
     /**
      * Valor numérico actual de la propiedad.
      * Retorna 0.0 si el objeto no tiene esa propiedad.
      *
-     * @param propertyId identificador de la propiedad.
+     * @param descriptor descriptor de la propiedad.
      * @return valor actual, o 0.0 si no existe.
      */
-    public double get(String propertyId) {
-        if (propertyId == null) return 0.0;
-        Double v = values.get(propertyId);
+    public double get(PropertyDescriptor descriptor) {
+        if (descriptor == null) return 0.0;
+        Double v = values.get(descriptor);
         return v != null ? v : 0.0;
-    }
-
-    /**
-     * Descriptor de la propiedad dado su id.
-     *
-     * @param propertyId identificador de la propiedad.
-     * @return descriptor, o null si no está registrado.
-     */
-    public PropertyDescriptor getDescriptor(String propertyId) {
-        if (propertyId == null) return null;
-        return descriptors.get(propertyId);
     }
 
     /**
@@ -135,16 +129,6 @@ public final class PhysicalState {
      */
     public Collection<PropertyDescriptor> registeredDescriptors() {
         return descriptors.values();
-    }
-
-    /**
-     * Conjunto de todos los ids de propiedades registradas.
-     * Vista inmutable.
-     *
-     * @return conjunto de ids.
-     */
-    public Collection<String> registeredIds() {
-        return descriptors.keySet();
     }
 
     /** Número de propiedades registradas. */
@@ -161,18 +145,14 @@ public final class PhysicalState {
      * se clampea automáticamente.
      * No hace nada si la propiedad no existe.
      *
-     * @param propertyId identificador de la propiedad.
+     * @param descriptor descriptor de la propiedad.
      * @param delta      valor a añadir. Negativo = restar.
      */
-    public void add(String propertyId, double delta) {
-        if (propertyId == null || !values.containsKey(propertyId)) return;
-        double current = values.get(propertyId);
+    public void add(PropertyDescriptor descriptor, double delta) {
+        if (descriptor == null || !values.containsKey(descriptor)) return;
+        double current = values.get(descriptor);
         double next    = current + delta;
-        PropertyDescriptor desc = descriptors.get(propertyId);
-        if (desc != null && desc.isBounded()) {
-            next = desc.clamp(next);
-        }
-        values.put(propertyId, next);
+        values.put(descriptor, descriptor.isBounded() ? descriptor.clamp(next) : next);
     }
 
     /**
@@ -180,25 +160,12 @@ public final class PhysicalState {
      * Si la propiedad tiene límites, el valor se clampea.
      * No hace nada si la propiedad no existe.
      *
-     * @param propertyId identificador de la propiedad.
+     * @param descriptor descriptor de la propiedad.
      * @param value      nuevo valor.
      */
-    public void set(String propertyId, double value) {
-        if (propertyId == null || !values.containsKey(propertyId)) return;
-        PropertyDescriptor desc = descriptors.get(propertyId);
-        values.put(propertyId, desc != null && desc.isBounded() ? desc.clamp(value) : value);
-    }
-
-    /**
-     * Establece el valor de una propiedad aunque no esté registrada en los
-     * descriptores. Útil para actualizar propiedades dinámicas en runtime.
-     * No aplica clamp — el llamador es responsable de los rangos.
-     *
-     * @param propertyId identificador.
-     * @param value      nuevo valor.
-     */
-    public void setRaw(String propertyId, double value) {
-        if (propertyId != null) values.put(propertyId, value);
+    public void set(PropertyDescriptor descriptor, double value) {
+        if (descriptor == null || !values.containsKey(descriptor)) return;
+        values.put(descriptor, descriptor.isBounded() ? descriptor.clamp(value) : value);
     }
 
     // ── Object ────────────────────────────────────────────────────────────
@@ -215,8 +182,8 @@ public final class PhysicalState {
      */
     public static final class Builder {
 
-        private final Map<String, Double>             values      = new LinkedHashMap<>();
-        private final Map<String, PropertyDescriptor> descriptors = new LinkedHashMap<>();
+        private final IdentityHashMap<PropertyDescriptor, Double>              values      = new IdentityHashMap<>();
+        private final LinkedHashMap<PropertyDescriptor, PropertyDescriptor>    descriptors = new LinkedHashMap<>();
 
         private Builder() {}
 
@@ -242,35 +209,14 @@ public final class PhysicalState {
         public Builder register(PropertyDescriptor descriptor, double initialValue) {
             if (descriptor == null) return this;
             double v = descriptor.isBounded() ? descriptor.clamp(initialValue) : initialValue;
-            values.put(descriptor.getId(), v);
-            descriptors.put(descriptor.getId(), descriptor);
-            return this;
-        }
-
-        /**
-         * Registra una propiedad por id y valor sin descriptor.
-         * Útil para propiedades dinámicas o de acceso rápido sin metadatos.
-         * El valor no se clampea.
-         *
-         * @param propertyId   identificador.
-         * @param initialValue valor inicial.
-         * @return this.
-         */
-        public Builder registerRaw(String propertyId, double initialValue) {
-            if (propertyId == null) return this;
-            values.put(propertyId, initialValue);
+            values.put(descriptor, v);
+            descriptors.put(descriptor, descriptor);
             return this;
         }
 
         /**
          * Registra todas las propiedades de material de un MaterialComponent.
          * Equivale a llamar registerInto(this) sobre el material.
-         *
-         * Uso:
-         *   PhysicalState.builder()
-         *       .register(CoreProperties.TEMPERATURE, 20.0)
-         *       .registerMaterial(mat)
-         *       .build();
          *
          * @param material el material cuyas propiedades se registran.
          *                 Ignorado si null.

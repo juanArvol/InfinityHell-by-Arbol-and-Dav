@@ -3,26 +3,31 @@ package Game.Gameplay.World.Presets;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.ThermalComponent;
 import Game.Engine.GameObjects;
-import Game.Engine.World.Components.ElectricalComponent;
-import Game.Engine.World.Components.FluidComponent;
-import Game.Engine.World.Components.PressureComponent;
 import Game.Engine.World.Fields.FieldFalloff;
 import Game.Engine.World.Fields.ScalarField;
 import Game.Engine.World.Fields.VectorField;
-import Game.Engine.World.Fields.WorldField;
+import Game.Engine.World.Physics.CoreProperties;
+import Game.Engine.World.Physics.PhysicsComponent;
+import Game.Engine.World.Solver.PhysicalStateComponent;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.
  *
- * ── HRFC-015 — World Simulation Core ──────────────────────────────────────
+ * ── HRFC-021 — Property-Driven Physics Architecture ───────────────────────
  *
  * ── UBICACIÓN ─────────────────────────────────────────────────────────────
  * WorldFieldPresets vive en Game.Gameplay.World.Presets, no en el Engine.
  * Los campos concretos (thermal, gravity, rain, vacuum...) son contenido
  * del universo de Infinity Hell — no infraestructura del Engine.
  *
- * El Engine define las abstracciones (ScalarField, VectorField, FieldFalloff).
- * Este módulo de Gameplay define las instancias concretas que el juego usa.
+ * ── MODELO DE ACCESO A PROPIEDADES (HRFC-021) ─────────────────────────────
+ * Los campos que modifican propiedades físicas acceden al estado mediante
+ * PhysicsComponent (nuevo) o PhysicalStateComponent (compatibilidad HRFC-019).
+ * En ambos casos operan sobre PropertyDescriptor, no sobre componentes
+ * especializados por dominio físico.
+ *
+ * ThermalComponent se mantiene soportado para objetos que aún lo usen como
+ * componente independiente (retrocompatibilidad).
  *
  * ── USO ───────────────────────────────────────────────────────────────────
  *
@@ -48,6 +53,9 @@ public final class WorldFieldPresets {
      * Campo térmico permanente — añade/sustrae temperatura en radio.
      * Sigue la posición del source si no es null.
      *
+     * Compatible con objetos que usen ThermalComponent (legacy) o
+     * PhysicsComponent / PhysicalStateComponent con CoreProperties.TEMPERATURE.
+     *
      * @param intensity positivo = calor, negativo = frío (delta/frame en el centro).
      */
     public static ScalarField thermal(double x, double y, double radius,
@@ -55,33 +63,32 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.LINEAR).source(source).applyToSource(false)
-            .applicator((obj, delta) -> {
-                ThermalComponent tc = obj.getComponent(ThermalComponent.class);
-                if (tc != null) tc.addHeat(delta);
-            })
+            .applicator((obj, delta) -> applyTemperature(obj, delta))
             .build();
     }
 
     /**
      * Campo térmico con duración finita.
+     *
      * @param lifetime duración en frames. WorldField.PERMANENT (-1) = sin límite.
      */
     public static ScalarField thermal(double x, double y, double radius,
-                                       double intensity, GameObjects source, int lifetime) {
+                                       double intensity, GameObjects source,
+                                       int lifetime) {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.LINEAR).source(source).applyToSource(false)
             .lifetime(lifetime)
-            .applicator((obj, delta) -> {
-                ThermalComponent tc = obj.getComponent(ThermalComponent.class);
-                if (tc != null) tc.addHeat(delta);
-            })
+            .applicator((obj, delta) -> applyTemperature(obj, delta))
             .build();
     }
 
     /**
      * Campo eléctrico — añade/sustrae carga eléctrica en radio.
      * Atenuación cuadrática: la carga decrece rápidamente con la distancia.
+     *
+     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
+     * tengan registrada la propiedad CoreProperties.CHARGE.
      *
      * @param intensity positivo = carga positiva, negativo = carga negativa (delta/frame).
      */
@@ -90,16 +97,16 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.QUADRATIC).source(source).applyToSource(false)
-            .applicator((obj, delta) -> {
-                ElectricalComponent ec = obj.getComponent(ElectricalComponent.class);
-                if (ec != null) ec.addCharge(delta);
-            })
+            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.CHARGE, delta))
             .build();
     }
 
     /**
      * Campo de humedad — añade/sustrae humedad en radio.
      * Intensidad constante en todo el radio (lluvia uniforme).
+     *
+     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
+     * tengan registrada la propiedad CoreProperties.HUMIDITY.
      *
      * @param intensity positivo = humedece, negativo = seca (delta/frame).
      */
@@ -108,16 +115,16 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.CONSTANT).source(source).applyToSource(true)
-            .applicator((obj, delta) -> {
-                FluidComponent fc = obj.getComponent(FluidComponent.class);
-                if (fc != null) fc.addHumidity(delta);
-            })
+            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.HUMIDITY, delta))
             .build();
     }
 
     /**
      * Campo de presión — añade/sustrae presión local en radio.
      * Atenuación cuadrática: el efecto decrece con la distancia.
+     *
+     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
+     * tengan registrada la propiedad CoreProperties.PRESSURE.
      *
      * @param intensity positivo = sobrepresión, negativo = subpresión/vacío (delta/frame).
      */
@@ -126,10 +133,7 @@ public final class WorldFieldPresets {
         return ScalarField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.QUADRATIC).source(source).applyToSource(false)
-            .applicator((obj, delta) -> {
-                PressureComponent pc = obj.getComponent(PressureComponent.class);
-                if (pc != null) pc.addPressure(delta);
-            })
+            .applicator((obj, delta) -> applyProperty(obj, CoreProperties.PRESSURE, delta))
             .build();
     }
 
@@ -157,7 +161,8 @@ public final class WorldFieldPresets {
 
     /** Campo gravitacional con duración finita. */
     public static VectorField gravity(double x, double y, double radius,
-                                       double intensity, GameObjects source, int lifetime) {
+                                       double intensity, GameObjects source,
+                                       int lifetime) {
         return VectorField.builder()
             .position(x, y).radius(radius).intensity(intensity)
             .falloff(FieldFalloff.INVERSE_SQUARE).mode(VectorField.VectorFieldMode.RADIAL_IN)
@@ -208,5 +213,58 @@ public final class WorldFieldPresets {
                 if (pc != null) pc.getPhysics().accumulate(vx, vy);
             })
             .build();
+    }
+
+    // ── Helpers internos ──────────────────────────────────────────────────
+
+    /**
+     * Aplica un delta de temperatura al objeto.
+     *
+     * Prioridad de acceso:
+     *   1. PhysicsComponent     (HRFC-021 — modelo nuevo)
+     *   2. PhysicalStateComponent (HRFC-019 — modelo anterior, aún compatible)
+     *   3. ThermalComponent     (legacy — componente independiente)
+     */
+    private static void applyTemperature(GameObjects obj, double delta) {
+        // 1. PhysicsComponent (HRFC-021)
+        PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
+        if (pc != null) {
+            pc.getState().add(CoreProperties.TEMPERATURE, delta);
+            return;
+        }
+        // 2. PhysicalStateComponent (HRFC-019)
+        PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
+        if (psc != null) {
+            psc.getState().add(CoreProperties.TEMPERATURE, delta);
+            return;
+        }
+        // 3. ThermalComponent (legacy)
+        ThermalComponent tc = obj.getComponent(ThermalComponent.class);
+        if (tc != null) tc.addHeat(delta);
+    }
+
+    /**
+     * Aplica un delta a una propiedad física genérica del objeto.
+     *
+     * Prioridad de acceso:
+     *   1. PhysicsComponent     (HRFC-021)
+     *   2. PhysicalStateComponent (HRFC-019)
+     *
+     * @param obj        el objeto receptor.
+     * @param descriptor el descriptor de la propiedad a modificar.
+     * @param delta      el delta a aplicar.
+     */
+    private static void applyProperty(GameObjects obj,
+                                       Game.Engine.World.Physics.PropertyDescriptor descriptor,
+                                       double delta) {
+        PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
+        if (pc != null) {
+            pc.getState().add(descriptor, delta);
+            return;
+        }
+        PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
+        if (psc != null) {
+            psc.getState().add(descriptor, delta);
+        }
     }
 }

@@ -29,8 +29,8 @@ import java.util.function.ToDoubleFunction;
  * MaterialProperty<V> es un descriptor que encapsula el acceso a una
  * propiedad del material mediante una función extractora.
  *
- * Las leyes físicas (PhysicsLaw) referencian propiedades mediante descriptores,
- * no mediante getters específicos. El acceso uniforme es:
+ * Las relaciones físicas (PhysicalRelation) referencian propiedades mediante
+ * descriptores, no mediante getters específicos. El acceso uniforme es:
  *
  *   double conductivity = MaterialProperties.THERMAL_CONDUCTIVITY.from(mat);
  *   double capacity     = MaterialProperties.HEAT_CAPACITY.from(mat);
@@ -62,8 +62,8 @@ import java.util.function.ToDoubleFunction;
  *              MaterialComponent::getMagneticPermeability,
  *              "Permeabilidad magnética del material [0,1]");
  *
- *   4. Usar el descriptor en las PhysicsLaw que la necesiten.
- *      → PhysicsSolver no cambia. LawRegistry no cambia.
+  *   4. Usar el descriptor en las PhysicalRelation que la necesiten.
+ *      → PhysicsSolver no cambia. RelationRegistry no cambia.
  *
  * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
  *   ✗ Algoritmos

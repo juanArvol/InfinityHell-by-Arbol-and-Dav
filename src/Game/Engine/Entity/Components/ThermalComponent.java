@@ -1,56 +1,34 @@
 package Game.Engine.Entity.Components;
 
 import Game.Engine.Component;
-import Game.Engine.World.Physics.CoreDomains;
-import Game.Engine.World.Physics.PhysicalQuantity;
 
 /**
  * Estado térmico actual de un objeto.
  *
- * ── HRFC-015 — World Simulation Core (iteración final) ────────────────────
+ * ── HRFC-021 — Property-Driven Physics Architecture ───────────────────────
  *
- * ── CAMBIO RESPECTO A LA VERSIÓN ANTERIOR ─────────────────────────────────
- * El campo interno pasa de {@code double temperature} a
- * {@code PhysicalQuantity<CoreDomains.Thermal>}.
+ * ── NOTA DE MIGRACIÓN ─────────────────────────────────────────────────────
+ * En el modelo HRFC-021, el estado térmico vive en PhysicalState (como
+ * propiedad CoreProperties.TEMPERATURE registrada en PhysicsComponent).
  *
- * Esto elimina los primitivos de la API pública del Engine: el dominio térmico
- * ahora está representado por un tipo con semántica explícita. El compilador
- * rechaza mezclar magnitudes de dominios distintos.
+ * ThermalComponent se mantiene por compatibilidad con código de gameplay
+ * existente que lo usa como componente independiente (p.ej. WorldFieldPresets).
+ * Su implementación es ahora un wrapper mínimo sobre un double mutable.
  *
- * La API legacy (getTemperature / setTemperature / addHeat) se mantiene como
- * delegates hacia PhysicalQuantity para no romper los callers existentes:
- *   - ThermalSimulation
- *   - WorldFieldPresets
+ * Todo código nuevo debe usar PhysicsComponent + PhysicalState.
  *
- * ── API NUEVA (PhysicalQuantity) ──────────────────────────────────────────
+ * ── API ───────────────────────────────────────────────────────────────────
  *
  *   ThermalComponent tc = obj.getComponent(ThermalComponent.class);
- *
- *   // Leer el estado térmico tipado:
- *   PhysicalQuantity<CoreDomains.Thermal> temp = tc.getQuantity();
- *
- *   // Modificar mediante la abstracción:
- *   tc.getQuantity().add(delta);
- *   tc.getQuantity().converge(0.0, diffusivity * timeScale);
- *
- *   // Snapshot para InteractionContext (no muta el estado):
- *   PhysicalQuantity<CoreDomains.Thermal> snap = tc.getQuantity().snapshot();
- *
- * ── API LEGACY (double) — mantenida por compatibilidad ───────────────────
- *
- *   tc.getTemperature()       → quantity.getValue()
- *   tc.setTemperature(t)      → quantity.set(t)
- *   tc.addHeat(delta)         → quantity.add(delta)
- *
- * ── SEPARACIÓN Estado / Material (sin cambios) ────────────────────────────
- *
- *   ThermalComponent    → "temperatura actual"         (cambia cada frame)
- *   MaterialComponent   → "conductividad del material" (constante)
+ *   if (tc != null) {
+ *       tc.addHeat(delta);
+ *       double t = tc.getTemperature();
+ *   }
  */
 public final class ThermalComponent extends Component {
 
-    /** Estado térmico tipado. Dominio: CoreDomains.Thermal. */
-    private final PhysicalQuantity<CoreDomains.Thermal> quantity;
+    /** Temperatura actual. 0 = ambiente. Positivo = caliente. Negativo = frío. */
+    private double temperature;
 
     // ── Constructores ─────────────────────────────────────────────────────
 
@@ -65,67 +43,47 @@ public final class ThermalComponent extends Component {
      * @param initialTemperature positivo = caliente, negativo = frío, 0 = ambiente.
      */
     public ThermalComponent(double initialTemperature) {
-        this.quantity = PhysicalQuantity.of(initialTemperature);
+        this.temperature = initialTemperature;
     }
 
-    // ── API PhysicalQuantity ──────────────────────────────────────────────
+    // ── API ───────────────────────────────────────────────────────────────
 
-    /**
-     * Acceso directo a la magnitud térmica tipada.
-     *
-     * Usar para toda lógica nueva. La magnitud es mutable — los módulos de
-     * simulación la modifican directamente:
-     *
-     *   tc.getQuantity().add(heatDelta);
-     *   tc.getQuantity().converge(ambientTemperature, diffusivity * scale);
-     *
-     * @return la magnitud térmica del objeto (nunca null).
-     */
-    public PhysicalQuantity<CoreDomains.Thermal> getQuantity() { return quantity; }
+    /** Temperatura actual como double. */
+    public double getTemperature()         { return temperature; }
 
-    // ── API legacy — delegates hacia PhysicalQuantity ─────────────────────
-    // Mantenida para compatibilidad con ThermalSimulation y WorldFieldPresets.
+    /** Establece la temperatura directamente. */
+    public void   setTemperature(double t) { this.temperature = t; }
 
-    /** Temperatura actual como double. Equivale a getQuantity().getValue(). */
-    public double getTemperature()      { return quantity.getValue(); }
-
-    /** Establece la temperatura. Equivale a getQuantity().set(t). */
-    public void   setTemperature(double t) { quantity.set(t); }
-
-    /** Añade delta de temperatura. Equivale a getQuantity().add(delta). */
-    public void   addHeat(double delta) { quantity.add(delta); }
+    /** Añade un delta de temperatura. */
+    public void   addHeat(double delta)    { this.temperature += delta; }
 
     // ── Consultas de estado ───────────────────────────────────────────────
 
     /** True si la temperatura está efectivamente en cero. */
-    public boolean isAtAmbient() { return quantity.isZero(); }
+    public boolean isAtAmbient() { return Math.abs(temperature) < 1e-9; }
 
     /** True si la temperatura es positiva (objeto más caliente que el ambiente). */
-    public boolean isHot()  { return quantity.isPositive(); }
+    public boolean isHot()  { return temperature > 0; }
 
     /** True si la temperatura es negativa (objeto más frío que el ambiente). */
-    public boolean isCold() { return quantity.isNegative(); }
+    public boolean isCold() { return temperature < 0; }
 
-    // ── Builder deprecado — retrocompatibilidad de compilación ────────────
+    // ── Builder — retrocompatibilidad de compilación ──────────────────────
 
     /** @deprecated Usar {@code new ThermalComponent()} o {@code new ThermalComponent(temp)}. */
     @Deprecated
     public static final class Builder {
         private double temperature = 0.0;
-        @SuppressWarnings("unused") private double ignitionThreshold = Double.POSITIVE_INFINITY;
-        @SuppressWarnings("unused") private double freezingThreshold = Double.NEGATIVE_INFINITY;
-        @SuppressWarnings("unused") private double conductivity      = 0.1;
-        @SuppressWarnings("unused") private double heatCapacity      = 1.0;
 
-        public Builder temperature(double v)       { this.temperature = v; return this; }
+        public Builder temperature(double v)                           { this.temperature = v; return this; }
         /** @deprecated → MaterialComponent.Builder.thermalConductivity() */
-        @Deprecated public Builder conductivity(double v)      { this.conductivity = v; return this; }
+        @Deprecated public Builder conductivity(double v)             { return this; }
         /** @deprecated → MaterialComponent.Builder.heatCapacity() */
-        @Deprecated public Builder heatCapacity(double v)      { this.heatCapacity = v; return this; }
-        /** @deprecated → PhysicsSolver + LawRegistry (ley de disipación térmica) */
-        @Deprecated public Builder ignitionThreshold(double v) { this.ignitionThreshold = v; return this; }
-        /** @deprecated → PhysicsSolver + LawRegistry (ley de disipación térmica) */
-        @Deprecated public Builder freezingThreshold(double v) { this.freezingThreshold = v; return this; }
+        @Deprecated public Builder heatCapacity(double v)             { return this; }
+        /** @deprecated → RelationConstraint de disipación térmica en RelationRegistry */
+        @Deprecated public Builder ignitionThreshold(double v)        { return this; }
+        /** @deprecated → RelationConstraint de disipación térmica en RelationRegistry */
+        @Deprecated public Builder freezingThreshold(double v)        { return this; }
 
         public ThermalComponent build() { return new ThermalComponent(temperature); }
     }

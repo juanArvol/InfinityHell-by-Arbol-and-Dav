@@ -1,153 +1,177 @@
 package Game.Engine.World.Solver;
 
 import Game.Engine.GameObjects;
+import Game.Engine.World.Physics.PhysicalRelation;
 import Game.Engine.World.Physics.PhysicalState;
-import Game.Engine.World.Physics.PhysicsLaw;
-import Game.Engine.World.Physics.WorldContext;
-
+import Game.Engine.World.Physics.PropertyDescriptor;
+import Game.Engine.World.Physics.WorkingState;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Motor de resolución física del World Simulation Core.
  *
- * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
+ * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
  *
  * ── FLUJO DEFINITIVO ──────────────────────────────────────────────────────
  *
- *     PhysicsSolver.solve(objects, deltaTime)
- *         ↓
- *     Construir WorldContext (una sola vez por frame)
- *         ↓
- *     for (PhysicsLaw law : laws)
- *         law.solve(ctx)
- *         volcar deltas → PhysicalState
+ *   PhysicsSolver.solve(relations, objects, deltaTime)
+ *       ↓
+ *   Para cada entidad activa: crear WorkingState (snapshot del PhysicalState)
+ *       ↓
+ *   Construir lista de EvaluationView (una vez por frame)
+ *       ↓
+ *   Para cada PhysicalRelation (ordenadas por prioridad):
+ *       EvaluatorRegistry.get(relation.getRelationType()) → RelationEvaluator
+ *       evaluator.evaluate(relation, views, deltaTime)
+ *       ↓
+ *   Commit: WorkingState.commit() → PhysicalState definitivo
  *
  * ── INVARIANTE CENTRAL ────────────────────────────────────────────────────
  * El Solver no conoce ningún concepto físico.
- * No distingue tipos de leyes.
- * No conoce aridad, contactRadius, dominios, ni fenómenos.
- * No prepara contextos distintos para distintas leyes.
- * No contiene ningún if, switch ni instanceof sobre la naturaleza de las leyes.
+ * No distingue tipos de relaciones.
+ * No conoce ninguna propiedad concreta.
+ * No contiene ningún if, switch ni instanceof sobre la naturaleza de las relaciones.
  *
  * El único trabajo del Solver es:
- *   1. Construir un WorldContext con las entidades activas.
- *   2. Ejecutar cada ley sobre ese contexto, en orden de prioridad.
- *   3. Aplicar los deltas acumulados al PhysicalState real.
+ *   1. Crear un WorkingState por entidad activa.
+ *   2. Construir las EvaluationView con las vistas de esos WorkingStates.
+ *   3. Por cada relación, obtener su evaluador y delegarle la evaluación.
+ *   4. Consolidar todos los WorkingStates mediante Commit.
  *
- * Eso es todo. El Solver permanece completamente inmutable ante cualquier
- * adición de nuevas leyes, propiedades, dominios o fenómenos físicos.
+ * Todo el conocimiento físico vive en los evaluadores especializados y en
+ * las PhysicalRelation declarativas. El Solver es agnóstico a ambos.
  *
- * ── ESCRITURA DIFERIDA ────────────────────────────────────────────────────
- * Durante law.solve(ctx), las leyes acumulan deltas sobre EntityView.add().
- * Esos deltas viven en un buffer local por entidad.
- *
- * Al finalizar la ejecución de una ley, el Solver vuelca todos los buffers
- * al PhysicalState real antes de pasar a la siguiente ley.
+ * ── WORKINGSTATE + COMMIT ─────────────────────────────────────────────────
+ * Durante evaluate(), los evaluadores acumulan deltas vía EvaluationView.add().
+ * Esos deltas viven en el WorkingState de cada entidad.
+ * Al finalizar TODAS las relaciones del frame, el Solver ejecuta Commit.
  *
  * Esto garantiza:
- *   - Dentro de una ley, todos los get() reflejan el estado del inicio de esa ley.
- *   - Entre leyes, los cambios de la ley anterior son visibles.
+ *   - Todas las lecturas de todos los evaluadores reflejan el estado al
+ *     inicio del frame (snapshot inmutable).
+ *   - El PhysicalState definitivo solo se modifica en la fase de Commit.
+ *   - No existen efectos colaterales derivados del orden de evaluación.
  *
- * ── THREAD SAFETY ────────────────────────────────────────────────────────
+ * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
  */
 public final class PhysicsSolver {
 
-    private final List<PhysicsLaw> laws  = new ArrayList<>();
-    private       boolean          dirty = false;
+    private final List<PhysicalRelation> relations = new ArrayList<>();
+    private final EvaluatorRegistry      evaluators;
+    private       boolean                dirty     = false;
+
+    // ── Constructores ─────────────────────────────────────────────────────
+
+    /**
+     * Crea un PhysicsSolver con los evaluadores del Core por defecto.
+     */
+    public PhysicsSolver() {
+        this.evaluators = EvaluatorRegistry.defaults();
+    }
+
+    /**
+     * Crea un PhysicsSolver con un registro de evaluadores personalizado.
+     *
+     * @param evaluators registro de evaluadores. No puede ser null.
+     */
+    public PhysicsSolver(EvaluatorRegistry evaluators) {
+        if (evaluators == null)
+            throw new IllegalArgumentException("evaluators no puede ser null");
+        this.evaluators = evaluators;
+    }
 
     // ── Registro ──────────────────────────────────────────────────────────
 
     /**
-     * Registra una PhysicsLaw.
+     * Registra una PhysicalRelation.
      *
-     * @param law la ley. Ignorado si null.
+     * @param relation la relación. Ignorada si null.
      */
-    public void addLaw(PhysicsLaw law) {
-        if (law == null) return;
-        laws.add(law);
+    public void addRelation(PhysicalRelation relation) {
+        if (relation == null) return;
+        relations.add(relation);
         dirty = true;
     }
 
     /**
-     * Registra todas las leyes de un LawRegistry.
+     * Registra todas las relaciones de un RelationRegistry.
      *
      * @param registry el registro. Ignorado si null o vacío.
      */
-    public void registerAll(LawRegistry registry) {
+    public void registerAll(RelationRegistry registry) {
         if (registry == null || registry.isEmpty()) return;
-        for (PhysicsLaw law : registry.laws()) addLaw(law);
+        for (PhysicalRelation r : registry.relations()) addRelation(r);
     }
 
-    /** Elimina todas las leyes registradas. */
+    /** Elimina todas las relaciones registradas. */
     public void clear() {
-        laws.clear();
+        relations.clear();
         dirty = false;
     }
 
-    /** Número de leyes registradas. */
-    public int lawCount() { return laws.size(); }
+    /** Número de relaciones registradas. */
+    public int relationCount() { return relations.size(); }
 
-    /** True si no hay leyes registradas. */
-    public boolean isEmpty() { return laws.isEmpty(); }
+    /** True si no hay relaciones registradas. */
+    public boolean isEmpty() { return relations.isEmpty(); }
 
     // ── Resolución ────────────────────────────────────────────────────────
 
     /**
      * Resuelve un frame completo de simulación física.
      *
-     * Construye el WorldContext una sola vez y lo entrega a cada ley en
-     * orden de prioridad. Tras cada ley, vuelca los deltas acumulados.
+     * Flujo:
+     *   1. Crear WorkingState por entidad (snapshot del PhysicalState actual).
+     *   2. Construir EvaluationView sobre esos WorkingStates.
+     *   3. Ordenar relaciones por prioridad (lazy sort).
+     *   4. Por cada relación: obtener evaluador y delegar.
+     *   5. Commit: consolidar todos los WorkingStates al PhysicalState real.
      *
      * @param objects   objetos activos en el mundo este frame.
      * @param deltaTime tiempo transcurrido desde el último frame, en segundos.
      */
     public void solve(List<GameObjects> objects, double deltaTime) {
-        if (objects == null || objects.isEmpty() || laws.isEmpty()) return;
+        if (objects == null || objects.isEmpty() || relations.isEmpty()) return;
 
         if (dirty) {
-            laws.sort(Comparator.comparingInt(PhysicsLaw::getPriority));
+            relations.sort(Comparator.comparingInt(PhysicalRelation::getPriority));
             dirty = false;
         }
 
-        // Construir las EntityView una sola vez — todas las leyes comparten
-        // el mismo contexto. Cada EntityView acumula sus propios deltas.
-        FrameContext ctx = new FrameContext(objects, deltaTime);
+        // ── Paso 1-2: construir WorkingStates y EvaluationViews ───────────
+        FrameContext ctx = new FrameContext(objects);
+        if (ctx.isEmpty()) return;
 
-        for (PhysicsLaw law : laws) {
-            int iterations = law.getIterations();
-            for (int i = 0; i < iterations; i++) {
-                ctx.resetDeltas();
-                law.solve(ctx);
-                ctx.applyDeltas();
-            }
+        List<RelationEvaluator.EvaluationView> views = ctx.views();
+
+        // ── Paso 3: evaluar cada relación mediante su evaluador ───────────
+        for (PhysicalRelation relation : relations) {
+            RelationEvaluator evaluator = evaluators.get(relation.getRelationType());
+            if (evaluator == null) continue; // sin evaluador registrado = sin efecto
+            evaluator.evaluate(relation, views, deltaTime);
         }
+
+        // ── Paso 4: Commit — consolidar WorkingStates → PhysicalState ─────
+        ctx.commit();
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    // Implementación interna de WorldContext
+    // FrameContext — gestión de WorkingStates para un frame
     // ═════════════════════════════════════════════════════════════════════
 
     /**
-     * Implementación concreta de WorldContext para un frame de simulación.
-     *
-     * Construye una EntityViewImpl por cada objeto con PhysicalState.
-     * Las leyes acceden a ellas via entities().
-     *
-     * Este tipo vive exclusivamente dentro del Solver. Nada externo lo conoce.
+     * Crea y gestiona los WorkingState y las EvaluationView de un frame.
+     * Privado al Solver — nada externo lo conoce.
      */
-    private static final class FrameContext implements WorldContext {
+    private static final class FrameContext {
 
-        private final List<EntityViewImpl> views;
-        private final List<WorldContext.EntityView> publicViews;
-        private final double deltaTime;
+        private final List<EvaluationViewImpl>                views;
+        private final List<RelationEvaluator.EvaluationView>  publicViews;
 
-        FrameContext(List<GameObjects> objects, double deltaTime) {
-            this.deltaTime   = deltaTime;
+        FrameContext(List<GameObjects> objects) {
             this.views       = new ArrayList<>(objects.size());
             this.publicViews = new ArrayList<>(objects.size());
 
@@ -156,92 +180,92 @@ public final class PhysicsSolver {
                 if (state == null || state.isEmpty()) continue;
                 double x = obj.getTransform().getPosition().getX();
                 double y = obj.getTransform().getPosition().getY();
-                EntityViewImpl view = new EntityViewImpl(state, x, y);
+                EvaluationViewImpl view = new EvaluationViewImpl(
+                    new WorkingState(state), x, y);
                 views.add(view);
                 publicViews.add(view);
             }
         }
 
-        @Override
-        public List<WorldContext.EntityView> entities() {
-            return publicViews;
-        }
+        boolean isEmpty() { return views.isEmpty(); }
 
-        @Override
-        public double deltaTime() {
-            return deltaTime;
-        }
+        List<RelationEvaluator.EvaluationView> views() { return publicViews; }
 
-        @Override
-        public double distance(WorldContext.EntityView a, WorldContext.EntityView b) {
-            if (!(a instanceof EntityViewImpl va)) return 0.0;
-            if (!(b instanceof EntityViewImpl vb)) return 0.0;
-            double dx = va.x - vb.x;
-            double dy = va.y - vb.y;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-
-        void resetDeltas() {
-            for (EntityViewImpl v : views) v.resetDeltas();
-        }
-
-        void applyDeltas() {
-            for (EntityViewImpl v : views) v.applyDeltas();
+        void commit() {
+            for (EvaluationViewImpl v : views) v.commit();
         }
 
         private static PhysicalState stateOf(GameObjects obj) {
             if (obj == null) return null;
-            PhysicalStateComponent comp = obj.getComponent(PhysicalStateComponent.class);
-            return comp != null ? comp.getState() : null;
+            // PhysicsComponent es el componente canónico (HRFC-021)
+            Game.Engine.World.Physics.PhysicsComponent pc =
+                obj.getComponent(Game.Engine.World.Physics.PhysicsComponent.class);
+            if (pc != null) return pc.getState();
+            // PhysicalStateComponent como fallback de compatibilidad
+            PhysicalStateComponent legacy =
+                obj.getComponent(PhysicalStateComponent.class);
+            return legacy != null ? legacy.getState() : null;
         }
     }
 
+    // ═════════════════════════════════════════════════════════════════════
+    // EvaluationViewImpl — implementa EvaluationView sobre WorkingState
+    // ═════════════════════════════════════════════════════════════════════
+
     /**
-     * Implementación de EntityView con escritura diferida.
+     * Implementación de EvaluationView delegando completamente en WorkingState.
      *
-     * Lee directamente del PhysicalState.
-     * Acumula deltas en un mapa local durante la ejecución de una ley.
-     * Vuelca los deltas al PhysicalState solo cuando applyDeltas() es llamado,
-     * al finalizar la ejecución de esa ley.
+     * has() y get() leen del snapshot del WorkingState (estado de inicio de frame).
+     * add() acumula deltas en el buffer pending del WorkingState.
+     * commit() consolida el WorkingState al PhysicalState definitivo.
+     *
+     * No contiene ningún buffer propio. Toda la lógica de staging y commit
+     * vive en WorkingState.
      */
-    private static final class EntityViewImpl implements WorldContext.EntityView {
+    private static final class EvaluationViewImpl
+            implements RelationEvaluator.EvaluationView {
 
-        private final PhysicalState       state;
-        final         double              x;
-        final         double              y;
-        private final Map<String, Double> deltas = new HashMap<>();
+        private final WorkingState workingState;
+        private final FrameState   frameState;
+        private final double       posX;
+        private final double       posY;
 
-        EntityViewImpl(PhysicalState state, double x, double y) {
-            this.state = state;
-            this.x     = x;
-            this.y     = y;
+        EvaluationViewImpl(WorkingState workingState, double x, double y) {
+            this.workingState = workingState;
+            this.frameState   = new FrameState();
+            this.posX         = x;
+            this.posY         = y;
         }
 
         @Override
-        public boolean has(String propertyId) {
-            return state.has(propertyId);
+        public boolean has(PropertyDescriptor descriptor) {
+            return workingState.has(descriptor);
         }
 
         @Override
-        public double get(String propertyId) {
-            return state.get(propertyId);
+        public double get(PropertyDescriptor descriptor) {
+            return workingState.get(descriptor);
         }
 
         @Override
-        public void add(String propertyId, double delta) {
-            if (!state.has(propertyId)) return;
-            deltas.merge(propertyId, delta, Double::sum);
+        public void add(PropertyDescriptor descriptor, double delta) {
+            workingState.add(descriptor, delta);
         }
 
-        void resetDeltas() {
-            deltas.clear();
-        }
+        @Override
+        public double x() { return posX; }
 
-        void applyDeltas() {
-            for (Map.Entry<String, Double> entry : deltas.entrySet()) {
-                state.add(entry.getKey(), entry.getValue());
-            }
-            deltas.clear();
+        @Override
+        public double y() { return posY; }
+
+        @Override
+        public FrameState frameState() { return frameState; }
+
+        void commit() {
+            workingState.commit();
+            // FrameState es transitorio — se destruye implícitamente con este objeto.
+            // El clear() explícito es defensivo para liberar referencias antes del GC.
+            frameState.clear();
         }
     }
 }

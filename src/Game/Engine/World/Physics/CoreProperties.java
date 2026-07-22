@@ -12,8 +12,8 @@ package Game.Engine.World.Physics;
  * No existe distinción entre "propiedades físicas" y "propiedades de material".
  * Todas son descriptores registrados en el mismo PhysicalState del objeto.
  *
- * Las leyes físicas (CoreLaws) referencian estas constantes por su campo id,
- * que es el string que LawEquation usa para leer y escribir en LawContext.
+ * Las relaciones físicas (CoreRelations) referencian estas constantes por su campo id,
+ * que es el string que el sistema de resolución usa para leer y escribir en PhysicalState.
  *
  * ── ESTRUCTURA ────────────────────────────────────────────────────────────
  * Los descriptores están agrupados semánticamente para legibilidad,
