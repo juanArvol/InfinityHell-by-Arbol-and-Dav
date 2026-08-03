@@ -1,7 +1,7 @@
 package Game.Engine.World.Physics.Radiation;
 
 import Game.Engine.World.Physics.Core.PhysicalRelation;
-import Game.Engine.World.Physics.Core.RadiationProperties;
+import Game.Engine.World.Physics.Radiation.RadiationProperties;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.FrameMagnitudes;
 import Game.Engine.World.Physics.Core.RelationEvaluator;

@@ -1,142 +1,97 @@
 package Game.Engine.World.Physics.Core;
 
 /**
- * Descriptor declarativo e inmutable de una propiedad física.
+ * Descriptor inmutable de una propiedad física del mundo.
  *
- * ── HRFC-019 — Eliminación Definitiva del Modelo Orientado a Tipos de Ley ─
- * ── HRFC-024 — Auditoría de Consistencia Arquitectónica ──────────────────
+ * ── HRFC-020 — Consolidación Definitiva del Modelo Declarativo ────────────
+ * ── HRFC-027 — Auditoría de Consistencia Arquitectónica ──────────────────
  *
- * ── FILOSOFÍA ─────────────────────────────────────────────────────────────
- * PropertyDescriptor unifica lo que antes eran dos modelos separados:
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
+ * PropertyDescriptor es la llave de acceso tipada al PhysicalState.
  *
- *   ANTES                                    AHORA
- *   ─────────────────────────────────────    ──────────────────────────────
- *   PhysicalProperty<D extends Domain>    →  PropertyDescriptor
- *   MaterialProperty<V>                   →  PropertyDescriptor
+ * Describe una propiedad física: su identificador, su valor por defecto,
+ * sus límites opcionales y su descripción semántica. No contiene lógica
+ * de simulación. No conoce entidades. No conoce leyes.
  *
- * La distinción entre "propiedad física" y "propiedad de material" no existe
- * en el Core. Ambas son simplemente descriptores registrados con un identificador,
- * un valor por defecto, límites opcionales y una descripción legible.
+ * Es al PhysicalState lo que FrameMagnitude es al FrameState.
  *
- * TEMPERATURE, CHARGE, HUMIDITY, PRESSURE son descriptores.
- * THERMAL_CONDUCTIVITY, HEAT_CAPACITY, COMPRESSIBILITY son descriptores.
- * MASS, RADIATION_LEVEL, VELOCITY_X, VELOCITY_Y son descriptores.
- * Todos son tratados exactamente igual.
+ * ── IDENTIDAD FUERTE ──────────────────────────────────────────────────────
+ * La identidad es por referencia de objeto (identity-based equals/hashCode).
+ * Dos descriptores con el mismo id textual son objetos distintos.
  *
- * ── ESTRUCTURA ────────────────────────────────────────────────────────────
+ * El PhysicalState usa IdentityHashMap indexado por referencia del descriptor.
+ * Esto garantiza que solo quien tiene la referencia al descriptor puede leer
+ * o escribir esa propiedad — no un String arbitrario con el mismo texto.
  *
- *   id           → identificador único de texto. Es la clave en PhysicalState
- *                  y en los parámetros de LawEquation.
+ * ── BOUNDED vs UNBOUNDED ─────────────────────────────────────────────────
+ * Un descriptor bounded tiene rango [min, max] aplicado automáticamente
+ * por PhysicalState.set() y PhysicalState.add() mediante clamp().
+ * Un descriptor unbounded acepta cualquier valor double.
  *
- *   defaultValue → valor inicial que PhysicalState usa al registrar esta
- *                  propiedad sin valor explícito.
+ * ── USO EN LOS CATÁLOGOS DE DOMINIO ──────────────────────────────────────
  *
- *   min / max    → límites opcionales del valor. Si bounded=true, PhysicalState
- *                  clampea automáticamente los valores al aplicar deltas.
- *                  Si bounded=false, el valor puede crecer sin restricción.
+ *   // Propiedad sin límites (temperatura puede ser cualquier valor):
+ *   public static final PropertyDescriptor TEMPERATURE =
+ *       new PropertyDescriptor("temperature", 0.0,
+ *           Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, false,
+ *           "Energía térmica almacenada relativa al ambiente");
  *
- *   description  → texto legible para depuración. Nunca afecta al comportamiento.
- *
- * ── SIN DOMINIO GENÉRICO ─────────────────────────────────────────────────
- * PhysicalProperty usaba un parámetro de tipo D para garantizar type-safety
- * entre dominios en tiempo de compilación. Ese mecanismo desaparece porque:
- *
- *   1. LawEquation trabaja con strings, no con tipos generics.
- *   2. PhysicalState almacena doubles, no PhysicalQuantity<D>.
- *   3. El Solver es agnóstico al dominio — no hay código especializado por tipo.
- *
- * La responsabilidad de usar las propiedades correctas es del autor de la ley,
- * no del compilador. A cambio, el modelo es completamente plano y extensible.
- *
- * ── INSTANCIACIÓN RESTRINGIDA AL PAQUETE — HRFC-024 ──────────────────────
- * El constructor es package-private. Solo los catálogos de propiedades que
- * residen en este paquete (Game.Engine.World.Physics) pueden crear instancias.
- * Ningún código externo puede fabricar PropertyDescriptor arbitrarios.
- *
- * Este principio es estructural: el compilador lo impone.
- * No depende de convenciones ni documentación.
- *
- * Catálogos autorizados (todos en este paquete):
- *   ThermalProperties
- *   ElectricalProperties
- *   FluidProperties
- *   MechanicalProperties
- *   KinematicProperties
- *   GravityProperties
- *   ElectromagneticProperties
- *   RadiationProperties
- *   MaterialStateProperties
- *   QuantumProperties
- *
- * ── USO COMO CATÁLOGO ────────────────────────────────────────────────────
- *
- *   // En un catálogo de propiedades (mismo paquete que PropertyDescriptor):
- *   public final class GameplayProperties {
- *       public static final PropertyDescriptor MANA =
- *           new PropertyDescriptor("mana", 100.0,
- *               Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, false,
- *               "Energía mágica disponible");
- *   }
- *
- * Los consumidores (evaluadores, componentes del juego) únicamente referencian
- * las constantes de los catálogos. Nunca crean descriptores nuevos.
- *
- *   // Correcto — consumir una constante de catálogo:
- *   view.get(KinematicProperties.VELOCITY_Y);
- *   view.get(GravityProperties.MASS);
- *
- *   // PROHIBIDO — ningún código externo al paquete puede hacer esto:
- *   new PropertyDescriptor(...)              // ← error de compilación
+ *   // Propiedad acotada (conductividad entre 0 y 1):
+ *   public static final PropertyDescriptor THERMAL_CONDUCTIVITY =
+ *       new PropertyDescriptor("thermal_conductivity", 0.1, 0.0, 1.0, true,
+ *           "Conductividad térmica del material [0=aislante, 1=conductor]");
  *
  * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
- *   ✗ Ningún parámetro de tipo de dominio.
- *   ✗ Ninguna referencia a CoreDomains ni PhysicalDomain.
- *   ✗ Ninguna distinción entre "propiedad física" y "propiedad de material".
+ *   ✗ Ningún algoritmo físico.
+ *   ✗ Ninguna referencia al Solver ni a evaluadores.
  *   ✗ Ninguna lógica de simulación.
- *   ✗ Ningún getter especializado por fenómeno.
- *   ✗ Ninguna factory pública (of/ofBounded/ofPositive eliminadas en HRFC-024).
+ *   ✗ Ningún acoplamiento a entidades concretas.
  */
 public final class PropertyDescriptor {
 
-    /** Identificador único. Es la clave en PhysicalState y LawContext. */
+    /** Identificador único de la propiedad. Nunca null ni vacío. */
     private final String  id;
 
-    /** Valor inicial cuando se registra la propiedad sin valor explícito. */
+    /** Valor por defecto al registrar la propiedad en un PhysicalState. */
     private final double  defaultValue;
 
-    /** Límite inferior. Double.NEGATIVE_INFINITY si no acotado. */
+    /** Límite inferior del rango válido. Ignorado si !bounded. */
     private final double  min;
 
-    /** Límite superior. Double.POSITIVE_INFINITY si no acotado. */
+    /** Límite superior del rango válido. Ignorado si !bounded. */
     private final double  max;
 
-    /** True si el valor está acotado entre min y max. */
+    /**
+     * True si esta propiedad tiene un rango acotado [min, max].
+     * PhysicalState aplica clamp automáticamente cuando bounded = true.
+     */
     private final boolean bounded;
 
-    /** Descripción legible. Puede ser null. Solo para depuración. */
+    /** Descripción semántica legible. Puede ser null. */
     private final String  description;
 
-    // ── Constructor package-private — solo catálogos del paquete pueden instanciar ─
-    //
-    // HRFC-024: La visibilidad package-private es el mecanismo estructural que
-    // garantiza que ningún código externo al paquete Game.Engine.World.Physics
-    // pueda crear PropertyDescriptor. El compilador impone esta restricción.
-    //
-    // Los catálogos autorizados (ThermalProperties, ElectricalProperties, etc.) viven
-    // en este mismo paquete y son la única fuente legítima de descriptores.
+    // ── Constructor público ───────────────────────────────────────────────
 
-    PropertyDescriptor(String id,
-                       double defaultValue,
-                       double min,
-                       double max,
-                       boolean bounded,
-                       String description) {
+    /**
+     * Crea un descriptor de propiedad física.
+     *
+     * @param id           identificador único. No puede ser null ni vacío.
+     * @param defaultValue valor por defecto al registrar la propiedad.
+     * @param min          límite inferior del rango (ignorado si !bounded).
+     * @param max          límite superior del rango (ignorado si !bounded).
+     * @param bounded      true si el valor debe mantenerse en [min, max].
+     * @param description  descripción semántica legible. Puede ser null.
+     */
+    public PropertyDescriptor(String  id,
+                               double  defaultValue,
+                               double  min,
+                               double  max,
+                               boolean bounded,
+                               String  description) {
         if (id == null || id.isBlank())
             throw new IllegalArgumentException("id no puede ser null ni vacío");
-        if (bounded && min > max) throw new IllegalArgumentException(
-            "min (" + min + ") no puede ser mayor que max (" + max + ")");
         this.id           = id;
-        this.defaultValue = bounded ? clamp(defaultValue, min, max) : defaultValue;
+        this.defaultValue = defaultValue;
         this.min          = min;
         this.max          = max;
         this.bounded      = bounded;
@@ -145,49 +100,58 @@ public final class PropertyDescriptor {
 
     // ── Accesores ─────────────────────────────────────────────────────────
 
-    /** Identificador único de la propiedad. La clave en PhysicalState y LawContext. */
-    public String  getId()           { return id; }
+    /** Identificador único de la propiedad. Nunca null ni vacío. */
+    public String getId() { return id; }
 
-    /** Valor inicial cuando se registra sin valor explícito. */
-    public double  getDefaultValue() { return defaultValue; }
+    /** Valor por defecto al registrar la propiedad en un PhysicalState. */
+    public double getDefaultValue() { return defaultValue; }
 
-    /** Límite inferior del valor. Double.NEGATIVE_INFINITY si no acotado. */
-    public double  getMin()          { return min; }
+    /** Límite inferior del rango válido. Relevante solo si bounded. */
+    public double getMin() { return min; }
 
-    /** Límite superior del valor. Double.POSITIVE_INFINITY si no acotado. */
-    public double  getMax()          { return max; }
-
-    /** True si el valor está acotado entre min y max. */
-    public boolean isBounded()       { return bounded; }
-
-    /** Descripción legible. Puede ser null. */
-    public String  getDescription()  { return description; }
+    /** Límite superior del rango válido. Relevante solo si bounded. */
+    public double getMax() { return max; }
 
     /**
-     * Clampea el valor al rango de este descriptor.
-     * Si no está acotado, retorna el valor sin cambios.
+     * True si esta propiedad tiene un rango acotado [min, max].
+     * PhysicalState.set() y PhysicalState.add() aplican clamp automáticamente.
+     */
+    public boolean isBounded() { return bounded; }
+
+    /** Descripción semántica legible. Puede ser null. */
+    public String getDescription() { return description; }
+
+    // ── Clamp ─────────────────────────────────────────────────────────────
+
+    /**
+     * Ajusta el valor al rango [min, max] si la propiedad es bounded.
+     * Si no es bounded, retorna el valor sin modificar.
      *
-     * @param value valor a clampear.
-     * @return valor dentro del rango válido.
+     * Usado internamente por PhysicalState.set() y PhysicalState.add().
+     *
+     * @param value el valor a ajustar.
+     * @return valor ajustado al rango, o el mismo valor si !bounded.
      */
     public double clamp(double value) {
-        return bounded ? clamp(value, min, max) : value;
+        if (!bounded) return value;
+        return Math.max(min, Math.min(max, value));
     }
 
-    // ── Object ────────────────────────────────────────────────────────────
+    // ── Object — identidad por referencia ────────────────────────────────
+
+    /**
+     * Identidad basada en referencia de objeto.
+     * Dos descriptores son iguales si y solo si son el mismo objeto.
+     * Garantiza que PhysicalState (IdentityHashMap) funcione correctamente.
+     */
+    @Override
+    public boolean equals(Object o) { return this == o; }
+
+    @Override
+    public int hashCode() { return System.identityHashCode(this); }
 
     @Override
     public String toString() {
-        if (bounded) {
-            return "PropertyDescriptor[" + id + " default=" + defaultValue
-                + " in [" + min + ", " + max + "]]";
-        }
-        return "PropertyDescriptor[" + id + " default=" + defaultValue + "]";
-    }
-
-    // ── Impl ──────────────────────────────────────────────────────────────
-
-    private static double clamp(double v, double lo, double hi) {
-        return Math.max(lo, Math.min(hi, v));
+        return "PropertyDescriptor[" + id + (bounded ? " [" + min + "," + max + "]" : "") + "]";
     }
 }

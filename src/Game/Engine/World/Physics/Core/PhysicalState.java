@@ -67,7 +67,7 @@ import java.util.Map;
  * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
  */
-public final class PhysicalState {
+public final class PhysicalState implements DomainState {
 
     /**
      * Valores actuales por descriptor.
@@ -179,6 +179,18 @@ public final class PhysicalState {
 
     /**
      * Builder de PhysicalState.
+     *
+     * ── HRFC-031 ──────────────────────────────────────────────────────────
+     * A partir de HRFC-031, PhysicalState describe exclusivamente propiedades
+     * del dominio físico del objeto (temperatura, presión, carga eléctrica,
+     * humedad, energía interna...).
+     *
+     * Las propiedades cinemáticas (velocidad, energía cinética, fricción) ya
+     * no se registran aquí: pertenecen al KinematicState del SimulationContext.
+     * Los evaluadores acceden a ellas mediante SimulationContext.kinematic().
+     *
+     * Para construir el contexto completo de simulación de una entidad,
+     * usar SimulationContextComponent en lugar de PhysicsComponent aislado.
      */
     public static final class Builder {
 

@@ -1,7 +1,7 @@
 package Game.Engine.World.Physics.Kinematic;
 
-import Game.Engine.World.Physics.Core.GravityProperties;
-import Game.Engine.World.Physics.Core.KinematicProperties;
+import Game.Engine.World.Physics.Gravity.GravityProperties;
+import Game.Engine.World.Physics.Kinematic.KinematicProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.RelationType;

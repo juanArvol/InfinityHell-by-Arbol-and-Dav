@@ -1,7 +1,7 @@
 package Game.Engine.Entity.Components;
 
 import Game.Engine.Component;
-import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameMath.KineticPhysics.Types.Physics2D;
 
 /**
  * Componente que le da física a un GameObjects.

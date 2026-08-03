@@ -1,309 +1,258 @@
 package Game.Engine.World.Physics.Core;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
- * Descripción declarativa e inmutable de una relación física entre propiedades.
+ * Descripción declarativa de una relación física entre propiedades del mundo.
  *
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
+ * ── HRFC-027 — Auditoría de Consistencia Arquitectónica ──────────────────
  *
- * ── PRINCIPIO FUNDAMENTAL ─────────────────────────────────────────────────
- * PhysicalRelation describe conocimiento físico.
- * PhysicalRelation nunca ejecuta nada.
- * PhysicalRelation nunca selecciona entidades.
- * PhysicalRelation nunca modifica propiedades.
- * PhysicalRelation nunca decide el flujo de la simulación.
- * PhysicalRelation nunca contiene algoritmos.
- * PhysicalRelation nunca contiene callbacks.
- * PhysicalRelation nunca contiene lambdas.
- * PhysicalRelation nunca contiene referencias al mundo.
+ * ── QUÉ ES PhysicalRelation ───────────────────────────────────────────────
+ * PhysicalRelation describe un fenómeno físico de forma declarativa:
+ *   - qué tipo de fenómeno es (RelationType)
+ *   - qué propiedades participan en él
+ *   - bajo qué condiciones es activo (RelationConstraint)
+ *   - en qué orden debe evaluarse (priority)
  *
- * Toda la responsabilidad de ejecución pertenece exclusivamente al sistema
- * de resolución, mediante evaluadores especializados por RelationType.
+ * PhysicalRelation NO ejecuta nada. NO contiene matemática.
+ * El procedimiento matemático vive exclusivamente en el RelationEvaluator
+ * correspondiente, registrado en EvaluatorRegistry por RelationType.
  *
- * ── MODELO CONCEPTUAL ─────────────────────────────────────────────────────
+ * ── SEPARACIÓN FUNDAMENTAL ───────────────────────────────────────────────
  *
- *   PhysicalRelation
- *       ↓
- *   ParticipatingProperties   →  qué propiedades participan en la relación
- *       ↓
- *   RelationType              →  qué fenómeno físico identifica la relación
- *       ↓
- *   Constraints               →  restricciones físicas asociadas
+ *   PhysicalRelation   → describe el fenómeno (QUÉ ocurre)
+ *   RelationEvaluator  → implementa la matemática (CÓMO se calcula)
+ *   PhysicsSolver      → coordina la resolución completa del frame
  *
- * ── CONTENIDO ─────────────────────────────────────────────────────────────
+ * ── PRIORIDAD ─────────────────────────────────────────────────────────────
+ * El PhysicsSolver evalúa las relaciones ordenadas por prioridad ascendente.
+ * Una relación con prioridad 1 se evalúa antes que una con prioridad 100.
+ * Las prioridades garantizan el orden correcto en cadenas de fenómenos:
+ *   GRAVITY (1) → BLACK_HOLE_GRAVITY (2) → BLACK_HOLE_HORIZON (3)
+ *   VOLUMETRIC_EXPANSION (5) → THERMAL_CONDUCTION (100) → JOULE_HEATING (105)
  *
- *   name                    → nombre legible de la relación. Solo para depuración.
+ * ── PROPIEDADES PARTICIPANTES ────────────────────────────────────────────
+ * El conjunto de descriptores que el evaluador puede leer y escribir.
+ * El orden de inserción se preserva — algunos evaluadores (AmbientDissipation)
+ * interpretan el primero como "propiedad que se disipa" y el segundo como
+ * "coeficiente de disipación".
  *
- *   participatingProperties → conjunto de propiedades físicas que participan
- *                             en esta relación. El evaluador del sistema de
- *                             resolución las utiliza para leer y producir cambios.
+ * ── CONSTRUCCIÓN ─────────────────────────────────────────────────────────
  *
- *   relationType            → identifica qué fenómeno físico describe esta
- *                             relación. El sistema de resolución lo usa para
- *                             seleccionar el evaluador especializado correcto.
- *                             No es una fórmula. No es una función. Solo identifica.
- *
- *   constraints             → conjunto de restricciones físicas declarativas.
- *                             Describen condiciones bajo las cuales la relación
- *                             es activa o válida. El evaluador las consulta para
- *                             decidir si aplica la relación en un contexto dado.
- *
- *   priority                → orden relativo de evaluación dentro de un frame.
- *                             Menor valor = se evalúa antes.
- *
- * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
- *   ✗ Ningún método solve().
- *   ✗ Ninguna referencia a WorldContext.
- *   ✗ Ninguna interfaz funcional.
- *   ✗ Ningún callback ni lambda.
- *   ✗ Ningún algoritmo de simulación.
- *   ✗ Ninguna referencia a PhysicsLaw.
- *   ✗ Ninguna iteración sobre entidades.
- *   ✗ Ninguna modificación de propiedades.
- *
- * ── RESPONSABILIDADES SEPARADAS ───────────────────────────────────────────
- *   PhysicalRelation       → describe conocimiento físico.
- *   RelationType           → identifica el fenómeno físico.
- *   RelationEvaluator      → implementa la matemática correspondiente.
- *   PhysicsSolver          → coordina el proceso completo de simulación.
- *
- * ── ROL EN EL DEPENDENCY GRAPH ───────────────────────────────────────────
- * PhysicalRelation es la carga útil (payload) de las aristas del
- * PropertyDependencyGraph. Cada arista declara:
- *
- *   "La propiedad A influye sobre la propiedad B
- *    mediante la relación física R de tipo T."
- *
- * El grafo deja de contener referencias a objetos ejecutables.
- * El grafo representa únicamente relaciones físicas entre propiedades.
- *
- * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Añadir una nueva relación física:
- *   1. Añadir la constante en RelationType.
- *   2. Crear el evaluador en Game.Engine.World.Solver.
- *   3. Registrar el evaluador en EvaluatorRegistry.
- *   4. Declarar la PhysicalRelation en el catálogo correspondiente.
- *
- * No se modifica PhysicalRelation. No se modifica PhysicsSolver. No se
- * modifica ningún otro componente del Core.
- *
- * ── USO EN UN CATÁLOGO ───────────────────────────────────────────────────
- *
- *   // Conducción térmica entre dos objetos (ley de Fourier):
  *   PhysicalRelation THERMAL_CONDUCTION = PhysicalRelation.builder()
  *       .name("thermal_conduction")
  *       .relationType(RelationType.FOURIER)
  *       .participating(ThermalProperties.TEMPERATURE,
  *                      ThermalProperties.THERMAL_CONDUCTIVITY,
  *                      ThermalProperties.HEAT_CAPACITY)
+ *       .constraint(RelationConstraint.maxDistance(32.0))
+ *       .constraint(RelationConstraint.minDelta(1e-6))
  *       .priority(100)
  *       .build();
  *
- *   // Transferencia de carga eléctrica (ley de Ohm):
- *   PhysicalRelation ELECTRICAL_TRANSFER = PhysicalRelation.builder()
- *       .name("electrical_transfer")
- *       .relationType(RelationType.OHM)
- *       .participating(ElectricalProperties.CHARGE,
- *                      ElectricalProperties.ELECTRICAL_CONDUCTIVITY)
- *       .priority(100)
- *       .build();
+ * ── INMUTABILIDAD ─────────────────────────────────────────────────────────
+ * PhysicalRelation es inmutable una vez construida. Sus colecciones internas
+ * son vistas inmutables.
+ *
+ * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
+ *   ✗ Ningún algoritmo físico.
+ *   ✗ Ninguna referencia al Solver ni a evaluadores concretos.
+ *   ✗ Ninguna referencia a entidades.
+ *   ✗ Ningún estado mutable.
  */
 public final class PhysicalRelation {
 
-    /** Nombre legible. Solo para depuración y logging. */
-    private final String name;
+    /** Nombre legible de la relación. Solo para depuración y logging. */
+    private final String                    name;
+
+    /** Tipo del fenómeno — clave de despacho hacia el evaluador. */
+    private final RelationType              relationType;
 
     /**
-     * Propiedades físicas que participan en esta relación.
-     * El evaluador correspondiente las usa para leer el estado actual
-     * y producir los deltas que el sistema de resolución aplicará.
+     * Propiedades que participan en este fenómeno.
+     * Orden de inserción preservado (LinkedHashSet).
+     * Vista inmutable expuesta por getParticipatingProperties().
      */
-    private final Set<PropertyDescriptor> participatingProperties;
+    private final Set<PropertyDescriptor>   participatingProperties;
 
     /**
-     * Identifica qué fenómeno físico describe esta relación.
-     * El sistema de resolución lo usa para seleccionar el evaluador correcto.
-     * No es una fórmula. No es una función. Solo identifica.
+     * Restricciones que condicionan la activación de esta relación.
+     * Indexadas por tipo para acceso O(1) desde los evaluadores.
      */
-    private final RelationType relationType;
+    private final List<RelationConstraint>  constraints;
 
     /**
-     * Restricciones físicas asociadas a esta relación.
-     * El evaluador las consulta para decidir si la relación aplica
-     * en un contexto concreto.
+     * Prioridad de evaluación. Menor valor = evaluado antes.
+     * El PhysicsSolver ordena las relaciones por prioridad ascendente.
      */
-    private final Set<RelationConstraint> constraints;
-
-    /**
-     * Prioridad de evaluación. Menor valor = se evalúa antes.
-     * Por defecto: 100.
-     */
-    private final int priority;
+    private final int                       priority;
 
     // ── Constructor privado — usar Builder ────────────────────────────────
 
     private PhysicalRelation(Builder b) {
-        if (b.relationType == null)
-            throw new IllegalArgumentException("relationType no puede ser null");
         this.name                   = b.name;
         this.relationType           = b.relationType;
-        this.participatingProperties =
-            Collections.unmodifiableSet(new LinkedHashSet<>(b.participatingProperties));
-        this.constraints            =
-            Collections.unmodifiableSet(new LinkedHashSet<>(b.constraints));
+        this.participatingProperties = Collections.unmodifiableSet(
+            new LinkedHashSet<>(b.participatingProperties));
+        this.constraints            = Collections.unmodifiableList(
+            new ArrayList<>(b.constraints));
         this.priority               = b.priority;
     }
+
+    // ── Factory ───────────────────────────────────────────────────────────
+
+    /** Punto de entrada del Builder. */
+    public static Builder builder() { return new Builder(); }
 
     // ── Accesores ─────────────────────────────────────────────────────────
 
     /**
-     * Nombre legible de la relación. Puede ser null.
-     * Solo para depuración. No afecta al comportamiento del sistema.
+     * Nombre legible de la relación.
+     * Usado exclusivamente para depuración y logging.
      *
-     * @return nombre, o null si no fue definido.
+     * @return nombre. Puede ser null si no fue declarado.
      */
-    public String getName() {
-        return name;
-    }
+    public String getName() { return name; }
 
     /**
-     * Identifica qué fenómeno físico describe esta relación.
-     * El sistema de resolución lo usa para seleccionar el evaluador correcto.
+     * Tipo del fenómeno físico — clave de despacho hacia el evaluador.
      *
-     * @return el tipo de relación. Nunca null.
+     * @return RelationType. Nunca null.
      */
-    public RelationType getRelationType() {
-        return relationType;
-    }
+    public RelationType getRelationType() { return relationType; }
 
     /**
-     * Propiedades físicas que participan en esta relación.
-     * El evaluador las usa para leer el estado y producir cambios.
+     * Conjunto inmutable de propiedades participantes en este fenómeno,
+     * en orden de inserción declarado en el Builder.
      *
-     * @return conjunto inmutable de descriptores de propiedades. Nunca null.
+     * Los evaluadores itegan sobre este conjunto para leer y escribir
+     * los valores de las propiedades participantes en cada entidad.
+     *
+     * @return conjunto inmutable de PropertyDescriptor. Nunca null.
      */
     public Set<PropertyDescriptor> getParticipatingProperties() {
         return participatingProperties;
     }
 
     /**
-     * Restricciones físicas asociadas a esta relación.
-     * El evaluador las consulta para decidir si la relación aplica.
+     * Prioridad de evaluación. Menor valor = evaluado antes en el frame.
      *
-     * @return conjunto inmutable de restricciones. Nunca null.
+     * @return prioridad. Valor por defecto: 100.
      */
-    public Set<RelationConstraint> getConstraints() {
-        return constraints;
-    }
+    public int getPriority() { return priority; }
 
     /**
-     * True si la relación tiene la restricción del tipo indicado.
+     * Retorna la restricción del tipo dado, o null si no hay ninguna.
      *
-     * @param type tipo de restricción a buscar.
-     * @return true si existe una restricción de ese tipo.
-     */
-    public boolean hasConstraint(RelationConstraint.Type type) {
-        for (RelationConstraint c : constraints)
-            if (c.getType() == type) return true;
-        return false;
-    }
-
-    /**
-     * Retorna la primera restricción del tipo indicado, o null si no existe.
+     * Los evaluadores usan este método para conocer los parámetros
+     * de activación declarados en la relación:
+     *   relation.getConstraint(RelationConstraint.Type.MAX_DISTANCE)
+     *   relation.getConstraint(RelationConstraint.Type.THRESHOLD_ABOVE)
      *
-     * @param type tipo de restricción a buscar.
-     * @return la restricción, o null.
+     * Si hay múltiples restricciones del mismo tipo, retorna la primera.
+     *
+     * @param type tipo de restricción buscado.
+     * @return la restricción, o null si no existe.
      */
     public RelationConstraint getConstraint(RelationConstraint.Type type) {
-        for (RelationConstraint c : constraints)
+        if (type == null) return null;
+        for (RelationConstraint c : constraints) {
             if (c.getType() == type) return c;
+        }
         return null;
     }
 
     /**
-     * Prioridad de evaluación. Menor = se evalúa antes.
+     * Todas las restricciones declaradas en esta relación.
      *
-     * @return prioridad. Por defecto 100.
+     * @return lista inmutable de restricciones. Nunca null.
      */
-    public int getPriority() {
-        return priority;
-    }
+    public List<RelationConstraint> getConstraints() { return constraints; }
 
     // ── Object ────────────────────────────────────────────────────────────
 
     @Override
     public String toString() {
-        String n = name != null ? name : relationType.name();
-        return "PhysicalRelation[" + n + " type=" + relationType
-            + " props=" + participatingProperties.size()
-            + " priority=" + priority + "]";
+        return "PhysicalRelation["
+            + (name != null ? name : relationType)
+            + " prio=" + priority + "]";
     }
 
-    // ── Builder ───────────────────────────────────────────────────────────
-
-    /** Punto de entrada del Builder. */
-    public static Builder builder() { return new Builder(); }
+    // ═════════════════════════════════════════════════════════════════════
+    // Builder
+    // ═════════════════════════════════════════════════════════════════════
 
     /**
      * Builder de PhysicalRelation.
      *
-     * Solo relationType y al menos una propiedad participante son obligatorios.
+     * Uso:
+     *   PhysicalRelation.builder()
+     *       .name("thermal_conduction")
+     *       .relationType(RelationType.FOURIER)
+     *       .participating(ThermalProperties.TEMPERATURE, ...)
+     *       .constraint(RelationConstraint.maxDistance(32.0))
+     *       .priority(100)
+     *       .build();
      */
     public static final class Builder {
 
-        private String                     name                   = null;
-        private RelationType               relationType           = null;
-        private final Set<PropertyDescriptor>  participatingProperties =
+        private String                   name                  = null;
+        private RelationType             relationType          = null;
+        private final Set<PropertyDescriptor> participatingProperties =
             new LinkedHashSet<>();
-        private final Set<RelationConstraint>  constraints            =
-            new LinkedHashSet<>();
-        private int                        priority               = 100;
+        private final List<RelationConstraint> constraints     = new ArrayList<>();
+        private int                      priority              = 100;
 
         private Builder() {}
 
         /**
-         * Nombre legible de la relación. Opcional.
-         * Solo para depuración.
+         * Nombre legible de la relación (para depuración).
          *
-         * @param n nombre de la relación.
+         * @param name nombre. Ignorado si null.
+         * @return this.
          */
-        public Builder name(String n) {
-            this.name = n;
+        public Builder name(String name) {
+            this.name = name;
             return this;
         }
 
         /**
-         * Tipo de relación física. Obligatorio.
-         * Identifica el fenómeno y el evaluador a usar.
+         * Tipo del fenómeno — clave de despacho hacia el evaluador.
          *
-         * @param type el tipo de relación. No puede ser null al construir.
+         * @param relationType el tipo. No puede ser null.
+         * @return this.
          */
-        public Builder relationType(RelationType type) {
-            this.relationType = type;
+        public Builder relationType(RelationType relationType) {
+            if (relationType == null)
+                throw new IllegalArgumentException("relationType no puede ser null");
+            this.relationType = relationType;
             return this;
         }
 
         /**
-         * Declara las propiedades físicas que participan en esta relación.
-         * El evaluador las usará para leer y producir cambios.
+         * Añade propiedades participantes en el fenómeno.
          *
-         * @param descriptors descriptores de propiedades participantes.
+         * @param descriptors descriptores de las propiedades. Ignorados si null.
+         * @return this.
          */
         public Builder participating(PropertyDescriptor... descriptors) {
-            if (descriptors != null)
-                for (PropertyDescriptor d : descriptors)
-                    if (d != null) participatingProperties.add(d);
+            if (descriptors == null) return this;
+            for (PropertyDescriptor d : descriptors) {
+                if (d != null) participatingProperties.add(d);
+            }
             return this;
         }
 
         /**
-         * Añade una restricción física a la relación.
+         * Añade una restricción que condiciona la activación de la relación.
          *
          * @param constraint la restricción. Ignorada si null.
+         * @return this.
          */
         public Builder constraint(RelationConstraint constraint) {
             if (constraint != null) constraints.add(constraint);
@@ -311,18 +260,24 @@ public final class PhysicalRelation {
         }
 
         /**
-         * Prioridad de evaluación. Menor = antes.
-         * Por defecto: 100.
+         * Prioridad de evaluación (menor = antes). Por defecto: 100.
          *
-         * @param p prioridad.
+         * @param priority prioridad.
+         * @return this.
          */
-        public Builder priority(int p) {
-            this.priority = p;
+        public Builder priority(int priority) {
+            this.priority = priority;
             return this;
         }
 
-        /** Construye la PhysicalRelation con la configuración acumulada. */
+        /**
+         * Construye la PhysicalRelation.
+         *
+         * @throws IllegalStateException si relationType no fue declarado.
+         */
         public PhysicalRelation build() {
+            if (relationType == null)
+                throw new IllegalStateException("relationType es obligatorio");
             return new PhysicalRelation(this);
         }
     }

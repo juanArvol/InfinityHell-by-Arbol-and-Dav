@@ -1,8 +1,8 @@
 package Game.Engine.World.Physics.MaterialState;
 
-import Game.Engine.World.Physics.Core.FluidProperties;
-import Game.Engine.World.Physics.Core.GravityProperties;
-import Game.Engine.World.Physics.Core.KinematicProperties;
+import Game.Engine.World.Physics.Fluid.FluidProperties;
+import Game.Engine.World.Physics.Gravity.GravityProperties;
+import Game.Engine.World.Physics.Kinematic.KinematicProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
 import Game.Engine.World.Physics.Core.RelationEvaluator;
 

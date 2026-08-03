@@ -1,9 +1,5 @@
 package Game.Engine.World.Physics.Core;
 
-import Game.Engine.World.Physics.Core.PhysicalRelation;
-import Game.Engine.World.Physics.Core.PropertyDescriptor;
-import Game.Engine.World.Physics.Core.FrameState;
-
 import java.util.List;
 
 /**
@@ -181,5 +177,29 @@ public interface RelationEvaluator {
          * @return el FrameState de esta entidad para este frame. Nunca null.
          */
         FrameState frameState();
+
+        /**
+         * SimulationContext compuesto de esta entidad.
+         *
+         * ── HRFC-031 ──────────────────────────────────────────────────────
+         * Disponible cuando la entidad tiene un SimulationContextComponent.
+         * Retorna null para entidades que solo tienen PhysicsComponent o
+         * PhysicalStateComponent (compatibilidad con HRFC-021 y anteriores).
+         *
+         * Los evaluadores que necesitan estados de dominio especializados
+         * (KinematicState, MaterialState, ContactState, EnvironmentState)
+         * deben verificar que context() != null antes de consumirlo:
+         *
+         *   if (view.context() == null || !view.context().hasKinematic()) continue;
+         *   KinematicState kin = view.context().currentKinematic();
+         *
+         * Evaluadores que no necesitan el contexto compuesto ignoran este método.
+         * La implementación por defecto retorna null para retrocompatibilidad.
+         *
+         * @return el SimulationContext de la entidad, o null si no disponible.
+         */
+        default SimulationContext context() {
+            return null;
+        }
     }
 }

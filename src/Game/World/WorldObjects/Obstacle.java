@@ -4,7 +4,7 @@ import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
-import Game.Engine.GameMath.Physics.SurfaceMaterial;
+import Game.Engine.GameMath.KineticPhysics.SurfaceMaterial;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;

@@ -1,11 +1,11 @@
 package Game.Engine.World.Components;
 
 import Game.Engine.Component;
-import Game.Engine.World.Physics.ElectricalProperties;
-import Game.Engine.World.Physics.FluidProperties;
-import Game.Engine.World.Physics.MechanicalProperties;
-import Game.Engine.World.Physics.PhysicalState;
-import Game.Engine.World.Physics.ThermalProperties;
+import Game.Engine.World.Physics.Core.PhysicalState;
+import Game.Engine.World.Physics.Electrical.ElectricalProperties;
+import Game.Engine.World.Physics.Fluid.FluidProperties;
+import Game.Engine.World.Physics.Mechanical.MechanicalProperties;
+import Game.Engine.World.Physics.Thermal.ThermalProperties;
 
 /**
  * Propiedades intrínsecas del material de un objeto.

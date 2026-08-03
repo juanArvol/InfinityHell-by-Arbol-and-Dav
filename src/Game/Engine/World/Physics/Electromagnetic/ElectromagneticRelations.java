@@ -1,9 +1,9 @@
 package Game.Engine.World.Physics.Electromagnetic;
 
-import Game.Engine.World.Physics.Core.ElectricalProperties;
-import Game.Engine.World.Physics.Core.ElectromagneticProperties;
-import Game.Engine.World.Physics.Core.ThermalProperties;
-import Game.Engine.World.Physics.Core.KinematicProperties;
+import Game.Engine.World.Physics.Electrical.ElectricalProperties;
+import Game.Engine.World.Physics.Electromagnetic.ElectromagneticProperties;
+import Game.Engine.World.Physics.Thermal.ThermalProperties;
+import Game.Engine.World.Physics.Kinematic.KinematicProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.RelationType;

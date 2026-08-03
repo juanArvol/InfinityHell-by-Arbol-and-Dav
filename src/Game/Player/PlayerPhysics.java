@@ -1,7 +1,7 @@
 package Game.Player;
 
-import Game.Engine.GameMath.Physics.MovementContext;
-import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameMath.KineticPhysics.MovementContext;
+import Game.Engine.GameMath.KineticPhysics.Types.Physics2D;
 
 /**
  * Física del jugador.

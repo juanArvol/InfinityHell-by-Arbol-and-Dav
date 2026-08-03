@@ -1,7 +1,7 @@
 package Game.Engine.World.Physics.Quantum;
 
 import Game.Engine.World.Physics.Core.PhysicalRelation;
-import Game.Engine.World.Physics.Core.QuantumProperties;
+import Game.Engine.World.Physics.Quantum.QuantumProperties;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.RelationType;
 

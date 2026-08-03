@@ -1,6 +1,6 @@
 package Game.Engine.World.Physics.Mechanical;
 
-import Game.Engine.World.Physics.Core.MechanicalProperties;
+import Game.Engine.World.Physics.Mechanical.MechanicalProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.RelationEvaluator;

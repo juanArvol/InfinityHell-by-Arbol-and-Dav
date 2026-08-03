@@ -1,158 +1,153 @@
 package Game.Engine.World.Physics.Core;
 
 /**
- * Identifica qué fenómeno físico describe una PhysicalRelation.
+ * Identifica el evaluador especializado que implementa una PhysicalRelation.
  *
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
+ * ── HRFC-027 — Auditoría de Consistencia Arquitectónica ──────────────────
  *
- * ── PRINCIPIO FUNDAMENTAL ─────────────────────────────────────────────────
- * RelationType no representa una fórmula matemática.
- * RelationType no representa una expresión.
- * RelationType no representa una función.
- * RelationType no representa un algoritmo.
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
+ * RelationType es la clave de despacho que PhysicsSolver usa para obtener
+ * el RelationEvaluator correcto desde el EvaluatorRegistry.
  *
- * RelationType únicamente identifica qué fenómeno físico está siendo
- * descrito por la PhysicalRelation que lo porta.
+ * Cada constante nombra un fenómeno físico real cuya matemática vive
+ * exclusivamente en el evaluador correspondiente.
  *
- * El procedimiento matemático correspondiente a cada tipo vive exclusivamente
- * en el evaluador especializado del sistema de resolución:
+ * ── INVARIANTE ────────────────────────────────────────────────────────────
+ *   ✗ No contiene ninguna lógica física.
+ *   ✗ No contiene parámetros ni constantes numéricas.
+ *   ✓ Solo es un identificador de despacho hacia el evaluador correcto.
  *
- *   FOURIER       → FourierEvaluator
- *   OHM           → OhmEvaluator
- *   PASCAL        → PascalEvaluator
- *   BERNOULLI     → BernoulliEvaluator
- *   NEWTON        → NewtonEvaluator
- *   HOOKE         → HookeEvaluator
- *   ARCHIMEDES    → ArchimedesEvaluator
- *   STOKES        → StokesEvaluator
- *   FICK          → FickEvaluator
- *   SCHWARZSCHILD → SchwarzschildEvaluator
- *   PLANCK        → PlanckEvaluator
+ * ── EVALUADORES CORRESPONDIENTES ─────────────────────────────────────────
+ *   FOURIER              → FourierEvaluator             (Thermal)
+ *   OHM                  → OhmEvaluator                 (Electrical)
+ *   PASCAL               → PascalEvaluator              (Mechanical)
+ *   BERNOULLI            → BernoulliEvaluator           (Fluid)
+ *   NEWTON               → NewtonEvaluator              (Gravity / Kinematic)
+ *   HOOKE                → HookeEvaluator               (Mechanical)
+ *   ARCHIMEDES           → ArchimedesEvaluator          (MaterialState)
+ *   STOKES               → StokesEvaluator              (MaterialState)
+ *   FICK                 → FickEvaluator                (Fluid / MaterialState)
+ *   SCHWARZSCHILD        → SchwarzschildEvaluator       (Gravity)
+ *   PLANCK               → PlanckEvaluator              (Radiation / Quantum / MaterialState)
+ *   JOULE                → JouleEvaluator               (Electrical)
+ *   EVENT_HORIZON        → EventHorizonEvaluator        (Gravity)
+ *   RADIATION_THERMAL    → RadiationThermalEvaluator    (Thermal)
+ *   AMBIENT_DISSIPATION  → AmbientDissipationEvaluator  (Thermal / Electrical / Fluid)
+ *   FRICTION_THERMAL     → FrictionThermalEvaluator     (Kinematic → Thermal)   HRFC-030
+ *   KINETIC_DISSIPATION  → KineticDissipationEvaluator  (Kinematic → Mechanical) HRFC-030
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Añadir un nuevo fenómeno físico:
+ * Añadir un nuevo fenómeno:
  *   1. Añadir una constante aquí.
- *   2. Crear el evaluador correspondiente en Game.Engine.World.Solver.
- *   3. Registrarlo en EvaluatorRegistry.
+ *   2. Implementar su RelationEvaluator en el dominio correspondiente.
+ *   3. Registrar en EvaluatorRegistry.defaults().
  *
- * No se modifica ningún otro componente del Core.
+ *   Ningún archivo existente se modifica salvo EvaluatorRegistry.
  */
 public enum RelationType {
 
-    /**
-     * Ley de Fourier — transferencia de calor por conducción.
-     * q = −k · ∇T
-     * Propiedades participantes: TEMPERATURE, THERMAL_CONDUCTIVITY, HEAT_CAPACITY
-     */
+    // ── Térmica ───────────────────────────────────────────────────────────
+
+    /** Conducción de calor entre pares — ley de Fourier. */
     FOURIER,
 
-    /**
-     * Ley de Ohm — relación entre tensión, corriente y resistencia.
-     * I = V / R  →  equivalente a transferencia de carga proporcional a
-     * la diferencia de potencial y a la conductividad eléctrica.
-     * Propiedades participantes: CHARGE, ELECTRICAL_CONDUCTIVITY
-     */
+    /** Disipación ambiental genérica (térmica, eléctrica, fluídica). */
+    AMBIENT_DISSIPATION,
+
+    // ── Eléctrica ─────────────────────────────────────────────────────────
+
+    /** Transferencia de carga entre pares — ley de Ohm. */
     OHM,
 
-    /**
-     * Ley de Pascal — propagación de presión en fluidos incompresibles.
-     * ΔP = ρ · g · Δh  →  aquí: presión propagada por diferencia de carga
-     * y compresibilidad.
-     * Propiedades participantes: PRESSURE, COMPRESSIBILITY, TEMPERATURE
-     */
+    /** Calentamiento por efecto Joule — Q = I² · R · t. */
+    JOULE,
+
+    // ── Mecánica ──────────────────────────────────────────────────────────
+
+    /** Expansión volumétrica por temperatura — ley de Pascal. */
     PASCAL,
 
-    /**
-     * Principio de Bernoulli — conservación de energía en fluidos.
-     * P + ½ρv² + ρgh = cte
-     * Propiedades participantes: PRESSURE, VISCOSITY, HUMIDITY
-     */
-    BERNOULLI,
-
-    /**
-     * Segunda ley de Newton — dinámica de partículas bajo fuerzas externas.
-     * F = m · a
-     * Propiedades participantes: VELOCITY_X, VELOCITY_Y, MASS
-     */
-    NEWTON,
-
-    /**
-     * Ley de Hooke — deformación elástica proporcional a la fuerza aplicada.
-     * F = −k · x
-     * Propiedades participantes: PRESSURE, COMPRESSIBILITY
-     */
+    /** Disipación de exceso de presión por compresibilidad — ley de Hooke. */
     HOOKE,
 
-    /**
-     * Principio de Arquímedes — fuerza de empuje en fluidos.
-     * F_b = ρ_fluido · V_sumergido · g
-     * Propiedades participantes: HUMIDITY, VISCOSITY, MASS, VELOCITY_Y
-     */
-    ARCHIMEDES,
+    // ── Fluídica ──────────────────────────────────────────────────────────
 
-    /**
-     * Ley de Stokes — resistencia viscosa a objetos en movimiento.
-     * F_d = 6π · η · r · v
-     * Propiedades participantes: VISCOSITY, VELOCITY_X, VELOCITY_Y
-     */
-    STOKES,
+    /** Difusión de masa entre pares — principio de Bernoulli. */
+    BERNOULLI,
 
-    /**
-     * Primera ley de Fick — difusión de materia por gradiente de concentración.
-     * J = −D · ∇C
-     * Propiedades participantes: HUMIDITY, HUMIDITY_ABSORPTION
-     */
+    /** Difusión de masa por gradiente — ley de Fick. */
     FICK,
 
-    /**
-     * Métrica de Schwarzschild — curvatura espacio-temporal por masa.
-     * r_s = 2GM / c²  →  aquí: atracción gravitacional extrema y
-     * horizonte de eventos.
-     * Propiedades participantes: MASS, SCHWARZSCHILD_RADIUS, VELOCITY_X, VELOCITY_Y
-     */
+    // ── Gravitacional / Cinemática ────────────────────────────────────────
+
+    /** Aceleración por fuerza externa — segunda ley de Newton. */
+    NEWTON,
+
+    /** Atracción gravitacional relativista — métrica de Schwarzschild. */
     SCHWARZSCHILD,
 
+    /** Absorción discontinua al cruzar el horizonte de eventos. */
+    EVENT_HORIZON,
+
+    // ── Estado del material ───────────────────────────────────────────────
+
+    /** Empuje hidrostático — principio de Arquímedes. */
+    ARCHIMEDES,
+
+    /** Resistencia viscosa y cohesión — ley de Stokes. */
+    STOKES,
+
+    // ── Radiación / Cuántica ──────────────────────────────────────────────
+
     /**
-     * Ley de Planck — radiación de cuerpo negro y emisión cuántica.
-     * B(λ,T) = (2hc²/λ⁵) / (e^(hc/λkT) − 1)
-     * Simplificado como transferencia de radiación proporcional a temperatura.
-     * Propiedades participantes: RADIATION_LEVEL, RADIATION_ABSORPTION, TEMPERATURE
+     * Transferencia de radiación entre pares y fenómenos cuánticos
+     * — ley de radiación de Planck.
+     *
+     * Reutilizado por: RadiationRelations (transferencia de radiación),
+     *                  QuantumRelations (colapso de función de onda),
+     *                  MaterialStateRelations (transición a plasma).
      */
     PLANCK,
 
-    /**
-     * Horizonte de eventos — absorción total al cruzar el radio de Schwarzschild.
-     * Cuando un objeto cruza el horizonte de eventos de un cuerpo masivo,
-     * toda su velocidad es absorbida instantáneamente.
-     * Propiedades participantes: MASS, SCHWARZSCHILD_RADIUS, VELOCITY_X, VELOCITY_Y
-     */
-    EVENT_HORIZON,
-
-    /**
-     * Efecto Joule — disipación de energía eléctrica como calor.
-     * P = I² · R  →  Q = I² · R · t
-     * Lee la corriente I desde FrameState (clave "current"),
-     * calculada previamente por OhmEvaluator.
-     * Produce ΔTemperature sobre las entidades con corriente en el frame.
-     * Propiedades participantes: TEMPERATURE, HEAT_CAPACITY
-     */
-    JOULE,
-
-    /**
-     * Conversión térmica de radiación absorbida.
-     * Q = R_absorbida · factor / C
-     * Lee la radiación absorbida desde FrameState (clave "absorbed_radiation"),
-     * calculada previamente por PlanckEvaluator.
-     * Produce ΔTemperature sobre las entidades receptoras.
-     * Propiedades participantes: TEMPERATURE, HEAT_CAPACITY
-     */
+    /** Conversión de radiación absorbida en calor. */
     RADIATION_THERMAL,
 
+    // ── Cinemática → Térmica  (HRFC-030) ─────────────────────────────────
+
     /**
-     * Disipación ambiental — decaimiento de una propiedad extensiva hacia el
-     * equilibrio ambiental (valor 0) a velocidad proporcional al coeficiente
-     * de disipación del material. Aplicable a temperatura, carga, humedad, etc.
-     * Propiedades participantes: prop_a_disipar, coeficiente_de_disipacion
+     * Generación de calor por fricción entre una entidad en movimiento y
+     * la superficie de contacto.
+     *
+     * Fenómeno: Q ≈ μ × N × Δx ≈ frictionFactor × mass × gravity × |v| × dt
+     *
+     * Entradas (KinematicStateProperties):
+     *   SPEED, FRICTION_FACTOR, ON_GROUND
+     * Salidas (ThermalProperties):
+     *   TEMPERATURE (delta positivo → calentamiento)
+     *
+     * Evaluador: FrictionThermalEvaluator
      */
-    AMBIENT_DISSIPATION
+    FRICTION_THERMAL,
+
+    // ── Cinemática → Mecánica (HRFC-030) ─────────────────────────────────
+
+    /**
+     * Disipación de energía cinética en fenómenos mecánicos y térmicos.
+     *
+     * Modela la conversión de la pérdida de energía cinética (frenado brusco,
+     * impacto, deceleración extrema) en incremento de temperatura, presión
+     * u otras propiedades del mundo.
+     *
+     * Fenómeno: |ΔKE| → ΔTemperature + ΔPressure  (partición configurable)
+     *
+     * Entradas (KinematicStateProperties):
+     *   DELTA_KINETIC_ENERGY, ACCELERATION
+     * Salidas (ThermalProperties + MechanicalProperties):
+     *   TEMPERATURE (calentamiento por disipación inelástica)
+     *   PRESSURE    (incremento de presión local)
+     *
+     * Evaluador: KineticDissipationEvaluator
+     */
+    KINETIC_DISSIPATION
 }

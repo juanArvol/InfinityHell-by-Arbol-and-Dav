@@ -1,6 +1,6 @@
 package Game.Engine.World.Physics.Electrical;
 
-import Game.Engine.World.Physics.Core.ElectricalProperties;
+import Game.Engine.World.Physics.Electrical.ElectricalProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.FrameMagnitudes;

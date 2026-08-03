@@ -1,12 +1,12 @@
 package Game.Engine.World.Physics.MaterialState;
 
-import Game.Engine.World.Physics.Core.FluidProperties;
-import Game.Engine.World.Physics.Core.ElectricalProperties;
-import Game.Engine.World.Physics.Core.KinematicProperties;
-import Game.Engine.World.Physics.Core.MaterialStateProperties;
-import Game.Engine.World.Physics.Core.ThermalProperties;
+import Game.Engine.World.Physics.Fluid.FluidProperties;
+import Game.Engine.World.Physics.Electrical.ElectricalProperties;
+import Game.Engine.World.Physics.Kinematic.KinematicProperties;
+import Game.Engine.World.Physics.MaterialState.MaterialStateProperties;
+import Game.Engine.World.Physics.Thermal.ThermalProperties;
 import Game.Engine.World.Physics.Core.PhysicalRelation;
-import Game.Engine.World.Physics.Core.RadiationProperties;
+import Game.Engine.World.Physics.Radiation.RadiationProperties;
 import Game.Engine.World.Physics.Core.RelationConstraint;
 import Game.Engine.World.Physics.Core.RelationType;
 

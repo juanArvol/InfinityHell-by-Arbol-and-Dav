@@ -6,13 +6,13 @@ import Game.Engine.GameObjects;
 import Game.Engine.World.Fields.FieldFalloff;
 import Game.Engine.World.Fields.ScalarField;
 import Game.Engine.World.Fields.VectorField;
-import Game.Engine.World.Physics.Core.ElectricalProperties;
-import Game.Engine.World.Physics.Core.FluidProperties;
-import Game.Engine.World.Physics.Core.MechanicalProperties;
+import Game.Engine.World.Physics.Electrical.ElectricalProperties;
+import Game.Engine.World.Physics.Fluid.FluidProperties;
+import Game.Engine.World.Physics.Mechanical.MechanicalProperties;
 import Game.Engine.World.Physics.Core.PropertyDescriptor;
-import Game.Engine.World.Physics.Runtime.PhysicsComponent;
-import Game.Engine.World.Physics.Core.ThermalProperties;
-import Game.Engine.World.Physics.Runtime.PhysicalStateComponent;
+import Game.Engine.World.Physics.Core.PhysicsComponent;
+import Game.Engine.World.Physics.Thermal.ThermalProperties;
+import Game.Engine.World.Physics.Core.PhysicalStateComponent;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.
@@ -259,7 +259,7 @@ public final class WorldFieldPresets {
      * @param delta      el delta a aplicar.
      */
     private static void applyProperty(GameObjects obj,
-                                       Game.Engine.World.Physics.PropertyDescriptor descriptor,
+                                       PropertyDescriptor descriptor,
                                        double delta) {
         PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
         if (pc != null) {

@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets;
 
-import Game.Engine.GameMath.Physics.Types.Physics2D;
+import Game.Engine.GameMath.KineticPhysics.Types.Physics2D;
 import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
 
 /**
