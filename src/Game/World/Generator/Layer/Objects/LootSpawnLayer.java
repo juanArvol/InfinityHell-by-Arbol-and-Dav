@@ -1,6 +1,6 @@
 package Game.World.Generator.Layer.Objects;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
@@ -8,7 +8,6 @@ import Game.Items.Savement.ItemStack;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldItem;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;

@@ -2,7 +2,7 @@ package Game.Engine;
 
 import Game.Engine.Entity.Components.HealthComponent;
 import Game.Engine.Entity.Components.StatusEffectComponent;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Transform2D;
+import Game.Engine.GameMath.Logic2D.Transform2D;
 
 /**
  * Capa de gameplay compartido entre todas las entidades interactuables.

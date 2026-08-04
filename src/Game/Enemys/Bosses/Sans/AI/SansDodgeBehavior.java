@@ -5,7 +5,7 @@ import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.AI.EnemyComport;
 import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Enemy;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Comportamiento de IA de Sans — esquiva y reposicionamiento.

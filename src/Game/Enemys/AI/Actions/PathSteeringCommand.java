@@ -2,7 +2,7 @@ package Game.Enemys.AI.Actions;
 
 import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.Core.Enemy;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.util.List;
 
 /**

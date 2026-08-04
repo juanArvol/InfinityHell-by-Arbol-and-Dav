@@ -1,7 +1,7 @@
 package Game.Engine.World.Fields;
 
 import Game.Engine.GameObjects;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Campo vectorial — aplica una fuerza (fx, fy) sobre los objetos en su radio.

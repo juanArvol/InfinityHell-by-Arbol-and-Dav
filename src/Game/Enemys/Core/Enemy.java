@@ -21,7 +21,7 @@ import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.Events.OnEnemyDeathEvent;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.World.WorldObjects.WorldObjectsContainer;

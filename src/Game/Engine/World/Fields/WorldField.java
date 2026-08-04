@@ -1,7 +1,7 @@
 package Game.Engine.World.Fields;
 
 import Game.Engine.GameObjects;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Campo físico del mundo — abstracción raíz de todos los campos.

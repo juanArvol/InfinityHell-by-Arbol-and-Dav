@@ -1,6 +1,6 @@
 package Game.Items.Types.Weapons.WeaponType;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletType;
 import Game.Items.Types.Weapons.WeaponType.FireMode.iFireMode;
 import Game.Items.Types.Weapons.WeaponType.Shoot.Shoot;

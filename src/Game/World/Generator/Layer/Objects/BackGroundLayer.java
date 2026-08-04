@@ -1,11 +1,10 @@
 package Game.World.Generator.Layer.Objects;
 
-import java.util.Random;
-
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.World.Core.World;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.Visuals.BackGround;
+import java.util.Random;
 
 public class BackGroundLayer implements WorldLayer {
 

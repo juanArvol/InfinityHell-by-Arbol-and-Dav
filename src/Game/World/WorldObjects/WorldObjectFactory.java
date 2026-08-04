@@ -1,7 +1,7 @@
 package Game.World.WorldObjects;
 
-import Game.Engine.GameMath.KineticPhysics.SurfaceMaterial;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Items.Savement.ItemStack;
 import java.awt.image.BufferedImage;
 

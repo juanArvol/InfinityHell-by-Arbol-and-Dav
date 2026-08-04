@@ -1,14 +1,13 @@
 package Game.Items.Types.Weapons.WeaponType.Shoot;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class WeaponShoot implements Shoot{
     private WeaponComport comport;

@@ -1,6 +1,6 @@
 package Game.Engine.Camera;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.util.function.Supplier;
 
 /**

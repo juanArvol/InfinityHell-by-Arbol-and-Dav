@@ -1,6 +1,6 @@
 package Game.Enemys.Core;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;

@@ -1,7 +1,7 @@
 package Game.Items.Types.Bullets;
 
-import Game.Engine.GameMath.KineticPhysics.Types.Physics2D;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 
 /**
  * Física de balas.

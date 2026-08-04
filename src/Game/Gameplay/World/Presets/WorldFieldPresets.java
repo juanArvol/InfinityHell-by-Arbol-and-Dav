@@ -2,17 +2,17 @@ package Game.Gameplay.World.Presets;
 
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.ThermalComponent;
+import Game.Engine.Physics.Core.PhysicalStateComponent;
+import Game.Engine.Physics.Core.PhysicsComponent;
+import Game.Engine.Physics.Core.PropertyDescriptor;
+import Game.Engine.Physics.Electrical.ElectricalProperties;
+import Game.Engine.Physics.Fluid.FluidProperties;
+import Game.Engine.Physics.Mechanical.MechanicalProperties;
+import Game.Engine.Physics.Thermal.ThermalProperties;
 import Game.Engine.GameObjects;
 import Game.Engine.World.Fields.FieldFalloff;
 import Game.Engine.World.Fields.ScalarField;
 import Game.Engine.World.Fields.VectorField;
-import Game.Engine.World.Physics.Electrical.ElectricalProperties;
-import Game.Engine.World.Physics.Fluid.FluidProperties;
-import Game.Engine.World.Physics.Mechanical.MechanicalProperties;
-import Game.Engine.World.Physics.Core.PropertyDescriptor;
-import Game.Engine.World.Physics.Core.PhysicsComponent;
-import Game.Engine.World.Physics.Thermal.ThermalProperties;
-import Game.Engine.World.Physics.Core.PhysicalStateComponent;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.

@@ -212,7 +212,7 @@ public class WorldManager {
                     GameObjects tracked = getCurrentWorld().getTrackTarget();
                     if (tracked == null) return null;
                     var pos = tracked.getTransform().getPosition();
-                    return new Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D(pos.getX(), pos.getY());
+                    return new Game.Engine.GameMath.Logic2D.Vector2D(pos.getX(), pos.getY());
                 },
                 0.10f   // lerp factor: seguimiento suave (10% por tick)
             );

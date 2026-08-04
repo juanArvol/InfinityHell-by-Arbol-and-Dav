@@ -3,7 +3,7 @@ package Game.Engine.Systems;
 import Game.Engine.Component;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteSkeletonComponent;
-import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
+import Game.Engine.GameMath.Logic3D.Transform3D;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;

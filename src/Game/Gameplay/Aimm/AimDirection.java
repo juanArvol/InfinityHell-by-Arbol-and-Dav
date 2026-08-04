@@ -1,6 +1,6 @@
 package Game.Gameplay.Aimm;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 public class AimDirection {
     private Vector2D direction;

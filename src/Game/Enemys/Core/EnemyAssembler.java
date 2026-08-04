@@ -10,7 +10,7 @@ import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Contrato base del ensamblador de Enemy.

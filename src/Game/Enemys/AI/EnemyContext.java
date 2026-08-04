@@ -1,6 +1,6 @@
 package Game.Enemys.AI;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Contexto de IA — abstracción del "objetivo" que persigue/ataca el enemigo.

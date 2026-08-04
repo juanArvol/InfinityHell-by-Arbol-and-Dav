@@ -2,7 +2,7 @@ package Game.World.Systems;
 
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.Events.OnEnemyDeathEvent;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;

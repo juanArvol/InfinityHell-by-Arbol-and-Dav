@@ -1,6 +1,6 @@
 package Game.World.Core;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Player.Player;
 import Game.World.WorldObjects.WorldObjectsContainer;

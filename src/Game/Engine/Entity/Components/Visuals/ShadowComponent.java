@@ -1,7 +1,7 @@
 package Game.Engine.Entity.Components.Visuals;
 
 import Game.Engine.Component;
-import Game.Engine.GameMath.SpaceLogic.Logic3D.Transform3D;
+import Game.Engine.GameMath.Logic3D.Transform3D;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
 import Game.Engine.RenderEngine.Contracts.Renderable;

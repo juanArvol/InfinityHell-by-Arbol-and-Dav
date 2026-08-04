@@ -1,7 +1,7 @@
 package Game.UI.Types;
 
 import Game.Engine.Camera.GameCamera;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Weapons.WeaponSelected;

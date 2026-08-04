@@ -1,7 +1,7 @@
 package Game.Engine.RenderEngine.Context;
 
 import Game.Engine.Camera.GameCamera;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Snapshot de posición de cámara para el pipeline de render.

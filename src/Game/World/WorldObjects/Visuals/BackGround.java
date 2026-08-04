@@ -1,7 +1,7 @@
 package Game.World.WorldObjects.Visuals;
 
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import java.awt.image.BufferedImage;
 

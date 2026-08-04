@@ -1,16 +1,17 @@
 package Game.Engine.World;
 
 import Game.Engine.GameObjects;
+import Game.Engine.Physics.Core.PhysicalRelation;
+import Game.Engine.Physics.Core.PhysicsCoordinator;
+import Game.Engine.Physics.Core.PropertyDependencyGraph;
+import Game.Engine.Physics.Core.RelationRegistry;
+import Game.Engine.Physics.Electrical.ElectricalRelations;
+import Game.Engine.Physics.Fluid.FluidRelations;
+import Game.Engine.Physics.Kinematic.KinematicDerivedRelations;
+import Game.Engine.Physics.Thermal.ThermalRelations;
 import Game.Engine.World.Fields.WorldFieldSystem;
 import Game.Engine.World.Influences.InfluenceSystem;
-import Game.Engine.World.Physics.Core.PhysicalRelation;
-import Game.Engine.World.Physics.Core.PhysicsCoordinator;
-import Game.Engine.World.Physics.Core.PropertyDependencyGraph;
-import Game.Engine.World.Physics.Core.RelationRegistry;
-import Game.Engine.World.Physics.Electrical.ElectricalRelations;
-import Game.Engine.World.Physics.Fluid.FluidRelations;
-import Game.Engine.World.Physics.Kinematic.KinematicDerivedRelations;
-import Game.Engine.World.Physics.Thermal.ThermalRelations;
+
 import java.util.List;
 
 /**

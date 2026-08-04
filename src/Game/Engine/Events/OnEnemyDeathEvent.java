@@ -1,7 +1,7 @@
 package Game.Engine.Events;
 
 import Game.Enemys.Core.Enemy;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Evento emitido cuando un Enemy llega a 0 HP y muere.

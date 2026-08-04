@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Sprites.Entity.Bullets.BulletAssets;

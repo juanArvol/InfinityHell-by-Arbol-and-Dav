@@ -1,16 +1,14 @@
 package Game.Items.Types.Weapons.Modifiers;
 
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.BulletType;
-import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
-import Game.Items.Types.Weapons.WeaponType.Shoot.ShootResult;
-
 import java.util.ArrayList;
 import java.util.List;
 

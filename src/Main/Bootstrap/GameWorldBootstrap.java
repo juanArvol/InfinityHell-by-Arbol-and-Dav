@@ -1,7 +1,7 @@
 package Main.Bootstrap;
 
 import Game.Enemys.Core.EnemySpawner;
-import Game.Engine.GameMath.SpaceLogic.Logic2D.Vector2D;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
 import Game.Player.Player;
 import Game.World.Core.World;
