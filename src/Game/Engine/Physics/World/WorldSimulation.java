@@ -1,17 +1,19 @@
-package Game.Engine.World;
+package Game.Engine.Physics.World;
 
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Core.PhysicalRelation;
 import Game.Engine.Physics.Core.PhysicsCoordinator;
+import Game.Engine.Physics.Core.PhysicsModule;
 import Game.Engine.Physics.Core.PropertyDependencyGraph;
 import Game.Engine.Physics.Core.RelationRegistry;
-import Game.Engine.Physics.Electrical.ElectricalRelations;
-import Game.Engine.Physics.Fluid.FluidRelations;
-import Game.Engine.Physics.Kinematic.KinematicDerivedRelations;
-import Game.Engine.Physics.Thermal.ThermalRelations;
-import Game.Engine.World.Fields.WorldFieldSystem;
-import Game.Engine.World.Influences.InfluenceSystem;
-
+import Game.Engine.Physics.Electrical.ElectricalModule;
+import Game.Engine.Physics.Fluid.FluidModule;
+import Game.Engine.Physics.Gravity.GravityModule;
+import Game.Engine.Physics.Kinematic.KinematicModule;
+import Game.Engine.Physics.Mechanical.MechanicalModule;
+import Game.Engine.Physics.Thermal.ThermalModule;
+import Game.Engine.Physics.World.Fields.WorldFieldSystem;
+import Game.Engine.Physics.World.Influences.InfluenceSystem;
 import java.util.List;
 
 /**
@@ -20,6 +22,7 @@ import java.util.List;
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
  * ── HRFC-030 — Integración entre Kinematic Physics y World Physics ────────
  * ── HRFC-031 — Descomposición de PhysicalState en SimulationContext ───────
+ * ── HRFC — Cierre del Refactor Arquitectónico ─────────────────────────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * WorldSimulation coordina el ciclo de simulación física del mundo.
@@ -33,7 +36,7 @@ import java.util.List;
  *   [2] WorldFieldSystem   — campos espaciales continuos
  *   [3] PhysicsCoordinator — resolución property-driven del estado físico
  *
- * ── FLUJO DEFINITIVO (HRFC-031) ───────────────────────────────────────────
+ * ── FLUJO DEFINITIVO ──────────────────────────────────────────────────────
  *
  *   Input
  *       ↓
@@ -49,24 +52,10 @@ import java.util.List;
  *       [3] PhysicsCoordinator
  *             PropertyResolver.resolve() → ResolutionPlan
  *             RelationResolver.evaluate(plan, objects, deltaTime)
- *               PhysicsSolver resuelve SimulationContextComponent primero,
- *               exponiendo SimulationContext via EvaluationView.context()
- *               FRICTION_THERMAL     → FrictionThermalEvaluator
- *                                      (lee desde context.kinematic/contact/material/environment)
- *               KINETIC_DISSIPATION  → KineticDissipationEvaluator
- *                                      (calcula deltaKE desde StateSnapshot)
- *               FOURIER / PASCAL / OHM / ...
- *                                      (leen desde PhysicalState via view.has/get/add)
  *       ↓
  *   PhysicalState actualizado — única fuente de verdad de propiedades físicas
  *       ↓
  *   Gameplay / Damage / Environment  observan el resultado
- *
- * ── NOTA SOBRE KinematicBridge ────────────────────────────────────────────
- * KinematicBridge es un Component que se ejecuta en GameObjects.update(),
- * ANTES de que WorldSimulation corra (ver WorldObjectsContainer, paso 1 vs 3).
- * Por tanto WorldSimulation no necesita coordinar KinematicBridge: ya recibe
- * el SimulationContext con el snapshot cinemático del frame actual actualizado.
  *
  * ── INVARIANTE CENTRAL ────────────────────────────────────────────────────
  * PhysicsCoordinator es el único responsable de producir comportamiento físico.
@@ -75,36 +64,47 @@ import java.util.List;
  *
  * ── COMPOSICIÓN ──────────────────────────────────────────────────────────
  *
- *   // Defaults + integración cinemática (HRFC-031) — opción recomendada
- *   WorldSimulation sim = WorldSimulation.withKinematicPhysics();
- *
- *   // Solo relaciones físicas fundamentales (sin integración cinemática)
- *   WorldSimulation sim = WorldSimulation.withDefaults();
- *
  *   // Mundo vacío (sin simulación física activa)
  *   WorldSimulation sim = WorldSimulation.empty();
  *
- *   // Mundo con física personalizada
+ *   // Física fundamental sin integración cinemática
+ *   WorldSimulation sim = WorldSimulation.withDefaults();
+ *
+ *   // Física fundamental + integración cinemática (recomendado para la mayoría de mundos)
+ *   WorldSimulation sim = WorldSimulation.withKinematicPhysics();
+ *
+ *   // Composición explícita con módulos
  *   WorldSimulation sim = WorldSimulation.builder()
- *       .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
- *       .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
- *       .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
- *       .registerAll(new RelationRegistry().registerAll(KinematicDerivedRelations.all()))
- *       .register(gravityRelation)
+ *       .module(new ThermalModule())
+ *       .module(new ElectricalModule())
+ *       .module(new FluidModule())
+ *       .module(new MechanicalModule())
+ *       .module(new GravityModule())
+ *       .module(new KinematicModule())
  *       .build();
  *
- * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Añadir un fenómeno nuevo del dominio físico clásico:
- *   1. Definir un PropertyDescriptor en el catálogo del dominio.
- *   2. Registrar ese PropertyDescriptor en el PhysicalState del objeto.
- *   3. Crear una PhysicalRelation con su RelationType.
- *   4. Implementar su RelationEvaluator y registrarlo en EvaluatorRegistry.
- *   5. Registrar la relación en el Builder o en runtime via coordinator().
+ *   // Composición con módulos de dominio adicionales
+ *   WorldSimulation sim = WorldSimulation.builder()
+ *       .module(new ThermalModule())
+ *       .module(new MechanicalModule())
+ *       .module(new GravityModule())
+ *       .module(new KinematicModule())
+ *       .module(new BossPhysicsModule())   // módulo de gameplay
+ *       .build();
  *
- * Añadir un fenómeno nuevo del dominio compuesto (cinemático, material, etc.):
- *   1. El evaluador lee desde view.context() los estados que necesite.
- *   2. Escribe resultados en PhysicalState via view.add() como siempre.
- *   3. Las entidades deben usar SimulationContextComponent.
+ * ── RESPONSABILIDAD DE COMPOSICIÓN ───────────────────────────────────────
+ * El Builder es el único punto donde se ensamblan los módulos. Cada módulo
+ * registra únicamente los evaluadores de su propio dominio. Cuando las
+ * relaciones de un dominio declaran un RelationType cuyo evaluador no está
+ * registrado por ese mismo módulo, la composición debe incluir el módulo
+ * que lo registra.
+ *
+ * Los módulos nunca se conocen entre ellos. Solo conocen sus propias leyes.
+ *
+ * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
+ * Añadir un nuevo dominio:
+ *   1. Implementar PhysicsModule en el paquete del dominio.
+ *   2. Instalar el módulo con .module(new NuevoDominioModule()).
  *
  *   WorldSimulation no cambia. PhysicsCoordinator no cambia.
  *   El Engine no aprende ningún concepto nuevo.
@@ -140,62 +140,58 @@ public final class WorldSimulation {
     }
 
     /**
-     * WorldSimulation con las relaciones físicas fundamentales distribuidas por dominio.
+     * WorldSimulation con los dominios físicos fundamentales.
      *
-     * Las relaciones registradas son:
-     *   Dominio térmico    → ThermalRelations (5 relaciones)
-     *   Dominio eléctrico  → ElectricalRelations (4 relaciones)
-     *   Dominio fluídico   → FluidRelations (3 relaciones)
+     * Módulos instalados:
+     *   ThermalModule     — conducción, disipación ambiental, expansión volumétrica, corrección
+     *   ElectricalModule  — transferencia, disipación ambiental, corrección, efecto Joule
+     *   FluidModule       — difusión, disipación ambiental, liberación en saturación
+     *   MechanicalModule  — presión, compresibilidad, elasticidad
      *
-     * @return WorldSimulation configurado con las relaciones físicas fundamentales.
+     * Esta combinación garantiza que todos los RelationType utilizados por
+     * las relaciones de los cuatro dominios tienen un evaluador registrado.
+     *
+     * @return WorldSimulation configurado con los dominios físicos fundamentales.
      */
     public static WorldSimulation withDefaults() {
         return builder()
-            .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
-            .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
-            .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
+            .module(new ThermalModule())
+            .module(new ElectricalModule())
+            .module(new FluidModule())
+            .module(new MechanicalModule())
             .build();
     }
 
     /**
-     * WorldSimulation con las relaciones físicas fundamentales más la integración
-     * cinemática completa (HRFC-031).
+     * WorldSimulation con los dominios físicos fundamentales más integración
+     * cinemática completa.
      *
-     * Las relaciones registradas son:
-     *   Dominio térmico    → ThermalRelations     (5 relaciones)
-     *   Dominio eléctrico  → ElectricalRelations  (4 relaciones)
-     *   Dominio fluídico   → FluidRelations        (3 relaciones)
-     *   Dominio cinemático → KinematicDerivedRelations (2 relaciones, prio 10-11):
-     *                          FRICTION_HEAT            — calor por rozamiento
-     *                          KINETIC_ENERGY_DISSIPATION — disipación → calor + presión
+     * Módulos instalados:
+     *   ThermalModule     — dominio térmico completo
+     *   ElectricalModule  — dominio eléctrico completo
+     *   FluidModule       — dominio fluídico completo
+     *   MechanicalModule  — dominio mecánico completo
+     *   GravityModule     — gravitación relativista y dinámica newtoniana
+     *   KinematicModule   — gravedad uniforme, calor por rozamiento, disipación cinética
+     *
+     * Esta combinación garantiza que todos los RelationType utilizados por
+     * las relaciones de los seis dominios tienen un evaluador registrado.
      *
      * Para que la integración cinemática sea efectiva, las entidades deben:
      *   1. Tener Physics2DComponent         (Kinematic Physics activo).
-     *   2. Tener SimulationContextComponent (contexto compuesto HRFC-031).
+     *   2. Tener SimulationContextComponent (contexto compuesto).
      *   3. Tener KinematicBridge como Component.
      *
-     * Patrón de ensamblado en Assembler:
-     *   PhysicalState physical = PhysicalState.builder()
-     *       .register(ThermalProperties.TEMPERATURE, 20.0)
-     *       .register(MechanicalProperties.PRESSURE)
-     *       .build();
-     *   MaterialState material = MaterialState.builder()
-     *       .frictionCoefficient(0.4).heatCapacity(500.0).build();
-     *   SimulationContext ctx = KinematicStateAssembler.buildContext(physical, material);
-     *   addComponent(new SimulationContextComponent(ctx));
-     *   addComponent(new KinematicBridge());
-     *
-     * Uso recomendado para mundos con física emergente del movimiento:
-     *   WorldSimulation sim = WorldSimulation.withKinematicPhysics();
-     *
-     * @return WorldSimulation con relaciones fundamentales + cinemáticas.
+     * @return WorldSimulation con dominios fundamentales + cinemáticos.
      */
     public static WorldSimulation withKinematicPhysics() {
         return builder()
-            .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
-            .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
-            .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
-            .registerAll(new RelationRegistry().registerAll(KinematicDerivedRelations.all()))
+            .module(new ThermalModule())
+            .module(new ElectricalModule())
+            .module(new FluidModule())
+            .module(new MechanicalModule())
+            .module(new GravityModule())
+            .module(new KinematicModule())
             .build();
     }
 
@@ -246,9 +242,8 @@ public final class WorldSimulation {
     /**
      * El PhysicsCoordinator del mundo.
      *
-     * Usar para registrar relaciones adicionales o dependencias en runtime:
-     *   world.coordinator().register(gravityRelation);
-     *   world.coordinator().graph().addRelation(tempProp, pressureProp, rel, "thermal");
+     * Usar para registrar relaciones o módulos adicionales en runtime:
+     *   world.coordinator().register(specialBossRelation);
      *   world.coordinator().registerAll(bossPhysicsRegistry);
      *
      * @return el PhysicsCoordinator de este mundo.
@@ -277,27 +272,67 @@ public final class WorldSimulation {
     /**
      * Builder de WorldSimulation.
      *
-     * Permite componer el núcleo de simulación con exactamente el grafo de
-     * dependencias y las relaciones físicas que cada mundo necesita.
+     * ── RESPONSABILIDAD ──────────────────────────────────────────────────
+     * El Builder es el único punto de composición del sistema. Su responsabilidad
+     * es ensamblar los módulos que participan en la simulación y garantizar que
+     * todos los RelationType utilizados por las relaciones registradas disponen
+     * de un evaluador.
      *
-     * El conocimiento físico se inyecta exclusivamente como instancias de
-     * PhysicalRelation. El Builder no conoce fenómenos, dominios ni propiedades.
+     * Cada módulo registra únicamente los evaluadores de su propio dominio.
+     * Cuando las relaciones de un módulo declaran un RelationType cuyo evaluador
+     * no registra ese mismo módulo, la composición debe incluir el módulo que
+     * sí lo registra. Esa responsabilidad recae exclusivamente en quien construye
+     * el WorldSimulation.
      *
-     * ── Patrones de composición ───────────────────────────────────────────
+     * ── API CANÓNICA ──────────────────────────────────────────────────────
+     * {@link #module(PhysicsModule)} es la forma estándar de instalar dominios.
+     * {@link #register(PhysicalRelation)} y {@link #registerAll(RelationRegistry)}
+     * sirven para relaciones individuales que no pertenecen a ningún módulo
+     * permanente — por ejemplo, relaciones de jefes, eventos o gameplay.
      *
-     *   // Con física emergente del movimiento (HRFC-030):
+     * ── REQUERIMIENTOS DE RelationType ───────────────────────────────────
+     * Módulos que declaran relaciones con RelationType sin evaluador propio:
+     *
+     *   ThermalModule       — RelationType.PASCAL, RelationType.HOOKE
+     *   ElectricalModule    — RelationType.AMBIENT_DISSIPATION, RelationType.HOOKE
+     *   FluidModule         — RelationType.AMBIENT_DISSIPATION
+     *   KinematicModule     — RelationType.NEWTON
+     *   MaterialStateModule — RelationType.FICK, RelationType.PLANCK
+     *   ElectromagneticModule — RelationType.OHM
+     *   QuantumModule       — RelationType.PLANCK
+     *
+     * ── PATRONES DE COMPOSICIÓN ───────────────────────────────────────────
+     *
+     *   // Física fundamental completa:
      *   WorldSimulation.builder()
-     *       .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
-     *       .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
-     *       .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
-     *       .registerAll(new RelationRegistry().registerAll(KinematicDerivedRelations.all()))
+     *       .module(new ThermalModule())
+     *       .module(new ElectricalModule())
+     *       .module(new FluidModule())
+     *       .module(new MechanicalModule())
      *       .build();
      *
-     *   // Con relaciones de un mod adicional:
+     *   // Física fundamental + cinemática:
      *   WorldSimulation.builder()
-     *       .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
-     *       .registerAll(new RelationRegistry().registerAll(KinematicDerivedRelations.all()))
-     *       .registerAll(new RelationRegistry().registerAll(ModRelations.all()))
+     *       .module(new ThermalModule())
+     *       .module(new ElectricalModule())
+     *       .module(new FluidModule())
+     *       .module(new MechanicalModule())
+     *       .module(new GravityModule())
+     *       .module(new KinematicModule())
+     *       .build();
+     *
+     *   // Módulo de gameplay con módulos base seleccionados:
+     *   WorldSimulation.builder()
+     *       .module(new ThermalModule())
+     *       .module(new MechanicalModule())
+     *       .module(new BossPhysicsModule())
+     *       .build();
+     *
+     *   // Relación de gameplay sin módulo permanente:
+     *   WorldSimulation.builder()
+     *       .module(new ThermalModule())
+     *       .module(new MechanicalModule())
+     *       .register(specialBossRelation)
      *       .build();
      */
     public static final class Builder {
@@ -306,6 +341,28 @@ public final class WorldSimulation {
             PhysicsCoordinator.builder();
 
         private Builder() {}
+
+        /**
+         * Instala un módulo de dominio físico.
+         *
+         * Invoca los dos contratos del módulo en orden:
+         *   1. module.registerRelations(...)  — relaciones declarativas del dominio.
+         *   2. module.registerEvaluators(...) — evaluadores especializados del dominio.
+         *
+         * WorldSimulation no conoce qué relaciones ni qué evaluadores contiene
+         * el módulo. Solo invoca el contrato.
+         *
+         * @param module el módulo a instalar. Ignorado si null.
+         * @return this.
+         */
+        public Builder module(PhysicsModule module) {
+            if (module == null) return this;
+            RelationRegistry registry = new RelationRegistry();
+            module.registerRelations(registry);
+            coordinatorBuilder.registerAll(registry);
+            module.registerEvaluators(coordinatorBuilder.evaluators());
+            return this;
+        }
 
         /**
          * Establece el grafo de dependencias físicas del universo.
@@ -320,6 +377,7 @@ public final class WorldSimulation {
 
         /**
          * Registra una PhysicalRelation individual.
+         * Usar para relaciones que no pertenecen a ningún módulo de dominio permanente.
          *
          * @param relation la relación declarativa. Ignorada si null.
          * @return this.
@@ -331,12 +389,7 @@ public final class WorldSimulation {
 
         /**
          * Registra todas las relaciones de un RelationRegistry.
-         *
-         * Ejemplo:
-         *   .registerAll(new RelationRegistry().registerAll(ThermalRelations.all()))
-         *   .registerAll(new RelationRegistry().registerAll(ElectricalRelations.all()))
-         *   .registerAll(new RelationRegistry().registerAll(FluidRelations.all()))
-         *   .registerAll(new RelationRegistry().registerAll(GameplayRelations.all()))
+         * Usar cuando se dispone de un registro ya construido externamente.
          *
          * @param registry el registro de relaciones. Ignorado si null o vacío.
          * @return this.

@@ -1,7 +1,6 @@
 package Game.Engine.Physics.Core;
 
 import Game.Engine.GameObjects;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -74,26 +73,39 @@ public final class RelationResolver {
      */
     private final RelationRegistry registry;
 
+    /**
+     * Registro de evaluadores inyectado desde la capa de composición (Physics.World).
+     * RelationResolver no conoce evaluadores concretos; solo los propaga al Solver.
+     */
+    private final EvaluatorRegistry evaluators;
+
     // ── Constructor ───────────────────────────────────────────────────────
 
     /**
-     * Crea un RelationResolver con un registro de relaciones preexistente.
+     * Crea un RelationResolver con un registro de relaciones y evaluadores dados.
      *
-     * @param registry registro de relaciones. No puede ser null.
+     * @param registry   registro de relaciones. No puede ser null.
+     * @param evaluators registro de evaluadores. No puede ser null.
      */
-    public RelationResolver(RelationRegistry registry) {
+    public RelationResolver(RelationRegistry registry, EvaluatorRegistry evaluators) {
         if (registry == null)
             throw new IllegalArgumentException("registry no puede ser null");
-        this.registry = registry;
-        this.solver   = new PhysicsSolver();
+        if (evaluators == null)
+            throw new IllegalArgumentException("evaluators no puede ser null");
+        this.registry   = registry;
+        this.evaluators = evaluators;
+        this.solver     = new PhysicsSolver(evaluators);
         for (PhysicalRelation r : registry.relations())
             solver.addRelation(r);
     }
 
-    /** Crea un RelationResolver con un registro vacío. */
-    public RelationResolver() {
-        this.registry = new RelationRegistry();
-        this.solver   = new PhysicsSolver();
+    /** Crea un RelationResolver con un registro vacío y evaluadores dados. */
+    public RelationResolver(EvaluatorRegistry evaluators) {
+        if (evaluators == null)
+            throw new IllegalArgumentException("evaluators no puede ser null");
+        this.registry   = new RelationRegistry();
+        this.evaluators = evaluators;
+        this.solver     = new PhysicsSolver(evaluators);
     }
 
     // ── Registro de relaciones ────────────────────────────────────────────
@@ -197,7 +209,7 @@ public final class RelationResolver {
                                         List<GameObjects> objects,
                                         double            deltaTime) {
         RelationRegistry single = new RelationRegistry().register(relation);
-        PhysicsSolver    temp   = new PhysicsSolver();
+        PhysicsSolver    temp   = new PhysicsSolver(evaluators);
         temp.registerAll(single);
         temp.solve(objects, deltaTime);
     }
@@ -208,7 +220,7 @@ public final class RelationResolver {
         if (relations.isEmpty()) return;
         RelationRegistry batch = new RelationRegistry();
         for (PhysicalRelation r : relations) batch.register(r);
-        PhysicsSolver temp = new PhysicsSolver();
+        PhysicsSolver temp = new PhysicsSolver(evaluators);
         temp.registerAll(batch);
         temp.solve(objects, deltaTime);
     }

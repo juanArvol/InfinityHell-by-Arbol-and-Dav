@@ -1,7 +1,7 @@
 package Game.Gameplay.Core.Dependencies;
 
-import Game.Engine.World.Graph.DependencyGraph;
-import Game.Engine.World.Graph.GraphEdge;
+import Game.Engine.Physics.World.Graph.DependencyGraph;
+import Game.Engine.Physics.World.Graph.GraphEdge;
 import Game.Gameplay.Core.Properties.PropertyKey;
 import java.util.ArrayList;
 import java.util.Collections;

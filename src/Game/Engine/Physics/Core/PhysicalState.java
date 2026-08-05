@@ -6,6 +6,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+
 /**
  * Fuente de verdad del estado físico de un objeto.
  *
@@ -189,8 +190,9 @@ public final class PhysicalState implements DomainState {
      * no se registran aquí: pertenecen al KinematicState del SimulationContext.
      * Los evaluadores acceden a ellas mediante SimulationContext.kinematic().
      *
-     * Para construir el contexto completo de simulación de una entidad,
-     * usar SimulationContextComponent en lugar de PhysicsComponent aislado.
+     * Para registrar propiedades de material usar:
+     *   .registerMaterial(mat::registerInto)
+     * donde mat es cualquier clase con un método registerInto(Builder).
      */
     public static final class Builder {
 
@@ -227,15 +229,26 @@ public final class PhysicalState implements DomainState {
         }
 
         /**
-         * Registra todas las propiedades de material de un MaterialComponent.
-         * Equivale a llamar registerInto(this) sobre el material.
+         * Registra las propiedades de un material en este PhysicalState.
          *
-         * @param material el material cuyas propiedades se registran.
-         *                 Ignorado si null.
+         * El parámetro es un Consumer que recibe este Builder y lo puebla con
+         * los PropertyDescriptors del material. Esto desacopla PhysicalState.Builder
+         * de cualquier clase concreta de material:
+         *
+         *   PhysicalState.builder()
+         *       .register(ThermalProperties.TEMPERATURE, 20.0)
+         *       .registerMaterial(mat::registerInto)   // mat es MaterialComponent
+         *       .build();
+         *
+         * Donde mat::registerInto es el método de MaterialComponent que conoce
+         * qué PropertyDescriptors registrar y con qué valores iniciales.
+         *
+         * @param materialRegistrar función que puebla este Builder con las
+         *                          propiedades del material. Ignorada si null.
          * @return this (para encadenado).
          */
-        public Builder registerMaterial(Game.Engine.World.Components.MaterialComponent material) {
-            if (material != null) material.registerInto(this);
+        public Builder registerMaterial(java.util.function.Consumer<Builder> materialRegistrar) {
+            if (materialRegistrar != null) materialRegistrar.accept(this);
             return this;
         }
 

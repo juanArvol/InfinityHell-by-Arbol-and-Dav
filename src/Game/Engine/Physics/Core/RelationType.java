@@ -41,9 +41,9 @@ package Game.Engine.Physics.Core;
  * Añadir un nuevo fenómeno:
  *   1. Añadir una constante aquí.
  *   2. Implementar su RelationEvaluator en el dominio correspondiente.
- *   3. Registrar en EvaluatorRegistry.defaults().
+ *   3. Registrar en el XxxModule del dominio (registerEvaluators).
  *
- *   Ningún archivo existente se modifica salvo EvaluatorRegistry.
+ *   Ningún archivo existente se modifica.
  */
 public enum RelationType {
 

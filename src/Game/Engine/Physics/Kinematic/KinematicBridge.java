@@ -2,8 +2,6 @@ package Game.Engine.Physics.Kinematic;
 
 import Game.Engine.Component;
 import Game.Engine.Entity.Components.Physics2DComponent;
-import Game.Engine.Physics.Core.PhysicsComponent;
-import Game.Engine.Physics.Core.PhysicalStateComponent;
 import Game.Engine.Physics.Core.SimulationContext;
 import Game.Engine.Physics.Core.SimulationContextComponent;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
@@ -73,9 +71,8 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  *   - Physics2DComponent          (Kinematic Physics activo)
  *   - SimulationContextComponent  (SimulationContext activo — HRFC-031)
  *
- * Compatibilidad legacy: si el objeto tiene PhysicsComponent o
- * PhysicalStateComponent sin SimulationContextComponent, KinematicBridge
- * no hace nada (la integración cinemática requiere el contexto compuesto).
+ * Si el objeto no tiene SimulationContextComponent, KinematicBridge no hace
+ * nada. La integración cinemática requiere el contexto compuesto.
  *
  * ── DELTATIME ─────────────────────────────────────────────────────────────
  * KinematicBridge usa el deltaTime fijo del motor (1/60 s por defecto).
@@ -188,9 +185,8 @@ public final class KinematicBridge extends Component {
     /**
      * Resuelve el SimulationContext del objeto.
      *
-     * Solo SimulationContextComponent es el canal canónico para HRFC-031.
-     * PhysicsComponent y PhysicalStateComponent no son suficientes: la
-     * integración cinemática requiere el contexto compuesto.
+     * SimulationContextComponent es el único canal canónico para la
+     * integración cinemática (HRFC-031).
      *
      * @return el SimulationContext, o null si el objeto no tiene el componente.
      */

@@ -1,4 +1,4 @@
-package Game.Engine.World.Graph;
+package Game.Engine.Physics.World.Graph;
 
 /**
  * Arista dirigida genérica del DependencyGraph<T>.

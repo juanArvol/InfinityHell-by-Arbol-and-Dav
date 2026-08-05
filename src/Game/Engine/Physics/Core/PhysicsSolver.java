@@ -27,12 +27,11 @@ import java.util.List;
  *       ↓
  *   Commit: WorkingState.commit() → PhysicalState definitivo
  *
- * ── RESOLUCIÓN DE ESTADO (HRFC-031) ──────────────────────────────────────
+ * ── RESOLUCIÓN DE ESTADO ──────────────────────────────────────────────────
  * FrameContext.resolveState() sigue el orden de prioridad:
  *   1. SimulationContextComponent — extrae physical() del contexto compuesto
  *                                    y expone el SimulationContext via view.context()
  *   2. PhysicsComponent           — extrae state directamente (context() = null)
- *   3. PhysicalStateComponent     — fallback legacy (context() = null)
  *
  * Los evaluadores que no necesitan el contexto compuesto funcionan igual
  * que antes: leen via view.has() / view.get() / view.add() sobre PhysicalState.
@@ -65,13 +64,6 @@ public final class PhysicsSolver {
     private       boolean                dirty     = false;
 
     // ── Constructores ─────────────────────────────────────────────────────
-
-    /**
-     * Crea un PhysicsSolver con los evaluadores del Core por defecto.
-     */
-    public PhysicsSolver() {
-        this.evaluators = EvaluatorRegistry.defaults();
-    }
 
     /**
      * Crea un PhysicsSolver con un registro de evaluadores personalizado.
@@ -202,11 +194,10 @@ public final class PhysicsSolver {
          * Resuelve el PhysicalState y el SimulationContext de un objeto,
          * en orden de prioridad:
          *
-         *   1. SimulationContextComponent (HRFC-031) — contexto compuesto
-         *   2. PhysicsComponent           (HRFC-021) — física pura
-         *   3. PhysicalStateComponent     (legacy)   — compatibilidad
+         *   1. SimulationContextComponent — contexto compuesto (HRFC-031)
+         *   2. PhysicsComponent           — física pura (HRFC-021)
          *
-         * Retorna null si el objeto no tiene ninguno de los tres.
+         * Retorna null si el objeto no tiene ninguno de los dos.
          */
         private static ResolvedState resolveState(GameObjects obj) {
             if (obj == null) return null;
@@ -223,13 +214,6 @@ public final class PhysicsSolver {
             PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
             if (pc != null) {
                 return new ResolvedState(pc.getState(), null);
-            }
-
-            // Prioridad 3: PhysicalStateComponent legacy
-            PhysicalStateComponent legacy =
-                obj.getComponent(PhysicalStateComponent.class);
-            if (legacy != null) {
-                return new ResolvedState(legacy.getState(), null);
             }
 
             return null;
@@ -310,7 +294,7 @@ public final class PhysicsSolver {
 
         /**
          * El SimulationContext de la entidad, si tiene SimulationContextComponent.
-         * Null para entidades con solo PhysicsComponent o PhysicalStateComponent.
+         * Null para entidades con solo PhysicsComponent.
          */
         @Override
         public SimulationContext context() { return simulationContext; }

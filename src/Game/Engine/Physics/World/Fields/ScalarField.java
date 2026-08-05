@@ -1,4 +1,4 @@
-package Game.Engine.World.Fields;
+package Game.Engine.Physics.World.Fields;
 
 import Game.Engine.GameObjects;
 

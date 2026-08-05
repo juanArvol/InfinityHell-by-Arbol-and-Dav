@@ -39,13 +39,10 @@ import Game.Engine.Component;
  * y opera exclusivamente sobre el PhysicalState que contiene. El componente
  * es transparente al Core — solo provee acceso al estado.
  *
- * ── MIGRACIÓN DESDE PhysicalStateComponent ────────────────────────────────
- * PhysicsComponent reemplaza a PhysicalStateComponent (HRFC-019).
- * La API es idéntica. El cambio es semántico: el nuevo nombre refleja
- * correctamente la responsabilidad según HRFC-021.
- *
- * PhysicalStateComponent sigue existiendo por compatibilidad con código
- * existente del proyecto. Todo código nuevo debe usar PhysicsComponent.
+ * ── NOTA HISTÓRICA ────────────────────────────────────────────────────────
+ * PhysicsComponent reemplazó a PhysicalStateComponent (HRFC-021).
+ * PhysicalStateComponent ha sido eliminado en el cierre del refactor.
+ * Todo código debe usar PhysicsComponent o SimulationContextComponent.
  */
 public final class PhysicsComponent extends Component {
 

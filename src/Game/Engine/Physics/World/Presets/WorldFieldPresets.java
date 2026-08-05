@@ -1,37 +1,38 @@
-package Game.Gameplay.World.Presets;
+package Game.Engine.Physics.World.Presets;
 
 import Game.Engine.Entity.Components.Physics2DComponent;
-import Game.Engine.Entity.Components.ThermalComponent;
-import Game.Engine.Physics.Core.PhysicalStateComponent;
+import Game.Engine.GameObjects;
 import Game.Engine.Physics.Core.PhysicsComponent;
 import Game.Engine.Physics.Core.PropertyDescriptor;
+import Game.Engine.Physics.Core.SimulationContextComponent;
 import Game.Engine.Physics.Electrical.ElectricalProperties;
 import Game.Engine.Physics.Fluid.FluidProperties;
 import Game.Engine.Physics.Mechanical.MechanicalProperties;
 import Game.Engine.Physics.Thermal.ThermalProperties;
-import Game.Engine.GameObjects;
-import Game.Engine.World.Fields.FieldFalloff;
-import Game.Engine.World.Fields.ScalarField;
-import Game.Engine.World.Fields.VectorField;
+import Game.Engine.Physics.World.Fields.FieldFalloff;
+import Game.Engine.Physics.World.Fields.ScalarField;
+import Game.Engine.Physics.World.Fields.VectorField;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.
  *
  * ── HRFC-021 — Property-Driven Physics Architecture ───────────────────────
+ * ── HRFC — Cierre del Refactor Arquitectónico ─────────────────────────────
  *
  * ── UBICACIÓN ─────────────────────────────────────────────────────────────
  * WorldFieldPresets vive en Game.Gameplay.World.Presets, no en el Engine.
  * Los campos concretos (thermal, gravity, rain, vacuum...) son contenido
  * del universo de Infinity Hell — no infraestructura del Engine.
  *
- * ── MODELO DE ACCESO A PROPIEDADES (HRFC-021) ─────────────────────────────
- * Los campos que modifican propiedades físicas acceden al estado mediante
- * PhysicsComponent (nuevo) o PhysicalStateComponent (compatibilidad HRFC-019).
+ * ── MODELO DE ACCESO A PROPIEDADES ────────────────────────────────────────
+ * Los campos que modifican propiedades físicas acceden al estado en orden
+ * de prioridad:
+ *
+ *   1. SimulationContextComponent — contexto compuesto (HRFC-031)
+ *   2. PhysicsComponent           — física pura (HRFC-021)
+ *
  * En ambos casos operan sobre PropertyDescriptor, no sobre componentes
  * especializados por dominio físico.
- *
- * ThermalComponent se mantiene soportado para objetos que aún lo usen como
- * componente independiente (retrocompatibilidad).
  *
  * ── USO ───────────────────────────────────────────────────────────────────
  *
@@ -56,9 +57,6 @@ public final class WorldFieldPresets {
     /**
      * Campo térmico permanente — añade/sustrae temperatura en radio.
      * Sigue la posición del source si no es null.
-     *
-     * Compatible con objetos que usen ThermalComponent (legacy) o
-     * PhysicsComponent / PhysicalStateComponent con CoreProperties.TEMPERATURE.
      *
      * @param intensity positivo = calor, negativo = frío (delta/frame en el centro).
      */
@@ -91,9 +89,6 @@ public final class WorldFieldPresets {
      * Campo eléctrico — añade/sustrae carga eléctrica en radio.
      * Atenuación cuadrática: la carga decrece rápidamente con la distancia.
      *
-     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
-     * tengan registrada la propiedad CoreProperties.CHARGE.
-     *
      * @param intensity positivo = carga positiva, negativo = carga negativa (delta/frame).
      */
     public static ScalarField electric(double x, double y, double radius,
@@ -109,9 +104,6 @@ public final class WorldFieldPresets {
      * Campo de humedad — añade/sustrae humedad en radio.
      * Intensidad constante en todo el radio (lluvia uniforme).
      *
-     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
-     * tengan registrada la propiedad CoreProperties.HUMIDITY.
-     *
      * @param intensity positivo = humedece, negativo = seca (delta/frame).
      */
     public static ScalarField humidity(double x, double y, double radius,
@@ -126,9 +118,6 @@ public final class WorldFieldPresets {
     /**
      * Campo de presión — añade/sustrae presión local en radio.
      * Atenuación cuadrática: el efecto decrece con la distancia.
-     *
-     * Opera sobre objetos con PhysicsComponent o PhysicalStateComponent que
-     * tengan registrada la propiedad CoreProperties.PRESSURE.
      *
      * @param intensity positivo = sobrepresión, negativo = subpresión/vacío (delta/frame).
      */
@@ -224,35 +213,20 @@ public final class WorldFieldPresets {
     /**
      * Aplica un delta de temperatura al objeto.
      *
-     * Prioridad de acceso:
-     *   1. PhysicsComponent     (HRFC-021 — modelo nuevo)
-     *   2. PhysicalStateComponent (HRFC-019 — modelo anterior, aún compatible)
-     *   3. ThermalComponent     (legacy — componente independiente)
+     * Orden de prioridad:
+     *   1. SimulationContextComponent — contexto compuesto (HRFC-031)
+     *   2. PhysicsComponent           — física pura (HRFC-021)
      */
     private static void applyTemperature(GameObjects obj, double delta) {
-        // 1. PhysicsComponent (HRFC-021)
-        PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
-        if (pc != null) {
-            pc.getState().add(ThermalProperties.TEMPERATURE, delta);
-            return;
-        }
-        // 2. PhysicalStateComponent (HRFC-019)
-        PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
-        if (psc != null) {
-            psc.getState().add(ThermalProperties.TEMPERATURE, delta);
-            return;
-        }
-        // 3. ThermalComponent (legacy)
-        ThermalComponent tc = obj.getComponent(ThermalComponent.class);
-        if (tc != null) tc.addHeat(delta);
+        applyProperty(obj, ThermalProperties.TEMPERATURE, delta);
     }
 
     /**
-     * Aplica un delta a una propiedad física genérica del objeto.
+     * Aplica un delta a una propiedad física del objeto.
      *
-     * Prioridad de acceso:
-     *   1. PhysicsComponent     (HRFC-021)
-     *   2. PhysicalStateComponent (HRFC-019)
+     * Orden de prioridad:
+     *   1. SimulationContextComponent — extrae PhysicalState del contexto compuesto
+     *   2. PhysicsComponent           — extrae PhysicalState directamente
      *
      * @param obj        el objeto receptor.
      * @param descriptor el descriptor de la propiedad a modificar.
@@ -261,14 +235,15 @@ public final class WorldFieldPresets {
     private static void applyProperty(GameObjects obj,
                                        PropertyDescriptor descriptor,
                                        double delta) {
+        SimulationContextComponent ctxComp =
+            obj.getComponent(SimulationContextComponent.class);
+        if (ctxComp != null) {
+            ctxComp.getContext().physical().add(descriptor, delta);
+            return;
+        }
         PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
         if (pc != null) {
             pc.getState().add(descriptor, delta);
-            return;
-        }
-        PhysicalStateComponent psc = obj.getComponent(PhysicalStateComponent.class);
-        if (psc != null) {
-            psc.getState().add(descriptor, delta);
         }
     }
 }

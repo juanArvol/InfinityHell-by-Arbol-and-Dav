@@ -8,12 +8,12 @@ import Game.Engine.Physics.Core.PropertyDescriptor;
  * ── HRFC-030 — Integración entre Kinematic Physics y World Physics ────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
- * KinematicStateProperties es el catálogo de acceso al estado cinemático
- * dentro del PhysicalState de una entidad.
+ * KinematicStateProperties es el catálogo de PropertyDescriptors que
+ * describen las magnitudes cinemáticas dentro del SimulationContext.
  *
- * Estas propiedades son escritas exclusivamente por KinematicPhysicsInterpreter,
- * después de cada paso de Kinematic Physics y antes de que PhysicsCoordinator
- * evalúe las relaciones del mundo.
+ * KinematicBridge produce estos valores cada frame y los registra en el
+ * SimulationContext vía updateKinematic(). Los evaluadores de World Physics
+ * los consumen desde KinematicState a través de view.context().
  *
  * World Physics las consume como cualquier otra propiedad del PhysicalState:
  * leyendo su valor mediante view.get(KinematicStateProperties.SPEED) en
@@ -54,11 +54,10 @@ import Game.Engine.Physics.Core.PropertyDescriptor;
  *       para producir un delta de PRESSURE o DEFORMATION_ENERGY.
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Añadir una nueva magnitud:
+ * Añadir una nueva magnitud cinemática:
  *   1. Crear un PropertyDescriptor aquí con un id único.
  *   2. Añadir el campo en KinematicState y calcularlo en KinematicState.from().
- *   3. KinematicPhysicsInterpreter la escribe al PhysicalState.
- *   4. Crear un evaluador que la consuma y registrarlo en EvaluatorRegistry.
+ *   3. Crear un evaluador que la consuma y registrarlo en KinematicModule.
  *
  *   Ningún sistema existente cambia.
  *
@@ -66,8 +65,9 @@ import Game.Engine.Physics.Core.PropertyDescriptor;
  *   ✗ No contiene lógica de simulación.
  *   ✗ No referencia Physics2D.
  *   ✗ No referencia evaluadores concretos.
+ *   ✗ No referencia KinematicPhysicsInterpreter (eliminado).
  *   ✓ Es un catálogo estático de PropertyDescriptors.
- *   ✓ Las propiedades son escritas por el Interpreter, leídas por evaluadores.
+ *   ✓ Las propiedades son producidas por KinematicBridge, leídas por evaluadores.
  */
 public final class KinematicStateProperties {
 
@@ -77,10 +77,10 @@ public final class KinematicStateProperties {
 
     /**
      * Módulo de la velocidad actual en u/s.
-     * Siempre ≥ 0. Producido cada frame por KinematicPhysicsInterpreter.
+     * Siempre ≥ 0. Producido cada frame por KinematicBridge.
      *
      * Consumidores relevantes:
-     *   → FrictionThermalEvaluator  (calor por fricción)
+     *   → FrictionThermalEvaluator    (calor por fricción)
      *   → KineticDissipationEvaluator (disipación de energía)
      *   → BernoulliEvaluator          (presión dinámica en fluidos)
      */

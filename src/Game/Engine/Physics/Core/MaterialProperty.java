@@ -1,68 +1,74 @@
 package Game.Engine.Physics.Core;
 
-import Game.Engine.World.Components.MaterialComponent;
 import java.util.function.ToDoubleFunction;
 
 /**
  * Descriptor genérico de una propiedad de material.
  *
  * ── HRFC-018 — Consolidación Definitiva del Modelo Declarativo ────────────
+ * ── HRFC — Cierre del Refactor Arquitectónico ─────────────────────────────
  *
  * ── PROBLEMA QUE RESUELVE ─────────────────────────────────────────────────
- * Antes de HRFC-018, las leyes físicas (PhysicsEquation, PhysicsConstraint,
- * PairEquation) accedían a las constantes del material mediante getters
- * específicos por fenómeno:
+ * Antes de HRFC-018, las leyes físicas accedían a las constantes del material
+ * mediante getters específicos por fenómeno:
  *
  *   mat.getThermalConductivity()
  *   mat.getHeatCapacity()
  *   mat.getElectricalConductivity()
- *   mat.getHumidityAbsorption()
- *   mat.getCompressibility()
  *   ...
  *
- * Añadir una propiedad nueva (p.ej. permeabilidad magnética) requería:
- *   1. Añadir un campo en MaterialComponent.
- *   2. Añadir un getter en MaterialComponent.
- *   3. Actualizar todas las leyes que usen esa propiedad.
+ * Añadir una propiedad nueva requería modificar MaterialComponent, añadir un
+ * getter y actualizar todas las leyes que la usaran.
  *
  * ── SOLUCIÓN ──────────────────────────────────────────────────────────────
- * MaterialProperty<V> es un descriptor que encapsula el acceso a una
- * propiedad del material mediante una función extractora.
+ * MaterialProperty<V> encapsula el acceso a una propiedad del material
+ * mediante una función extractora sobre MaterialData.
  *
- * Las relaciones físicas (PhysicalRelation) referencian propiedades mediante
- * descriptores, no mediante getters específicos. El acceso uniforme es:
+ * Las relaciones físicas referencian propiedades mediante descriptores:
  *
- *   double conductivity = MaterialProperties.THERMAL_CONDUCTIVITY.from(mat);
- *   double capacity     = MaterialProperties.HEAT_CAPACITY.from(mat);
- *   double magnetic     = MaterialProperties.MAGNETIC_PERMEABILITY.from(mat);
+ *   double conductivity = ThermalMaterialProperties.THERMAL_CONDUCTIVITY.from(mat);
+ *   double capacity     = ThermalMaterialProperties.HEAT_CAPACITY.from(mat);
  *
- * La firma es idéntica para todas las propiedades. El Solver nunca necesita
- * conocer el nombre del getter subyacente.
+ * La firma es idéntica para todas las propiedades. Los evaluadores nunca
+ * necesitan conocer el nombre del getter subyacente.
+ *
+ * ── DESACOPLAMIENTO DE ENTITY (HRFC — Cierre) ─────────────────────────────
+ * El extractor opera sobre MaterialData (interfaz de Physics.Core), no sobre
+ * MaterialComponent (clase concreta de Entity.Components.Collisions).
+ *
+ * Esto elimina la dependencia estructural:
+ *
+ *   Antes:  Physics.Core  →  Entity.Components.Collisions.MaterialComponent
+ *   Ahora:  Physics.Core  →  Physics.Core.MaterialData   (solo intra-módulo)
+ *           Entity.Components.Collisions.MaterialComponent  →  Physics.Core.MaterialData
+ *
+ * Cualquier implementación de MaterialData puede ser usada como fuente de
+ * datos de material — no solo MaterialComponent.
  *
  * ── DISEÑO ────────────────────────────────────────────────────────────────
  * MaterialProperty<V> es inmutable. Contiene:
  *
  *   id          → identificador único legible (para depuración y serialización)
- *   extractor   → ToDoubleFunction<MaterialComponent> que lee el valor
+ *   extractor   → ToDoubleFunction<MaterialData> que lee el valor
  *   description → descripción opcional legible
  *
  * El parámetro de tipo <V> está reservado para extensibilidad futura
  * (propiedades no escalares). En esta versión todas las propiedades del
- * material son escalares (double), por lo que V = Double en el catálogo.
+ * material son escalares (double), por lo que V = Double en los catálogos.
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
  * Para añadir una nueva propiedad física de material:
  *
- *   1. Añadir el campo en MaterialComponent (una sola línea).
- *   2. Añadir el getter en MaterialComponent (una sola línea).
- *   3. Declarar una constante en el catálogo (MaterialProperties o uno propio):
+ *   1. Añadir el getter en la interfaz MaterialData.
+ *   2. Implementarlo en MaterialComponent (y cualquier otra implementación).
+ *   3. Declarar una constante en el catálogo del dominio correspondiente:
  *
  *      public static final MaterialProperty<Double> MAGNETIC_PERMEABILITY =
  *          MaterialProperty.of("magnetic_permeability",
- *              MaterialComponent::getMagneticPermeability,
+ *              MaterialData::getMagneticPermeability,
  *              "Permeabilidad magnética del material [0,1]");
  *
-  *   4. Usar el descriptor en las PhysicalRelation que la necesiten.
+ *   4. Usar el descriptor en las PhysicalRelation que la necesiten.
  *      → PhysicsSolver no cambia. RelationRegistry no cambia.
  *
  * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
@@ -71,6 +77,7 @@ import java.util.function.ToDoubleFunction;
  *   ✗ Lógica de simulación
  *   ✗ Nombres de fenómenos
  *   ✗ Referencias al Solver
+ *   ✗ Referencias a clases del módulo Entity
  *
  * @param <V> tipo del valor de la propiedad. Double para propiedades escalares.
  */
@@ -80,10 +87,10 @@ public final class MaterialProperty<V> {
     private final String id;
 
     /**
-     * Función que extrae el valor escalar de esta propiedad desde un MaterialComponent.
+     * Función que extrae el valor escalar de esta propiedad desde un MaterialData.
      * Nunca null.
      */
-    private final ToDoubleFunction<MaterialComponent> extractor;
+    private final ToDoubleFunction<MaterialData> extractor;
 
     /** Descripción legible opcional. Puede ser null. */
     private final String description;
@@ -91,7 +98,7 @@ public final class MaterialProperty<V> {
     // ── Constructor privado — usar factories ──────────────────────────────
 
     private MaterialProperty(String id,
-                              ToDoubleFunction<MaterialComponent> extractor,
+                              ToDoubleFunction<MaterialData> extractor,
                               String description) {
         if (id == null || id.isBlank())
             throw new IllegalArgumentException("id no puede ser null ni vacío");
@@ -108,14 +115,14 @@ public final class MaterialProperty<V> {
      * Crea un descriptor con id, función extractora y descripción.
      *
      * @param id          identificador único. No puede ser null ni vacío.
-     * @param extractor   función que extrae el valor desde MaterialComponent.
+     * @param extractor   función que extrae el valor desde MaterialData.
      * @param description descripción legible (puede ser null).
      * @param <V>         tipo del valor.
      * @return descriptor configurado.
      */
     public static <V> MaterialProperty<V> of(
             String id,
-            ToDoubleFunction<MaterialComponent> extractor,
+            ToDoubleFunction<MaterialData> extractor,
             String description) {
         return new MaterialProperty<>(id, extractor, description);
     }
@@ -124,13 +131,13 @@ public final class MaterialProperty<V> {
      * Crea un descriptor sin descripción.
      *
      * @param id        identificador único. No puede ser null ni vacío.
-     * @param extractor función que extrae el valor desde MaterialComponent.
+     * @param extractor función que extrae el valor desde MaterialData.
      * @param <V>       tipo del valor.
      * @return descriptor configurado.
      */
     public static <V> MaterialProperty<V> of(
             String id,
-            ToDoubleFunction<MaterialComponent> extractor) {
+            ToDoubleFunction<MaterialData> extractor) {
         return new MaterialProperty<>(id, extractor, null);
     }
 
@@ -141,12 +148,12 @@ public final class MaterialProperty<V> {
      *
      * Uso en leyes físicas:
      *
-     *   double cond = MaterialProperties.THERMAL_CONDUCTIVITY.from(mat);
+     *   double cond = ThermalMaterialProperties.THERMAL_CONDUCTIVITY.from(mat);
      *
      * @param material el material del que leer la propiedad. No puede ser null.
      * @return valor escalar de la propiedad.
      */
-    public double from(MaterialComponent material) {
+    public double from(MaterialData material) {
         if (material == null)
             throw new IllegalArgumentException("material no puede ser null");
         return extractor.applyAsDouble(material);
@@ -160,7 +167,7 @@ public final class MaterialProperty<V> {
      * @param defaultValue valor retornado si material es null.
      * @return valor escalar de la propiedad, o defaultValue si material es null.
      */
-    public double fromOrDefault(MaterialComponent material, double defaultValue) {
+    public double fromOrDefault(MaterialData material, double defaultValue) {
         if (material == null) return defaultValue;
         return extractor.applyAsDouble(material);
     }

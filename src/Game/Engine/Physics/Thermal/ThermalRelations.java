@@ -1,26 +1,22 @@
 package Game.Engine.Physics.Thermal;
 
 import Game.Engine.Physics.Core.PhysicalRelation;
-import Game.Engine.Physics.Core.PropertyDescriptor;
 import Game.Engine.Physics.Core.RelationConstraint;
 import Game.Engine.Physics.Core.RelationType;
 import Game.Engine.Physics.Mechanical.MechanicalProperties;
-import Game.Engine.Physics.Thermal.ThermalProperties;
 
 /**
  * Catálogo de relaciones del dominio térmico.
  *
  * ── HRFC-025 — Eliminación de la Deuda Histórica CoreProperties / CoreRelations ──
+ * ── HRFC — Auditoría Arquitectónica Final ────────────────────────────────
  *
  * ── DOMINIO FÍSICO ────────────────────────────────────────────────────────
- * Este catálogo agrupa exclusivamente las relaciones que describen fenómenos
- * de transferencia, disipación y corrección de energía térmica.
+ * Este catálogo agrupa exclusivamente las relaciones cuya magnitud motriz
+ * es la energía térmica: fenómenos originados por la temperatura.
  *
  * Una relación pertenece a este catálogo si y solo si responde a la pregunta:
  *   ¿Modela un fenómeno cuya magnitud primaria es la energía térmica?
- *
- * No se agrupan relaciones aquí por razones de distribución uniforme ni
- * por herencia histórica. La cohesión del dominio térmico prevalece.
  *
  * ── RELACIONES INCLUIDAS ──────────────────────────────────────────────────
  *
@@ -28,7 +24,6 @@ import Game.Engine.Physics.Thermal.ThermalProperties;
  *   [2] THERMAL_AMBIENT_DISSIPATION  temperatura → equilibrio               AMBIENT_DISSIPATION
  *   [3] THERMAL_EXCESS_CORRECTION    corrección cuando temperatura > 500    HOOKE
  *   [4] VOLUMETRIC_EXPANSION         temperatura → presión interna          PASCAL
- *   [5] RADIATION_THERMAL_CONVERSION radiación absorbida → temperatura      RADIATION_THERMAL
  *
  * ── NOTA ARQUITECTÓNICA: VOLUMETRIC_EXPANSION ────────────────────────────
  * Aunque VOLUMETRIC_EXPANSION produce un delta en PRESSURE (dominio mecánico),
@@ -38,18 +33,15 @@ import Game.Engine.Physics.Thermal.ThermalProperties;
  * Por eso pertenece a ThermalRelations, no a MechanicalRelations.
  *
  * ── NOTA ARQUITECTÓNICA: RADIATION_THERMAL_CONVERSION ────────────────────
- * Esta relación convierte radiación absorbida (escrita en FrameState por
- * PlanckEvaluator) en variación de temperatura. El efecto final es térmico:
- * la propiedad modificada es TEMPERATURE. Pertenece a ThermalRelations.
+ * La conversión de radiación absorbida en calor (RADIATION_THERMAL) pertenece
+ * a RadiationRelations porque su magnitud motriz es la radiación recibida,
+ * producida por PlanckEvaluator (dominio radiante). Aunque el efecto final
+ * sea térmico, la causa es radiante. RadiationModule es el responsable de
+ * registrar esa relación y su evaluador (RadiationThermalEvaluator).
  *
  * ── PRINCIPIO FUNDAMENTAL ─────────────────────────────────────────────────
  * Estas relaciones no ejecutan comportamiento. Describen el universo.
  * El procedimiento matemático vive exclusivamente en el evaluador especializado.
- *
- * ── CATÁLOGOS SIMÉTRICOS ──────────────────────────────────────────────────
- * ThermalRelations    ↔ ThermalProperties
- * ElectricalRelations ↔ ElectricalProperties
- * FluidRelations      ↔ FluidProperties
  */
 public final class ThermalRelations {
 
@@ -104,10 +96,8 @@ public final class ThermalRelations {
 
     /**
      * Cuando la temperatura supera un umbral crítico (500 unidades), la energía
-     * excess se disipa más agresivamente para evitar divergencia numérica.
-     *
-     * La presión acumulada por la expansión volumétrica se corrige por la
-     * compresibilidad del material. La causa sigue siendo térmica.
+     * en exceso se disipa más agresivamente para evitar divergencia numérica.
+     * La causa es térmica: la condición de activación es temperatura > 500.
      *
      * Fenómeno: HOOKE (ley de Hooke — fuerza restauradora elástica)
      * Evaluador: HookeEvaluator
@@ -131,8 +121,7 @@ public final class ThermalRelations {
      * Fenómeno térmico: la expansión del material por calor produce presión.
      *
      * Aunque el efecto resultante es PRESSURE (dominio mecánico), la causa
-     * física es la temperatura. Este fenómeno es la expansión volumétrica
-     * térmica, clasificada en el dominio térmico.
+     * física es la temperatura. Pertenece al dominio térmico.
      *
      * Fenómeno: PASCAL (expansión volumétrica / ley de Pascal)
      * Dependencia física: temperatura → presión
@@ -150,47 +139,19 @@ public final class ThermalRelations {
         .priority(5)
         .build();
 
-    // ── Relación 5: Conversión térmica de radiación absorbida ─────────────
-
-    /**
-     * La radiación absorbida este frame (leída desde FrameMagnitudes.ABSORBED_RADIATION,
-     * escrita por PlanckEvaluator) se convierte en calor a través de la
-     * capacidad calorífica del material.
-     *
-     * Evaluada después de RADIATION en RadiationRelations (prio 110 → 112).
-     * No existe ninguna propiedad puente en PhysicalState.
-     *
-     * Composición vía FrameState:
-     *   PLANCK            (prio 110) → ΔRadiation + escribe FrameMagnitudes.ABSORBED_RADIATION
-     *   RADIATION_THERMAL (prio 112) → lee FrameMagnitudes.ABSORBED_RADIATION → ΔTemperature
-     *
-     * Fenómeno: RADIATION_THERMAL (conversión de radiación en calor)
-     * Evaluador: RadiationThermalEvaluator
-     */
-    public static final PhysicalRelation RADIATION_THERMAL_CONVERSION = PhysicalRelation.builder()
-        .name("radiation_thermal_conversion")
-        .relationType(RelationType.RADIATION_THERMAL)
-        .participating(
-            ThermalProperties.TEMPERATURE,
-            ThermalProperties.HEAT_CAPACITY)
-        .constraint(RelationConstraint.minDelta(1e-9))
-        .priority(112)
-        .build();
-
     // ── Colección completa ────────────────────────────────────────────────
 
     /**
      * Todas las relaciones del dominio térmico.
      *
-     * @return array con las 5 relaciones térmicas.
+     * @return array con las 4 relaciones térmicas.
      */
     public static PhysicalRelation[] all() {
         return new PhysicalRelation[] {
             VOLUMETRIC_EXPANSION,
             THERMAL_CONDUCTION,
             THERMAL_AMBIENT_DISSIPATION,
-            THERMAL_EXCESS_CORRECTION,
-            RADIATION_THERMAL_CONVERSION
+            THERMAL_EXCESS_CORRECTION
         };
     }
 }

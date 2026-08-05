@@ -181,10 +181,8 @@ public interface RelationEvaluator {
         /**
          * SimulationContext compuesto de esta entidad.
          *
-         * ── HRFC-031 ──────────────────────────────────────────────────────
          * Disponible cuando la entidad tiene un SimulationContextComponent.
-         * Retorna null para entidades que solo tienen PhysicsComponent o
-         * PhysicalStateComponent (compatibilidad con HRFC-021 y anteriores).
+         * Retorna null para entidades que solo tienen PhysicsComponent.
          *
          * Los evaluadores que necesitan estados de dominio especializados
          * (KinematicState, MaterialState, ContactState, EnvironmentState)
@@ -194,7 +192,7 @@ public interface RelationEvaluator {
          *   KinematicState kin = view.context().currentKinematic();
          *
          * Evaluadores que no necesitan el contexto compuesto ignoran este método.
-         * La implementación por defecto retorna null para retrocompatibilidad.
+         * La implementación por defecto retorna null.
          *
          * @return el SimulationContext de la entidad, o null si no disponible.
          */

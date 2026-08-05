@@ -1,4 +1,4 @@
-package Game.Engine.World.Influences;
+package Game.Engine.Physics.World.Influences;
 
 import Game.Engine.GameObjects;
 import java.util.ArrayList;

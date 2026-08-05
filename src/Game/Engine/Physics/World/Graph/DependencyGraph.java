@@ -1,4 +1,4 @@
-package Game.Engine.World.Graph;
+package Game.Engine.Physics.World.Graph;
 
 import java.util.ArrayList;
 import java.util.Collections;

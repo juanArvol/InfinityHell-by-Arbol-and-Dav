@@ -1,7 +1,7 @@
 package Game.Engine.Physics.Core;
 
-import Game.Engine.World.Graph.DependencyGraph;
-import Game.Engine.World.Graph.GraphEdge;
+import Game.Engine.Physics.World.Graph.DependencyGraph;
+import Game.Engine.Physics.World.Graph.GraphEdge;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;

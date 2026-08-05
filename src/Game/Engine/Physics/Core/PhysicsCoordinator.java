@@ -93,7 +93,7 @@ public final class PhysicsCoordinator {
     private PhysicsCoordinator(Builder b) {
         this.graph            = b.graph;
         this.propertyResolver = new PropertyResolver(b.graph);
-        this.relationResolver = new RelationResolver(b.registry);
+        this.relationResolver = new RelationResolver(b.registry, b.evaluators);
     }
 
     // ── Factories ─────────────────────────────────────────────────────────
@@ -214,11 +214,16 @@ public final class PhysicsCoordinator {
 
     /**
      * Builder de PhysicsCoordinator.
+     *
+     * El EvaluatorRegistry se construye internamente a medida que los módulos
+     * de dominio invocan {@link #registerEvaluators(EvaluatorRegistry)}.
+     * No se inyecta desde fuera: cada módulo es el único que conoce sus evaluadores.
      */
     public static final class Builder {
 
-        private PropertyDependencyGraph graph    = new PropertyDependencyGraph();
-        private RelationRegistry        registry = new RelationRegistry();
+        private PropertyDependencyGraph graph      = new PropertyDependencyGraph();
+        private RelationRegistry        registry   = new RelationRegistry();
+        private EvaluatorRegistry       evaluators = new EvaluatorRegistry();
 
         private Builder() {}
 
@@ -231,6 +236,19 @@ public final class PhysicsCoordinator {
         public Builder graph(PropertyDependencyGraph graph) {
             if (graph != null) this.graph = graph;
             return this;
+        }
+
+        /**
+         * Expone el EvaluatorRegistry interno para que los módulos registren
+         * sus evaluadores directamente.
+         *
+         * Llamado por WorldSimulation.Builder al procesar cada módulo:
+         *   module.registerEvaluators(coordinatorBuilder.evaluators())
+         *
+         * @return el EvaluatorRegistry interno. Nunca null.
+         */
+        public EvaluatorRegistry evaluators() {
+            return evaluators;
         }
 
         /**

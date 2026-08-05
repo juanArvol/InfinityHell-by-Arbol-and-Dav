@@ -1,22 +1,5 @@
 package Game.Engine.Physics.Core;
 
-import Game.Engine.Physics.Electrical.JouleEvaluator;
-import Game.Engine.Physics.Electrical.OhmEvaluator;
-import Game.Engine.Physics.Fluid.BernoulliEvaluator;
-import Game.Engine.Physics.Fluid.FickEvaluator;
-import Game.Engine.Physics.Gravity.EventHorizonEvaluator;
-import Game.Engine.Physics.Gravity.NewtonEvaluator;
-import Game.Engine.Physics.Gravity.SchwarzschildEvaluator;
-import Game.Engine.Physics.Kinematic.FrictionThermalEvaluator;
-import Game.Engine.Physics.Kinematic.KineticDissipationEvaluator;
-import Game.Engine.Physics.MaterialState.ArchimedesEvaluator;
-import Game.Engine.Physics.MaterialState.StokesEvaluator;
-import Game.Engine.Physics.Mechanical.HookeEvaluator;
-import Game.Engine.Physics.Mechanical.PascalEvaluator;
-import Game.Engine.Physics.Radiation.PlanckEvaluator;
-import Game.Engine.Physics.Thermal.AmbientDissipationEvaluator;
-import Game.Engine.Physics.Thermal.FourierEvaluator;
-import Game.Engine.Physics.Thermal.RadiationThermalEvaluator;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -24,26 +7,54 @@ import java.util.Map;
  * Registro de evaluadores especializados por RelationType.
  *
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
+ * ── HRFC — Cierre del Refactor Arquitectónico ─────────────────────────────
+ * ── HRFC — Auditoría Arquitectónica Final ────────────────────────────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * EvaluatorRegistry mapea cada RelationType a su RelationEvaluator
  * especializado. El PhysicsSolver lo consulta para obtener el evaluador
  * correcto dado el tipo de una PhysicalRelation.
  *
- * ── REGISTRO POR DEFECTO ─────────────────────────────────────────────────
- * EvaluatorRegistry.defaults() produce un registro con todos los evaluadores
- * del Core ya registrados, listo para usar sin configuración adicional.
+ * ── COMPOSICIÓN ───────────────────────────────────────────────────────────
+ * El registro se construye desde la capa de composición (Physics.World),
+ * no desde el Core. Cada PhysicsModule registra sus propios evaluadores
+ * en el EvaluatorRegistry interno del PhysicsCoordinator.Builder:
+ *
+ *   module.registerEvaluators(coordinatorBuilder.evaluators())
+ *       → PhysicsCoordinator.Builder
+ *           → RelationResolver
+ *               → PhysicsSolver
+ *
+ * Esto mantiene Core libre de dependencias hacia dominios concretos.
+ *
+ * ── POLÍTICA DE SOBREESCRITURA ────────────────────────────────────────────
+ * Registrar el mismo RelationType más de una vez reemplaza silenciosamente
+ * el evaluador anterior. Este comportamiento es una decisión de diseño
+ * explícita, no un defecto.
+ *
+ * Varios módulos pueden registrar el mismo evaluador genérico (por ejemplo,
+ * AmbientDissipationEvaluator, HookeEvaluator, NewtonEvaluator) porque cada
+ * módulo debe ser autónomo — no puede depender de que otro módulo esté
+ * instalado para que sus relaciones tengan evaluador.
+ *
+ * La sobreescritura es inofensiva porque todos los módulos registran
+ * instancias equivalentes del mismo evaluador. El resultado es siempre
+ * el mismo independientemente del orden de instalación.
+ *
+ * Consecuencia deliberada: instalar un módulo dos veces produce el mismo
+ * resultado que instalarlo una vez. El registro es idempotente respecto a
+ * módulos equivalentes.
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * Para un tipo personalizado:
- *   registry.register(RelationType.MI_TIPO, new MiEvaluador());
- *
- * Para reemplazar un evaluador del Core:
+ * Para reemplazar un evaluador del motor (personalización, mods):
  *   registry.register(RelationType.FOURIER, new MiFourierPersonalizado());
+ * El último registro prevalece — esto permite a módulos de gameplay
+ * sobreescribir comportamientos base sin alterar el módulo original.
  *
  * ── INVARIANTE ────────────────────────────────────────────────────────────
  *   ✗ No contiene lógica física.
- *   ✓ Solo mapea tipos a evaluadores.
+ *   ✗ No conoce ningún evaluador concreto de dominio.
+ *   ✓ Solo mapea RelationType a RelationEvaluator.
  */
 public final class EvaluatorRegistry {
 
@@ -55,59 +66,13 @@ public final class EvaluatorRegistry {
     /** Crea un registro vacío. */
     public EvaluatorRegistry() {}
 
-    // ── Registro por defecto ──────────────────────────────────────────────
-
-    /**
-     * Retorna un registro con todos los evaluadores del Core registrados.
-     *
-     * Mapeado:
-     *   FOURIER              → FourierEvaluator
-     *   OHM                  → OhmEvaluator
-     *   PASCAL               → PascalEvaluator
-     *   BERNOULLI            → BernoulliEvaluator
-     *   NEWTON               → NewtonEvaluator
-     *   HOOKE                → HookeEvaluator
-     *   ARCHIMEDES           → ArchimedesEvaluator
-     *   STOKES               → StokesEvaluator
-     *   FICK                 → FickEvaluator
-     *   SCHWARZSCHILD        → SchwarzschildEvaluator
-     *   PLANCK               → PlanckEvaluator
-     *   JOULE                → JouleEvaluator
-     *   EVENT_HORIZON        → EventHorizonEvaluator
-     *   RADIATION_THERMAL    → RadiationThermalEvaluator
-     *   AMBIENT_DISSIPATION  → AmbientDissipationEvaluator
-     *   FRICTION_THERMAL     → FrictionThermalEvaluator     (HRFC-030)
-     *   KINETIC_DISSIPATION  → KineticDissipationEvaluator  (HRFC-030)
-     *
-     * @return registro con todos los evaluadores del Core.
-     */
-    public static EvaluatorRegistry defaults() {
-        EvaluatorRegistry r = new EvaluatorRegistry();
-        r.register(RelationType.FOURIER,             new FourierEvaluator());
-        r.register(RelationType.OHM,                 new OhmEvaluator());
-        r.register(RelationType.PASCAL,              new PascalEvaluator());
-        r.register(RelationType.BERNOULLI,           new BernoulliEvaluator());
-        r.register(RelationType.NEWTON,              new NewtonEvaluator());
-        r.register(RelationType.HOOKE,               new HookeEvaluator());
-        r.register(RelationType.ARCHIMEDES,          new ArchimedesEvaluator());
-        r.register(RelationType.STOKES,              new StokesEvaluator());
-        r.register(RelationType.FICK,                new FickEvaluator());
-        r.register(RelationType.SCHWARZSCHILD,       new SchwarzschildEvaluator());
-        r.register(RelationType.PLANCK,              new PlanckEvaluator());
-        r.register(RelationType.JOULE,               new JouleEvaluator());
-        r.register(RelationType.EVENT_HORIZON,       new EventHorizonEvaluator());
-        r.register(RelationType.RADIATION_THERMAL,   new RadiationThermalEvaluator());
-        r.register(RelationType.AMBIENT_DISSIPATION, new AmbientDissipationEvaluator());
-        // ── Cinemática → Térmica / Mecánica (HRFC-030) ────────────────────
-        r.register(RelationType.FRICTION_THERMAL,    new FrictionThermalEvaluator());
-        r.register(RelationType.KINETIC_DISSIPATION, new KineticDissipationEvaluator());
-        return r;
-    }
-
     // ── Mutación ──────────────────────────────────────────────────────────
 
     /**
-     * Registra (o reemplaza) el evaluador para un RelationType.
+     * Registra el evaluador para un RelationType.
+     *
+     * Si ya existe un evaluador para ese tipo, es reemplazado. Ver sección
+     * POLÍTICA DE SOBREESCRITURA en el Javadoc de clase.
      *
      * @param type      el tipo de relación. No puede ser null.
      * @param evaluator el evaluador especializado. No puede ser null.

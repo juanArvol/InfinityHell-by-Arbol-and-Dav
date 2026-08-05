@@ -1,6 +1,7 @@
-package Game.Engine.World.Components;
+package Game.Engine.Entity.Components.Collisions;
 
 import Game.Engine.Component;
+import Game.Engine.Physics.Core.MaterialData;
 import Game.Engine.Physics.Core.PhysicalState;
 import Game.Engine.Physics.Electrical.ElectricalProperties;
 import Game.Engine.Physics.Fluid.FluidProperties;
@@ -36,13 +37,7 @@ import Game.Engine.Physics.Thermal.ThermalProperties;
  *   MaterialComponent mat = new MaterialComponent.Builder()
  *       .thermalConductivity(0.8)
  *       .heatCapacity(500.0)
- *       .thermalDiffusivity(0.6)
- *       .electricalConductivity(0.9)
- *       .humidityAbsorption(0.05)
- *       .compressibility(0.05)
- *       .elasticity(0.6)
- *       .hardness(0.9)
- *       .density(7800.0)
+ *       ...
  *       .build();
  *
  *   PhysicalState state = PhysicalState.builder()
@@ -50,10 +45,10 @@ import Game.Engine.Physics.Thermal.ThermalProperties;
  *       .register(CoreProperties.CHARGE)
  *       .register(CoreProperties.HUMIDITY)
  *       .register(CoreProperties.PRESSURE)
- *       .registerMaterial(mat)          // registra todas las props del material
+ *       .registerMaterial(mat::registerInto)    // registra todas las props del material
  *       .build();
  *
- *   addComponent(new PhysicalStateComponent(state));
+ *   addComponent(new PhysicsComponent(state));
  *
  * ── QUÉ NO CONTIENE ──────────────────────────────────────────────────────
  *   ✗ Ninguna lógica de simulación.
@@ -61,7 +56,7 @@ import Game.Engine.Physics.Thermal.ThermalProperties;
  *   ✗ Ninguna clasificación de material (metal, madera, gas...).
  *   ✗ Ninguna referencia a CoreDomains ni a dominios físicos.
  */
-public final class MaterialComponent extends Component {
+public final class MaterialComponent extends Component implements MaterialData {
 
     private final double thermalConductivity;
     private final double heatCapacity;
@@ -97,39 +92,51 @@ public final class MaterialComponent extends Component {
     // ── Accesores ─────────────────────────────────────────────────────────
 
     /** Conductividad térmica [0, 1]. */
+    @Override
     public double getThermalConductivity()    { return thermalConductivity; }
 
     /** Capacidad calorífica específica (0, +∞). */
+    @Override
     public double getHeatCapacity()           { return heatCapacity; }
 
     /** Difusividad térmica [0, 1]. */
+    @Override
     public double getThermalDiffusivity()     { return thermalDiffusivity; }
 
     /** Punto de fusión. Double.POSITIVE_INFINITY si no aplica. */
+    @Override
     public double getMeltingPoint()           { return meltingPoint; }
 
     /** Punto de ebullición. Double.POSITIVE_INFINITY si no aplica. */
+    @Override
     public double getBoilingPoint()           { return boilingPoint; }
 
     /** Conductividad eléctrica efectiva [0, 1]. */
+    @Override
     public double getElectricalConductivity() { return electricalConductivity; }
 
     /** Coeficiente de absorción de humedad [0, 1]. */
+    @Override
     public double getHumidityAbsorption()     { return humidityAbsorption; }
 
     /** Viscosidad [0, +∞). 0 para sólidos. */
+    @Override
     public double getViscosity()              { return viscosity; }
 
     /** Compresibilidad [0, 1]. */
+    @Override
     public double getCompressibility()        { return compressibility; }
 
     /** Elasticidad [0, 1]. */
+    @Override
     public double getElasticity()             { return elasticity; }
 
     /** Dureza [0, 1]. */
+    @Override
     public double getHardness()               { return hardness; }
 
     /** Densidad relativa (0, +∞). */
+    @Override
     public double getDensity()                { return density; }
 
     // ── Integración con PhysicalState ─────────────────────────────────────
@@ -139,10 +146,10 @@ public final class MaterialComponent extends Component {
      * PhysicalState dado. Las leyes físicas las leerán con get() junto
      * al resto del estado del objeto.
      *
-     * Uso en Assembler:
+     * Uso en Assembler (via referencia a método):
      *   PhysicalState.builder()
-     *       .register(CoreProperties.TEMPERATURE, 20.0)
-     *       .registerMaterial(mat)
+     *       .register(ThermalProperties.TEMPERATURE, 20.0)
+     *       .registerMaterial(mat::registerInto)
      *       .build();
      *
      * @param builder el builder de PhysicalState donde registrar.

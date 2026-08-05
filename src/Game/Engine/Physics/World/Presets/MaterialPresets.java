@@ -1,6 +1,6 @@
-package Game.Gameplay.World.Presets;
+package Game.Engine.Physics.World.Presets;
 
-import Game.Engine.World.Components.MaterialComponent;
+import Game.Engine.Entity.Components.Collisions.MaterialComponent;
 
 /**
  * Perfiles de material predefinidos para MaterialComponent.

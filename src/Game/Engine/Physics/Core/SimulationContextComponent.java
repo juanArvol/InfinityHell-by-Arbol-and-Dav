@@ -28,12 +28,11 @@ import Game.Engine.Component;
  * propiedades físicas sin integración cinemática. No es reemplazado.
  *
  * ── PRECEDENCIA EN PhysicsSolver ──────────────────────────────────────────
- * PhysicsSolver.FrameContext.stateOf() resuelve en este orden:
- *   1. SimulationContextComponent (HRFC-031) — extrae physical() del contexto
- *   2. PhysicsComponent           (HRFC-021) — extrae state directamente
- *   3. PhysicalStateComponent     (legacy)   — fallback de compatibilidad
+ * PhysicsSolver.FrameContext.resolveState() resuelve en este orden:
+ *   1. SimulationContextComponent — extrae physical() del contexto compuesto
+ *   2. PhysicsComponent           — extrae state directamente
  *
- * Esto garantiza retrocompatibilidad total: entidades con PhysicsComponent
+ * Esto garantiza compatibilidad total: entidades con PhysicsComponent
  * siguen funcionando sin cambios.
  *
  * ── PRINCIPIO FUNDAMENTAL ─────────────────────────────────────────────────

@@ -35,8 +35,6 @@ import java.util.List;
  * Antes (HRFC-030):
  *   Leía DELTA_KINETIC_ENERGY y ACCELERATION desde PropertyDescriptors
  *   registrados en el PhysicalState mediante registerKinematic().
- *   El valor de DELTA_KINETIC_ENERGY era calculado por KinematicPhysicsInterpreter
- *   comparando con el campo previousSpeed de KinematicBridge.
  *
  * Ahora (HRFC-031):
  *   El delta de energía cinética se calcula directamente desde StateSnapshot:
