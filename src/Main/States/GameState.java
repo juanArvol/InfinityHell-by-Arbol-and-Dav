@@ -54,6 +54,15 @@ public class GameState {
         this.settings = DebugGameSettings.getInstance();
         settings.setFpsEnabled(true);
 
+        // ── Registros globales de gameplay ────────────────────────────────────
+        // AmuletRegistry y WeaponRegistry deben inicializarse ANTES de que
+        // GameWorldBootstrap construya el Player (que crea ModifiedWeapon) y antes
+        // de que se inyecte el entityProvider desde GameWorldBootstrap.
+        Game.Items.Types.Ammulets.AmuletRegistry.init();
+        Game.Items.Types.Ammulets.AmuletRegistry.registerDefaults();
+        Game.Items.Types.Weapons.WeaponRegistry.init();
+        Game.Items.Types.Weapons.WeaponRegistry.registerDefaults();
+
         // ── World (instancia directa, sin singleton) ──────────────────────────
         this.worldManager = new WorldManager(virtualWidth, virtualHeight, settings);
 

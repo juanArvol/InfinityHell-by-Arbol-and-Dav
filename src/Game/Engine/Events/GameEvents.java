@@ -3,33 +3,21 @@ package Game.Engine.Events;
 import Game.Enemys.Core.Enemy;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
-import Game.Items.Types.Weapons.Modifiers.WeaponModifier;
 import Game.Player.Player;
 
 /**
  * Catálogo centralizado de eventos del Game.
  *
  * Vive en Game.Events porque todos los eventos aquí definidos referencian
- * tipos concretos del Game (Enemy, Player, ItemDefinition, WeaponModifier).
+ * tipos concretos del Game (Enemy, Player, ItemDefinition).
  * El Engine no debe conocer esos tipos — por eso este catálogo no pertenece
  * a Game.Engine.Events.
  *
- * MIGRADO DESDE: Game.Engine.Events.GameEvents
- * RAZÓN: el catálogo importaba Enemy, Player, ItemDefinition, WeaponModifier
- * desde el Engine, creando dependencias Engine → Game.* en 4 paquetes.
- *
- * NOTA sobre OnEnemyDeathEvent y OnPickupEvent:
- *   Tienen sus propios archivos standalone en sus paquetes naturales:
- *     Game.Enemys.Core.Events.OnEnemyDeathEvent
- *     Game.Items.OnPickupEvent
- *   Usar siempre esos, no definir records duplicados aquí.
- *
- * USO:
- *   // Emitir
- *   GameEventBus.GLOBAL.post(new GameEvents.OnWeaponFireEvent(player, sound));
- *
- *   // Suscribir
- *   GameEventBus.GLOBAL.subscribe(GameEvents.OnPlayerDeathEvent.class, e -> { ... });
+ * ── HRFC — Projectile System Refactor ────────────────────────────────────
+ * Eliminados: OnModifierAppliedEvent, OnModifierRemovedEvent.
+ * El sistema de modificadores legacy (WeaponModifier) fue eliminado.
+ * El sistema de amuletos (AmuletRegistry) reemplaza esa funcionalidad.
+ * Los eventos de amuletos viven en WeaponEvents (OnWeaponFired, etc.).
  */
 public final class GameEvents {
 
@@ -44,8 +32,6 @@ public final class GameEvents {
     public record OnWeaponFireEvent(Player player, String sound) {}
     public record OnReloadStartEvent(Player player, int reloadTimeTicks) {}
     public record OnReloadCompleteEvent(Player player) {}
-    public record OnModifierAppliedEvent(Player player, WeaponModifier modifier) {}
-    public record OnModifierRemovedEvent(Player player, String modifierId) {}
 
     // ── Enemigos ──────────────────────────────────────────────────────────────
 
@@ -77,8 +63,6 @@ public final class GameEvents {
     public record OnGameResumedEvent() {}
 
     // ── Física 3D / Salto ─────────────────────────────────────────────────────
-    // Nota: usan Object para no acoplar el evento a GameObjects del Engine.
-    // El listener hace cast si necesita el objeto concreto.
 
     public record OnJumpEvent(Object source, double impulse) {}
     public record OnLandEvent(Object source) {}

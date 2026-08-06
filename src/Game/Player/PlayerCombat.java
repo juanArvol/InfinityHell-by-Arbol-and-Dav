@@ -1,102 +1,66 @@
 package Game.Player;
 
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Weapons.ModifiedWeapon;
+import Game.Items.Types.Weapons.WeaponEvents;
 import Game.Items.Types.Weapons.WeaponInventory;
-import Game.Items.Types.Weapons.WeaponSelected;
 import Inputs.Listeners.MouseActionListener;
 import Inputs.MouseInput;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * Combate del jugador.
+ * Combate del jugador — responsable de conectar input, arma y mundo.
  *
- * ── REFACTOR 1: ELIMINAR WorldManager (Dependency Injection) ─────────────
+ * ── HRFC — Weapon & Projectile System ────────────────────────────────────
  *
- * PROBLEMA ORIGINAL:
- *   PlayerCombat accedía al World mediante el singleton WorldManager:
+ * PlayerCombat ahora usa {@link ModifiedWeapon} directamente como tipo
+ * de arma, eliminando la capa de indirección de WeaponSelected + Weapon
+ * que no añadía valor. El pipeline de disparo completo (FireMode →
+ * amuletos → BulletBehavior compuesto → proyectiles) vive en ModifiedWeapon.
  *
- *     World world = WorldManager.getInstance().getCurrentWorld();
- *     world.add(bullet);
+ * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
- *   Esto creaba tres problemas:
- *   (a) Acoplamiento duro: PlayerCombat conoce WorldManager, World y todo
- *       lo que WorldManager implica. Cambiar el ciclo de vida del World
- *       afecta a PlayerCombat.
- *   (b) Testabilidad: imposible testear disparo sin un World real.
- *   (c) Responsabilidad mezclada: PlayerCombat tiene que saber CÓMO añadir
- *       cosas al mundo, no solo disparar.
+ *   1. Leer input de mouse (click puntual, botón mantenido).
+ *   2. Gestionar la recarga manual.
+ *   3. Delegar el disparo a la ModifiedWeapon activa.
+ *   4. Pasar los proyectiles resultantes al bulletSpawner inyectado.
+ *   5. Emitir eventos de ciclo de vida del arma (cargador vacío, recarga).
  *
- * SOLUCIÓN:
- *   Sustituir el acceso al singleton por un Consumer<Bullet> inyectado en
- *   el constructor. El que construye PlayerCombat (Player o el bootstrap)
- *   decide cómo se añaden las balas al mundo:
+ * ── LO QUE NO HACE ────────────────────────────────────────────────────────
  *
- *     new PlayerCombat(player, state, bullet -> world.add(bullet));
+ *   - No conoce World, WorldManager ni cómo añadir objetos al mundo.
+ *   - No conoce Player directamente (recibe un Supplier<Vector2D> para posición).
+ *   - No construye armas (eso lo hace Player o un sistema de loadout).
  *
- *   PlayerCombat no conoce World ni WorldManager. Solo sabe "cuando disparo,
- *   llamo a este callback con la bala resultante".
+ * ── DEPENDENCY INJECTION ─────────────────────────────────────────────────
  *
- * BENEFICIO:
- *   - Sin imports de World ni WorldManager en este archivo.
- *   - Fácil de testear: pasar un Consumer que acumule en una lista.
- *   - Bajo acoplamiento: si World cambia su API, PlayerCombat no cambia.
+ *   positionSupplier → proveedor de posición del portador. Lazy.
+ *   bulletSpawner    → callback que añade proyectiles al mundo.
  *
- * ── REFACTOR 2: EXTRAER CONFIGURACIÓN DE LOADOUT ─────────────────────────
- *
- * PROBLEMA ORIGINAL:
- *   El constructor de PlayerCombat construía y configuraba el arma inicial:
- *
- *     inventory.addWeapon(new WeaponSelected(new WeaponEscopeta(), SPRINGBULLET));
- *
- *   Mezcla responsabilidades: combate + configuración inicial del loadout.
- *   Si queremos cargar loadouts desde datos (JSON, save), no hay punto de
- *   entrada limpio.
- *
- * SOLUCIÓN:
- *   Extraer la configuración inicial a un método setInitialWeapon() separado,
- *   que Player (o un sistema de loadout externo) llama después de construir
- *   PlayerCombat. El constructor queda limpio y sin conocimiento de tipos
- *   de arma concretos.
- *
- * BENEFICIO:
- *   - PlayerCombat es agnóstico al loadout específico.
- *   - Facilita futuros sistemas: loadout desde save, loadout aleatorio,
- *     selección por clase de personaje.
- *
- * ── REFACTOR 3: DESACOPLAR DE Player COMPLETO ────────────────────────────
- *
- * PROBLEMA ORIGINAL:
- *   PlayerCombat recibía el Player completo y accedía a player.getPosition().
- *   Solo necesitaba la posición para calcular el origen del disparo.
- *
- * SOLUCIÓN:
- *   Inyectar un Supplier<Vector2D> para la posición en lugar del Player completo.
- *   Esto rompe la dependencia circular PlayerCombat ↔ Player.
- *
- * BENEFICIO:
- *   - PlayerCombat no depende de Player. Puede reutilizarse para otros
- *     combatientes sin arrastrar Player.
+ *   Esto hace PlayerCombat testeable sin ningún sistema de mundo real.
  */
 public class PlayerCombat implements MouseActionListener {
 
-    private final PlayerState         state;
-    private final WeaponInventory     inventory;
-    private final java.util.function.Supplier<Vector2D> positionSupplier;
-    private final Consumer<Bullet>    bulletSpawner;
+    private final PlayerState        state;
+    private final WeaponInventory    inventory;
+    private final Supplier<Vector2D> positionSupplier;
+    private final Consumer<Bullet>   bulletSpawner;
 
-    /** Edge click recibido este frame (disparo puntual). */
+    /** Edge-click registrado este frame (disparo puntual en SemiAuto/Burst). */
     private boolean clickFired = false;
 
     /**
-     * @param state           estado del jugador (dirección, recarga, aim)
-     * @param positionSupplier proveedor de posición actual del jugador
-     * @param bulletSpawner   callback para añadir balas al mundo
+     * @param state            estado del jugador (congelado, apuntado, recargando)
+     * @param positionSupplier proveedor de posición actual del portador
+     * @param bulletSpawner    callback para añadir proyectiles al mundo
      */
     public PlayerCombat(
             PlayerState state,
-            java.util.function.Supplier<Vector2D> positionSupplier,
+            Supplier<Vector2D> positionSupplier,
             Consumer<Bullet> bulletSpawner
     ) {
         this.state            = state;
@@ -105,14 +69,17 @@ public class PlayerCombat implements MouseActionListener {
         this.inventory        = new WeaponInventory();
     }
 
+    // ── Loadout ────────────────────────────────────────────────────────────
+
     /**
-     * Configura el arma inicial (loadout).
-     * Separado del constructor para que la responsabilidad de qué armas
-     * tiene el jugador al inicio quede fuera de PlayerCombat.
+     * Añade un arma al inventario del jugador.
      *
      * Llamar desde Player o desde un sistema de loadout externo.
+     * Si es la primera arma, pasa a ser el arma activa automáticamente.
+     *
+     * @param weapon arma ya construida con su WeaponComport, BulletType y amulets
      */
-    public void setInitialWeapon(WeaponSelected weapon) {
+    public void addWeapon(ModifiedWeapon weapon) {
         inventory.addWeapon(weapon);
     }
 
@@ -120,7 +87,7 @@ public class PlayerCombat implements MouseActionListener {
         return inventory;
     }
 
-    // ── MouseActionListener ───────────────────────────────────────────────
+    // ── MouseActionListener ────────────────────────────────────────────────
 
     @Override
     public void onMouseAction(String action, float virtualX, float virtualY) {
@@ -129,53 +96,72 @@ public class PlayerCombat implements MouseActionListener {
         }
     }
 
-    // ── Update ────────────────────────────────────────────────────────────
+    // ── Update ─────────────────────────────────────────────────────────────
 
     public void update() {
         if (state.isCongelado()) return;
 
-        WeaponSelected currentWeapon = inventory.getCurrentWeapon();
+        ModifiedWeapon currentWeapon = inventory.getCurrentWeapon();
         if (currentWeapon == null) return;
 
-        // ── Gestión de recarga ────────────────────────────────────────────
-        // Activar recarga si el jugador presiona la tecla de recarga y el arma
-        // tiene munición que recargar.
+        // ── Recarga manual ────────────────────────────────────────────────
         boolean reloadKeyPressed = Inputs.KeyBoard.getState("reload");
         if (reloadKeyPressed && !state.isReloading() && !currentWeapon.isFullyLoaded()) {
             state.setReloading(true);
-        }
-
-        if (state.isReloading()) {
             currentWeapon.reload();
-            // Desactivar el flag cuando el arma haya terminado de recargar.
-            // weapon.isReloading() es false una vez que la recarga se completa.
-            if (!currentWeapon.isReloading()) {
-                state.setReloading(false);
+
+            // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
+            if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnReloadStart.class)) {
+                GameEventBus.GLOBAL.post(new WeaponEvents.OnReloadStart(
+                        currentWeapon, currentWeapon.getComport().getStats().getCooldown()));
             }
         }
 
-        boolean holding = MouseInput.getButtonState("leftPressed");
-        Vector2D pos    = positionSupplier.get();
-        Vector2D aim    = state.getAimDirection();
+        // ── Sincronizar estado de recarga ─────────────────────────────────
+        if (state.isReloading()) {
+            boolean wasReloading = currentWeapon.isReloading();
+            if (!wasReloading) {
+                // La recarga se completó este frame
+                state.setReloading(false);
+                if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnReloadComplete.class)) {
+                    GameEventBus.GLOBAL.post(new WeaponEvents.OnReloadComplete(currentWeapon));
+                }
+            }
+        }
+
+        // ── Cargador vacío ────────────────────────────────────────────────
+        if (clickFired && currentWeapon.getCurrentAmmo() <= 0 && !currentWeapon.isReloading()) {
+            if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnEmptyMagazine.class)) {
+                GameEventBus.GLOBAL.post(new WeaponEvents.OnEmptyMagazine(currentWeapon));
+            }
+        }
+
+        // ── Disparo ───────────────────────────────────────────────────────
+        boolean holding  = MouseInput.getButtonState("leftPressed");
+        Vector2D pos     = positionSupplier.get();
+        Vector2D aim     = state.getAimDirection();
 
         List<Bullet> newBullets = currentWeapon.handleInput(
-            holding,
-            clickFired,
-            pos.getX(),
-            pos.getY(),
-            state.isDer(),
-            aim
+                holding,
+                clickFired,
+                pos.getX(),
+                pos.getY(),
+                state.isDer(),
+                aim
         );
 
         clickFired = false;
 
-        // Delegar al spawner inyectado — sin conocer World ni WorldManager
+        // Pasar proyectiles al mundo via el spawner inyectado
         for (Bullet b : newBullets) {
             bulletSpawner.accept(b);
         }
 
+        // Actualizar timers del arma (cooldown, recarga interna)
         currentWeapon.update();
     }
+
+    // ── Cambio de arma ────────────────────────────────────────────────────
 
     public void nextWeapon()     { inventory.nextWeapon();     }
     public void previousWeapon() { inventory.previousWeapon(); }

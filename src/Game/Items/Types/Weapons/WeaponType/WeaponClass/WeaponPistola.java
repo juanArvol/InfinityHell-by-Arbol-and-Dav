@@ -17,6 +17,6 @@ public class WeaponPistola extends WeaponComport {
         new AutoMode(), 
         10, 
         20, 
-        "Pistol.wav");
+        "Gun.wav");
     }
 } 

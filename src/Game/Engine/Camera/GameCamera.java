@@ -1,10 +1,49 @@
 package Game.Engine.Camera;
 
+import Game.Engine.Camera.Constraint.CameraConstraintList;
+import Game.Engine.Camera.Constraint.WorldBoundsConstraint;
+import Game.Engine.Camera.Modifier.CameraModifierStack;
+import Game.Engine.Camera.Modifier.CameraState;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.awt.geom.AffineTransform;
 
 /**
  * Cámara del Engine — entidad de primer nivel.
+ *
+ * ── HRFC: Integración de Modifiers y Constraints ─────────────────────────
+ *
+ * GameCamera ahora integra tres sistemas ortogonales:
+ *
+ *   CameraController     → QUIÉN sigue a quién y cómo (lerp, snap, cinemático)
+ *   CameraModifierStack  → CÓMO se ve la imagen (shake, zoom, offset, rotation)
+ *   CameraConstraintList → DÓNDE puede ir (bounds, región, maxFollow)
+ *
+ * ── PIPELINE DE CÁMARA POR FRAME ─────────────────────────────────────────
+ *
+ *   1. CameraController.update()     → calcula posición base via lerpCenterOn()
+ *   2. modifiers.computeState()      → acumula efectos de todos los modificadores
+ *   3. applyModifierState(state)     → aplica offsets, zoom delta, rotation delta
+ *   4. constraints.apply()           → restringe la posición final
+ *
+ * El paso 2-4 ocurre implícitamente dentro de applyClamp() cuando los sistemas
+ * están activos. El orden garantiza que constraints siempre tienen la
+ * última palabra sobre la posición final.
+ *
+ * ── RETROCOMPATIBILIDAD TOTAL ─────────────────────────────────────────────
+ * Toda la API existente (centerOn, lerpCenterOn, setZoom, setWorldBounds, etc.)
+ * sigue funcionando sin cambios. Los nuevos sistemas son opcionalmente usados:
+ * si modifierStack está vacío y constraintList está vacía, el comportamiento
+ * es idéntico al anterior.
+ *
+ * ── CLAMP ANTERIOR REEMPLAZADO POR WorldBoundsConstraint ─────────────────
+ * El clamp hardcodeado en applyClamp() fue reemplazado por WorldBoundsConstraint
+ * (prioridad 1000 — siempre última en aplicarse).
+ * setWorldBounds() ahora actualiza la constraint, no el estado interno del clamp.
+ * La API setWorldBounds() sigue siendo la misma — sin cambios externos.
+ *
+ * ── NO ACEPTA COORDENADAS NEGATIVAS ──────────────────────────────────────
+ * La constraint por defecto clamp a [minX, minY] que arranca en 0.
+ * Para mundos con coords negativas: worldBoundsConstraint.update(minX, minY, maxX, maxY).
  *
  * ── Qué es ───────────────────────────────────────────────────────────────
  *
@@ -15,67 +54,58 @@ import java.awt.geom.AffineTransform;
  * NO pertenece al renderer (SceneRenderer solo la lee para construir la vista).
  * PERTENECE al Engine como entidad independiente con identidad propia.
  *
- * ── Responsabilidades ────────────────────────────────────────────────────
- *
- *   ESTADO:     mantiene posición, zoom y rotación de la vista.
- *   TRANSFORM:  expone getViewTransform() para que el renderer la aplique.
- *   LERP:       soporta interpolación suave de posición y zoom.
- *   CLAMP:      clamp opcional a los límites de un mundo.
- *
- * ── Responsabilidades EXCLUIDAS ──────────────────────────────────────────
- *
- *   COMPORTAMIENTO: quién sigue a quién, cómo se mueve → CameraController.
- *   RENDER:         aplicar la transformación a Graphics2D → RenderContext.
- *   GAMEPLAY:       disparadores de eventos, visibilidad → sistemas futuros.
- *
- * ── Por qué getViewTransform() en lugar de getX()/getY() para el render ──
- *
- *   Cuando hay solo translación, ambas formas son equivalentes. Con zoom y
- *   rotación, el renderer necesita una transformación compuesta. Exponer un
- *   AffineTransform encapsula esa composición y permite añadir shear,
- *   perspectiva o cualquier otra transformación futura sin cambiar la firma
- *   de ningún método del renderer.
- *
- *   getX() y getY() se conservan para casos donde solo se necesita el offset
- *   de translación (componentes existentes como SpriteRenderer).
- *
- * ── Threading ────────────────────────────────────────────────────────────
- *
- *   GameCamera es mutable. Todas las escrituras deben ocurrir en el
- *   game loop thread (CameraController.update). getViewTransform() puede
- *   ser llamado desde el render thread si la política de sincronización
- *   del game loop lo garantiza (single-threaded loop: sin riesgo).
- *
  * ── Coordenadas ──────────────────────────────────────────────────────────
  *
- *   Exclusivamente coordenadas VIRTUALES (virtualWidth × virtualHeight).
- *   La transformación virtual → pantalla real la realiza el pipeline de Display.
- *   GameCamera nunca conoce resoluciones reales de monitor.
+ * Exclusivamente coordenadas VIRTUALES (virtualWidth × virtualHeight).
+ * La transformación virtual → pantalla real la realiza el pipeline de Display.
+ * GameCamera nunca conoce resoluciones reales de monitor.
  */
 public final class GameCamera {
 
-    // ── Estado ───────────────────────────────────────────────────────────────
+    // ── Estado de posición/vista ──────────────────────────────────────────────
 
-    /** Posición top-left de la vista en coordenadas de mundo virtual. */
+    /** Posición top-left de la vista en coordenadas de mundo virtual (base, sin modificadores). */
     private double x;
     private double y;
 
-    /** Factor de zoom. 1.0 = sin zoom. >1.0 = ampliar. <1.0 = alejar. */
+    /** Posición final tras aplicar modificadores y constraints (usada en render). */
+    private double finalX;
+    private double finalY;
+
+    /** Factor de zoom base. 1.0 = sin zoom. >1.0 = ampliar. <1.0 = alejar. */
     private float zoom;
 
+    /** Zoom efectivo = zoom * zoomDelta de los modificadores. */
+    private float effectiveZoom;
+
     /**
-     * Rotación en radianes. 0.0 = sin rotación.
+     * Rotación base en radianes. 0.0 = sin rotación.
      * Positivo = sentido horario (convención AWT).
      */
     private float rotation;
 
-    // ── Límites de mundo (opcionales) ────────────────────────────────────────
+    /** Rotación efectiva = rotation + rotationDelta de los modificadores. */
+    private float effectiveRotation;
 
-    private int worldWidth  = 0;
-    private int worldHeight = 0;
+    // ── Dimensiones virtuales ─────────────────────────────────────────────────
+
     private int virtualWidth;
     private int virtualHeight;
-    private boolean hasBounds = false;
+
+    // ── Sistemas integrados ───────────────────────────────────────────────────
+
+    /** Pila de modificadores temporales (shake, zoom, offset, rotation, letterbox). */
+    private final CameraModifierStack  modifierStack;
+
+    /** Lista de constraints de posición (WorldBounds, Region, MaxFollow, etc.). */
+    private final CameraConstraintList constraintList;
+
+    /** La constraint de WorldBounds es la más importante: acceso directo para setWorldBounds(). */
+    private final WorldBoundsConstraint worldBoundsConstraint;
+
+    // ── Estado del último CameraState (para acceso externo, ej: letterbox) ───
+
+    private CameraState lastModifierState = null;
 
     // ── Construcción ─────────────────────────────────────────────────────────
 
@@ -86,34 +116,40 @@ public final class GameCamera {
      * @param virtualHeight alto virtual del área de juego (DisplaySettings.virtualHeight)
      */
     public GameCamera(int virtualWidth, int virtualHeight) {
-        this.x             = 0;
-        this.y             = 0;
-        this.zoom          = 1.0f;
-        this.rotation      = 0.0f;
-        this.virtualWidth  = virtualWidth;
-        this.virtualHeight = virtualHeight;
+        this.x               = 0;
+        this.y               = 0;
+        this.finalX          = 0;
+        this.finalY          = 0;
+        this.zoom            = 1.0f;
+        this.effectiveZoom   = 1.0f;
+        this.rotation        = 0.0f;
+        this.effectiveRotation = 0.0f;
+        this.virtualWidth    = virtualWidth;
+        this.virtualHeight   = virtualHeight;
+
+        this.modifierStack         = new CameraModifierStack();
+        this.constraintList        = new CameraConstraintList();
+        this.worldBoundsConstraint = new WorldBoundsConstraint(); // deshabilitada por defecto
+        this.constraintList.add(worldBoundsConstraint);
     }
 
     // ── Posicionamiento directo ───────────────────────────────────────────────
 
     /**
      * Centra la cámara en la posición de mundo dada (snap instantáneo).
-     *
-     * Aplica clamp a los límites del mundo si están configurados.
-     * Sin límites: clamp a >= 0 para evitar posiciones negativas.
+     * Aplica constraints. Los modificadores se aplican en commitFrame().
      */
     public void centerOn(double worldX, double worldY) {
         double targetX = worldX - virtualWidth  / (2.0 * zoom);
         double targetY = worldY - virtualHeight / (2.0 * zoom);
-        applyClamp(targetX, targetY);
+        setBasePosition(targetX, targetY);
     }
 
     /**
-     * Mueve la cámara directamente a la posición top-left indicada (snap).
-     * No aplica centrado — coloca el corner superior izquierdo en (x, y).
+     * Mueve la cámara directamente a la posición top-left indicada.
      */
     public void moveTo(double x, double y) {
-        applyClamp(x, y);
+        setBasePosition(x, y);
     }
 
     // ── Interpolación (lerp) ──────────────────────────────────────────────────
@@ -121,13 +157,8 @@ public final class GameCamera {
     /**
      * Suaviza la posición de la cámara hacia el centro del objetivo.
      *
-     * No llega instantáneamente: se aproxima al objetivo en cada tick,
-     * produciendo el efecto de seguimiento suave característico de los
-     * juegos de calidad. A mayor factor, más rápido (1.0 = snap).
-     *
      * Fórmula: pos = pos + (target - pos) * factor
      * Con factor=0.1 y 30fps: alcanza ~96% en 1 segundo.
-     * Con factor=0.08 y 30fps: alcanza ~92% en 1 segundo (más suave).
      *
      * @param worldX  posición X en mundo hacia la que centrar
      * @param worldY  posición Y en mundo hacia la que centrar
@@ -140,7 +171,7 @@ public final class GameCamera {
         double newX = x + (targetX - x) * factor;
         double newY = y + (targetY - y) * factor;
 
-        applyClamp(newX, newY);
+        setBasePosition(newX, newY);
     }
 
     /**
@@ -151,6 +182,7 @@ public final class GameCamera {
      */
     public void lerpZoom(float targetZoom, float factor) {
         zoom = zoom + (targetZoom - zoom) * factor;
+        commitFrame();
     }
 
     /**
@@ -161,48 +193,83 @@ public final class GameCamera {
      */
     public void lerpRotation(float targetRotation, float factor) {
         rotation = rotation + (targetRotation - rotation) * factor;
+        commitFrame();
     }
 
-    // ── Mutación directa de zoom y rotación ─────────────────────────────────
+    // ── Mutación directa de zoom y rotación ──────────────────────────────────
 
     /**
-     * Establece el zoom inmediatamente.
+     * Establece el zoom base inmediatamente.
      * @param zoom > 0; 1.0 = sin zoom.
      */
     public void setZoom(float zoom) {
-        if (zoom > 0) this.zoom = zoom;
+        if (zoom > 0) {
+            this.zoom = zoom;
+            commitFrame();
+        }
     }
 
     /**
-     * Establece la rotación inmediatamente.
+     * Establece la rotación base inmediatamente.
      * @param rotation en radianes; 0.0 = sin rotación.
      */
     public void setRotation(float rotation) {
         this.rotation = rotation;
+        commitFrame();
     }
 
-    // ── Límites de mundo ─────────────────────────────────────────────────────
+    // ── Sistema de modificadores ──────────────────────────────────────────────
 
     /**
-     * Configura el clamp a los límites del mundo.
+     * Acceso al modifier stack para añadir/eliminar modificadores temporales.
      *
-     * Cuando está activo, la cámara nunca mostrará área más allá de los
-     * bordes del mundo. Llamar cada vez que el mundo cambie de tamaño.
+     * Uso:
+     *   camera.getModifiers().add(ShakeModifier.impact(6.0f, 12));
+     *   camera.getModifiers().add(new ZoomModifier(1.5f, 30, 0.1f));
+     */
+    public CameraModifierStack getModifiers() {
+        return modifierStack;
+    }
+
+    // ── Sistema de constraints ────────────────────────────────────────────────
+
+    /**
+     * Acceso a la lista de constraints para añadir/eliminar restricciones.
+     *
+     * Uso:
+     *   camera.getConstraints().add(new RegionConstraint(200, 100, 1000, 600));
+     *   camera.getConstraints().add(HardConstraint.horizontal(0, worldWidth));
+     */
+    public CameraConstraintList getConstraints() {
+        return constraintList;
+    }
+
+    // ── Límites de mundo ──────────────────────────────────────────────────────
+
+    /**
+     * Configura los límites del mundo.
+     *
+     * Actualiza WorldBoundsConstraint (prioridad 1000 — siempre gana).
+     * La cámara nunca mostrará área más allá de los bordes del mundo.
+     * Llamar cada vez que el mundo cambie de tamaño o se cambie de sector.
      *
      * @param worldWidth  ancho total del mundo en píxeles virtuales
      * @param worldHeight alto total del mundo en píxeles virtuales
      */
     public void setWorldBounds(int worldWidth, int worldHeight) {
-        this.worldWidth  = worldWidth;
-        this.worldHeight = worldHeight;
-        this.hasBounds   = (worldWidth > 0 && worldHeight > 0);
-        // Re-aplicar clamp con los nuevos límites.
-        applyClamp(this.x, this.y);
+        worldBoundsConstraint.update(worldWidth, worldHeight);
+        commitFrame(); // re-aplicar constraints con los nuevos límites
     }
 
     /** Elimina los límites de mundo. La cámara puede ir a cualquier posición. */
     public void clearWorldBounds() {
-        this.hasBounds = false;
+        worldBoundsConstraint.setEnabled(false);
+        commitFrame();
+    }
+
+    /** True si los límites de mundo están activos. */
+    public boolean hasBounds() {
+        return worldBoundsConstraint.isActive();
     }
 
     // ── Actualización de resolución virtual ──────────────────────────────────
@@ -214,7 +281,40 @@ public final class GameCamera {
     public void onVirtualResolutionChanged(int newVirtualWidth, int newVirtualHeight) {
         this.virtualWidth  = newVirtualWidth;
         this.virtualHeight = newVirtualHeight;
-        applyClamp(this.x, this.y);
+        commitFrame();
+    }
+
+    /**
+     * Consolida el estado del frame: aplica modificadores y constraints.
+     *
+     * Debe llamarse al final de cada tick del game loop, después de que
+     * CameraController haya actualizado la posición base.
+     *
+     * CameraSystem (WorldManager) llama este método automáticamente.
+     * No es necesario llamarlo desde código de gameplay.
+     */
+    public void commitFrame() {
+        // 1. Calcular estado acumulado de los modificadores
+        CameraState state = modifierStack.computeState();
+        lastModifierState = state;
+
+        // 2. Aplicar offsets de modificadores a la posición base
+        double candidateX = x + state.offsetX;
+        double candidateY = y + state.offsetY;
+
+        // 3. Aplicar zoom y rotación efectivos
+        effectiveZoom     = zoom     * state.zoomDelta;
+        effectiveRotation = rotation + state.rotationDelta;
+
+        // 4. Aplicar constraints en cadena priorizada
+        var constrained = constraintList.apply(
+            candidateX, candidateY,
+            virtualWidth, virtualHeight,
+            effectiveZoom
+        );
+
+        finalX = constrained.getX();
+        finalY = constrained.getY();
     }
 
     // ── Transformación de vista ───────────────────────────────────────────────
@@ -222,65 +322,67 @@ public final class GameCamera {
     /**
      * Devuelve la transformación de vista lista para aplicar al Graphics2D.
      *
+     * Usa finalX/finalY (ya con modificadores y constraints aplicados).
+     *
      * La transformación convierte coordenadas de mundo a coordenadas de
      * pantalla virtual aplicando en orden:
-     *   1. Translación (offset de cámara).
-     *   2. Zoom (escala uniforme desde el centro de la pantalla).
-     *   3. Rotación (alrededor del centro de la pantalla).
-     *
-     * El renderer aplica esta transformación con:
-     *   Graphics2D g = ...;
-     *   AffineTransform saved = g.getTransform();
-     *   g.transform(camera.getViewTransform());
-     *   // dibujar la escena
-     *   g.setTransform(saved);
-     *
-     * Para el caso más común (solo translación, zoom=1, rotation=0), la
-     * transformación es equivalente a g.translate(-x, -y).
+     *   1. Translación (offset de cámara efectivo).
+     *   2. Zoom efectivo (base × zoomDelta de modificadores).
+     *   3. Rotación efectiva (base + rotationDelta de modificadores).
      *
      * @return transformación de vista como AffineTransform (nueva instancia cada llamada).
      */
     public AffineTransform getViewTransform() {
         AffineTransform t = new AffineTransform();
 
-        if (zoom != 1.0f || rotation != 0.0f) {
-            // Zoom y/o rotación: componer desde el centro de la pantalla virtual.
+        if (effectiveZoom != 1.0f || effectiveRotation != 0.0f) {
             double cx = virtualWidth  / 2.0;
             double cy = virtualHeight / 2.0;
-
-            // Trasladar al centro de pantalla, aplicar zoom+rotación, descentrar y aplicar offset.
             t.translate(cx, cy);
-            if (rotation != 0.0f) t.rotate(rotation);
-            if (zoom != 1.0f)     t.scale(zoom, zoom);
+            if (effectiveRotation != 0.0f) t.rotate(effectiveRotation);
+            if (effectiveZoom     != 1.0f) t.scale(effectiveZoom, effectiveZoom);
             t.translate(-cx, -cy);
         }
 
-        // Translación de cámara (siempre presente).
-        t.translate(-x, -y);
-
+        t.translate(-finalX, -finalY);
         return t;
     }
 
     // ── Lectura de estado ─────────────────────────────────────────────────────
 
     /**
-     * Offset X de la cámara en coordenadas de mundo.
-     * screenX = worldX - camera.getX()   (con zoom=1, rotation=0).
-     * Conservado para compatibilidad con componentes existentes.
+     * Offset X efectivo de la cámara (tras modificadores y constraints).
+     * screenX = worldX - camera.getX()  (con zoom=1, rotation=0).
      */
-    public double getX() { return x; }
+    public double getX() { return finalX; }
 
     /**
-     * Offset Y de la cámara en coordenadas de mundo.
-     * screenY = worldY - camera.getY()   (con zoom=1, rotation=0).
+     * Offset Y efectivo de la cámara (tras modificadores y constraints).
      */
-    public double getY() { return y; }
+    public double getY() { return finalY; }
 
-    /** Zoom actual. 1.0 = sin zoom. */
+    /**
+     * Offset X base de la cámara (sin modificadores ni constraints).
+     * Útil para CameraController que trabajan con la posición base.
+     */
+    public double getBaseX() { return x; }
+
+    /**
+     * Offset Y base de la cámara (sin modificadores ni constraints).
+     */
+    public double getBaseY() { return y; }
+
+    /** Zoom base actual. 1.0 = sin zoom. */
     public float getZoom() { return zoom; }
 
-    /** Rotación actual en radianes. */
+    /** Zoom efectivo (base × modificadores). Usar en render. */
+    public float getEffectiveZoom() { return effectiveZoom; }
+
+    /** Rotación base en radianes. */
     public float getRotation() { return rotation; }
+
+    /** Rotación efectiva (base + modificadores). Usar en render. */
+    public float getEffectiveRotation() { return effectiveRotation; }
 
     /** Ancho virtual configurado. */
     public int getVirtualWidth()  { return virtualWidth;  }
@@ -289,42 +391,31 @@ public final class GameCamera {
     public int getVirtualHeight() { return virtualHeight; }
 
     /**
-     * Copia defensiva de la posición como Vector2D.
+     * Copia defensiva de la posición efectiva como Vector2D.
      * Preferir getX()/getY() cuando solo se necesita el valor escalar.
      */
     public Vector2D getPosition() {
-        return new Vector2D(x, y);
+        return new Vector2D(finalX, finalY);
     }
 
     /**
-     * True si los límites de mundo están activos.
+     * El último CameraState calculado por commitFrame().
+     * Usado por el renderer para efectos como letterbox.
+     * Puede ser null si commitFrame() no se ha llamado aún.
      */
-    public boolean hasBounds() { return hasBounds; }
+    public CameraState getLastModifierState() {
+        return lastModifierState;
+    }
 
     // ── Privados ──────────────────────────────────────────────────────────────
 
     /**
-     * Aplica la posición con clamp a los límites configurados.
-     *
-     * Sin límites: clamp a >= 0 para evitar posiciones negativas.
-     * Con límites: clamp a [0, worldDim - virtualDim / zoom].
-     *
-     * La división por zoom corrige el visible area: con zoom=2.0 la vista
-     * virtual cubre la mitad del espacio, por lo que el límite superior es
-     * (worldWidth - virtualWidth/zoom), no (worldWidth - virtualWidth).
+     * Establece la posición base y consolida el frame.
+     * Punto de convergencia de todas las escrituras de posición.
      */
-    private void applyClamp(double newX, double newY) {
-        if (hasBounds) {
-            // Area visible = virtualDim / zoom
-            double visW = virtualWidth  / (double) zoom;
-            double visH = virtualHeight / (double) zoom;
-            // Math.max(0, ...) protege el caso worldDim < virtualDim/zoom.
-            this.x = Math.max(0, Math.min(newX, Math.max(0, worldWidth  - visW)));
-            this.y = Math.max(0, Math.min(newY, Math.max(0, worldHeight - visH)));
-        } else {
-            // Sin límites: solo clamp a >= 0.
-            this.x = Math.max(0, newX);
-            this.y = Math.max(0, newY);
-        }
+    private void setBasePosition(double newX, double newY) {
+        this.x = newX;
+        this.y = newY;
+        commitFrame();
     }
 }

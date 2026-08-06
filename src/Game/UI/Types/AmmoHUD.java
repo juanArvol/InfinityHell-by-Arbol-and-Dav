@@ -3,8 +3,8 @@ package Game.UI.Types;
 import java.awt.Color;
 import java.awt.Graphics2D;
 
+import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Items.Types.Weapons.WeaponInventory;
-import Game.Items.Types.Weapons.WeaponSelected;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import Game.UI.UIAnchor;
 import Game.UI.UIElement;
@@ -58,7 +58,7 @@ public class AmmoHUD implements UIElement {
 
     @Override
     public void draw(Graphics2D g) {
-        WeaponSelected weapon = inventory.getCurrentWeapon();
+        ModifiedWeapon weapon = inventory.getCurrentWeapon();
         if (weapon == null) return;
 
         WeaponStats stats = weapon.getStats();

@@ -17,6 +17,6 @@ public class WeaponEscopeta extends WeaponComport {
         new SemiAutoMode(),
         6, 
         35,
-        "Pistol.wav");
+        "Gun.wav");
     }
 } 

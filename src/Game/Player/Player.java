@@ -17,7 +17,11 @@ import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
+import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Bullets.BulletType;
+import Game.Items.Types.Weapons.ModifiedWeapon;
+import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponEscopeta;
 import Sprites.Entity.Player.PlayerAssets;
 import java.awt.Color;
 import java.util.function.Consumer;
@@ -105,6 +109,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     private final PlayerStats      playerStats;
     private final PlayerState      state;
 
+    /** Amuletos acumulados en la run actual. Referencia compartida con ModifiedWeapon. */
+    private final PlayerAmulets    playerAmulets;
+
     private final Inventory     inventory;
     private final EquippedItems equippedItems;
 
@@ -151,8 +158,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         addComponent(new StatusEffectComponent());
 
         // ── Módulos de gameplay ───────────────────────────────────────────
-        state       = new PlayerState();
-        playerStats = new PlayerStats();
+        state         = new PlayerState();
+        playerStats   = new PlayerStats();
+        playerAmulets = new PlayerAmulets();
 
         // Vincular HealthComponent a PlayerStats (fachada de UI solamente).
         // LifeHUD → PlayerStats.getLife() → HealthComponent.getCurrent()
@@ -167,13 +175,15 @@ public class Player extends MovingObjects implements EntityInfoProvider {
             bulletSpawner
         );
 
-        // Loadout inicial
-        combat.setInitialWeapon(
-            new Game.Items.Types.Weapons.WeaponSelected(
-                new Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponEscopeta(),
-                Game.Items.Types.Bullets.BulletType.SPRINGBULLET
-            )
-        );
+        // ── Loadout inicial ───────────────────────────────────────────────
+        // ModifiedWeapon recibe el comport, el tipo de bala y los amuletos
+        // del jugador (referencia compartida — si el jugador recoge un amuleto
+        // lo verá el arma automáticamente en el próximo disparo).
+        combat.addWeapon(new ModifiedWeapon(
+                new WeaponEscopeta(),
+                BulletType.SPRINGBULLET,
+                playerAmulets
+        ));
 
         // ── Colisión y visual ─────────────────────────────────────────────
         ColliderComponent collider = getComponent(ColliderComponent.class);
@@ -270,6 +280,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     public PlayerCombat     getCombat()        { return combat; }
     public Inventory        getInventory()     { return inventory; }
     public EquippedItems    getEquippedItems() { return equippedItems; }
+
+        /** Inventario de amuletos de la run actual. */
+    public PlayerAmulets    getAmulets()       { return playerAmulets; }
 
     /**
      * Fachada de UI e invulnerabilidad específica del Player.

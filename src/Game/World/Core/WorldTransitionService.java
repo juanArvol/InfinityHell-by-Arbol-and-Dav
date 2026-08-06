@@ -1,155 +1,95 @@
 package Game.World.Core;
 
 import Game.Engine.GameObjects;
-import Game.World.Generator.WorldGenerator;
-import java.util.ArrayList;
-import java.util.List;
+import Game.World.Transition.TransitionSystem;
+import java.util.function.Predicate;
 
 /**
- * Servicio de transición entre mundos.
+ * Adaptador de compatibilidad para el sistema de transición.
  *
- * RAZÓN DE EXISTENCIA:
- *   La lógica de transferencia de objetos entre mundos era una responsabilidad
- *   mezclada dentro de WorldManager. Extraerla cumple SRP y facilita testing.
+ * ── EVOLUCIÓN ─────────────────────────────────────────────────────────────
+ * WorldTransitionService ANTES mezclaba cuatro responsabilidades distintas:
+ *   1. Detección de objetos fuera de bounds
+ *   2. Transferencia de objetos entre mundos
+ *   3. Generación de mundos vecinos
+ *   4. Validación implícita (ninguna)
  *
- *   WorldTransitionService sabe:
- *   - Qué objetos salieron del mundo actual (pos fuera de bounds)
- *   - A qué mundo vecino van
- *   - Cómo ajustar sus coordenadas tras el cruce
- *   - Si el objeto rastreado (el "player") cruzó → qué WorldCoordinator es el nuevo actual
+ * AHORA WorldTransitionService es un adaptador delgado sobre TransitionSystem,
+ * que implementa esas responsabilidades por separado y con mayor extensibilidad:
+ *   1. TransitionDetector   → detección
+ *   2. TransitionSystem.executeTransfer → transferencia
+ *   3. TransitionSystem.ensureWorldExists → generación (solo cuando se necesita)
+ *   4. TransitionValidator + TransitionResolver → validación y resolución
  *
- *   WorldTransitionService NO sabe:
- *   - Qué es un Player (usa un predicado inyectable en lugar de instanceof)
- *   - Cómo dibujar mundos
- *   - Cómo pre-generar vecinos (eso es WorldManager)
+ * ── RETROCOMPATIBILIDAD ───────────────────────────────────────────────────
+ * La API pública de WorldTransitionService se mantiene para que WorldManager
+ * no necesite cambios bruscos. WorldManager usará gradualmente la nueva
+ * API de TransitionSystem directamente.
  *
- * ELIMINACIÓN DE instanceof Player:
- *   El código original usaba `if (obj instanceof Player)` para determinar
- *   si el objeto que cruzó era el jugador y actualizar currentCoord.
- *   Esto acoplaba WorldManager al tipo concreto Player.
- *
- *   Solución: WorldTransitionService recibe un `java.util.function.Predicate<GameObjects>`
- *   que identifica el objeto "controlador de mundo" (puede ser Player o cualquier otro).
- *   GameState lo configura: transitionService.setWorldControllerPredicate(obj -> obj instanceof Player)
- *   Este acoplamiento queda en la capa de composición (GameState), no en la lógica de dominio.
+ * ── DELEGACIÓN ────────────────────────────────────────────────────────────
+ * Todos los métodos públicos de esta clase delegan en TransitionSystem.
+ * No hay lógica duplicada.
  */
 public final class WorldTransitionService {
 
-    private final WorldCache     cache;
-    private final WorldGenerator generator;
+    private final TransitionSystem transitionSystem;
 
-    // Predicado que identifica cuál objeto controla el cambio de mundo activo.
-    // Por defecto: cualquier objeto que salga cambia el mundo (comportamiento original).
-    // En práctica: GameState lo configura como obj -> obj instanceof Player.
-    private java.util.function.Predicate<GameObjects> worldControllerPredicate =
-        obj -> true; // fallback: cualquier objeto que cruce activa el cambio
-
-    public WorldTransitionService(WorldCache cache, WorldGenerator generator) {
-        this.cache     = cache;
-        this.generator = generator;
+    public WorldTransitionService(WorldCache cache,
+                                   Game.World.Generator.WorldGenerator generator,
+                                   Game.Engine.Events.GameEventBus eventBus,
+                                   java.util.function.Supplier<World> currentWorldSupplier) {
+        this.transitionSystem = new TransitionSystem(
+            currentWorldSupplier, cache, generator, eventBus
+        );
     }
 
     /**
-     * Registra el predicado que identifica el "objeto controlador" de mundo.
-     * Cuando ese objeto cruza un borde, el WorldCoordinator activo cambia.
-     *
-     * Uso desde GameState:
-     *   transitionService.setWorldControllerPredicate(obj -> obj instanceof Player);
-     *
-     * Esto mantiene el conocimiento de "Player" en la capa de composición,
-     * no en la lógica de transición.
+     * Constructor de compatibilidad mínimo (usa GameEventBus.GLOBAL).
+     * Preferir el constructor completo para mayor control.
      */
-    public void setWorldControllerPredicate(java.util.function.Predicate<GameObjects> predicate) {
-        this.worldControllerPredicate = predicate;
+    public WorldTransitionService(WorldCache cache,
+                                   Game.World.Generator.WorldGenerator generator) {
+        this(cache, generator,
+             Game.Engine.Events.GameEventBus.GLOBAL,
+             () -> null);   // supplier temporal — WorldManager lo reconfigura
     }
 
+    // ── API de configuración ──────────────────────────────────────────────
+
     /**
-     * Procesa todas las transferencias de objetos entre mundos.
+     * Registra el predicado que identifica el "world controller".
+     * Delega en TransitionSystem.setControllerPredicate().
+     */
+    public void setWorldControllerPredicate(Predicate<GameObjects> predicate) {
+        transitionSystem.setControllerPredicate(predicate);
+    }
+
+    // ── API de procesamiento ──────────────────────────────────────────────
+
+    /**
+     * Procesa todas las transferencias del tick actual.
+     *
+     * Delega completamente en TransitionSystem.update().
      *
      * @param world         el mundo actual
-     * @param currentCoord  coordenada del mundo actual
-     * @param worldWidth    ancho lógico de cada mundo
-     * @param worldHeight   alto lógico de cada mundo
-     * @return              nueva WorldCoordinator si el objeto controlador cruzó,
-     *                      null si el mundo activo no cambió
+     * @param currentCoord  coordenada del sector actual
+     * @param worldWidth    ancho lógico de cada sector
+     * @param worldHeight   alto lógico de cada sector
+     * @return nueva WorldCoordinator si el world controller cambió de sector,
+     *         null si el sector activo no cambió
      */
     public WorldCoordinator processTransitions(World world,
                                                WorldCoordinator currentCoord,
                                                int worldWidth,
                                                int worldHeight) {
-        List<GameObjects> toTransfer = findObjectsOutOfBounds(world, worldWidth, worldHeight);
-        if (toTransfer.isEmpty()) return null;
-
-        WorldCoordinator newCurrentCoord = null;
-
-        for (GameObjects obj : toTransfer) {
-            var pos = obj.getTransform().getPosition();
-
-            int dx = 0, dy = 0;
-            if (pos.getX() < 0)                dx = -1;
-            else if (pos.getX() >= worldWidth)  dx =  1;
-            if (pos.getY() < 0)                dy = -1;
-            else if (pos.getY() >= worldHeight) dy =  1;
-
-            WorldCoordinator nextCoord = new WorldCoordinator(
-                currentCoord.x() + dx,
-                currentCoord.y() + dy
-            );
-
-            ensureWorldExists(nextCoord, worldWidth, worldHeight);
-
-            // Ajustar coordenadas del objeto al nuevo mundo
-            double newX = pos.getX();
-            double newY = pos.getY();
-            if (dx != 0) newX = (dx > 0) ? newX - worldWidth  : newX + worldWidth;
-            if (dy != 0) newY = (dy > 0) ? newY - worldHeight : newY + worldHeight;
-            pos.setX(newX);
-            pos.setY(newY);
-
-            world.remove(obj);
-            World nextWorld;
-            synchronized (cache) {
-                nextWorld = cache.get(nextCoord);
-            }
-            nextWorld.add(obj);
-
-            // Si este objeto es el controlador de mundo, actualizar currentCoord
-            if (worldControllerPredicate.test(obj)) {
-                newCurrentCoord = nextCoord;
-            }
-        }
-
-        // Flush del mundo actual y del nuevo mundo si hubo cambio
-        world.getObjectsContainer().flush();
-        if (newCurrentCoord != null) {
-            synchronized (cache) {
-                World nextWorld = cache.get(newCurrentCoord);
-                if (nextWorld != null) nextWorld.getObjectsContainer().flush();
-            }
-        }
-
-        return newCurrentCoord;
+        return transitionSystem.update(world, currentCoord, worldWidth, worldHeight);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private List<GameObjects> findObjectsOutOfBounds(World world, int worldWidth, int worldHeight) {
-        List<GameObjects> result = new ArrayList<>();
-        for (var obj : world.getObjectsContainer().getObjects()) {
-            var pos = obj.getTransform().getPosition();
-            if (pos.getX() < 0 || pos.getX() >= worldWidth ||
-                pos.getY() < 0 || pos.getY() >= worldHeight) {
-                result.add(obj);
-            }
-        }
-        return result;
-    }
-
-    private void ensureWorldExists(WorldCoordinator coord, int worldWidth, int worldHeight) {
-        synchronized (cache) {
-            if (!cache.contains(coord)) {
-                cache.put(generator.generate(worldWidth, worldHeight, coord));
-            }
-        }
+    /**
+     * Acceso directo al TransitionSystem para código que necesita la API completa.
+     * Usar para registrar gates, solicitar teleportes, etc.
+     */
+    public TransitionSystem getTransitionSystem() {
+        return transitionSystem;
     }
 }

@@ -36,6 +36,14 @@ public final class AmuletRegistry {
     private final Map<String, AmuletDefinition> definitions = new LinkedHashMap<>();
     private final Map<String, ItemRarity> rarityOverrides   = new HashMap<>();
 
+    /**
+     * Proveedor de entidades del mundo activo.
+     * Inyectado desde GameWorldBootstrap cuando el mundo está disponible.
+     * Usado por amuletos como BounceAmuletWrapper que necesitan buscar objetivos.
+     * Null hasta que se llame setEntityProvider().
+     */
+    private java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>> entityProvider = java.util.List::of;
+
     private AmuletRegistry() {}
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
@@ -48,6 +56,28 @@ public final class AmuletRegistry {
         if (instance == null) throw new IllegalStateException(
             "AmuletRegistry no inicializado. Llamá AmuletRegistry.init() primero.");
         return instance;
+    }
+
+    /**
+     * Inyecta el proveedor de entidades del mundo activo.
+     *
+     * Necesario para amuletos que buscan entidades cercanas (BounceAmuletWrapper).
+     * Llamar desde GameWorldBootstrap después de crear el mundo y el player.
+     *
+     * @param provider proveedor que retorna la lista de AbstractEntity del mundo actual
+     */
+    public static void setEntityProvider(
+            java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>> provider) {
+        getInstance().entityProvider = (provider != null) ? provider : java.util.List::of;
+    }
+
+    /**
+     * Proveedor de entidades activo.
+     * Los amuletos que lo necesitan lo leen desde aquí.
+     */
+    public static java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>>
+            getEntityProvider() {
+        return getInstance().entityProvider;
     }
 
     /**
@@ -146,7 +176,11 @@ public final class AmuletRegistry {
             new AmuletEffect() {
                 @Override
                 public BulletBehavior wrapBehavior(BulletBehavior base) {
-                    return new Game.Items.Types.Ammulets.Effects.BounceAmuletWrapper(base, 1);
+                    // Usa el proveedor de entidades inyectado desde GameWorldBootstrap.
+                    // Si no está disponible (sin mundo activo), el amuleto se degrada:
+                    // aplica el daño normal pero no rebota.
+                    return new Game.Items.Types.Ammulets.Effects.BounceAmuletWrapper(
+                            base, 1, AmuletRegistry.getEntityProvider());
                 }
             }
         ));

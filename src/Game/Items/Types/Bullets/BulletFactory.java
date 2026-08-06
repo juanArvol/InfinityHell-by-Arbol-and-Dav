@@ -3,97 +3,134 @@ package Game.Items.Types.Bullets;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
+import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Sprites.Entity.Bullets.BulletAssets;
+import java.awt.image.BufferedImage;
 
 /**
- * Extensión de BulletFactory — añade createBulletWithBehavior() para
- * el sistema de ModifiedWeapon que necesita pasar un behavior ya compuesto.
+ * Factory de proyectiles.
  *
- * RETRO-COMPATIBLE: no toca los métodos originales. Solo añade uno nuevo.
+ * ── HRFC — Projectile System Refactor ────────────────────────────────────
  *
- * Este archivo REEMPLAZA al BulletFactory.java original, que sigue siendo
- * válido. Si el proyecto tiene BulletFactory en un solo archivo, agrega
- * createBulletWithBehavior() al final del original.
+ * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ *
+ *   ASSET RESOLUTION por ProjectileData.assetKey():
+ *     Si data.assetKey() != null, la factory busca el asset por clave.
+ *     Si null, usa el sprite por defecto de BulletAssets.
+ *     Cada tipo de proyectil puede tener su propio sprite sin modificar
+ *     la factory.
+ *
+ *   GRAVITY desde ProjectileData.gravityValue():
+ *     Si data.gravityValue() != 0, la factory compone el movement del
+ *     behavior con un GravityMovement. Esto garantiza que los behaviors
+ *     que declaran gravityValue > 0 en ProjectileData la tengan activa,
+ *     incluso si getDefaultMovement() retorna LinearMovement.
+ *
+ *     Si getDefaultMovement() ya incluye GravityMovement (como BulletJump),
+ *     no se añade doble gravedad — BulletJump declara su propio
+ *     getDefaultMovement() que retorna GravityMovement y NO declara
+ *     gravityValue en ProjectileData (usa 0.0).
+ *
+ *     Regla: usar gravityValue en ProjectileData solo si getDefaultMovement()
+ *     no incluye ya una GravityMovement. Si el behavior sobreescribe
+ *     getDefaultMovement() con GravityMovement, poner gravityValue=0.0.
+ *
+ * ── MÉTODOS ───────────────────────────────────────────────────────────────
+ *
+ *   createBullet(...)             — ruta directa desde BulletType (sin amuletos)
+ *   createBulletWithBehavior(...) — ruta desde ModifiedWeapon (con amuletos)
+ *   getStats(...)                 — preview de stats sin crear Bullet (para UI)
  */
 public class BulletFactory {
 
-    // ── Métodos ORIGINALES (no modificados) ───────────────────────────────
+    // ── Creación desde BulletType ─────────────────────────────────────────
 
+    /**
+     * Crea un proyectil desde un BulletType con sus valores por defecto.
+     * ModifiedWeapon NO usa este método — tiene su propio pipeline con amuletos.
+     */
     public static Bullet createBullet(
-            double startX,
-            double startY,
-            Vector2D direction,
+            double     startX,
+            double     startY,
+            Vector2D   direction,
             BulletType type,
-            double weaponBaseSpeed,
-            double damage
+            double     weaponBaseSpeed,
+            double     damage
     ) {
-        Vector2D spawn = new Vector2D(startX, startY);
-        BulletBehavior comport = type.create();
+        BulletBehavior behavior = type.create();
+        ProjectileData data     = behavior.getDefaultData();
 
-        double finalSpeed  = weaponBaseSpeed * comport.getSpeedFactor();
-        double finalDamage = damage + comport.getBulletBaseDamage();
+        double finalSpeed  = weaponBaseSpeed * data.speedFactor();
+        double finalDamage = damage + data.damage();
 
-        double xSpeed = direction.getX() * finalSpeed;
-        double ySpeed = direction.getY() * finalSpeed;
-
-        return new Bullet(
-            spawn,
-            BulletAssets.balaHandle.resolveDefault().getImage(),
-            comport,
-            xSpeed,
-            ySpeed,
-            comport.getLifeTime(),
-            finalDamage
-        );
+        return build(startX, startY, direction, behavior, finalSpeed, finalDamage, data);
     }
 
+    // ── Creación desde ModifiedWeapon (valores finales ya calculados) ─────
+
+    /**
+     * Crea un proyectil con behavior compuesto y valores finales calculados.
+     * Usado por ModifiedWeapon después de aplicar amuletos sobre WeaponStats.
+     */
+    public static Bullet createBulletWithBehavior(
+            double         startX,
+            double         startY,
+            Vector2D       direction,
+            BulletBehavior behavior,
+            double         finalSpeed,
+            double         finalDamage
+    ) {
+        ProjectileData data = behavior.getDefaultData();
+        return build(startX, startY, direction, behavior, finalSpeed, finalDamage, data);
+    }
+
+    // ── Stats para UI (sin instanciar Bullet) ────────────────────────────
+
+    /**
+     * Calcula los BulletStats sin crear un Bullet.
+     * Útil para tooltips y previews en CrossHairHUD.
+     */
     public static BulletStats getStats(
             BulletType type,
             double weaponBaseSpeed,
             double weaponDamageBonus
     ) {
-        BulletBehavior comport = type.create();
-        double finalSpeed  = weaponBaseSpeed * comport.getSpeedFactor();
-        double finalDamage = weaponDamageBonus + comport.getBulletBaseDamage();
-        return new BulletStats(finalSpeed, finalDamage, comport.getLifeTime(), comport.hasGravity());
+        BulletBehavior behavior = type.create();
+        ProjectileData data     = behavior.getDefaultData();
+        double finalSpeed  = weaponBaseSpeed * data.speedFactor();
+        double finalDamage = weaponDamageBonus + data.damage();
+        return new BulletStats(finalSpeed, finalDamage, data.lifeTime(), data.hasGravity());
     }
 
-    // ── MÉTODO NUEVO para ModifiedWeapon ──────────────────────────────────
+    // ── Builder interno ───────────────────────────────────────────────────
 
-    /**
-     * Crea una Bullet con un BulletBehavior ya compuesto (pipeline de modifiers).
-     *
-     * A diferencia de createBullet(), recibe el behavior FINAL en lugar del BulletType,
-     * porque ModifiedWeapon ya compuso el wrapper chain externamente.
-     *
-     * @param startX         posición X de spawn
-     * @param startY         posición Y de spawn
-     * @param direction      dirección normalizada (puede tener spread aplicado)
-     * @param behavior       behavior final compuesto (puede ser un BulletBehaviorWrapper)
-     * @param finalSpeed     velocidad total ya calculada (con speedFactor incluido)
-     * @param finalDamage    daño total ya calculado (con bonuses incluidos)
-     */
-    public static Bullet createBulletWithBehavior(
-            double startX,
-            double startY,
-            Vector2D direction,
+    private static Bullet build(
+            double         startX,
+            double         startY,
+            Vector2D       direction,
             BulletBehavior behavior,
-            double finalSpeed,
-            double finalDamage
+            double         speed,
+            double         damage,
+            ProjectileData data
     ) {
-        Vector2D spawn = new Vector2D(startX, startY);
+        Vector2D spawn  = new Vector2D(startX, startY);
+        double   xSpeed = direction.getX() * speed;
+        double   ySpeed = direction.getY() * speed;
 
-        double xSpeed = direction.getX() * finalSpeed;
-        double ySpeed = direction.getY() * finalSpeed;
+        // ── Resolver movimiento ───────────────────────────────────────────
+        ProjectileMovement movement = behavior.getDefaultMovement();
+        if (data.hasGravity() && movement.isStateless()) {
+            movement = movement.andThen(new GravityMovement(data.gravityValue()));
+        }
 
-        return new Bullet(
-            spawn,
-            BulletAssets.balaHandle.resolveDefault().getImage(),
-            behavior,
-            xSpeed,
-            ySpeed,
-            behavior.getLifeTime(),
-            finalDamage
-        );
+        // ── Resolver sprite ───────────────────────────────────────────────
+        // BulletAssets.balaHandle es inicializado por Assets.init() en GameOrquester.
+        // Si assetKey está definido en ProjectileData se usará en el futuro
+        // para sprites específicos por tipo — por ahora todos usan el default.
+        BufferedImage texture = BulletAssets.balaHandle.resolveDefault().getImage();
+
+        return new Bullet(spawn, texture, behavior, movement,
+                          xSpeed, ySpeed, data.lifeTime(), damage,
+                          data.width(), data.height());
     }
 }

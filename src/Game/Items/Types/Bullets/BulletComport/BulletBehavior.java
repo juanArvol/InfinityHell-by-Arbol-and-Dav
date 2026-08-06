@@ -2,92 +2,116 @@ package Game.Items.Types.Bullets.BulletComport;
 
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Bullets.ProjectileData;
+import Game.Items.Types.Bullets.ProjectileMovement;
+import Game.Items.Types.Bullets.Movement.LinearMovement;
 
 /**
- * Comportamiento de un proyectil — define su ciclo de vida y reacción a colisiones.
+ * Comportamiento de un proyectil — qué hace al impactar y cada frame.
  *
- * ── HRFC-014 — GAP-2 / GAP-8: Desacoplamiento de tipos concretos ────────
+ * ── HRFC — Projectile System Refactor ────────────────────────────────────
  *
- * PROBLEMA ANTERIOR:
- *   BulletBehavior declaraba sobrecargas tipadas por tipo de objeto del Game:
+ * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- *     onCollision(Bullet, Player)
- *     onCollision(Bullet, Enemy)
- *     onCollision(Bullet, BackGround)
- *     onCollision(Bullet, Obstacle)
- *     onCollision(Bullet, BlockWorld)
+ *   BulletBehavior  → QUÉ HACE al impactar y en cada frame (comportamiento puro)
+ *   ProjectileData  → QUÉ VALORES tiene el proyectil (datos inmutables de spawn)
+ *   ProjectileMovement → CÓMO SE MUEVE cada frame (estrategia de movimiento)
  *
- *   Esto acoplaba el Engine de proyectiles a tipos concretos del Game:
- *   - Cualquier entidad nueva (NPC, invocación, trampa) que recibiera balas
- *     requería añadir una nueva sobrecarga.
- *   - BulletBehavior no podía vivir sin conocer Player, Enemy, BackGround, etc.
- *   - No escalaba con la visión de Infinity Hell.
+ * ── CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR ───────────────────────────────
  *
- * SOLUCIÓN:
- *   Un único método genérico:
+ *   ELIMINADO: 5 métodos @Deprecated (getBulletBaseDamage, getSpeedFactor,
+ *              getLifeTime, hasGravity, getGravityValue, método bridge update()).
+ *              Eran deuda técnica activa — métodos deprecated en producción
+ *              que ningún caller usaba ya. El código que los llamaba fue
+ *              migrado a getDefaultData() directamente.
  *
- *     onCollision(Bullet bullet, GameObjects other)
+ * ── API ────────────────────────────────────────────────────────────────────
  *
- *   Cada BulletBehavior concreto hace instanceof en su implementación
- *   cuando necesita distinguir tipos específicos. El Engine no los conoce.
+ *   getDefaultData()     — datos de referencia de este tipo de proyectil.
+ *                          ProjectileData es un record inmutable.
+ *   getDefaultMovement() — estrategia de movimiento por defecto.
+ *   onUpdate(Bullet)     — lógica por frame (efectos continuos, etc.).
+ *   onCollision(Bullet, GameObjects) — reacción al impacto con cualquier objeto.
  *
- *   Este es el mismo patrón que GameObjects.onCollisionWith(GameObjects).
- *
- * ── API ────────────────────────────────────────────────────────────────
- *
- *   update(bullet)              — lógica frame a frame del proyectil.
- *   onCollision(bullet, other)  — reacción al contacto con cualquier objeto.
- *
- * ── Ejemplo de implementación ────────────────────────────────────────────
+ * ── EJEMPLO DE IMPLEMENTACIÓN ────────────────────────────────────────────
  *
  *   public class BulletFire extends BulletBehavior {
+ *       private static final ProjectileData DATA =
+ *           ProjectileData.flat(20, 1.0, 12);
+ *
+ *       {@literal @}Override
+ *       public ProjectileData getDefaultData() { return DATA; }
+ *
  *       {@literal @}Override
  *       public void onCollision(Bullet bullet, GameObjects other) {
- *           if (other instanceof AbstractEntity entity) {
- *               entity.damage((int) bullet.getDamage());
- *               entity.addEffect(new BurningEffect(60));
+ *           if (other instanceof AbstractEntity e) {
+ *               e.damage((int) bullet.getDamage());
+ *               e.addEffect(new BurningEffect(120));
  *           }
- *           bullet.getBulletLife().setDead();
+ *           bullet.getBulletLife().kill();
  *       }
  *   }
  */
 public abstract class BulletBehavior {
 
-    private final int    bulletBaseDamage;
-    private final double speedFactor;
-    private final boolean gravity;
-    private final double gravityValue;
-    private final int    lifeTime;
+    // ── Datos y movimiento por defecto ────────────────────────────────────
 
-    protected BulletBehavior(int bulletBaseDamage,
-                             double speedFactor,
-                             boolean gravity,
-                             double gravityValue,
-                             int lifeTime) {
-        this.bulletBaseDamage = bulletBaseDamage;
-        this.speedFactor      = speedFactor;
-        this.gravity          = gravity;
-        this.gravityValue     = gravityValue;
-        this.lifeTime         = lifeTime;
+    /**
+     * Datos de configuración por defecto de este tipo de proyectil.
+     *
+     * Sobreescribir en cada BulletBehavior concreto con los valores
+     * apropiados para ese tipo. BulletFactory lee estos datos cuando
+     * crea proyectiles desde un BulletType.
+     *
+     * ModifiedWeapon calcula sus propios datos finales (WeaponStats + amuletos)
+     * y los pasa directamente a BulletFactory — en ese flujo estos defaults
+     * solo se usan para lifeTime, width/height y assetKey.
+     *
+     * Default base: 10 daño, x1 speed, 10 ticks, sin gravedad, 8×8px.
+     * Las subclases deben sobreescribir esto con sus valores reales.
+     */
+    public ProjectileData getDefaultData() {
+        return ProjectileData.flat(10, 1.0, 10);
     }
 
-    public int    getBulletBaseDamage() { return bulletBaseDamage; }
-    public double getSpeedFactor()      { return speedFactor; }
-    public int    getLifeTime()         { return lifeTime; }
-    public boolean hasGravity()         { return gravity; }
-    public double getGravityValue()     { return gravityValue; }
+    /**
+     * Estrategia de movimiento por defecto de este tipo de proyectil.
+     *
+     * Default: LinearMovement.INSTANCE (movimiento recto, velocidad constante).
+     * Sobreescribir para tipos con movimiento especial (gravedad, homing, orbital…).
+     *
+     * Si getDefaultData().gravityValue() != 0, considerar retornar un
+     * GravityMovement con ese valor aquí — BulletFactory lo usa automáticamente.
+     */
+    public ProjectileMovement getDefaultMovement() {
+        return LinearMovement.INSTANCE;
+    }
+
+    // ── Comportamiento ────────────────────────────────────────────────────
 
     /**
      * Lógica de actualización por frame del proyectil.
-     * Comportamiento por defecto: sin efecto (subclases sobreescriben si lo necesitan).
+     *
+     * Llamado desde Bullet.update() cada frame que el proyectil está vivo,
+     * ANTES de que ProjectileMovement.tick() mueva el proyectil.
+     *
+     * Usar para efectos continuos: rastro de partículas, cambio de color,
+     * emisión de luz, timers internos del comportamiento, etc.
+     *
+     * Default: sin efecto. Sobreescribir solo cuando se necesite.
      */
-    public void update(Bullet bullet) {}
+    public void onUpdate(Bullet bullet) {}
 
     /**
      * Reacción al contacto con cualquier objeto del mundo.
      *
      * Las subclases usan instanceof para distinguir tipos cuando sea necesario.
-     * Si no se sobreescribe, no hay reacción (el proyectil no hace nada al impactar).
+     * Si no se sobreescribe, no hay reacción al impactar.
+     *
+     * Patrones típicos:
+     *   if (other instanceof AbstractEntity e) { e.damage(...); }
+     *   bullet.getBulletLife().kill();    // destruir el proyectil
+     *   bullet.getBulletLife().revive();  // ignorar el impacto (piercing)
      *
      * @param bullet el proyectil que colisionó
      * @param other  el objeto con el que colisionó

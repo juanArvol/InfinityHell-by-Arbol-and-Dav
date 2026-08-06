@@ -4,7 +4,7 @@ import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Game.Items.Types.Bullets.BulletFactory;
-import Game.Items.Types.Weapons.WeaponSelected;
+import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Player.Player;
 import Game.UI.UIElement;
 import Inputs.MouseInput;
@@ -67,7 +67,7 @@ public class CrossHairHUD implements UIElement {
 
         if (!MouseInput.getButtonState("rightPressed")) return;
 
-        WeaponSelected weapon = player.getCombat()
+        ModifiedWeapon weapon = player.getCombat()
                                       .getInventory()
                                       .getCurrentWeapon();
         if (weapon == null) return;
