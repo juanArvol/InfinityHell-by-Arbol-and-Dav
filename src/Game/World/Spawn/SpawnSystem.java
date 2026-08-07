@@ -1,7 +1,7 @@
 package Game.World.Spawn;
 
-import Game.Engine.GameObjects;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 import Game.World.Core.World;
 import Game.World.Core.WorldCache;
 import Game.World.Core.WorldCoordinator;
@@ -162,7 +162,7 @@ public final class SpawnSystem {
         World world = currentWorldSupplier.get();
         if (world == null) return null;
         GameObjects obj = strategy.create(position);
-        if (obj != null) world.add(obj);
+        if (obj != null) world.addDynamic(obj);
         return obj;
     }
 
@@ -188,11 +188,11 @@ public final class SpawnSystem {
         SpawnDescriptor descriptor = request.getDescriptor();
         SpawnPoint point = descriptor.getSpawnPoint();
 
-        // Resolver posición
+        // Resolver posición — en el nuevo modelo World no tiene dimensiones propias.
+        // Si no hay SpawnPoint, usar el centro del primer chunk como fallback.
         Vector2D position = (point != null)
                 ? point.samplePosition()
-                : new Vector2D(defaultWorld.getWidth()  / 2.0,
-                               defaultWorld.getHeight() / 2.0);
+                : new Vector2D(640.0, 360.0);
 
         // Resolver mundo objetivo
         World targetWorld = resolveTargetWorld(point, defaultWorld);
@@ -202,8 +202,8 @@ public final class SpawnSystem {
         GameObjects obj = descriptor.getStrategy().create(position);
         if (obj == null) return; // estrategia no pudo construir — skip silencioso
 
-        // Añadir al mundo
-        targetWorld.add(obj);
+        // Añadir al mundo como entidad dinámica
+        targetWorld.addDynamic(obj);
 
         // Notificar al request
         request.onSpawned();

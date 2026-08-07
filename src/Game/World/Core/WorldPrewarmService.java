@@ -2,60 +2,63 @@ package Game.World.Core;
 
 import Game.Engine.GameObjects;
 import Game.World.Generator.WorldGenerator;
+import Game.World.Region.StreamingRegion;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
-import java.util.function.Supplier;
 
 /**
- * Servicio de pre-generación anticipada de sectores vecinos.
+ * Servicio de pre-generación anticipada de chunks vecinos.
  *
- * ── EXTRACCIÓN DESDE WorldManager ─────────────────────────────────────────
- * La lógica de prewarming fue extraída de WorldManager para cumplir SRP.
- * WorldManager era responsable de: world state, camera, render, transitions,
- * Y prewarming. WorldPrewarmService recibe exclusivamente esta responsabilidad.
+ * ── ETAPA 5: Migración a coordenadas globales y StreamingRegion ───────────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
- * Monitorizar la posición del objeto rastreado y generar en background los
- * sectores vecinos antes de que el jugador llegue a ellos, eliminando el
- * hitching al cruzar bordes.
+ * ANTES: detectaba proximidad al borde con coordenadas locales al sector:
+ *   if (px < prewarmThreshold) scheduleNeighbor(-1, 0, ...)
+ *   if (px > logicalWidth - prewarmThreshold) scheduleNeighbor(1, 0, ...)
+ *   ... asumía que el player siempre estaba en [0, logicalWidth]
  *
- * ── CÓMO FUNCIONA ─────────────────────────────────────────────────────────
- * En cada tick, evalúa si el objeto rastreado está dentro del umbral de
- * proximidad a un borde. Si es así, envía al ExecutorService la generación
- * del sector vecino correspondiente.
+ * AHORA: usa StreamingRegion para calcular qué chunks son necesarios
+ *   según la posición GLOBAL del player. StreamingRegion devuelve el
+ *   conjunto completo de coords requeridas (no solo los 4 vecinos inmediatos).
+ *   Para cada coord requerida que no esté en WorldCache, programa su generación.
  *
- * La generación es idempotente: si el sector ya existe en caché, el trabajo
- * es descartado sin error.
+ * ── INVARIANTE ────────────────────────────────────────────────────────────
+ * StreamingRegion.streamingRadius >= SimulationRegion.simulationRadius
+ * → Los chunks necesarios para simular siempre se generan antes de ser usados.
  *
- * ── UMBRAL CONFIGURABLE ───────────────────────────────────────────────────
- * prewarmThreshold: distancia al borde en píxeles para activar el prewarm.
- * Valor por defecto: 300px. Con sectores de 1280px, el prewarm se activa
- * cuando el jugador está a menos de 300px del borde (~23% del ancho).
+ * ── WorldCache (legacy) ───────────────────────────────────────────────────
+ * Sigue usando WorldCache durante esta etapa por compatibilidad con
+ * WorldManager y TransitionSystem. En Etapa 9, WorldCache se reemplaza
+ * por World.getChunkStorage() y este servicio se actualiza para usar Chunk
+ * directamente a través de ChunkStorage.
  */
 public final class WorldPrewarmService {
 
     private static final Logger LOG = Logger.getLogger(WorldPrewarmService.class.getName());
 
-    private final WorldCache          cache;
-    private final WorldGenerator      generator;
-    private final ExecutorService     bgExecutor;
-    private final Supplier<WorldCoordinator> currentCoordSupplier;
-
-    private int prewarmThreshold = 300;
+    private final WorldCache       cache;
+    private final WorldGenerator   generator;
+    private final ExecutorService  bgExecutor;
+    private final StreamingRegion  streamingRegion;
 
     /**
-     * @param cache                 caché de mundos
-     * @param generator             generador de mundos
-     * @param currentCoordSupplier  proveedor de la coordenada activa actual
+     * @param cache          caché legacy de mundos
+     * @param generator      generador de mundos
+     * @param chunkWidth     ancho de cada chunk en píxeles globales
+     * @param chunkHeight    alto de cada chunk en píxeles globales
+     * @param streamingRadius radio de streaming en píxeles globales
+     *                        (típico: 2.5 × chunkWidth)
      */
     public WorldPrewarmService(WorldCache cache,
                                 WorldGenerator generator,
-                                Supplier<WorldCoordinator> currentCoordSupplier) {
-        this.cache                = cache;
-        this.generator            = generator;
-        this.currentCoordSupplier = currentCoordSupplier;
+                                int chunkWidth,
+                                int chunkHeight,
+                                double streamingRadius) {
+        this.cache           = cache;
+        this.generator       = generator;
+        this.streamingRegion = new StreamingRegion(streamingRadius);
         this.bgExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "WorldPrewarm");
             t.setDaemon(true);
@@ -64,29 +67,32 @@ public final class WorldPrewarmService {
         });
     }
 
-    // ── Configuración ─────────────────────────────────────────────────────
-
     /**
-     * Configura el umbral de proximidad al borde para activar el prewarm.
-     * @param pixels distancia en píxeles al borde que activa la pre-generación.
+     * Constructor legacy para compatibilidad durante la transición.
+     * Usa streamingRadius = 2.5 × max(chunkWidth, chunkHeight).
+     *
+     * @deprecated Usar el constructor con streamingRadius explícito.
      */
-    public void setPrewarmThreshold(int pixels) {
-        this.prewarmThreshold = Math.max(0, pixels);
+    @Deprecated(forRemoval = true)
+    public WorldPrewarmService(WorldCache cache,
+                                WorldGenerator generator,
+                                java.util.function.Supplier<WorldCoordinator> ignored) {
+        // El Supplier<WorldCoordinator> ya no es necesario — usamos coords globales
+        this(cache, generator, 1280, 720, 1280 * 2.5);
     }
-
-    public int getPrewarmThreshold() { return prewarmThreshold; }
 
     // ── Update ────────────────────────────────────────────────────────────
 
     /**
-     * Evalúa si el objeto rastreado está cerca de un borde y programa
-     * la generación anticipada de los sectores vecinos correspondientes.
+     * Evalúa qué chunks son necesarios según la posición global del player
+     * y programa su generación en background si no están disponibles.
      *
-     * Llamar una vez por tick desde WorldManager.update().
+     * Usa StreamingRegion para calcular el conjunto de coords requeridas.
+     * Los chunks ya disponibles se ignoran (idempotente).
      *
-     * @param tracked       el objeto rastreado (jugador u otro)
-     * @param logicalWidth  ancho lógico de cada sector
-     * @param logicalHeight alto lógico de cada sector
+     * @param tracked       el objeto rastreado (player u otro)
+     * @param logicalWidth  ancho de cada chunk en píxeles
+     * @param logicalHeight alto de cada chunk en píxeles
      */
     public void update(GameObjects tracked, int logicalWidth, int logicalHeight) {
         if (tracked == null) return;
@@ -95,18 +101,20 @@ public final class WorldPrewarmService {
         double px = pos.getX();
         double py = pos.getY();
 
-        if (px < prewarmThreshold)                   scheduleNeighbor(-1,  0, logicalWidth, logicalHeight);
-        if (px > logicalWidth  - prewarmThreshold)   scheduleNeighbor( 1,  0, logicalWidth, logicalHeight);
-        if (py < prewarmThreshold)                   scheduleNeighbor( 0, -1, logicalWidth, logicalHeight);
-        if (py > logicalHeight - prewarmThreshold)   scheduleNeighbor( 0,  1, logicalWidth, logicalHeight);
+        // Calcular qué chunks son necesarios según la posición global
+        streamingRegion.update(px, py, logicalWidth, logicalHeight);
+        Set<WorldCoordinator> required = streamingRegion.getRequiredChunks();
+
+        for (WorldCoordinator coord : required) {
+            synchronized (cache) {
+                if (cache.contains(coord)) continue;
+            }
+            scheduleChunk(coord, logicalWidth, logicalHeight);
+        }
     }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
-    /**
-     * Apaga el ExecutorService del prewarm.
-     * Llamar al cerrar la aplicación o al destruir el WorldManager.
-     */
     public void shutdown() {
         bgExecutor.shutdown();
         try {
@@ -120,31 +128,38 @@ public final class WorldPrewarmService {
         }
     }
 
+    // ── Configuración ─────────────────────────────────────────────────────
+
+    public void setStreamingRadius(double radius) {
+        streamingRegion.setStreamingRadius(radius);
+    }
+
+    public double getStreamingRadius() {
+        return streamingRegion.getStreamingRadius();
+    }
+
     // ── Privado ───────────────────────────────────────────────────────────
 
-    private void scheduleNeighbor(int dx, int dy, int logicalWidth, int logicalHeight) {
-        WorldCoordinator currentCoord = currentCoordSupplier.get();
-        if (currentCoord == null) return;
-
-        WorldCoordinator neighborCoord = new WorldCoordinator(
-            currentCoord.x() + dx,
-            currentCoord.y() + dy
-        );
-
-        synchronized (cache) {
-            if (cache.contains(neighborCoord)) return;
-        }
-
-        final int w = logicalWidth;
-        final int h = logicalHeight;
-
+    private void scheduleChunk(WorldCoordinator coord, int w, int h) {
         bgExecutor.submit(() -> {
-            World generated = generator.generate(w, h, neighborCoord);
+            // generateLegacyWorld: genera Chunk y envuelve en World para WorldCache.
+            // Eliminar cuando WorldCache → ChunkStorage.
+            World generated = generateLegacyWorld(w, h, coord);
             synchronized (cache) {
-                if (!cache.contains(neighborCoord)) {
+                if (!cache.contains(coord)) {
                     cache.put(generated);
                 }
             }
         });
+    }
+
+    /**
+     * Wrapper que aísla el warning de deprecación durante la transición.
+     *
+     * @SuppressWarnings justificado: llamada interna de migración.
+     */
+    @SuppressWarnings({"deprecation", "removal"})
+    private World generateLegacyWorld(int w, int h, WorldCoordinator coord) {
+        return generator.generate(w, h, coord);
     }
 }

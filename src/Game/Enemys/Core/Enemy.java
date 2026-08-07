@@ -24,7 +24,6 @@ import Game.Engine.Events.OnEnemyDeathEvent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
-import Game.World.WorldObjects.WorldObjectsContainer;
 import Sprites.Core.SpriteHandle;
 
 /**
@@ -72,7 +71,7 @@ import Sprites.Core.SpriteHandle;
  *   6. ComponentRegistry actualiza todos los EnemyComponents opcionales.
  *   7. super.update() — Components del engine (health, physics, renderer…).
  */
-public final class Enemy extends MovingObjects implements EntityInfoProvider, WorldObjectsContainer.Destroyable, ContextualUpdatable {
+public final class Enemy extends MovingObjects implements EntityInfoProvider, Game.Engine.Destroyable, ContextualUpdatable {
 
     // ── Controladores — inyectados por EnemyAssembler ─────────────────────
     private final EnemyAIController         aiController;

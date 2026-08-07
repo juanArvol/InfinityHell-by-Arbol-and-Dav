@@ -1,7 +1,6 @@
 package Game.World.Transition;
 
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.World.Core.World;
 import Game.World.Core.WorldCache;
@@ -78,6 +77,13 @@ public final class TransitionSystem {
     private final List<PendingTransition> pendingTransitions = new ArrayList<>();
 
     /** GameEventBus para publicar eventos de transición. */
+
+    /**
+     * Dimensiones del chunk activo, actualizadas en cada llamada a update().
+     * Usadas por request() para acceder a las dimensiones sin pasar parámetros.
+     */
+    private int lastWorldWidth  = 1280;
+    private int lastWorldHeight = 720;
     private final GameEventBus eventBus;
 
     // ── Constructor ───────────────────────────────────────────────────────
@@ -137,7 +143,7 @@ public final class TransitionSystem {
      * @param request el request de transición a ejecutar.
      */
     public void request(TransitionRequest request) {
-        processRequest(request, currentWorldSupplier.get());
+        processRequest(request, currentWorldSupplier.get(), lastWorldWidth, lastWorldHeight);
     }
 
     // ── Update ────────────────────────────────────────────────────────────
@@ -156,6 +162,9 @@ public final class TransitionSystem {
                                     WorldCoordinator currentCoord,
                                     int worldWidth,
                                     int worldHeight) {
+        // Guardar dimensiones para request() que no recibe estos parámetros
+        this.lastWorldWidth  = worldWidth;
+        this.lastWorldHeight = worldHeight;
         WorldCoordinator result = null;
 
         // ── 1. Actualizar transiciones pendientes (con style animado) ─────
@@ -166,7 +175,7 @@ public final class TransitionSystem {
             world, currentCoord, worldWidth, worldHeight
         );
         for (TransitionRequest req : detected) {
-            WorldCoordinator changed = processRequest(req, world);
+            WorldCoordinator changed = processRequest(req, world, worldWidth, worldHeight);
             if (changed != null) result = changed;
         }
 
@@ -177,10 +186,10 @@ public final class TransitionSystem {
                 gates.remove(gate);
                 continue;
             }
-            for (GameObjects obj : world.getObjectsContainer().getObjects()) {
+            for (GameObjects obj : world.getDynamicEntityRegistry().getAll()) {
                 TransitionRequest req = gate.evaluate(obj, currentCoord);
                 if (req != null) {
-                    WorldCoordinator changed = processRequest(req, world);
+                    WorldCoordinator changed = processRequest(req, world, worldWidth, worldHeight);
                     if (changed != null) result = changed;
                     gate.onTransitionExecuted(req);
                 }
@@ -211,12 +220,13 @@ public final class TransitionSystem {
      *
      * @return nueva WorldCoordinator si el world controller cambió de sector, null si no.
      */
-    private WorldCoordinator processRequest(TransitionRequest request, World sourceWorld) {
+    private WorldCoordinator processRequest(TransitionRequest request, World sourceWorld,
+                                              int worldWidth, int worldHeight) {
         WorldCoordinator toSector = request.getToSector();
         if (toSector == null) return null;
 
-        // Asegurar que el mundo destino existe
-        ensureWorldExists(toSector, sourceWorld.getWidth(), sourceWorld.getHeight());
+        // Asegurar que el mundo destino existe — usa dimensiones pasadas como parámetro
+        ensureWorldExists(toSector, worldWidth, worldHeight);
 
         World targetWorld;
         synchronized (cache) {
@@ -304,7 +314,20 @@ public final class TransitionSystem {
     }
 
     /**
-     * Ejecuta la transferencia física de la entidad entre mundos.
+     * Bookkeeping de cambio de chunk — ya NO transfiere entidades entre mundos.
+     *
+     * ── ETAPA 8 ────────────────────────────────────────────────────────────
+     * Las entidades dinámicas viven en DynamicEntityRegistry, independiente
+     * de cualquier World/chunk. No existe "mover una entidad de mundo A a B".
+     * La posición de la entidad ya fue ajustada antes de llegar aquí (si aplica).
+     *
+     * Lo único que hace este método:
+     *   1. Notifica OnTransitionCompleted (para efectos de audio/visual).
+     *   2. Si es el world controller, notifica OnWorldControllerSectorChanged
+     *      para que WorldManager actualice currentCoord (legacy).
+     *
+     * El CollisionsSystem.clearContactHistory() ya se llama en WorldManager
+     * al detectar el cambio de sector, sin necesidad de acceder a containers.
      *
      * @return nueva WorldCoordinator si el world controller cambió, null si no.
      */
@@ -314,31 +337,25 @@ public final class TransitionSystem {
         GameObjects subject = request.getSubject();
         WorldCoordinator toSector = request.getToSector();
 
-        // Ajustar posición al destino
-        var pos = subject.getTransform().getPosition();
-        Vector2D target = request.getTargetPosition();
-        pos.setX(target.getX());
-        pos.setY(target.getY());
+        // ── ELIMINADO: sourceWorld.remove(subject) / targetWorld.add(subject) ──
+        // Las entidades dinámicas viven en DynamicEntityRegistry.
+        // No pertenecen estructuralmente a ningún world/chunk.
+        // Cruzar un límite de chunk es solo un cambio de afiliación — no una transferencia.
 
-        // Transferir entre mundos
-        sourceWorld.remove(subject);
-        targetWorld.add(subject);
+        // ── ELIMINADO: getObjectsContainer().flush() ──
+        // El flush ocurre en DynamicEntityRegistry.flush() al inicio del tick.
 
-        // Flush inmediato para que el objeto no quede en pendingRemove/pendingAdd
-        sourceWorld.getObjectsContainer().flush();
-        targetWorld.getObjectsContainer().flush();
+        // ── ELIMINADO: clearCollisionContactHistory() ──
+        // WorldManager llama collisionsSystem.clearContactHistory() directamente.
 
-        // Limpiar historial de colisiones del mundo destino
-        targetWorld.getObjectsContainer().clearCollisionContactHistory();
-
-        // Publicar evento de completitud
+        // Publicar evento de completitud (para audio, efectos, UI)
         eventBus.post(new TransitionEvent.OnTransitionCompleted(
             subject,
             request.getFromSector(),
             toSector
         ));
 
-        // Si es el world controller, notificar cambio de sector activo
+        // Notificar cambio de sector activo si es el world controller
         if (request.isWorldController()) {
             eventBus.post(new TransitionEvent.OnWorldControllerSectorChanged(
                 subject,
@@ -351,6 +368,7 @@ public final class TransitionSystem {
         return null;
     }
 
+    @SuppressWarnings({"deprecation", "removal"})
     private void ensureWorldExists(WorldCoordinator coord, int worldWidth, int worldHeight) {
         synchronized (cache) {
             if (!cache.contains(coord)) {

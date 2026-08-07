@@ -36,7 +36,7 @@ import java.awt.image.BufferedImage;
  *   );
  *   world.add(item);
  */
-public class WorldItem extends GameObjects implements WorldObjectsContainer.Destroyable {
+public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
 
     private ItemStack itemStack;
     private boolean pendingRemoval = false;

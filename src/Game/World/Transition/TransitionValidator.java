@@ -1,7 +1,7 @@
 package Game.World.Transition;
 
-import Game.Engine.GameObjects;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameObjects;
 import Game.World.Core.World;
 import java.awt.Rectangle;
 import java.util.List;
@@ -85,7 +85,7 @@ public final class TransitionValidator {
         Rectangle subjectBounds = calculateBoundsAt(subjectCol, request.getTargetPosition());
 
         // Verificar intersección con colisionadores sólidos del mundo destino
-        for (GameObjects other : targetWorld.getObjectsContainer().getObjects()) {
+        for (GameObjects other : targetWorld.getDynamicEntityRegistry().getAll()) {
             if (other == subject) continue;
 
             ColliderComponent otherCol = other.getComponent(ColliderComponent.class);

@@ -1,6 +1,6 @@
 package Game.World.Generator.Layer.Objects;
 
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
 import Sprites.Enviroment.Obstacles.ObstaclesAssets;
@@ -9,20 +9,16 @@ import java.util.Random;
 /**
  * Capa de obstáculos — dispersa obstáculos aleatorios en el mundo.
  *
- * MEJORAS vs. versión original:
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * 1. USA WorldObjectFactory: no crea Obstacle con new directamente.
+ * ANTES: posiciones random.nextInt(world.getWidth()) → coordenadas locales [0, width).
  *
- * 2. CANTIDAD CONFIGURABLE: en lugar de hardcodear nextInt(5),
- *    se expone un rango min/max de obstáculos por chunk.
+ * AHORA: posición global = chunk.getOriginX() + random.nextInt(chunk.getWidth())
  *
- * 3. TAMAÑO CONFIGURABLE: ancho y alto de obstáculos como parámetros.
- *    Permite subclases fáciles (ObstacleBigLayer, ObstacleSmallLayer…).
+ * VERIFICACIÓN para chunk(0,0): originX=0 → global = 0 + local ← IDÉNTICO
+ * VERIFICACIÓN para chunk(1,0): originX=1280 → global = 1280 + local ← correcto
  *
- * 4. MARGEN CONFIGURABLE: el margen del borde del mundo (antes fijo en 40/120)
- *    ahora se deriva del tamaño del obstáculo automáticamente.
- *
- * Retro-compatible: ObstacleLayer() sin args reproduce exactamente el original.
+ * El número y tipo de obstáculos generados es idéntico al anterior para (0,0).
  */
 public class ObstacleLayer implements WorldLayer {
 
@@ -40,7 +36,7 @@ public class ObstacleLayer implements WorldLayer {
      * Constructor configurable.
      *
      * @param minCount   mínimo de obstáculos por chunk (inclusive)
-     * @param maxCount   máximo de obstáculos por chunk (exclusive, igual que Random.nextInt)
+     * @param maxCount   máximo de obstáculos por chunk (exclusive)
      * @param obstacleW  ancho de cada obstáculo en píxeles lógicos
      * @param obstacleH  alto de cada obstáculo en píxeles lógicos
      */
@@ -52,25 +48,31 @@ public class ObstacleLayer implements WorldLayer {
     }
 
     @Override
-    public void generate(World world, Random random) {
-        int worldWidth  = world.getWidth();
-        int worldHeight = world.getHeight();
+    public void generate(Chunk chunk, Random random) {
+        // Área disponible en coordenadas locales (sin margen de borde)
+        int maxLocalX = chunk.getWidth()  - obstacleW;
+        int maxLocalY = chunk.getHeight() - obstacleH;
 
-        // Margen automático basado en el tamaño del obstáculo
-        int maxX = worldWidth  - obstacleW;
-        int maxY = worldHeight - obstacleH;
-
-        if (maxX <= 0 || maxY <= 0) return;
+        if (maxLocalX <= 0 || maxLocalY <= 0) return;
 
         int range = maxCount - minCount;
         int count = (range > 0) ? minCount + random.nextInt(range) : minCount;
 
-        for (int i = 0; i < count; i++) {
-            int x = random.nextInt(maxX);
-            int y = random.nextInt(maxY);
+        // Origen global del chunk
+        int originX = chunk.getOriginX();
+        int originY = chunk.getOriginY();
 
-            world.add(WorldObjectFactory.obstacle(
-                x, y,
+        for (int i = 0; i < count; i++) {
+            // Posición local aleatoria dentro del chunk
+            int localX = random.nextInt(maxLocalX);
+            int localY = random.nextInt(maxLocalY);
+
+            // Convertir a coordenadas globales
+            int globalX = originX + localX;
+            int globalY = originY + localY;
+
+            chunk.add(WorldObjectFactory.obstacle(
+                globalX, globalY,
                 obstacleW, obstacleH,
                 ObstaclesAssets.getMondongoImage()
             ));

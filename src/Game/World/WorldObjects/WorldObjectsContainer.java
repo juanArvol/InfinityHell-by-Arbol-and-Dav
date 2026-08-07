@@ -53,14 +53,17 @@ public class WorldObjectsContainer {
      * Interfaz para objetos que tienen un ciclo de vida finito y pueden
      * auto-marcarse para remoción.
      *
-     * Implementar en: Bullet, WorldItem (ya tiene isPendingRemoval()),
-     * futuros Particle, Grenade, Trap, etc.
+     * ── MIGRACIÓN (ETAPA 3) ───────────────────────────────────────────────
+     * Esta interfaz interna es ahora un alias de {@link Game.Engine.Destroyable}.
+     * Bullet, Enemy y WorldItem pueden migrar progresivamente a implementar
+     * la interfaz del Engine directamente, sin tocar este alias.
+     *
+     * @deprecated Implementar {@link Game.Engine.Destroyable} directamente.
+     *             Este alias se elimina en Etapa 9.
      */
-    public interface Destroyable {
-        /**
-         * @return true si este objeto debe ser removido del mundo en el próximo flush.
-         */
-        boolean isPendingDestruction();
+    @Deprecated(forRemoval = true)
+    public interface Destroyable extends Game.Engine.Destroyable {
+        // alias — sin métodos adicionales
     }
 
     // ── Estado ────────────────────────────────────────────────────────────────
@@ -243,7 +246,11 @@ public class WorldObjectsContainer {
      *                Nunca null; usar el default (obj.update()) si se quiere resetear.
      */
     public void setObjectUpdater(Consumer<List<GameObjects>> updater) {
-        if (updater == null) throw new IllegalArgumentException("updater no puede ser null");
+        if (updater == null) {
+            // Resetear al default en lugar de lanzar excepción
+            this.objectUpdater = list -> list.forEach(GameObjects::update);
+            return;
+        }
         this.objectUpdater = updater;
     }
 

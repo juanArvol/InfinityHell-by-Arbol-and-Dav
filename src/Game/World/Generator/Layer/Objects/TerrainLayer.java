@@ -1,6 +1,6 @@
 package Game.World.Generator.Layer.Objects;
 
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
 import Sprites.Enviroment.Around.Blocks.BlocksAssets;
@@ -9,23 +9,30 @@ import java.util.Random;
 /**
  * Capa de terreno — genera el suelo base del mundo.
  *
- * MEJORAS vs. versión original:
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * 1. USA WorldObjectFactory: ya no crea BlockWorld con new directamente.
- *    Esto desacopla la generación de la construcción concreta.
+ * ANTES: el suelo siempre empezaba en x=0 (local al chunk).
+ *   groundBlock(worldWidth, groundY, ...) → bloques en (0, groundY)
  *
- * 2. RELACIÓN ALTURA CONFIGURABLE: el groundRatio (por defecto 0.25 = 25% del mundo)
- *    se puede ajustar al construir la capa.
- *    Ejemplo: new TerrainLayer(0.15) → suelo más delgado.
+ * AHORA: el suelo empieza en chunk.getOriginX() (global).
+ *   El ancho del bloque sigue siendo chunk.getWidth().
+ *   El Y del suelo es chunk.getOriginY() + groundHeight_offset.
  *
- * 3. El bug del groundHeight*4 ya estaba corregido en la versión anterior.
- *    Se mantiene el fix: el bloque tiene height=groundHeight, no groundHeight*4.
+ * VERIFICACIÓN para chunk(0,0) con chunkWidth=1280, chunkHeight=720, ratio=0.25:
+ *   groundHeight = 720 * 0.25 = 180
+ *   groundY (local)  = 720 - 180 = 540    ← antes
+ *   groundY (global) = 0 + 720 - 180 = 540  ← ahora para chunk(0,0)  ← IDÉNTICO
+ *
+ * VERIFICACIÓN para chunk(1,0):
+ *   originX = 1280, originY = 0
+ *   groundY (global) = 0 + 720 - 180 = 540
+ *   Bloque en (1280, 540, ancho=1280, alto=180)  ← correcto (continuo con chunk 0,0)
  */
 public class TerrainLayer implements WorldLayer {
 
     private final double groundRatio;
 
-    /** Constructor por defecto: suelo = 25% de la altura del mundo (igual que antes). */
+    /** Constructor por defecto: suelo = 25% de la altura del chunk. */
     public TerrainLayer() {
         this(0.25);
     }
@@ -33,25 +40,30 @@ public class TerrainLayer implements WorldLayer {
     /**
      * Constructor con ratio configurable.
      *
-     * @param groundRatio fracción de la altura del mundo que ocupa el suelo (0.0–1.0)
+     * @param groundRatio fracción de la altura del chunk que ocupa el suelo (0.0–1.0)
      */
     public TerrainLayer(double groundRatio) {
         if (groundRatio <= 0 || groundRatio >= 1) {
-            throw new IllegalArgumentException("groundRatio debe estar en (0, 1). Recibido: " + groundRatio);
+            throw new IllegalArgumentException(
+                "groundRatio debe estar en (0, 1). Recibido: " + groundRatio);
         }
         this.groundRatio = groundRatio;
     }
 
     @Override
-    public void generate(World world, Random random) {
-        int width  = world.getWidth();
-        int height = world.getHeight();
+    public void generate(Chunk chunk, Random random) {
+        int groundHeight = (int)(chunk.getHeight() * groundRatio);
 
-        int groundHeight = (int)(height * groundRatio);
-        int groundY      = height - groundHeight;
+        // Posición Y global del borde superior del suelo
+        // = origen Y del chunk + altura del chunk - altura del suelo
+        int groundY = chunk.getOriginY() + chunk.getHeight() - groundHeight;
 
-        world.add(WorldObjectFactory.groundBlock(
-            width,
+        // Posición X global = origen X del chunk (borde izquierdo)
+        int originX = chunk.getOriginX();
+
+        chunk.add(WorldObjectFactory.groundBlock(
+            originX,
+            chunk.getWidth(),
             groundY,
             groundHeight,
             BlocksAssets.getSueloImage()

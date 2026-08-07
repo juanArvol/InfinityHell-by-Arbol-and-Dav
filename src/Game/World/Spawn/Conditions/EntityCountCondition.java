@@ -1,6 +1,5 @@
 package Game.World.Spawn.Conditions;
 
-import Game.Engine.GameObjects;
 import Game.World.Core.World;
 import Game.World.Spawn.SpawnCondition;
 
@@ -60,7 +59,8 @@ public final class EntityCountCondition implements SpawnCondition {
 
     @Override
     public boolean isMet(World world) {
-        long count = world.getObjectsContainer().getObjects().stream()
+        // Consultar el DynamicEntityRegistry en lugar del WorldObjectsContainer legacy
+        long count = world.getDynamicEntityRegistry().getAll().stream()
             .filter(obj -> type == null || type.isInstance(obj))
             .count();
 

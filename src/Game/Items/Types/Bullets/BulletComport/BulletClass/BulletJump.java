@@ -23,12 +23,12 @@ public class BulletJump extends BulletBehavior {
 
     // gravityValue=1.0 activa la gravedad (> 0 implica gravedad activa)
     private static final ProjectileData DEFAULT_DATA =
-            new ProjectileData(5, 0.9, 20, 1.0);
+            new ProjectileData(5, 0.9, 2000, 1.0);
 
     private static final ProjectileMovement GRAVITY =
-            new GravityMovement(1.0);
+            new GravityMovement(1);
 
-    private static final double JUMP_BOOST    = -10.0;
+    private static final double JUMP_BOOST    = -20.0;
     private static final double FRICTION      = 1.01; // divisor de vx en cada rebote
 
     @Override
@@ -53,7 +53,7 @@ public class BulletJump extends BulletBehavior {
                 bullet.getBulletLife().extend(1);
             }
             // Reducir ligeramente la velocidad horizontal en cada rebote
-            bullet.getPhysics().setXspeed(bullet.getPhysics().getXspeed() / FRICTION);
+            bullet.getPhysics().setXspeed((bullet.getPhysics().getXspeed() / FRICTION)*1.1);
         }
     }
 }

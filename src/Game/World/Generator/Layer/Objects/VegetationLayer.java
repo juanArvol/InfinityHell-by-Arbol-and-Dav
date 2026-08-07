@@ -1,24 +1,21 @@
 package Game.World.Generator.Layer.Objects;
 
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
 import Sprites.Enviroment.Obstacles.ObstaclesAssets;
 import java.util.Random;
 
 /**
- * Capa de vegetación — añade obstáculos decorativos (arbustos, árboles)
- * sin bloquear el movimiento del jugador (no-collision, solo visual).
+ * Capa de vegetación — añade obstáculos decorativos en el mundo.
  *
- * En la arquitectura actual Obstacle sí tiene colisión, así que por ahora
- * VegetationLayer usa obstáculos pequeños como proxy visual.
- * Cuando se añada un tipo VegetationObject sin colisión, basta con cambiar
- * WorldObjectFactory.vegetation(...) aquí.
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * Configurable mediante builder (igual que LootSpawnLayer).
+ * ANTES: posiciones random.nextInt(world.getWidth()) en coords locales.
  *
- * Uso:
- *   .addLayer(new VegetationLayer(10, 20, 16, 32))
+ * AHORA: posición global = chunk.getOriginX() + random.nextInt(maxLocalX)
+ *
+ * VERIFICACIÓN para chunk(0,0): originX=0 → idéntico al anterior.
  */
 public class VegetationLayer implements WorldLayer {
 
@@ -39,21 +36,26 @@ public class VegetationLayer implements WorldLayer {
     }
 
     @Override
-    public void generate(World world, Random random) {
+    public void generate(Chunk chunk, Random random) {
         int range = maxCount - minCount;
         int count = (range > 0) ? minCount + random.nextInt(range) : minCount;
 
-        int maxX = world.getWidth()  - vegW;
-        int maxY = world.getHeight() - vegH;
-        if (maxX <= 0 || maxY <= 0) return;
+        int maxLocalX = chunk.getWidth()  - vegW;
+        int maxLocalY = chunk.getHeight() - vegH;
+        if (maxLocalX <= 0 || maxLocalY <= 0) return;
+
+        int originX = chunk.getOriginX();
+        int originY = chunk.getOriginY();
 
         for (int i = 0; i < count; i++) {
-            int x = random.nextInt(maxX);
-            int y = random.nextInt(maxY);
+            int localX = random.nextInt(maxLocalX);
+            int localY = random.nextInt(maxLocalY);
 
-            // Usa ObstaclesAssets por ahora; reemplazar con VegetationAssets cuando existan
-            world.add(WorldObjectFactory.obstacle(
-                x, y,
+            int globalX = originX + localX;
+            int globalY = originY + localY;
+
+            chunk.add(WorldObjectFactory.obstacle(
+                globalX, globalY,
                 vegW, vegH,
                 ObstaclesAssets.getMondongoImage()
             ));

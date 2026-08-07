@@ -5,7 +5,7 @@ import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
 import Game.Items.Savement.ItemStack;
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldItem;
 import java.util.ArrayList;
@@ -15,25 +15,25 @@ import java.util.Random;
 /**
  * Capa de loot — genera WorldItems en posiciones aleatorias del mundo.
  *
- * ── DISEÑO ───────────────────────────────────────────────────────────────
- * Usa loot tables simples: una lista de LootEntry donde cada entrada tiene
- * un item ID, una rareza (para peso) y un rango de cantidad.
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * Los pesos se calculan sumando ItemRarity.weight de cada entry,
- * sin hardcodear distribuciones específicas.
+ * ANTES: posiciones x = margin + random.nextInt(maxX - margin) en coords locales.
+ *
+ * AHORA: posición global = chunk.getOriginX() + margen + random.nextInt(maxLocalX)
+ *
+ * VERIFICACIÓN para chunk(0,0): originX=0 → idéntico al anterior.
+ *
+ * ── DISEÑO ───────────────────────────────────────────────────────────────
+ * Usa loot tables simples: LootEntry con item ID, rareza y rango de cantidad.
+ * Los pesos se calculan sumando ItemRarity.weight de cada entry.
  *
  * ── USO ──────────────────────────────────────────────────────────────────
- *   // En WorldGeneratorConfig:
  *   WorldGeneratorConfig cfg = WorldGeneratorConfig.defaults()
  *       .addLayer(new LootSpawnLayer.Builder()
  *           .count(5, 10)
- *           .addEntry("pistol_9mm",  ItemRarity.UNCOMMON, 1, 1)
- *           .addEntry("ammo_9mm",    ItemRarity.COMMON,   10, 30)
- *           .addEntry("bandage",     ItemRarity.COMMON,   1, 3)
+ *           .addEntry("pistol_9mm", ItemRarity.UNCOMMON, 1, 1)
+ *           .addEntry("ammo_9mm",   ItemRarity.COMMON,   10, 30)
  *           .build());
- *
- * ── RETRO-COMPATIBLE ─────────────────────────────────────────────────────
- * LootSpawnLayer no modifica WorldGenerator. Se añade a la config como layer.
  */
 public class LootSpawnLayer implements WorldLayer {
 
@@ -50,41 +50,48 @@ public class LootSpawnLayer implements WorldLayer {
     }
 
     @Override
-    public void generate(World world, Random random) {
+    public void generate(Chunk chunk, Random random) {
         if (entries.isEmpty()) return;
 
         int range = maxCount - minCount;
         int count = (range > 0) ? minCount + random.nextInt(range) : minCount;
 
-        int maxX = world.getWidth()  - margin;
-        int maxY = world.getHeight() - margin;
-        if (maxX <= margin || maxY <= margin) return;
+        // Área disponible en coordenadas locales
+        int maxLocalX = chunk.getWidth()  - margin;
+        int maxLocalY = chunk.getHeight() - margin;
+        if (maxLocalX <= margin || maxLocalY <= margin) return;
 
-        // Total de pesos para la ruleta
         int totalWeight = entries.stream().mapToInt(e -> e.rarity.weight).sum();
+
+        int originX = chunk.getOriginX();
+        int originY = chunk.getOriginY();
 
         for (int i = 0; i < count; i++) {
             LootEntry entry = rollEntry(random, totalWeight);
             if (entry == null) continue;
 
-            // Intentar obtener la definición del registro
             ItemDefinition def = ItemRegistry.find(entry.itemId);
-            if (def == null) continue; // ítem no registrado — skip silencioso
+            if (def == null) continue;
 
             int amount = entry.minAmount + (entry.maxAmount > entry.minAmount
                 ? random.nextInt(entry.maxAmount - entry.minAmount + 1)
                 : 0);
 
-            int x = margin + random.nextInt(maxX - margin);
-            int y = margin + random.nextInt(maxY - margin);
+            // Posición local dentro del área disponible
+            int localX = margin + random.nextInt(maxLocalX - margin);
+            int localY = margin + random.nextInt(maxLocalY - margin);
+
+            // Convertir a coordenadas globales
+            int globalX = originX + localX;
+            int globalY = originY + localY;
 
             WorldItem worldItem = new WorldItem(
-                new Vector2D(x, y),
+                new Vector2D(globalX, globalY),
                 new ItemStack(def, amount),
                 def.icon
             );
 
-            world.add(worldItem);
+            chunk.add(worldItem);
         }
     }
 
@@ -95,7 +102,7 @@ public class LootSpawnLayer implements WorldLayer {
             accumulated += entry.rarity.weight;
             if (roll < accumulated) return entry;
         }
-        return entries.get(entries.size() - 1); // fallback
+        return entries.get(entries.size() - 1);
     }
 
     // ── Entrada de loot table ─────────────────────────────────────────────

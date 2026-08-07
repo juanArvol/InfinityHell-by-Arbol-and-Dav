@@ -4,65 +4,78 @@ import Game.Engine.Camera.CameraController;
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Scene.SceneRenderer;
+import Game.Engine.Systems.CollisionsSystem;
 import Game.Engine.Systems.DebugSettings;
+import Game.Engine.Systems.StatusEffectSystem;
+import Game.Player.Player;
+import Game.World.Chunk.ChunkAffiliationSystem;
+import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Generator.WorldGenerator;
+import Game.World.Region.SimulationRegion;
 import Game.World.Spawn.SpawnSystem;
 import java.awt.Graphics2D;
+import java.util.List;
 
 /**
- * Orquestador del módulo World.
+ * Orquestador del módulo World — mundo continuo multi-chunk.
  *
- * ── HRFC: Separación de responsabilidades ────────────────────────────────
+ * ── CORRECCIÓN DEL BUG DEL PLAYER (post-refactorización) ──────────────────
  *
- * WorldManager ANTES era responsable de:
- *   1. Gestión del mundo activo y caché
- *   2. Cámara (GameCamera, CameraController, snap, lerp)
- *   3. Render (SceneRenderer)
- *   4. Prewarming de vecinos (ExecutorService)
- *   5. Transiciones entre sectores
- *   6. SpawnSystem
+ * SÍNTOMA: al cruzar un chunk el Player desaparecía, perdía input, la cámara
+ * dejaba de seguirlo y las balas dejaban de funcionar.
  *
- * WorldManager AHORA es únicamente el ORQUESTADOR que coordina:
- *   - WorldCache          → caché de mundos generados
- *   - WorldGenerator      → generación de mundos
- *   - CameraSystem        → toda la lógica de cámara (extraída)
- *   - WorldPrewarmService → pre-generación de vecinos (extraída)
- *   - WorldTransitionService → transiciones entre sectores (ya existía)
- *   - SpawnSystem         → spawn de entidades
- *   - SceneRenderer       → render de la escena
+ * CAUSA RAÍZ — triple:
  *
- * WorldManager no contiene lógica propia más allá de la coordinación del
- * ciclo update/draw y el mantenimiento de la coordenada activa.
+ *   1. TransitionDetector detectaba que el Player cruzó x >= worldWidth
+ *      y calculaba newX = x - worldWidth (envolver al sector siguiente).
+ *      executeTransfer() fue neutralizado en Etapa 8 y ya NO aplicaba esa
+ *      posición. El Player seguía en x=1281 (global) — correcto arquitectónicamente.
+ *      Pero el TransitionSystem devolvía nextCoord = (1,0), disparando el bug 2.
  *
- * ── API PÚBLICA SIN CAMBIOS ───────────────────────────────────────────────
- * Toda la API existente (getCamera, setTrackedObject, draw, onVirtualResize,
- * setCameraController, getCurrentWorld, resize, shutdown) sigue funcionando.
- * GameState no necesita cambios.
+ *   2. Tras detectar la transición, WorldManager cambiaba currentCoord a (1,0)
+ *      y llamaba getCurrentWorld() que devolvía el World del sector (1,0).
+ *      Ese World tenía su propio DynamicEntityRegistry VACÍO — el Player
+ *      estaba registrado en el World del sector (0,0), que ya no era el
+ *      "mundo activo". Todos los sistemas (SimulationRegion, SceneRenderer,
+ *      TransitionDetector) leían el registry del nuevo World → Player ausente.
  *
- * ── CAMERA_DELTA_TIME ─────────────────────────────────────────────────────
- * Ya no es una constante hardcodeada. Se calcula a partir del targetFps
- * inyectado en el constructor. Valor por defecto: 1/30 = 0.0333s.
+ *   3. SceneRenderer.draw(getCurrentWorld(), ...) consultaba
+ *      world.getDynamicEntityRegistry() del nuevo World → lista vacía.
+ *      El Player no se renderizaba.
  *
- * ── TRANSICIÓN DE SECTOR ─────────────────────────────────────────────────
- * Cuando WorldTransitionService reporta un cambio de sector activo,
- * WorldManager:
- *   1. Actualiza currentCoord.
- *   2. Registra el trackedObject en el nuevo mundo.
- *   3. Notifica a CameraSystem para hacer snap.
- *   4. Actualiza los WorldBounds de la cámara.
- *   5. Limpia el historial de colisiones del nuevo mundo.
+ * CORRECCIÓN ARQUITECTÓNICA:
  *
- * ── SPAWNSYSTEM ───────────────────────────────────────────────────────────
- * WorldManager posee el SpawnSystem y lo actualiza en cada tick.
- * El SpawnSystem usa currentWorldSupplier para acceder siempre al mundo
- * activo, eliminando el bug de "enemigos solo en pantalla inicial".
+ *   El DynamicEntityRegistry es un SINGLETON DEL UNIVERSO, no por-World.
+ *   Vive aquí, en WorldManager. Todos los sistemas lo reciben directamente
+ *   de WorldManager, no de getCurrentWorld().
+ *
+ *   World.getDynamicEntityRegistry() sigue existiendo como API de conveniencia
+ *   pero devuelve el registry GLOBAL, no uno privado por sector.
+ *
+ *   TransitionDetector ahora recibe el registry global directamente para
+ *   detectar entidades que cruzaron el borde de coordenadas locales.
+ *
+ *   Mientras el TransitionSystem legacy siga activo, el "cruce de sector"
+ *   solo actualiza currentCoord (para que el prewarm sepa qué vecinos cargar)
+ *   pero NO afecta qué entidades se simulan ni se renderizan — eso lo decide
+ *   el globalDynamicRegistry, que es invariante ante cambios de sector.
+ *
+ * ── ORDEN DE UPDATE ────────────────────────────────────────────────────────
+ *   1. globalDynamicRegistry.flush()   — aplicar pendingAdd/Remove
+ *   2. SimulationRegion.rebuild()      — estáticos de chunks + todos los dinámicos
+ *   3. WorldEnemyUpdater.updateAll()   — update de IA con contexto de player
+ *   4. StatusEffectSystem.update()     — proyectar flags derivados
+ *   5. Destroyable cleanup             — eliminar entidades muertas del registry
+ *   6. CollisionsSystem.update()       — física, movimiento, colisiones
+ *   7. ChunkAffiliationSystem.update() — bookkeeping (solo metadata)
+ *   8. SpawnSystem.update()            — evaluar y ejecutar spawns
+ *   9. CameraSystem.update()           — mover cámara
+ *   10. WorldPrewarmService.update()   — pre-generar chunks vecinos
+ *   11. TransitionService (legacy)     — solo actualiza currentCoord
  */
 public class WorldManager {
 
-    /** Frames por segundo objetivo. Configurable en el constructor. */
     private final double targetFps;
-
-    /** Delta de tiempo calculado: 1.0 / targetFps. */
     private final double cameraDeltaTime;
 
     // ── Colaboradores ─────────────────────────────────────────────────────
@@ -75,28 +88,44 @@ public class WorldManager {
     private final WorldPrewarmService      prewarmService;
     private final SpawnSystem              spawnSystem;
 
-    // ── Estado activo ─────────────────────────────────────────────────────
+    // ── Sistemas de simulación ─────────────────────────────────────────────
 
+    private final SimulationRegion         simulationRegion;
+    private final CollisionsSystem         collisionsSystem;
+    private final StatusEffectSystem       statusEffectSystem;
+    private final ChunkAffiliationSystem   affiliationSystem;
+
+    /**
+     * Registro global de entidades dinámicas del universo.
+     *
+     * SINGLETON DEL UNIVERSO — no pertenece a ningún sector.
+     * Contiene Player, Enemy, Bullet y cualquier entidad dinámica viva.
+     *
+     * Invariante: este registry NO cambia cuando currentCoord cambia de sector.
+     * Cruzar un chunk no modifica la lista de entidades dinámicas activas.
+     */
+    private final DynamicEntityRegistry    globalDynamicRegistry;
+
+    // ── Estado activo ──────────────────────────────────────────────────────
+
+    /**
+     * Coordenada del sector activo — usado solo para:
+     *   - WorldPrewarmService: saber qué vecinos pre-cargar
+     *   - TransitionDetector: detectar cruce de borde local
+     *   - WorldCache key para generar/recuperar World de vecinos
+     *
+     * NO determina qué entidades se simulan ni qué se renderiza.
+     * Su cambio no afecta al globalDynamicRegistry.
+     */
     private WorldCoordinator currentCoord;
     private int              logicalWidth;
     private int              logicalHeight;
 
-    /** El objeto rastreado para prewarming y cámara. */
+    private Player      trackedPlayer;
     private GameObjects trackedObject;
 
     // ── Construcción ──────────────────────────────────────────────────────
 
-    /**
-     * Constructor principal — todos los colaboradores inyectados.
-     *
-     * @param width         ancho lógico de cada sector
-     * @param height        alto lógico de cada sector
-     * @param virtualWidth  ancho virtual del juego (para GameCamera)
-     * @param virtualHeight alto virtual del juego (para GameCamera)
-     * @param generator     generador de mundos (inyectable para tests)
-     * @param settings      interfaz DebugSettings del Engine
-     * @param targetFps     frames por segundo objetivo del game loop
-     */
     public WorldManager(int width, int height,
                         int virtualWidth, int virtualHeight,
                         WorldGenerator generator,
@@ -109,42 +138,41 @@ public class WorldManager {
         this.cameraDeltaTime = 1.0 / targetFps;
         this.currentCoord    = new WorldCoordinator(0, 0);
 
-        // Inicializar colaboradores
-        this.cache      = new WorldCache();
-        this.renderer   = new SceneRenderer(settings);
+        this.cache    = new WorldCache();
+        this.renderer = new SceneRenderer(settings);
 
-        // CameraSystem posee GameCamera — separado de WorldManager
         this.cameraSystem = new CameraSystem(virtualWidth, virtualHeight);
-        this.cameraSystem.setWorldBounds(width, height);
 
-        // WorldTransitionService: conectar con el mundo dinámico
         this.transitionService = new WorldTransitionService(
             cache, generator,
             Game.Engine.Events.GameEventBus.GLOBAL,
             this::getCurrentWorld
         );
 
-        // WorldPrewarmService: proveedor de coordenada activa dinámica
+        double streamingRadius = Math.max(width, height) * 2.5;
         this.prewarmService = new WorldPrewarmService(
-            cache, generator, () -> currentCoord
+            cache, generator, width, height, streamingRadius
         );
 
-        // SpawnSystem: usa el mundo activo dinámicamente (elimina bug de primer mundo)
         this.spawnSystem = new SpawnSystem(this::getCurrentWorld, cache);
+
+        double simRadius = Math.max(width, height) * 1.5;
+        this.simulationRegion   = new SimulationRegion(simRadius);
+        this.collisionsSystem   = new CollisionsSystem();
+        this.statusEffectSystem = new StatusEffectSystem();
+        this.affiliationSystem  = new ChunkAffiliationSystem(width, height);
+
+        // Registry global — único para todo el universo, invariante ante
+        // cambios de sector.
+        this.globalDynamicRegistry = new DynamicEntityRegistry();
 
         regenerateInitialWorld();
     }
 
-    /**
-     * Constructor de conveniencia con targetFps=30 y generador por defecto.
-     */
     public WorldManager(int width, int height, DebugSettings settings) {
         this(width, height, width, height, new WorldGenerator(), settings, 30.0);
     }
 
-    /**
-     * Constructor de conveniencia con generador custom y targetFps=30.
-     */
     public WorldManager(int width, int height,
                         int virtualWidth, int virtualHeight,
                         WorldGenerator generator,
@@ -152,153 +180,208 @@ public class WorldManager {
         this(width, height, virtualWidth, virtualHeight, generator, settings, 30.0);
     }
 
-    // ── Acceso al mundo activo ────────────────────────────────────────────
+    // ── Acceso al registry global ─────────────────────────────────────────
 
     /**
-     * Retorna el mundo del sector activo actual.
-     * Si no existe en caché, lo genera y lo añade.
+     * El registro global de entidades dinámicas del universo.
+     * Usar para añadir Player, Enemy, Bullet, etc. al mundo.
+     *
+     * @return el DynamicEntityRegistry global (singleton del universo)
      */
+    public DynamicEntityRegistry getGlobalDynamicRegistry() {
+        return globalDynamicRegistry;
+    }
+
+    // ── Acceso al mundo activo (legacy — necesario para TransitionService) ─
+
     public World getCurrentWorld() {
         synchronized (cache) {
             if (!cache.contains(currentCoord)) {
-                cache.put(generator.generate(logicalWidth, logicalHeight, currentCoord));
+                World generated = generateLegacyWorld(logicalWidth, logicalHeight, currentCoord);
+                // Inyectar el registry global para que addDynamic() en este World
+                // también registre entidades en el globalDynamicRegistry.
+                generated.setExternalDynamicRegistry(globalDynamicRegistry);
+                cache.put(generated);
             }
-            return cache.get(currentCoord);
+            World w = cache.get(currentCoord);
+            // Garantizar que siempre tiene el registry global inyectado
+            // (puede haberse creado antes de que externalRegistry existiera)
+            w.setExternalDynamicRegistry(globalDynamicRegistry);
+            return w;
         }
-    }
-
-    // ── SpawnSystem ───────────────────────────────────────────────────────
-
-    /**
-     * El SpawnSystem activo.
-     * Registrar SpawnRequests aquí para spawn automático o manual.
-     */
-    public SpawnSystem getSpawnSystem() {
-        return spawnSystem;
-    }
-
-    // ── TransitionService ─────────────────────────────────────────────────
-
-    /**
-     * El WorldTransitionService activo.
-     * Permite configurar el WorldController predicate y registrar gates.
-     *
-     * Uso desde la capa de composición (GameWorldBootstrap):
-     *   worldManager.getTransitionService()
-     *       .setWorldControllerPredicate(obj -> obj instanceof Player);
-     */
-    public WorldTransitionService getTransitionService() {
-        return transitionService;
-    }
-
-    // ── Cámara ────────────────────────────────────────────────────────────
-
-    /**
-     * La GameCamera del Engine.
-     * UIBootstrap, CrossHairHUD y cualquier sistema que necesite la vista
-     * acceden a ella a través de este método.
-     */
-    public GameCamera getCamera() {
-        return cameraSystem.getCamera();
-    }
-
-    /**
-     * El CameraSystem completo.
-     * Usar para acceder a getTargets(), addTarget(), getModifiers(), etc.
-     */
-    public CameraSystem getCameraSystem() {
-        return cameraSystem;
-    }
-
-    /**
-     * Reemplaza el CameraController activo.
-     * null desactiva el controlador (cámara estática).
-     */
-    public void setCameraController(CameraController controller) {
-        cameraSystem.setCameraController(controller);
     }
 
     // ── Update ────────────────────────────────────────────────────────────
 
-    /**
-     * Actualiza todos los subsistemas del mundo en el orden correcto:
-     *   1. Mundo activo (entidades, física, colisiones)
-     *   2. SpawnSystem (evalúa requests, ejecuta spawns pendientes)
-     *   3. CameraSystem (CameraController + commitFrame)
-     *   4. WorldPrewarmService (pre-genera sectores vecinos en background)
-     *   5. WorldTransitionService (detecta cruces, transfiere entidades)
-     *   6. Post-transición (snap de cámara, actualizar bounds, limpiar historial)
-     */
     public void update() {
+        // El World activo provee el externalRegistry para interoperabilidad legacy.
         World world = getCurrentWorld();
-        world.update();
 
-        // SpawnSystem: usa getCurrentWorld() dinámicamente — no el primer mundo
+        // ── 1. Flush del registry global ──────────────────────────────────
+        globalDynamicRegistry.flush();
+
+        // ── 2. Centro de simulación ────────────────────────────────────────
+        double centerX = 0, centerY = 0;
+        if (trackedObject != null) {
+            var pos = trackedObject.getTransform().getPosition();
+            centerX = pos.getX();
+            centerY = pos.getY();
+        }
+
+        // Construir el ChunkStorage compuesto UNA SOLA VEZ por tick.
+        // Incluye los chunks de todos los sectores cargados en el WorldCache.
+        // Esto permite que SimulationRegion y SceneRenderer accedan a estáticos
+        // de chunks vecinos al borde del sector activo.
+        Game.World.Chunk.ChunkStorage compositeStorage = buildCompositeChunkStorage();
+
+        // ── 3. Reconstruir SimulationRegion ───────────────────────────────
+        // Estáticos del ChunkStorage compuesto + TODOS los dinámicos globales.
+        simulationRegion.rebuildFromStorage(
+            centerX, centerY,
+            logicalWidth, logicalHeight,
+            compositeStorage,
+            globalDynamicRegistry
+        );
+
+        List<GameObjects> activeObjects = simulationRegion.getActiveObjects();
+
+        // ── 4. Update de IA ────────────────────────────────────────────────
+        if (trackedPlayer != null) {
+            WorldEnemyUpdater.updateAll(activeObjects, trackedPlayer);
+        } else {
+            activeObjects.forEach(GameObjects::update);
+        }
+
+        // ── 5. StatusEffectSystem ──────────────────────────────────────────
+        statusEffectSystem.update(activeObjects);
+
+        // ── 6. Destroyable cleanup ─────────────────────────────────────────
+        for (GameObjects obj : activeObjects) {
+            if (obj instanceof Game.Engine.Destroyable d && d.isPendingDestruction()) {
+                globalDynamicRegistry.remove(obj);
+            }
+        }
+        globalDynamicRegistry.flush();
+
+        // Reconstruir después del flush (mismo composite, ya calculado)
+        simulationRegion.rebuildFromStorage(
+            centerX, centerY,
+            logicalWidth, logicalHeight,
+            compositeStorage,
+            globalDynamicRegistry
+        );
+        activeObjects = simulationRegion.getActiveObjects();
+
+        // ── 7. CollisionsSystem ────────────────────────────────────────────
+        collisionsSystem.update(activeObjects);
+
+        // ── 8. ChunkAffiliationSystem ──────────────────────────────────────
+        affiliationSystem.update(globalDynamicRegistry.getAll(), world.getSpatialIndex());
+
+        // ── 9. SpawnSystem ─────────────────────────────────────────────────
         spawnSystem.update();
 
-        // CameraSystem: actualiza el controller y consolida el frame
+        // ── 10. CameraSystem ───────────────────────────────────────────────
         cameraSystem.update(cameraDeltaTime);
 
-        // Prewarming de sectores vecinos en background
+        // ── 11. WorldPrewarmService ────────────────────────────────────────
         if (trackedObject != null) {
             prewarmService.update(trackedObject, logicalWidth, logicalHeight);
         }
 
-        // Procesar transiciones entre sectores
+        // ── 12. TransitionService (legacy) ─────────────────────────────────
         WorldCoordinator nextCoord = transitionService.processTransitions(
             world, currentCoord, logicalWidth, logicalHeight
         );
 
-        // Post-transición: si el sector activo cambió
         if (nextCoord != null) {
             currentCoord = nextCoord;
-            World nextWorld = getCurrentWorld();
-
-            if (trackedObject != null) {
-                // Registrar el tracked object en el nuevo mundo
-                nextWorld.setTrackTarget(trackedObject);
-
-                // Snap de cámara: evitar lerp largo al cruzar sector
-                var pos = trackedObject.getTransform().getPosition();
-                cameraSystem.onSectorChanged(new Game.Engine.GameMath.Logic2D.Vector2D(
-                    pos.getX(), pos.getY()
-                ));
-                cameraSystem.setWorldBounds(logicalWidth, logicalHeight);
-            }
-
-            // Limpiar historial de colisiones: evitar enter/exit espurios
-            nextWorld.getObjectsContainer().clearCollisionContactHistory();
+            collisionsSystem.clearContactHistory();
         }
     }
 
     // ── Render ────────────────────────────────────────────────────────────
 
     /**
-     * Dibuja el sector activo usando la cámara del Engine.
+     * Renderiza el mundo usando el registry global y todos los chunks cargados.
+     *
+     * Construye un ChunkStorage compuesto con todos los chunks disponibles
+     * en el WorldCache para que RenderRegion pueda mostrar chunks vecinos
+     * cuando la cámara está cerca del borde.
      */
     public void draw(Graphics2D g) {
         GameCamera camera = cameraSystem.getCamera();
-        renderer.draw(getCurrentWorld(), camera, g,
-                      camera.getVirtualWidth(), camera.getVirtualHeight());
+
+        // Construir ChunkStorage compuesto con todos los chunks del cache
+        // para que el renderer vea estáticos de chunks vecinos al borde.
+        Game.World.Chunk.ChunkStorage compositeStorage = buildCompositeChunkStorage();
+
+        renderer.drawGlobal(
+            compositeStorage,
+            globalDynamicRegistry,
+            camera, g,
+            camera.getVirtualWidth(),
+            camera.getVirtualHeight()
+        );
+    }
+
+    /**
+     * Construye un ChunkStorage temporal con los chunks de todos los Worlds
+     * del WorldCache. Permite al renderer acceder a estáticos de todos los
+     * sectores cargados simultáneamente.
+     *
+     * Esto es necesario porque cada World del WorldCache tiene su propio
+     * ChunkStorage, pero RenderRegion necesita consultar chunks vecinos.
+     */
+    private Game.World.Chunk.ChunkStorage buildCompositeChunkStorage() {
+        Game.World.Chunk.ChunkStorage composite = new Game.World.Chunk.ChunkStorage();
+        synchronized (cache) {
+            for (World w : cache.getAllWorlds()) {
+                for (Game.World.Chunk.Chunk chunk : w.getChunkStorage().allChunks()) {
+                    composite.put(chunk);
+                }
+            }
+        }
+        return composite;
     }
 
     // ── Tracking ──────────────────────────────────────────────────────────
 
-    /**
-     * Registra el objeto a rastrear para prewarming, cámara y tracking de mundo.
-     *
-     * Configura automáticamente el sistema de cámara para seguir el objeto.
-     * Si ya existe un CameraController personalizado, no se reemplaza.
-     *
-     * @param obj el objeto a seguir (generalmente el player); puede ser null.
-     */
     public void setTrackedObject(GameObjects obj) {
         this.trackedObject = obj;
-        getCurrentWorld().setTrackTarget(obj);
-
+        if (obj instanceof Player p) {
+            this.trackedPlayer = p;
+        }
         if (obj != null) {
             cameraSystem.setTrackedObject(obj);
         }
+    }
+
+    // ── API de conveniencia para bootstrap ────────────────────────────────
+
+    /**
+     * Añade una entidad dinámica al registry global del universo.
+     * Equivalente a getGlobalDynamicRegistry().add(entity).
+     *
+     * Usar en bootstrap y en código de gameplay para registrar Player,
+     * Enemy, Bullet, etc. sin importar en qué sector están.
+     *
+     * @param entity la entidad dinámica a añadir
+     */
+    public void addDynamic(GameObjects entity) {
+        globalDynamicRegistry.add(entity);
+    }
+
+    // ── API de acceso ─────────────────────────────────────────────────────
+
+    public SpawnSystem            getSpawnSystem()       { return spawnSystem;              }
+    public WorldTransitionService getTransitionService() { return transitionService;        }
+    public GameCamera             getCamera()            { return cameraSystem.getCamera(); }
+    public CameraSystem           getCameraSystem()      { return cameraSystem;             }
+    public SimulationRegion       getSimulationRegion()  { return simulationRegion;         }
+
+    public void setCameraController(CameraController controller) {
+        cameraSystem.setCameraController(controller);
     }
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
@@ -307,21 +390,13 @@ public class WorldManager {
         if (newWidth <= 0 || newHeight <= 0) return;
         this.logicalWidth  = newWidth;
         this.logicalHeight = newHeight;
-        cameraSystem.setWorldBounds(newWidth, newHeight);
     }
 
-    /**
-     * Alias para compatibilidad con llamadas existentes desde GameState.
-     */
     public void onVirtualResize(int newVirtualWidth, int newVirtualHeight) {
         resize(newVirtualWidth, newVirtualHeight);
         cameraSystem.onVirtualResize(newVirtualWidth, newVirtualHeight);
     }
 
-    /**
-     * Apaga el prewarm service y libera recursos.
-     * Llamar al cerrar la aplicación.
-     */
     public void shutdown() {
         prewarmService.shutdown();
     }
@@ -331,7 +406,12 @@ public class WorldManager {
     private void regenerateInitialWorld() {
         synchronized (cache) {
             cache.clear();
-            cache.put(generator.generate(logicalWidth, logicalHeight, currentCoord));
+            cache.put(generateLegacyWorld(logicalWidth, logicalHeight, currentCoord));
         }
+    }
+
+    @SuppressWarnings({"deprecation", "removal"})
+    private World generateLegacyWorld(int w, int h, WorldCoordinator coord) {
+        return generator.generate(w, h, coord);
     }
 }

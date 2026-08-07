@@ -111,6 +111,7 @@ public final class TransitionResolver {
      * Coloca el objeto en el borde del sector destino, en el lado más cercano
      * al punto de entrada.
      */
+    @SuppressWarnings({"deprecation", "removal"})
     public static ResolutionStrategy snapToEdge(int edgeMargin) {
         return (request, world, validator) -> {
             Vector2D pos = request.getTargetPosition();
@@ -169,6 +170,7 @@ public final class TransitionResolver {
         };
     }
 
+    @SuppressWarnings({"deprecation", "removal"})
     private static Vector2D clampToWorld(Vector2D pos, World world,
                                           Game.Engine.GameObjects subject) {
         ColliderComponent col = subject.getComponent(ColliderComponent.class);

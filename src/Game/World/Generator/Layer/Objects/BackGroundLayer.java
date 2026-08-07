@@ -1,7 +1,7 @@
 package Game.World.Generator.Layer.Objects;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.Visuals.BackGround;
 import java.util.Random;
@@ -9,42 +9,30 @@ import java.util.Random;
 /**
  * Capa de fondo base del mundo.
  *
- * ── BUG CORREGIDO: dependencia implícita a Vector2D(0, 0) ────────────────
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * ANTES: La posición del fondo siempre era (0, 0), asumiendo que el origen
- * del mundo coincide con el borde superior izquierdo del primer sector.
- * Si el origen del mundo cambia o se introducen coordenadas negativas,
- * el fondo quedaba desplazado respecto al contenido del mundo.
+ * ANTES: la posición del fondo era (0, 0) — borde superior izquierdo del chunk
+ * en coordenadas locales. Correcto para el chunk (0,0), incorrecto para (1,0).
  *
- * AHORA: La posición se calcula como el origen lógico del mundo derivado
- * de su WorldCoordinator. Para el sector (0,0) el resultado es el mismo
- * que antes — sin cambio visual. Para sectores con coords distintas, el
- * fondo se posiciona correctamente dentro de los bounds del sector.
+ * AHORA: la posición usa chunk.getOriginX/Y() para obtener el origen global.
  *
- * El origen de cada sector siempre es (0, 0) en coordenadas locales del
- * sector, así que Vector2D(0, 0) es correcto siempre que se entienda como
- * "esquina superior izquierda del sector actual", no como "origen del
- * mundo absoluto". La corrección semántica está en el comentario y en
- * que el código ahora es explícito sobre su intención.
+ *   Chunk(0,0): originX=0,    originY=0    → BackGround en (0, 0)      ← idéntico
+ *   Chunk(1,0): originX=1280, originY=0    → BackGround en (1280, 0)   ← correcto
+ *   Chunk(0,1): originX=0,    originY=720  → BackGround en (0, 720)    ← correcto
+ *
+ * El resultado visual para el chunk (0,0) es idéntico al anterior.
  */
 public class BackGroundLayer implements WorldLayer {
 
     @Override
-    public void generate(World world, Random random) {
-        int width  = world.getWidth();
-        int height = world.getHeight();
-
-        // La posición (0, 0) es la esquina superior izquierda del sector actual,
-        // en coordenadas locales del sector. Esto es correcto para todos los sectores:
-        // cada sector tiene su propio espacio de coordenadas [0, width] × [0, height].
-        //
-        // NO es el origen del mundo absoluto — ese lo mantiene WorldCoordinator.
-        // El fondo cubre exactamente el área lógica del sector.
-        world.add(new BackGround(
-            new Vector2D(0, 0),
+    public void generate(Chunk chunk, Random random) {
+        // La posición del fondo es el origen global del chunk.
+        // Para chunk(0,0): (0,0) — idéntico al comportamiento anterior.
+        chunk.add(new BackGround(
+            new Vector2D(chunk.getOriginX(), chunk.getOriginY()),
             null,
-            width,
-            height
+            chunk.getWidth(),
+            chunk.getHeight()
         ));
     }
 }

@@ -1,7 +1,7 @@
 package Game.World.Transition;
 
-import Game.Engine.GameObjects;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 import Game.World.Core.World;
 import Game.World.Core.WorldCoordinator;
 import java.util.ArrayList;
@@ -63,7 +63,7 @@ public final class TransitionDetector {
                                            int worldHeight) {
         List<TransitionRequest> requests = new ArrayList<>();
 
-        for (GameObjects obj : world.getObjectsContainer().getObjects()) {
+        for (GameObjects obj : world.getDynamicEntityRegistry().getAll()) {
             var pos = obj.getTransform().getPosition();
             double x = pos.getX();
             double y = pos.getY();

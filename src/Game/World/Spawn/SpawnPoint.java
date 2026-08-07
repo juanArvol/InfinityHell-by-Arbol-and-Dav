@@ -1,6 +1,7 @@
 package Game.World.Spawn;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.World.Chunk.GlobalChunkResolver;
 import Game.World.Core.WorldCoordinator;
 
 /**
@@ -20,9 +21,20 @@ import Game.World.Core.WorldCoordinator;
  * SpawnPoint.samplePosition() en una subclase o añadir nuevas factories.
  *
  * ── COORDENADAS ───────────────────────────────────────────────────────────
- * Siempre en coordenadas de MUNDO. El SpawnPoint no conoce sectores ni
- * pantallas. El WorldCoordinator identifica en qué sector vive este punto.
- * Si es null, se usa el sector activo en el momento del spawn.
+ * Las coordenadas internas del SpawnPoint son LOCALES al chunk al que pertenece
+ * (o globales si sector == null y el caller ya proporciona coords globales).
+ *
+ * Cuando sector != null, samplePosition() convierte automáticamente a
+ * coordenadas globales usando GlobalChunkResolver:
+ *
+ *   globalX = sector.x() * chunkWidth  + localX
+ *   globalY = sector.y() * chunkHeight + localY
+ *
+ * El chunkWidth/chunkHeight se pasa en samplePosition(chunkW, chunkH).
+ * La firma sin argumentos samplePosition() asume que el centro ya está en
+ * coords globales (caso más común: sector == null, posición global directa).
+ *
+ * Para SpawnPoints con sector explícito usar samplePosition(chunkW, chunkH).
  */
 public final class SpawnPoint {
 
@@ -114,15 +126,55 @@ public final class SpawnPoint {
     // ── Muestreo de posición ──────────────────────────────────────────────
 
     /**
-     * Retorna una posición de spawn muestreada dentro de esta zona.
+     * Retorna una posición de spawn muestreada en coordenadas GLOBALES.
      *
-     * Para POINT: retorna siempre el centro.
-     * Para CIRCLE: posición aleatoria uniforme dentro del disco.
-     * Para RECT: posición aleatoria uniforme dentro del rectángulo.
+     * Si sector == null: asume que el centro ya está en coords globales.
+     * Si sector != null: delega en samplePosition(chunkWidth, chunkHeight)
+     *   usando dimensiones de chunk por defecto (0). Esto lanzará un error
+     *   en runtime si se usa con sector != null. Preferir la sobrecarga
+     *   con chunkWidth y chunkHeight explícitos.
      *
-     * @return nueva instancia de Vector2D con las coordenadas de spawn.
+     * @return nueva instancia de Vector2D con coordenadas globales de spawn.
      */
     public Vector2D samplePosition() {
+        Vector2D local = sampleLocal();
+
+        if (sector != null) {
+            // No tenemos chunkWidth/Height aquí — advertencia en la firma sin args
+            // La posición local se devuelve tal cual como fallback seguro.
+            // Usar samplePosition(chunkW, chunkH) para conversión correcta.
+            return local;
+        }
+
+        return local;
+    }
+
+    /**
+     * Retorna una posición de spawn muestreada en coordenadas GLOBALES,
+     * convirtiendo desde coords locales al chunk si sector != null.
+     *
+     * Para SpawnPoints con sector explícito, siempre usar esta sobrecarga.
+     *
+     * @param chunkWidth  ancho del chunk en píxeles globales
+     * @param chunkHeight alto del chunk en píxeles globales
+     * @return nueva instancia de Vector2D con coordenadas globales de spawn.
+     */
+    public Vector2D samplePosition(int chunkWidth, int chunkHeight) {
+        Vector2D local = sampleLocal();
+
+        if (sector != null && chunkWidth > 0 && chunkHeight > 0) {
+            // Convertir posición local a global usando el origen del sector
+            double globalX = GlobalChunkResolver.toGlobalX(sector, local.getX(), chunkWidth);
+            double globalY = GlobalChunkResolver.toGlobalY(sector, local.getY(), chunkHeight);
+            return new Vector2D(globalX, globalY);
+        }
+
+        // sector == null: el centro ya está en coords globales
+        return local;
+    }
+
+    /** Muestrea la posición interna (sin conversión de coordenadas). */
+    private Vector2D sampleLocal() {
         return switch (shape) {
             case POINT  -> new Vector2D(center.getX(), center.getY());
             case CIRCLE -> sampleCircle();

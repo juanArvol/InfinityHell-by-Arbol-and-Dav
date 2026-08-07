@@ -1,6 +1,6 @@
 package Game.World.Generator.Layer.Objects;
 
-import Game.World.Core.World;
+import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldObjectFactory;
 import Sprites.Enviroment.Obstacles.ObstaclesAssets;
@@ -9,14 +9,14 @@ import java.util.Random;
 /**
  * Capa de edificios — genera estructuras rectangulares (muros) en el mundo.
  *
- * Cada "edificio" es un conjunto de 2-4 obstáculos que forman las paredes.
- * El interior queda vacío para que el jugador pueda entrar.
+ * ── MIGRACIÓN A COORDENADAS GLOBALES (ETAPA 2) ────────────────────────────
  *
- * Extensible: cuando exista un tipo Building concreto con puerta y loot
- * interior, se puede subclasificar o añadir esa lógica aquí.
+ * ANTES: origen del edificio calculado como random.nextInt(maxX) en coords locales.
  *
- * Uso:
- *   .addLayer(new BuildingLayer(2, 4))  // 2 a 4 edificios por chunk
+ * AHORA: origen del edificio = chunk.getOriginX() + random.nextInt(maxLocalX)
+ *
+ * VERIFICACIÓN para chunk(0,0): originX=0 → resultado idéntico al anterior.
+ * VERIFICACIÓN para chunk(1,0): edificios en [1280+40, 1280+maxX] → correcto.
  */
 public class BuildingLayer implements WorldLayer {
 
@@ -44,35 +44,40 @@ public class BuildingLayer implements WorldLayer {
     }
 
     @Override
-    public void generate(World world, Random random) {
+    public void generate(Chunk chunk, Random random) {
         int range = maxBuildings - minBuildings;
         int count = (range > 0) ? minBuildings + random.nextInt(range) : minBuildings;
 
         int marginX = buildingW + 40;
         int marginY = buildingH + 40;
 
-        int maxX = world.getWidth()  - marginX;
-        int maxY = world.getHeight() - marginY;
-        if (maxX <= 0 || maxY <= 0) return;
+        int maxLocalX = chunk.getWidth()  - marginX;
+        int maxLocalY = chunk.getHeight() - marginY;
+        if (maxLocalX <= 0 || maxLocalY <= 0) return;
+
+        int originX = chunk.getOriginX();
+        int originY = chunk.getOriginY();
 
         for (int i = 0; i < count; i++) {
-            int originX = 40 + random.nextInt(maxX);
-            int originY = 40 + random.nextInt(maxY);
-            placeBuilding(world, originX, originY);
+            // Posición local dentro del chunk con margen
+            int localX = 40 + random.nextInt(maxLocalX);
+            int localY = 40 + random.nextInt(maxLocalY);
+
+            // Convertir a coordenadas globales
+            int globalX = originX + localX;
+            int globalY = originY + localY;
+
+            placeBuilding(chunk, globalX, globalY);
         }
     }
 
-    private void placeBuilding(World world, int ox, int oy) {
-        var spr = ObstaclesAssets.getMondongoImage(); // Reemplazar con WallAsset cuando exista
+    private void placeBuilding(Chunk chunk, int ox, int oy) {
+        var spr = ObstaclesAssets.getMondongoImage();
 
-        // Pared superior
-        world.add(WorldObjectFactory.obstacle(ox, oy, buildingW, wallThickness, spr));
-        // Pared inferior
-        world.add(WorldObjectFactory.obstacle(ox, oy + buildingH - wallThickness, buildingW, wallThickness, spr));
-        // Pared izquierda (sin esquinas para no duplicar)
-        world.add(WorldObjectFactory.obstacle(ox, oy + wallThickness, wallThickness, buildingH - 2 * wallThickness, spr));
-        // Pared derecha
-        world.add(WorldObjectFactory.obstacle(ox + buildingW - wallThickness, oy + wallThickness, wallThickness, buildingH - 2 * wallThickness, spr));
-        // La "puerta" queda abierta — el centro de la pared inferior no se coloca
+        // Todas las posiciones son ya globales (ox, oy son globales)
+        chunk.add(WorldObjectFactory.obstacle(ox, oy, buildingW, wallThickness, spr));
+        chunk.add(WorldObjectFactory.obstacle(ox, oy + buildingH - wallThickness, buildingW, wallThickness, spr));
+        chunk.add(WorldObjectFactory.obstacle(ox, oy + wallThickness, wallThickness, buildingH - 2 * wallThickness, spr));
+        chunk.add(WorldObjectFactory.obstacle(ox + buildingW - wallThickness, oy + wallThickness, wallThickness, buildingH - 2 * wallThickness, spr));
     }
 }

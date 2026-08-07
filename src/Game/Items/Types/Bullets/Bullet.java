@@ -7,11 +7,10 @@ import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.GameObjects;
+import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
-import Game.World.WorldObjects.WorldObjectsContainer;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
@@ -60,7 +59,7 @@ import java.awt.image.BufferedImage;
  *   Destroy  → WorldObjectsContainer.flush() lo elimina del mundo
  *   Pool     → (si PooledBullet) resetState() y devuelto al pool
  */
-public class Bullet extends GameObjects implements WorldObjectsContainer.Destroyable {
+public class Bullet extends GameObjects implements Game.Engine.Destroyable {
 
     private final BulletBehavior      behavior;
     private final ProjectileMovement  movement;

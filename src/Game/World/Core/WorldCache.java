@@ -89,6 +89,7 @@ public class WorldCache {
      *
      * Comportamiento idéntico al anterior si no hay política configurada.
      */
+    @SuppressWarnings({"deprecation", "removal"})
     public void put(World world) {
         worlds.putIfAbsent(world.getCoordinate(), world);
 

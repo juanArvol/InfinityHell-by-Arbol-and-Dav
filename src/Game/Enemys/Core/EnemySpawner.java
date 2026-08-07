@@ -64,7 +64,8 @@ public class EnemySpawner {
             EnemyFactory.EnemyId type = types[(int)(Math.random() * types.length)];
             Vector2D pos   = randomPosition(world);
             Enemy    enemy = EnemyFactory.create(type, pos);
-            world.add(enemy);
+            // addDynamic: enemigos son entidades dinámicas — no pertenecen a chunks
+            world.addDynamic(enemy);
         }
     }
 
@@ -77,7 +78,7 @@ public class EnemySpawner {
      */
     public void spawnAt(World world, EnemyFactory.EnemyId type, Vector2D pos) {
         Enemy enemy = EnemyFactory.create(type, pos);
-        world.add(enemy);
+        world.addDynamic(enemy);
     }
 
     /**
@@ -89,7 +90,7 @@ public class EnemySpawner {
      */
     public void spawnWith(World world, EnemyAssembler assembler, Vector2D pos) {
         Enemy enemy = EnemyFactory.create(assembler, pos);
-        world.add(enemy);
+        world.addDynamic(enemy);
     }
 
     // ── API nueva (via SpawnSystem) ────────────────────────────────────────
@@ -106,9 +107,10 @@ public class EnemySpawner {
      * @param count       número de enemies a spawnar
      */
     public void spawnViaSystem(SpawnSystem spawnSystem, World world, int count) {
-        SpawnPoint point = SpawnPoint.worldBounds(
-            world.getWidth(), world.getHeight(), 60
-        );
+        // SpawnPoint.worldBounds con dimensiones estándar de chunk.
+        // En el nuevo modelo World no tiene dimensiones propias —
+        // el spawn se distribuye dentro de los primeros 1280×720 px globales.
+        SpawnPoint point = SpawnPoint.worldBounds(1280, 720, 60);
 
         SpawnDescriptor desc = SpawnDescriptor.builder()
             .id("enemy_spawner_" + System.nanoTime())
@@ -143,9 +145,11 @@ public class EnemySpawner {
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private Vector2D randomPosition(World world) {
+        // En el nuevo modelo las posiciones son globales.
+        // Spawn dentro del primer chunk (0,0): [60, 1220) × [60, 660)
         double margin = 60.0;
-        double x = margin + Math.random() * Math.max(0, world.getWidth()  - margin * 2);
-        double y = margin + Math.random() * Math.max(0, world.getHeight() - margin * 2);
+        double x = margin + Math.random() * (1280 - margin * 2);
+        double y = margin + Math.random() * (720  - margin * 2);
         return new Vector2D(x, y);
     }
 }
