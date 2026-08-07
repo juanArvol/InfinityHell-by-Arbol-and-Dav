@@ -76,6 +76,21 @@ public final class DisplayManager {
 
     private volatile DisplayState currentState;
 
+    /**
+     * True una vez que disposeWindow() ha sido invocado.
+     *
+     * Protege enqueue() para que ningún comando nuevo sea encolado después
+     * de que el shutdown definitivo haya comenzado. Esto impide que retries
+     * del pipeline (RecreateBufferStrategy) o callbacks de recuperación del
+     * SurfacePublisher (onContentLost, onRecoveryNeeded) puedan iniciar un
+     * ciclo infinito de reintentos sobre un Canvas cuyo peer ya fue destruido
+     * por backend.dispose().
+     *
+     * Volatile: enqueue() puede ser llamado desde cualquier thread; la
+     * escritura en disposeWindow() debe ser visible inmediatamente.
+     */
+    private volatile boolean disposed = false;
+
     private final List<ResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
 
     public DisplayManager(DisplaySettings settings) {
@@ -281,6 +296,7 @@ public final class DisplayManager {
     }
 
     public void disposeWindow() {
+        disposed = true;
         if (SwingUtilities.isEventDispatchThread()) {
             backend.dispose();
         } else {
@@ -297,6 +313,11 @@ public final class DisplayManager {
     void drainCommands() { commandQueue.drainToEDT(pipeline); }
 
     public void enqueue(DisplayCommand command) {
+        if (disposed) {
+            LOG.fine("DisplayManager: ignoring command after dispose: "
+                     + command.getClass().getSimpleName());
+            return;
+        }
         commandQueue.enqueue(command);
         SwingUtilities.invokeLater(this::drainCommands);
     }
