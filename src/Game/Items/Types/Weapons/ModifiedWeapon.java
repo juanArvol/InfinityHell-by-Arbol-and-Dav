@@ -4,10 +4,12 @@ import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Ammulets.PlayerAmulets;
-import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletFactory;
-import Game.Items.Types.Bullets.BulletType;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletType;
+import Game.Items.Types.Bullets.Definition.ProjectilePool;
+import Game.Items.Types.Bullets.ProjectileBlueprint;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import Sprites.Source.Sounds;
@@ -17,41 +19,38 @@ import java.util.List;
 /**
  * Arma equipada con el pipeline de disparo completo.
  *
- * ── HRFC — Refactor Weapon & Projectile System ───────────────────────────
+ * ── PIPELINE DE DISPARO ───────────────────────────────────────────────────
  *
- * ModifiedWeapon es ahora la ÚNICA abstracción de arma equipada.
- * Reemplaza la cadena WeaponSelected → Weapon → WeaponShoot que existía
- * antes. Esa cadena era puro boilerplate de delegación sin valor añadido.
+ *   1. FireMode.handleInput()            → ¿dispara este frame?
+ *   2. copyStats(comport.getStats())     → copia mutable de WeaponStats
+ *   3. bulletType.create()               → BulletBehavior base
+ *   4. AmuletRegistry.applyAll()         → modifica stats + envuelve behavior
+ *   5. ProjectileBlueprint.from()        → definición resuelta del proyectil
+ *   6. pool.acquire() / BulletFactory.build() → instancia Bullet
  *
- * ── RESPONSABILIDADES ────────────────────────────────────────────────────
+ * ── POOL OPCIONAL ─────────────────────────────────────────────────────────
  *
- *   1. Traducir input (held/pressed) a disparo via FireMode.
- *   2. Aplicar los amuletos del jugador sobre una COPIA de WeaponStats
- *      (el original del WeaponComport nunca se muta).
- *   3. Componer el BulletBehavior con los wrappers de amuletos.
- *   4. Delegar la creación de proyectiles a BulletFactory.
- *   5. Gestionar ammo/cooldown/recarga a través de WeaponComport.
- *   6. Emitir el sonido de disparo.
+ * ModifiedWeapon acepta un ProjectilePool opcional en construcción.
+ *
+ * Si se provee un pool:
+ *   → bullets.acquire(blueprint, position, direction, owner)
+ *   → El pool decide si reutiliza una instancia o crea una nueva via la Factory.
+ *   → Esto es el camino recomendado para proyectiles del jugador en combate.
+ *
+ * Si no se provee pool (pool == null):
+ *   → BulletFactory.build(blueprint, position, direction, owner)
+ *   → Camino directo, sin pooling. Útil en tests, cutscenes, o sistemas
+ *     donde el lifecycle del proyectil no justifica pooling.
+ *
+ * Ambos caminos usan el mismo Blueprint y producen Bullets idénticas en
+ * comportamiento. La única diferencia es si se reutilizan instancias.
  *
  * ── LO QUE NO HACE ────────────────────────────────────────────────────────
  *
  *   - No conoce World ni WorldManager.
  *   - No conoce Player, Enemy ni ninguna entidad concreta.
  *   - No gestiona el ciclo de vida de los proyectiles.
- *
- * ── CÓMO SE USA ────────────────────────────────────────────────────────────
- *
- *   // En Player (constructor o loadout):
- *   ModifiedWeapon weapon = new ModifiedWeapon(
- *       new WeaponEscopeta(),
- *       BulletType.SPRINGBULLET,
- *       player.getAmulets()
- *   );
- *   combat.addWeapon(weapon);
- *
- *   // En PlayerCombat.update():
- *   List<Bullet> bullets = currentWeapon.handleInput(held, pressed, x, y, right, dir);
- *   bullets.forEach(bulletSpawner);
+ *   - No llama setCollisionProfile() manualmente.
  */
 public class ModifiedWeapon {
 
@@ -59,12 +58,59 @@ public class ModifiedWeapon {
     private final BulletType     bulletType;
     private final PlayerAmulets  amulets;
 
+    /**
+     * Pool de proyectiles para reutilización de instancias.
+     *
+     * null = sin pooling — usa BulletFactory directamente.
+     * Inyectado en construcción por quien crea el arma (Player, Turret, etc.).
+     */
+    private final ProjectilePool pool;
+
+    /**
+     * Propietario de esta arma. Se propaga al evento OnProjectileSpawn.
+     */
+    private final Object owner;
+
+    // ── Constructores ─────────────────────────────────────────────────────
+
+    /**
+     * Constructor completo con pool y owner explícitos.
+     *
+     * @param comport    comportamiento del arma (cadencia, cooldown, munición)
+     * @param bulletType tipo de proyectil base
+     * @param amulets    amuletos del portador del arma
+     * @param pool       pool de proyectiles para reutilización (null = sin pooling)
+     * @param owner      el objeto portador del arma (Player, Turret, etc.), o null
+     */
     public ModifiedWeapon(WeaponComport comport,
                           BulletType bulletType,
-                          PlayerAmulets amulets) {
+                          PlayerAmulets amulets,
+                          ProjectilePool pool,
+                          Object owner) {
         this.comport    = comport;
         this.bulletType = bulletType;
         this.amulets    = amulets;
+        this.pool       = pool;
+        this.owner      = owner;
+    }
+
+    /**
+     * Constructor con owner sin pool — sin reutilización de instancias.
+     */
+    public ModifiedWeapon(WeaponComport comport,
+                          BulletType bulletType,
+                          PlayerAmulets amulets,
+                          Object owner) {
+        this(comport, bulletType, amulets, null, owner);
+    }
+
+    /**
+     * Constructor sin owner ni pool — compatibilidad con código existente.
+     */
+    public ModifiedWeapon(WeaponComport comport,
+                          BulletType bulletType,
+                          PlayerAmulets amulets) {
+        this(comport, bulletType, amulets, null, null);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────
@@ -72,13 +118,6 @@ public class ModifiedWeapon {
     /**
      * Procesa el input del frame y retorna los proyectiles a spawnear.
      * Lista vacía = no disparó este frame.
-     *
-     * @param held      botón de disparo mantenido pulsado
-     * @param pressed   borde de activación (click puntual)
-     * @param x         posición X de spawn del proyectil
-     * @param y         posición Y de spawn del proyectil
-     * @param right     el portador mira a la derecha (para flip de sprite)
-     * @param direction dirección normalizada de apuntado
      */
     public List<Bullet> handleInput(
             boolean held,
@@ -88,7 +127,6 @@ public class ModifiedWeapon {
             Vector2D direction) {
 
         var fireModeResult = comport.getFireMode().handleInput(held, pressed, comport);
-
         if (!fireModeResult.shouldShoot()) {
             return List.of();
         }
@@ -116,12 +154,10 @@ public class ModifiedWeapon {
         // 2. Behavior base del tipo de bala equipado
         BulletBehavior behavior = bulletType.create();
 
-        // 3. Aplicar amuletos del jugador (acumulativos):
-        //    applyToStats() modifica la copia de WeaponStats
-        //    wrapBehavior() envuelve el behavior con efectos on-hit
+        // 3. Aplicar amuletos del jugador
         behavior = AmuletRegistry.applyAll(amulets.getIds(), effectiveStats, behavior);
 
-        // 4. Crear proyectiles con el behavior compuesto
+        // 4. Construir proyectiles con el pipeline Blueprint → Pool/Factory
         List<Bullet> bullets = new ArrayList<>(effectiveStats.getBulletsPerShot());
 
         for (int i = 0; i < effectiveStats.getBulletsPerShot(); i++) {
@@ -135,8 +171,20 @@ public class ModifiedWeapon {
             double finalDamage = effectiveStats.getDamageBonusByWeapon() * damageMult
                                  + behavior.getDefaultData().damage();
 
-            bullets.add(BulletFactory.createBulletWithBehavior(
-                    x, y, spreadDir, behavior, finalSpeed, finalDamage));
+            ProjectileBlueprint blueprint = ProjectileBlueprint.from(
+                    behavior, finalSpeed, finalDamage);
+
+            // ── Adquisición unificada ─────────────────────────────────────
+            // Si hay pool: acquire() → reutiliza o delega a BulletFactory.
+            // Si no hay pool: BulletFactory.build() → instancia directa.
+            // Ambos caminos usan el mismo Blueprint y producen Bullets idénticas.
+            Bullet bullet;
+            if (pool != null) {
+                bullet = pool.acquire(blueprint, new Vector2D(x, y), spreadDir, owner);
+            } else {
+                bullet = BulletFactory.build(blueprint, new Vector2D(x, y), spreadDir, owner);
+            }
+            bullets.add(bullet);
         }
 
         // 5. Avanzar estado del arma
@@ -150,7 +198,7 @@ public class ModifiedWeapon {
             Sounds.playSound(sound);
         }
 
-        // 7. Evento de disparo (bus global — suscriptores opcionales)
+        // 7. Evento de disparo
         if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnWeaponFired.class)) {
             GameEventBus.GLOBAL.post(new WeaponEvents.OnWeaponFired(this, bullets.size()));
         }
@@ -160,56 +208,30 @@ public class ModifiedWeapon {
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
-    /**
-     * Actualiza timers del arma (cooldown, recarga).
-     * Llamar una vez por frame desde PlayerCombat.
-     */
-    public void update() {
-        comport.update();
-    }
+    public void update() { comport.update(); }
 
-    /**
-     * Inicia la recarga manual si el arma no está llena.
-     * WeaponComport.startReload() tiene guard interno.
-     */
-    public void reload() {
-        comport.startReload();
-    }
+    public void reload() { comport.startReload(); }
 
-    /** Resetea el contador de ráfaga (llamar cuando se suelta el gatillo en BurstMode). */
-    public void resetBurst() {
-        comport.resetBurst();
-    }
+    public void resetBurst() { comport.resetBurst(); }
 
     // ── Consultas de estado ───────────────────────────────────────────────
 
-    /** Munición actual en el cargador. */
-    public int getCurrentAmmo() { return comport.getCurrentAmmo(); }
-
-    /** Capacidad máxima del cargador. */
-    public int getMaxAmmo() { return comport.getChargerSize(); }
-
-    /** True si el arma está recargando actualmente. */
-    public boolean isReloading() { return comport.isReloading(); }
-
-    /** True si el cargador está completamente lleno. */
-    public boolean isFullyLoaded() { return comport.isFullyLoaded(); }
-
-    /** Cooldown restante entre disparos. */
-    public int getFireWait() { return comport.getFireWait(); }
-
-    /** Cooldown total configurado. */
-    public int getCooldown() { return comport.getCooldown(); }
-
-    /** Velocidad base de los proyectiles de esta arma. */
-    public double getBulletSpeedBase() { return comport.getStats().getBulletSpeedBase(); }
+    public int     getCurrentAmmo()     { return comport.getCurrentAmmo();   }
+    public int     getMaxAmmo()         { return comport.getChargerSize();   }
+    public boolean isReloading()        { return comport.isReloading();      }
+    public boolean isFullyLoaded()      { return comport.isFullyLoaded();    }
+    public int     getFireWait()        { return comport.getFireWait();      }
+    public int     getCooldown()        { return comport.getCooldown();      }
+    public double  getBulletSpeedBase() { return comport.getStats().getBulletSpeedBase(); }
 
     // ── Acceso a subcomponentes ────────────────────────────────────────────
 
-    public WeaponComport getComport()    { return comport; }
+    public WeaponComport getComport()    { return comport;    }
     public BulletType    getBulletType() { return bulletType; }
-    public PlayerAmulets getAmulets()    { return amulets; }
+    public PlayerAmulets getAmulets()    { return amulets;    }
     public WeaponStats   getStats()      { return comport.getStats(); }
+    public Object        getOwner()      { return owner; }
+    public ProjectilePool getPool()      { return pool; }
 
     // ── Helper ────────────────────────────────────────────────────────────
 

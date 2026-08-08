@@ -1,4 +1,4 @@
-package Game.Items.Types.Bullets;
+package Game.Items.Types.Bullets.Definition;
 
 /**
  * Datos de configuración inmutables de un proyectil.

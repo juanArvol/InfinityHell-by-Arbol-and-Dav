@@ -1,4 +1,4 @@
-package Game.Items.Types.Bullets;
+package Game.Items.Types.Bullets.BulletComport;
 
 /**
  * Ciclo de vida de un proyectil.

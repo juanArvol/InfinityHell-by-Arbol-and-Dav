@@ -36,11 +36,24 @@ import Main.Debug.FpsOverlay;
 public class GameState {
 
     // ── Runtime dependencies ─────────────────────────────────────────────────
-    private final DebugGameSettings settings;
-    private final WorldManager worldManager;
-    private final UIManager    uiManager;
-    private final Player       player;
-    private final FpsOverlay   fpsOverlay;
+    private final DebugGameSettings    settings;
+    private final WorldManager         worldManager;
+    private final UIManager            uiManager;
+    private final Player               player;
+    private final FpsOverlay           fpsOverlay;
+
+    /**
+     * Referencia al bootstrap para poder llamar shutdown() al destruir el GameState.
+     *
+     * GameWorldBootstrap instala listeners y referencias de scope World en
+     * GameEventBus.GLOBAL y AmuletRegistry:
+     *   - ProjectileRegistry.listener (SpawnProjectileEvent en GLOBAL)
+     *   - AmuletRegistry.entityProvider (referencia al WorldManager)
+     *
+     * bootstrap.shutdown() libera ambas referencias, evitando que el
+     * GameEventBus.GLOBAL y AmuletRegistry retengan objetos del World destruido.
+     */
+    private final GameWorldBootstrap   worldBootstrap;
 
     private int fpsPorSegundo = 0;
     private int virtualWidth;
@@ -67,7 +80,7 @@ public class GameState {
         this.worldManager = new WorldManager(virtualWidth, virtualHeight, settings);
 
         // ── World bootstrap: Player, cámara, tracked object, spawn inicial ───
-        GameWorldBootstrap worldBootstrap = new GameWorldBootstrap(
+        this.worldBootstrap = new GameWorldBootstrap(
             worldManager, virtualWidth, virtualHeight
         );
         this.player = worldBootstrap.getPlayer();
@@ -139,9 +152,20 @@ public class GameState {
         this.fpsPorSegundo = fps;
     }
 
-    /** Libera recursos (ExecutorService del WorldManager). Llamar al cerrar la aplicación. */
+    /** Libera recursos al cerrar la aplicación o destruir este GameState.
+     *
+     * Orden de shutdown correcto:
+     *   1. worldBootstrap.shutdown() — cancela listeners de scope World en
+     *      GameEventBus.GLOBAL y limpia AmuletRegistry.entityProvider.
+     *      Debe hacerse ANTES de que worldManager sea liberado.
+     *   2. worldManager.shutdown() — libera ExecutorService y recursos del mundo.
+     *
+     * WeaponRegistry y AmuletRegistry.definitions son singletons de aplicación
+     * y NO se destruyen aquí — viven hasta que termina el proceso.
+     */
     public void shutdown() {
-        worldManager.shutdown();
+        worldBootstrap.shutdown();   // cancela ProjectileRegistry + AmuletRegistry.entityProvider
+        worldManager.shutdown();     // libera ExecutorService del world
     }
 
     /**

@@ -2,12 +2,11 @@ package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.GameObjects;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Items.Types.Bullets.ProjectileEvents;
-import Game.Items.Types.Weapons.Modifiers.BulletBehaviorWrapper;
+import Game.Items.Types.Bullets.BulletComport.BulletBehaviorWrapper;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileEvents;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -85,6 +84,27 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      */
     public BounceAmuletWrapper(BulletBehavior inner, int maxBounces) {
         this(inner, maxBounces, null);
+    }
+
+    // ── Contrato de estado ────────────────────────────────────────────────
+
+    /**
+     * BounceAmuletWrapper es STATEFUL: bounceCount cambia por cada proyectil.
+     * El pool no puede reutilizar instancias de este wrapper sin resetear su estado.
+     */
+    @Override
+    public boolean isBehaviorStateless() {
+        return false;
+    }
+
+    /**
+     * Resetea el contador de rebotes al estado inicial.
+     * Llamado por el pool antes de reutilizar la instancia.
+     */
+    @Override
+    public void resetBehaviorState() {
+        bounceCount = 0;
+        inner.resetBehaviorState(); // propagar al inner
     }
 
     // ── Comportamiento ────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-package Game.Items.Types.Bullets;
+package Game.Items.Types.Bullets.BulletComport;
 
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 

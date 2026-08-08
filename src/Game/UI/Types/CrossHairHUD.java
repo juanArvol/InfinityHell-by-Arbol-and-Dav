@@ -89,11 +89,17 @@ public class CrossHairHUD implements UIElement {
         g.drawLine(centerX, centerY - HAIR_SIZE, centerX, centerY + HAIR_SIZE);
 
         // ── Trayectoria matemática ────────────────────────────────────────
-        BulletStats stats = BulletFactory.getStats(
-            weapon.getBulletType(),
-            weapon.getStats().getBulletSpeedBase(),
-            weapon.getStats().getDamageBonusByWeapon()
-        );
+        // Construir el Blueprint del arma actual para obtener stats reales.
+        // BulletFactory.statsFrom() deriva hasGravity del movement efectivo
+        // del Blueprint — no de una propiedad declarativa de ProjectileData.
+        var behavior   = weapon.getBulletType().create();
+        double speed   = weapon.getStats().getBulletSpeedBase()
+                         * behavior.getDefaultData().speedFactor();
+        double damage  = weapon.getStats().getDamageBonusByWeapon()
+                         + behavior.getDefaultData().damage();
+        var blueprint  = Game.Items.Types.Bullets.ProjectileBlueprint.from(
+                behavior, speed, damage);
+        BulletStats stats = BulletFactory.statsFrom(blueprint);
 
         // Offset de cámara para convertir coordenadas de mundo → pantalla virtual.
         // GameCamera.getX/Y() devuelve el offset top-left (igual que Camera.getX/Y()).

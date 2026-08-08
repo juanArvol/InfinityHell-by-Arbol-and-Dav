@@ -1,4 +1,4 @@
-package Game.Items.Types.Bullets;
+package Game.Items.Types.Bullets.Definition;
 
 import Game.Engine.GameObjects;
 

@@ -1,10 +1,9 @@
-package Game.Items.Types.Weapons.Modifiers;
+package Game.Items.Types.Bullets.BulletComport;
 
 import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
-import Game.Items.Types.Bullets.Bullet;
-import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Items.Types.Bullets.ProjectileData;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.ProjectileMovement;
 
 /**
@@ -68,6 +67,48 @@ public abstract class BulletBehaviorWrapper extends BulletBehavior {
         return inner.getDefaultMovement();
     }
 
+    // ── Delegación de ciclo de vida al inner ──────────────────────────────
+
+    /**
+     * Delega onAttached al inner y luego invoca el hook del wrapper.
+     * Los wrappers que necesiten inicialización al adjuntarse sobreescriben
+     * {@link #onWrapperAttached(Bullet)}.
+     */
+    @Override
+    public void onAttached(Bullet bullet) {
+        inner.onAttached(bullet);
+        onWrapperAttached(bullet);
+    }
+
+    /**
+     * Delega onDetached al inner y luego invoca el hook del wrapper.
+     * Los wrappers que necesiten limpieza al separarse sobreescriben
+     * {@link #onWrapperDetached(Bullet)}.
+     */
+    @Override
+    public void onDetached(Bullet bullet) {
+        inner.onDetached(bullet);
+        onWrapperDetached(bullet);
+    }
+
+    /**
+     * Propaga onRelease al inner y luego invoca el hook del wrapper.
+     *
+     * Los wrappers que necesiten cleanup garantizado al final del lifecycle
+     * sobreescriben {@link #onWrapperRelease(Bullet)}.
+     *
+     * Llamado exactamente una vez por ciclo de vida, independientemente
+     * de la causa de muerte. Es el punto correcto para:
+     *   - Limpiar Sets de entidades impactadas (hitEntities).
+     *   - Cancelar Subscriptions registradas en onAttached.
+     *   - Liberar referencias externas.
+     */
+    @Override
+    public void onRelease(Bullet bullet) {
+        inner.onRelease(bullet);
+        onWrapperRelease(bullet);
+    }
+
     // ── Delegación de comportamiento ──────────────────────────────────────
 
     @Override
@@ -113,6 +154,41 @@ public abstract class BulletBehaviorWrapper extends BulletBehavior {
         }
     }
 
+    // ── Delegación de onExpire ────────────────────────────────────────────
+
+    /**
+     * Delega el hook de expiración al inner y luego invoca el hook del wrapper.
+     * Los wrappers pueden reaccionar a la expiración sobreescribiendo onWrapperExpire().
+     */
+    @Override
+    public void onExpire(Bullet bullet,
+                         Game.Items.Types.Bullets.Definition.ProjectileContext ctx) {
+        inner.onExpire(bullet, ctx);
+        onWrapperExpire(bullet, ctx);
+    }
+
+    // ── Contrato de estado (pool safety) ─────────────────────────────────
+
+    /**
+     * Un wrapper es stateless solo si TANTO el wrapper propio como el inner son stateless.
+     * Si cualquiera de los dos tiene estado, el pool no reutilizará la instancia.
+     * Las subclases que tengan estado propio deben sobreescribir retornando false.
+     */
+    @Override
+    public boolean isBehaviorStateless() {
+        return inner.isBehaviorStateless();
+    }
+
+    /**
+     * Resetea el estado del inner y el estado propio del wrapper.
+     * Las subclases con estado deben llamar super.resetBehaviorState()
+     * y luego resetear sus propios campos.
+     */
+    @Override
+    public void resetBehaviorState() {
+        inner.resetBehaviorState();
+    }
+
     // ── Hooks para subclases ──────────────────────────────────────────────
 
     /**
@@ -132,4 +208,39 @@ public abstract class BulletBehaviorWrapper extends BulletBehavior {
      * Usar instanceof dentro si se necesita distinguir tipos concretos.
      */
     protected void onHitWorld(Bullet bullet, GameObjects other) {}
+
+    /**
+     * Llamado cuando el proyectil expira (después de que el inner procesa la expiración).
+     * Override para reaccionar a la expiración: explosiones, fragmentación, etc.
+     */
+    protected void onWrapperExpire(Bullet bullet,
+                                   Game.Items.Types.Bullets.Definition.ProjectileContext ctx) {}
+
+    /**
+     * Llamado después de que el inner recibe onAttached.
+     * Override en wrappers que necesiten inicialización al adjuntarse a un proyectil.
+     */
+    protected void onWrapperAttached(Bullet bullet) {}
+
+    /**
+     * Llamado después de que el inner recibe onDetached.
+     * Override en wrappers que necesiten limpieza al separarse de un proyectil
+     * VIVO por reemplazo de behavior. Para cleanup en muerte normal usar
+     * {@link #onWrapperRelease(Bullet)}.
+     */
+    protected void onWrapperDetached(Bullet bullet) {}
+
+    /**
+     * Llamado justo antes de que el proyectil sea reciclado al pool o destruido.
+     *
+     * Se invoca siempre, independientemente de la causa de muerte.
+     * Es el punto correcto para liberar recursos externos adquiridos en
+     * onWrapperAttached: cancelar listeners, limpiar colecciones, liberar refs.
+     *
+     * Override en wrappers que mantengan estado externo (Sets de entidades,
+     * Subscriptions, referencias a objetos del mundo).
+     *
+     * Default: sin efecto.
+     */
+    protected void onWrapperRelease(Bullet bullet) {}
 }

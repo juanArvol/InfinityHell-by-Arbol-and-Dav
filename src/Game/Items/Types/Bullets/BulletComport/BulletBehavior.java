@@ -1,56 +1,78 @@
 package Game.Items.Types.Bullets.BulletComport;
 
 import Game.Engine.GameObjects;
-import Game.Items.Types.Bullets.Bullet;
-import Game.Items.Types.Bullets.ProjectileData;
-import Game.Items.Types.Bullets.ProjectileMovement;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileContext;
+import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
+import Game.Items.Types.Bullets.ProjectileMovement;
 
 /**
- * Comportamiento de un proyectil — qué hace al impactar y cada frame.
+ * Comportamiento de un proyectil — qué hace al impactar, cada frame y al expirar.
  *
- * ── HRFC — Projectile System Refactor ────────────────────────────────────
+ * ── HRFC — Projectile Construction & Transformation Pipeline ─────────────
  *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- *   BulletBehavior  → QUÉ HACE al impactar y en cada frame (comportamiento puro)
- *   ProjectileData  → QUÉ VALORES tiene el proyectil (datos inmutables de spawn)
- *   ProjectileMovement → CÓMO SE MUEVE cada frame (estrategia de movimiento)
+ *   BulletBehavior     → QUÉ HACE al impactar, en cada frame y al expirar.
+ *   ProjectileData     → QUÉ VALORES tiene el proyectil (datos declarativos).
+ *   ProjectileMovement → CÓMO SE MUEVE cada frame (estrategia de movimiento).
+ *   ProjectileBlueprint→ DEFINICIÓN FINAL resuelta antes de instanciar Bullet.
  *
- * ── CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR ───────────────────────────────
+ * ── CICLO DE VIDA COMPLETO DEL BEHAVIOR ──────────────────────────────────
  *
- *   ELIMINADO: 5 métodos @Deprecated (getBulletBaseDamage, getSpeedFactor,
- *              getLifeTime, hasGravity, getGravityValue, método bridge update()).
- *              Eran deuda técnica activa — métodos deprecated en producción
- *              que ningún caller usaba ya. El código que los llamaba fue
- *              migrado a getDefaultData() directamente.
+ *   onAttached(bullet)           — bullet adquirido del pool o recién creado.
+ *                                  Adquirir recursos, registrar listeners,
+ *                                  capturar posición de spawn.
  *
- * ── API ────────────────────────────────────────────────────────────────────
+ *   onUpdate(bullet)             — cada frame mientras el bullet está vivo.
  *
- *   getDefaultData()     — datos de referencia de este tipo de proyectil.
- *                          ProjectileData es un record inmutable.
- *   getDefaultMovement() — estrategia de movimiento por defecto.
- *   onUpdate(Bullet)     — lógica por frame (efectos continuos, etc.).
- *   onCollision(Bullet, GameObjects) — reacción al impacto con cualquier objeto.
+ *   onCollision(bullet, other)   — al impactar un objeto del mundo.
  *
- * ── EJEMPLO DE IMPLEMENTACIÓN ────────────────────────────────────────────
+ *   onExpire(bullet, ctx)        — al agotar lifeTime SIN impactar nada.
+ *                                  spawnear fragmentos, efectos de área, etc.
  *
- *   public class BulletFire extends BulletBehavior {
- *       private static final ProjectileData DATA =
- *           ProjectileData.flat(20, 1.0, 12);
+ *   onRelease(bullet)            — SIEMPRE, justo antes de que el bullet sea
+ *                                  reciclado al pool o destruido definitivamente.
+ *                                  Liberar recursos: cancelar listeners,
+ *                                  limpiar colecciones, liberar referencias.
+ *                                  GARANTÍA: se invoca exactamente una vez por
+ *                                  ciclo de vida, independientemente de la causa
+ *                                  de muerte (expiración, colisión, kill()).
  *
- *       {@literal @}Override
- *       public ProjectileData getDefaultData() { return DATA; }
+ *   onDetached(bullet)           — SOLO cuando el behavior es REEMPLAZADO en
+ *                                  un bullet VIVO (via ProjectileView.changeBehavior).
+ *                                  NO se llama en muerte normal. NO se llama antes
+ *                                  del pool release — eso es responsabilidad de
+ *                                  onRelease().
  *
- *       {@literal @}Override
- *       public void onCollision(Bullet bullet, GameObjects other) {
- *           if (other instanceof AbstractEntity e) {
- *               e.damage((int) bullet.getDamage());
- *               e.addEffect(new BurningEffect(120));
- *           }
- *           bullet.getBulletLife().kill();
- *       }
- *   }
+ * ── SECUENCIA PARA BULLETS CON POOL ──────────────────────────────────────
+ *
+ *   acquire() → onAttached → onUpdate* → onExpire/onCollision → onRelease
+ *             → [pool.release()] → [pool.acquire()] → onAttached → ...
+ *
+ * ── SECUENCIA PARA BULLETS SIN POOL ──────────────────────────────────────
+ *
+ *   new Bullet() → onAttached → onUpdate* → onExpire/onCollision → onRelease
+ *               → [GC]
+ *
+ * ── COMPORTAMIENTO DE onRelease vs onDetached ─────────────────────────────
+ *
+ *   onRelease  → cleanup final. Liberar todo. Siempre garantizado.
+ *   onDetached → notificación de reemplazo en vida. Para transición de control.
+ *
+ *   Un behavior que registra un listener en onAttached DEBE cancelarlo en
+ *   onRelease. Si usa onDetached para eso, falla en muerte normal (sin reemplazo).
+ *
+ * ── STATELESS vs STATEFUL ────────────────────────────────────────────────
+ *
+ *   isBehaviorStateless() == true  → el pool puede reutilizar sin resetear.
+ *   isBehaviorStateless() == false → el pool llama resetBehaviorState() antes.
+ *
+ *   resetBehaviorState() debe dejar el behavior en el mismo estado que una
+ *   instancia recién creada — no debe necesitar onRelease() para eso.
+ *   onRelease() es para limpieza de recursos EXTERNOS (listeners, refs).
+ *   resetBehaviorState() es para limpieza de estado INTERNO (contadores).
  */
 public abstract class BulletBehavior {
 
@@ -59,16 +81,12 @@ public abstract class BulletBehavior {
     /**
      * Datos de configuración por defecto de este tipo de proyectil.
      *
-     * Sobreescribir en cada BulletBehavior concreto con los valores
-     * apropiados para ese tipo. BulletFactory lee estos datos cuando
-     * crea proyectiles desde un BulletType.
-     *
-     * ModifiedWeapon calcula sus propios datos finales (WeaponStats + amuletos)
-     * y los pasa directamente a BulletFactory — en ese flujo estos defaults
-     * solo se usan para lifeTime, width/height y assetKey.
+     * ProjectileBlueprint.from() lee estos datos para construir la definición
+     * inicial antes de aplicar modifiers. BulletFactory ya NO lee estos datos
+     * directamente — los recibe resueltos en el Blueprint.
      *
      * Default base: 10 daño, x1 speed, 10 ticks, sin gravedad, 8×8px.
-     * Las subclases deben sobreescribir esto con sus valores reales.
+     * Sobreescribir con los valores reales del behavior.
      */
     public ProjectileData getDefaultData() {
         return ProjectileData.flat(10, 1.0, 10);
@@ -77,44 +95,144 @@ public abstract class BulletBehavior {
     /**
      * Estrategia de movimiento por defecto de este tipo de proyectil.
      *
-     * Default: LinearMovement.INSTANCE (movimiento recto, velocidad constante).
-     * Sobreescribir para tipos con movimiento especial (gravedad, homing, orbital…).
+     * Default: LinearMovement.INSTANCE (velocidad constante, sin efectos).
      *
-     * Si getDefaultData().gravityValue() != 0, considerar retornar un
-     * GravityMovement con ese valor aquí — BulletFactory lo usa automáticamente.
+     * Sobreescribir para tipos con movimiento intrínseco (gravedad, homing, orbital…).
      */
     public ProjectileMovement getDefaultMovement() {
         return LinearMovement.INSTANCE;
     }
 
-    // ── Comportamiento ────────────────────────────────────────────────────
+    // ── Ciclo de vida del behavior ────────────────────────────────────────
+
+    /**
+     * Llamado cuando este behavior es asignado a un proyectil.
+     *
+     * Se invoca en dos situaciones:
+     *   1. Al construir el Bullet (el behavior inicial recibe onAttached).
+     *   2. Al adquirir del pool (pool.acquire() llama resetState que llama onAttached).
+     *   3. Cuando ProjectileView.changeBehavior() reemplaza el behavior en vida.
+     *
+     * Usar para: capturar posición de spawn, registrar listeners, adquirir refs.
+     *
+     * GARANTÍA: el proyectil ya tiene posición, velocidad y collider configurados.
+     * onDetached() del behavior anterior ya fue llamado (en caso de reemplazo).
+     *
+     * Default: sin efecto.
+     */
+    public void onAttached(Bullet bullet) {}
+
+    /**
+     * Llamado cuando este behavior es REEMPLAZADO en un proyectil VIVO.
+     *
+     * Se invoca SOLO cuando ProjectileView.changeBehavior() reemplaza este
+     * behavior mientras el proyectil sigue activo. NO se invoca en muerte normal.
+     *
+     * Para liberación de recursos en muerte normal (expiración, colisión, kill()),
+     * usar {@link #onRelease(Bullet)} que siempre está garantizado.
+     *
+     * Default: sin efecto.
+     */
+    public void onDetached(Bullet bullet) {}
+
+    /**
+     * Llamado justo antes de que el proyectil sea reciclado al pool o destruido.
+     *
+     * ── GARANTÍA DE CLEANUP ───────────────────────────────────────────────
+     *
+     * onRelease() se invoca EXACTAMENTE UNA VEZ por ciclo de vida, independientemente
+     * de cómo murió el proyectil:
+     *   - expiración por tiempo (lifeTime agotado)
+     *   - muerte por colisión (kill() desde onCollision)
+     *   - muerte manual (kill() desde exterior)
+     *   - pool release (PooledBullet antes de volver al pool)
+     *
+     * Es el único hook con esa garantía. No depender de onExpire ni onDetached
+     * para liberación de recursos — esos no están garantizados en todos los paths.
+     *
+     * USO CORRECTO:
+     *   - Cancelar Subscriptions registradas en onAttached.
+     *   - Limpiar Sets de referencias (hitEntities, etc.).
+     *   - Liberar referencias a entidades externas.
+     *   - Cualquier limpieza que DEBE ocurrir al final del lifecycle.
+     *
+     * NO usar para: lógica de juego (eso es onExpire/onCollision).
+     *
+     * Default: sin efecto. Sobreescribir cuando se necesite cleanup.
+     *
+     * @param bullet el proyectil que está siendo liberado
+     */
+    public void onRelease(Bullet bullet) {}
+
+    // ── Comportamiento de frame ───────────────────────────────────────────
 
     /**
      * Lógica de actualización por frame del proyectil.
      *
-     * Llamado desde Bullet.update() cada frame que el proyectil está vivo,
-     * ANTES de que ProjectileMovement.tick() mueva el proyectil.
-     *
-     * Usar para efectos continuos: rastro de partículas, cambio de color,
-     * emisión de luz, timers internos del comportamiento, etc.
-     *
-     * Default: sin efecto. Sobreescribir solo cuando se necesite.
+     * Llamado desde Bullet.update() cada frame que el proyectil está vivo.
+     * Default: sin efecto.
      */
     public void onUpdate(Bullet bullet) {}
 
+    // ── Comportamiento de colisión ────────────────────────────────────────
+
     /**
      * Reacción al contacto con cualquier objeto del mundo.
-     *
-     * Las subclases usan instanceof para distinguir tipos cuando sea necesario.
-     * Si no se sobreescribe, no hay reacción al impactar.
-     *
-     * Patrones típicos:
-     *   if (other instanceof AbstractEntity e) { e.damage(...); }
-     *   bullet.getBulletLife().kill();    // destruir el proyectil
-     *   bullet.getBulletLife().revive();  // ignorar el impacto (piercing)
      *
      * @param bullet el proyectil que colisionó
      * @param other  el objeto con el que colisionó
      */
     public void onCollision(Bullet bullet, GameObjects other) {}
+
+    // ── Comportamiento de expiración ──────────────────────────────────────
+
+    /**
+     * Reacción cuando el proyectil agota su tiempo de vida sin impactar nada.
+     *
+     * Se llama ANTES del evento OnProjectileExpire del bus.
+     * El behavior puede spawnear proyectiles secundarios via ProjectileContext.
+     *
+     * Diferencia con onCollision:
+     *   onCollision → el proyectil impacta un objeto.
+     *   onExpire    → el proyectil agota su lifeTime sin impactar.
+     *
+     * NOTA: onRelease() se llamará DESPUÉS de onExpire(). No duplicar cleanup.
+     *
+     * Default: sin efecto.
+     *
+     * @param bullet el proyectil que expiró
+     * @param ctx    contexto de interacción con el mundo
+     */
+    public void onExpire(Bullet bullet, ProjectileContext ctx) {}
+
+    // ── Contrato de estado para pool ──────────────────────────────────────
+
+    /**
+     * Indica si este behavior NO tiene estado interno mutable.
+     *
+     * true  → el pool puede reutilizar esta instancia sin resetear su estado.
+     * false → el pool llama resetBehaviorState() antes de reutilizar.
+     *
+     * IMPORTANTE: isBehaviorStateless() aplica al ESTADO INTERNO del behavior
+     * (contadores, flags, colecciones). Los recursos EXTERNOS (listeners
+     * registrados, referencias capturadas) siempre deben limpiarse en onRelease(),
+     * independientemente de si el behavior es stateless.
+     *
+     * Default: true.
+     */
+    public boolean isBehaviorStateless() {
+        return true;
+    }
+
+    /**
+     * Resetea el estado interno del behavior para reutilización por el pool.
+     *
+     * Solo se llama si isBehaviorStateless() == false.
+     * resetBehaviorState() resetea contadores y estado interno.
+     * onRelease() libera recursos externos.
+     * Son responsabilidades distintas — no mezclarlas.
+     *
+     * Default: no-op.
+     */
+    public void resetBehaviorState() {}
 }

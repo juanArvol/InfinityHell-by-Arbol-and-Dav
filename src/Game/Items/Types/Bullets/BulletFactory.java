@@ -1,136 +1,214 @@
 package Game.Items.Types.Bullets;
 
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileEvents;
+import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
+import Game.Items.Types.Bullets.Flyweight.BulletFlyweightCache;
+import Game.Items.Types.Bullets.Movement.CompositeMovement;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
-import Sprites.Entity.Bullets.BulletAssets;
-import java.awt.image.BufferedImage;
 
 /**
- * Factory de proyectiles.
+ * Factory de proyectiles — única autoridad de construcción de instancias Bullet.
  *
- * ── HRFC — Projectile System Refactor ────────────────────────────────────
+ * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
- * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ *   1. Resolver el BulletFlyweight del cache (recursos compartidos del tipo).
+ *   2. Calcular velocidad X/Y desde speed escalar y dirección normalizada.
+ *   3. Construir la instancia Bullet con el Flyweight ya resuelto.
+ *   4. Emitir OnProjectileSpawn cuando corresponde.
  *
- *   ASSET RESOLUTION por ProjectileData.assetKey():
- *     Si data.assetKey() != null, la factory busca el asset por clave.
- *     Si null, usa el sprite por defecto de BulletAssets.
- *     Cada tipo de proyectil puede tener su propio sprite sin modificar
- *     la factory.
+ * ── LO QUE NO HACE ────────────────────────────────────────────────────────
  *
- *   GRAVITY desde ProjectileData.gravityValue():
- *     Si data.gravityValue() != 0, la factory compone el movement del
- *     behavior con un GravityMovement. Esto garantiza que los behaviors
- *     que declaran gravityValue > 0 en ProjectileData la tengan activa,
- *     incluso si getDefaultMovement() retorna LinearMovement.
+ *   × No decide si una instancia debe reutilizarse (eso es ProjectilePool).
+ *   × No gestiona disponibilidad ni reciclaje de instancias.
+ *   × No resuelve assets directamente (delega a BulletFlyweightCache).
+ *   × No conoce Player, Enemy ni ninguna entidad concreta.
+ *   × No contiene if/switch por tipo de proyectil.
  *
- *     Si getDefaultMovement() ya incluye GravityMovement (como BulletJump),
- *     no se añade doble gravedad — BulletJump declara su propio
- *     getDefaultMovement() que retorna GravityMovement y NO declara
- *     gravityValue en ProjectileData (usa 0.0).
+ * ── DOS RUTAS DE CONSTRUCCIÓN ─────────────────────────────────────────────
  *
- *     Regla: usar gravityValue en ProjectileData solo si getDefaultMovement()
- *     no incluye ya una GravityMovement. Si el behavior sobreescribe
- *     getDefaultMovement() con GravityMovement, poner gravityValue=0.0.
+ * build()        — ruta pública. Construye y emite OnProjectileSpawn.
+ *                  Usar desde ModifiedWeapon y cualquier sistema que construya
+ *                  proyectiles sin pool.
  *
- * ── MÉTODOS ───────────────────────────────────────────────────────────────
+ * buildForPool() — ruta del pool (package-private). Construye SIN emitir
+ *                  OnProjectileSpawn. El pool controla cuándo y con qué owner
+ *                  se emite el evento, tanto para instancias nuevas como para
+ *                  instancias reutilizadas. Un único punto de emisión en acquire().
  *
- *   createBullet(...)             — ruta directa desde BulletType (sin amuletos)
- *   createBulletWithBehavior(...) — ruta desde ModifiedWeapon (con amuletos)
- *   getStats(...)                 — preview de stats sin crear Bullet (para UI)
+ * ── RELACIÓN FACTORY ↔ POOL ───────────────────────────────────────────────
+ *
+ *   Pool.acquire()
+ *       ├── instancia compatible → resetState()
+ *       └── no disponible → BulletFactory.buildForPool() → Bullet nueva
+ *                               → pool.assignPool(bullet)
+ *                               → pool.emit OnProjectileSpawn(bullet, owner)
+ *
+ *   La Factory no sabe si la Bullet irá a un pool. El Pool no sabe cómo
+ *   construir una Bullet. Responsabilidades inequívocas.
+ *
+ * ── FLYWEIGHT ─────────────────────────────────────────────────────────────
+ *
+ *   BulletFlyweightCache.INSTANCE.get(blueprint) devuelve el Flyweight
+ *   compartido para este tipo (assetKey + profile + dimensiones).
+ *   La resolución del asset ocurre solo la primera vez para cada tipo.
+ *   Con N Bullets del mismo tipo activas: 1 BulletFlyweight, no N.
  */
-public class BulletFactory {
+public final class BulletFactory {
 
-    // ── Creación desde BulletType ─────────────────────────────────────────
+    private BulletFactory() {}
+
+    // ── Ruta pública — construcción con evento ────────────────────────────
 
     /**
-     * Crea un proyectil desde un BulletType con sus valores por defecto.
-     * ModifiedWeapon NO usa este método — tiene su propio pipeline con amuletos.
+     * Construye un Bullet y emite OnProjectileSpawn con owner = null.
+     *
+     * Ruta estándar para proyectiles que no pasan por un pool.
+     *
+     * @param blueprint definición completa y resuelta del proyectil
+     * @param position  posición de spawn en coordenadas del mundo
+     * @param direction dirección normalizada de vuelo
+     * @return Bullet listo para añadir al mundo
      */
-    public static Bullet createBullet(
-            double     startX,
-            double     startY,
-            Vector2D   direction,
-            BulletType type,
-            double     weaponBaseSpeed,
-            double     damage
-    ) {
-        BulletBehavior behavior = type.create();
-        ProjectileData data     = behavior.getDefaultData();
-
-        double finalSpeed  = weaponBaseSpeed * data.speedFactor();
-        double finalDamage = damage + data.damage();
-
-        return build(startX, startY, direction, behavior, finalSpeed, finalDamage, data);
+    public static Bullet build(ProjectileBlueprint blueprint,
+                               Vector2D position,
+                               Vector2D direction) {
+        return build(blueprint, position, direction, null);
     }
 
-    // ── Creación desde ModifiedWeapon (valores finales ya calculados) ─────
+    /**
+     * Construye un Bullet, emite OnProjectileSpawn propagando el owner.
+     *
+     * owner es Object — la Factory es ignorante de la jerarquía de entidades.
+     * owner puede ser null: proyectil sin dueño rastreable.
+     *
+     * @param blueprint definición completa y resuelta del proyectil
+     * @param position  posición de spawn en coordenadas del mundo
+     * @param direction dirección normalizada de vuelo
+     * @param owner     el objeto que originó el disparo (puede ser null)
+     * @return Bullet listo para añadir al mundo
+     */
+    public static Bullet build(ProjectileBlueprint blueprint,
+                               Vector2D position,
+                               Vector2D direction,
+                               Object owner) {
+        Bullet bullet = construct(blueprint, position, direction);
+        emitSpawn(bullet, owner);
+        return bullet;
+    }
+
+    // ── Ruta del pool — construcción sin evento ───────────────────────────
 
     /**
-     * Crea un proyectil con behavior compuesto y valores finales calculados.
-     * Usado por ModifiedWeapon después de aplicar amuletos sobre WeaponStats.
+     * Construye un Bullet SIN emitir OnProjectileSpawn.
+     *
+     * Usar exclusivamente desde ProjectilePool.acquire() cuando no hay
+     * instancia compatible disponible. El pool emite el evento después de
+     * inyectar el ownerPool y el projectileContext, con el owner correcto
+     * y en el mismo punto que las reutilizaciones — un único punto de emisión.
+     *
+     * El nombre "buildForPool" documenta explícitamente que esta ruta omite
+     * el evento. No llamar desde código que no sea ProjectilePool.
+     *
+     * @param blueprint definición completa y resuelta del proyectil
+     * @param position  posición de spawn en coordenadas del mundo
+     * @param direction dirección normalizada de vuelo
+     * @return Bullet nueva, sin evento emitido, sin ownerPool asignado
      */
-    public static Bullet createBulletWithBehavior(
-            double         startX,
-            double         startY,
-            Vector2D       direction,
-            BulletBehavior behavior,
-            double         finalSpeed,
-            double         finalDamage
-    ) {
-        ProjectileData data = behavior.getDefaultData();
-        return build(startX, startY, direction, behavior, finalSpeed, finalDamage, data);
+    public static Bullet buildForPool(ProjectileBlueprint blueprint,
+                                      Vector2D position,
+                                      Vector2D direction) {
+        return construct(blueprint, position, direction);
     }
 
     // ── Stats para UI (sin instanciar Bullet) ────────────────────────────
 
     /**
-     * Calcula los BulletStats sin crear un Bullet.
-     * Útil para tooltips y previews en CrossHairHUD.
+     * Calcula BulletStats desde un ProjectileBlueprint sin crear un Bullet.
+     * Usado por CrossHairHUD y cualquier sistema de preview.
+     *
+     * hasGravity se infiere inspeccionando recursivamente el árbol de movimiento.
+     *
+     * @param blueprint definición del proyectil
+     * @return BulletStats para presentación en UI
      */
-    public static BulletStats getStats(
-            BulletType type,
-            double weaponBaseSpeed,
-            double weaponDamageBonus
-    ) {
-        BulletBehavior behavior = type.create();
-        ProjectileData data     = behavior.getDefaultData();
-        double finalSpeed  = weaponBaseSpeed * data.speedFactor();
-        double finalDamage = weaponDamageBonus + data.damage();
-        return new BulletStats(finalSpeed, finalDamage, data.lifeTime(), data.hasGravity());
+    public static BulletStats statsFrom(ProjectileBlueprint blueprint) {
+        boolean hasGravity = containsGravity(blueprint.movement());
+        return new BulletStats(
+                blueprint.speed(),
+                blueprint.damage(),
+                blueprint.lifeTime(),
+                hasGravity
+        );
     }
 
-    // ── Builder interno ───────────────────────────────────────────────────
+    // ── Construcción interna compartida ──────────────────────────────────
 
-    private static Bullet build(
-            double         startX,
-            double         startY,
-            Vector2D       direction,
-            BulletBehavior behavior,
-            double         speed,
-            double         damage,
-            ProjectileData data
-    ) {
-        Vector2D spawn  = new Vector2D(startX, startY);
-        double   xSpeed = direction.getX() * speed;
-        double   ySpeed = direction.getY() * speed;
+    /**
+     * Núcleo de construcción compartido entre build() y buildForPool().
+     *
+     * Resuelve el Flyweight, calcula la velocidad vectorial y construye
+     * la instancia Bullet. No emite eventos — eso es responsabilidad del
+     * caller según si usa la ruta pública o la ruta del pool.
+     */
+    private static Bullet construct(ProjectileBlueprint blueprint,
+                                    Vector2D position,
+                                    Vector2D direction) {
+        BulletFlyweight flyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
 
-        // ── Resolver movimiento ───────────────────────────────────────────
-        ProjectileMovement movement = behavior.getDefaultMovement();
-        if (data.hasGravity() && movement.isStateless()) {
-            movement = movement.andThen(new GravityMovement(data.gravityValue()));
+        double xSpeed = direction.getX() * blueprint.speed();
+        double ySpeed = direction.getY() * blueprint.speed();
+
+        return new Bullet(
+                position,
+                flyweight,
+                blueprint.behavior(),
+                blueprint.movement(),
+                xSpeed,
+                ySpeed,
+                blueprint.lifeTime(),
+                blueprint.damage()
+        );
+    }
+
+    // ── Emisión de evento (separada para reutilizar desde el pool) ────────
+
+    /**
+     * Emite OnProjectileSpawn si hay suscriptores.
+     *
+     * Separado de construct() para que ProjectilePool pueda emitir el evento
+     * una vez, en el mismo punto, tanto para instancias nuevas como para
+     * instancias reutilizadas — garantizando que el owner es siempre el correcto.
+     *
+     * Llamar desde ProjectilePool.acquire() después de inyectar ownerPool
+     * y projectileContext. No llamar en otros contextos.
+     */
+    public static void emitSpawn(Bullet bullet, Object owner) {
+        if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileSpawn.class)) {
+            GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileSpawn(bullet, owner));
         }
+    }
 
-        // ── Resolver sprite ───────────────────────────────────────────────
-        // BulletAssets.balaHandle es inicializado por Assets.init() en GameOrquester.
-        // Si assetKey está definido en ProjectileData se usará en el futuro
-        // para sprites específicos por tipo — por ahora todos usan el default.
-        BufferedImage texture = BulletAssets.balaHandle.resolveDefault().getImage();
+    // ── Utilidad interna ──────────────────────────────────────────────────
 
-        return new Bullet(spawn, texture, behavior, movement,
-                          xSpeed, ySpeed, data.lifeTime(), damage,
-                          data.width(), data.height());
+    /**
+     * Determina si un ProjectileMovement incluye gravedad real.
+     *
+     * Inspección recursiva:
+     *   - GravityMovement directo → true.
+     *   - CompositeMovement → inspecciona cada componente recursivamente.
+     *   - Cualquier otro movement → false.
+     */
+    static boolean containsGravity(ProjectileMovement movement) {
+        if (movement instanceof GravityMovement) return true;
+        if (movement instanceof CompositeMovement composite) {
+            for (ProjectileMovement component : composite.getComponents()) {
+                if (containsGravity(component)) return true;
+            }
+        }
+        return false;
     }
 }

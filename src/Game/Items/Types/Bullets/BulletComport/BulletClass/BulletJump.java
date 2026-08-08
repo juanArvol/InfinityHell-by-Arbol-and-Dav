@@ -2,10 +2,10 @@ package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
 import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
-import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
-import Game.Items.Types.Bullets.ProjectileData;
 import Game.Items.Types.Bullets.ProjectileMovement;
 
 /**
@@ -21,14 +21,16 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  */
 public class BulletJump extends BulletBehavior {
 
-    // gravityValue=1.0 activa la gravedad (> 0 implica gravedad activa)
+    // La gravedad es intrínseca a este behavior y se declara en getDefaultMovement().
+    // gravityValue = 0.0 en ProjectileData — la fuente de verdad es GRAVITY abajo,
+    // no un campo de datos. ProjectileBlueprint.from() no añadirá doble gravedad.
     private static final ProjectileData DEFAULT_DATA =
-            new ProjectileData(5, 0.9, 2000, 1.0);
+            ProjectileData.flat(5, 0.9, 60);
 
     private static final ProjectileMovement GRAVITY =
             new GravityMovement(1);
 
-    private static final double JUMP_BOOST    = -20.0;
+    private static final double JUMP_BOOST    = -14.0;
     private static final double FRICTION      = 1.01; // divisor de vx en cada rebote
 
     @Override

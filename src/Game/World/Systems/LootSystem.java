@@ -27,6 +27,29 @@ import java.util.function.Consumer;
  *
  * LootSystem recibe un itemSpawner inyectado → no depende de WorldManager.
  * El que construye LootSystem decide cómo spawnear ítems en el mundo.
+ *
+ * ── LIFECYCLE DE LISTENER ─────────────────────────────────────────────────
+ *
+ * register() retorna una {@link GameEventBus.Subscription} que el caller debe
+ * conservar. Llamar subscription.cancel() cuando el World que owns este
+ * LootSystem se destruye, para liberar la referencia al itemSpawner en el bus.
+ *
+ * Ownership:
+ *   LootSystem tiene lifecycle de World/Scene — no es un singleton de aplicación.
+ *   Su listener en GLOBAL captura itemSpawner, que a su vez puede capturar
+ *   referencias al worldManager. Si no se cancela, esas referencias quedan
+ *   vivas en GLOBAL.listeners impidiendo GC del World destruido.
+ *
+ * Patrón de uso correcto:
+ * <pre>
+ *   // Al crear el World:
+ *   LootSystem loot = new LootSystem(world::addDynamic);
+ *   loot.addEntry("gold", ItemRarity.COMMON, 0.8f, 1, 3);
+ *   GameEventBus.Subscription lootSub = loot.register();
+ *
+ *   // Al destruir el World:
+ *   lootSub.cancel();
+ * </pre>
  */
 public class LootSystem {
 
@@ -58,14 +81,24 @@ public class LootSystem {
 
     // ── Activación ────────────────────────────────────────────────────────
 
-    /** Registra el handler en el bus de eventos global. */
-    public void register() {
-        GameEventBus.GLOBAL.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
+    /**
+     * Registra el handler en el bus de eventos global.
+     *
+     * @return Subscription que debe conservarse para cancelar el listener
+     *         cuando el World/Scene que owns este LootSystem se destruya.
+     */
+    public GameEventBus.Subscription register() {
+        return GameEventBus.GLOBAL.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
     }
 
-    /** Registra el handler en una instancia específica del bus. */
-    public void register(GameEventBus bus) {
-        bus.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
+    /**
+     * Registra el handler en una instancia específica del bus.
+     *
+     * @param bus bus de eventos donde registrar el listener
+     * @return Subscription para cancelar cuando ya no sea necesario
+     */
+    public GameEventBus.Subscription register(GameEventBus bus) {
+        return bus.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
     }
 
     // ── Handler ───────────────────────────────────────────────────────────

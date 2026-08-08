@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets.Movement;
 
-import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.ProjectileMovement;
 
 /**

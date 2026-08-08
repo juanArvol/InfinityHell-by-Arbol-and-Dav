@@ -1,28 +1,52 @@
 package Game.Items.Types.Bullets;
 
+import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.Events.SpawnProjectileEvent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectilePool;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
  * Registro central de tipos de proyectil identificados por ID string.
  *
- * ── HRFC — Weapon & Projectile System ────────────────────────────────────
+ * ── HRFC — Projectile Construction & Transformation Pipeline ─────────────
  *
- * Resuelve el gap crítico: SpawnProjectileEvent existía con un campo
- * {@code projectileTypeId} ("sans.bone", "fireball", "arrow"), pero no había
- * ningún sistema que lo escuchara ni que supiera qué proyectil instanciar.
+ * ProjectileRegistry conecta un string ID ("sans.bone", "fireball") con una
+ * factory concreta y escucha SpawnProjectileEvent para que cualquier emisor
+ * (Enemy, Boss, Turret, Trap) pueda spawnear proyectiles sin conocer
+ * BulletFactory ni BulletBehavior.
  *
- * ProjectileRegistry conecta el string ID con una factory concreta y registra
- * el listener en GameEventBus para que cualquier emisor (Enemy, Boss, Turret,
- * Trap) pueda spawnear proyectiles sin conocer BulletFactory ni BulletBehavior.
+ * ── LIFECYCLE DE LISTENER ─────────────────────────────────────────────────
  *
- * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ * installListener() registra exactamente UN listener en GameEventBus.GLOBAL y
+ * conserva la Subscription para poder desregistrarlo limpiamente.
+ *
+ * Si se llama installListener() nuevamente (ej: reinicio del mundo), el
+ * listener anterior se cancela antes de instalar el nuevo — nunca se acumulan.
+ *
+ * uninstallListener() cancela el listener explícitamente. Debe llamarse cuando
+ * el World/Scene que owns este registry se destruye.
+ *
+ * shutdown() combina uninstallListener() + reset del estado interno. Es el
+ * punto correcto de limpieza cuando el registry tiene lifecycle de World.
+ *
+ * ── POOL INTEGRADO ────────────────────────────────────────────────────────
+ *
+ * ProjectileRegistry gestiona un ProjectilePool interno. resolve() usa el pool
+ * automáticamente para tipos de proyectil que lo admiten (behavior stateless
+ * o movement ResettableMovement).
+ *
+ * El pool recibe un ProjectileContext inyectado desde el mundo (via setContext)
+ * para que behaviors puedan spawnear proyectiles secundarios en onExpire.
+ *
+ * ── PIPELINE ──────────────────────────────────────────────────────────────
  *
  *   Emisor (Enemy, Boss):
  *     GameEventBus.GLOBAL.post(new SpawnProjectileEvent(
@@ -30,55 +54,53 @@ import java.util.function.Supplier;
  *
  *   ProjectileRegistry escucha SpawnProjectileEvent:
  *     → busca la factory por "sans.bone"
- *     → calcula dirección desde origin→target
- *     → crea el Bullet via BulletFactory
- *     → llama bulletSpawner.accept(bullet) para añadirlo al mundo
+ *     → resuelve dirección origin→target
+ *     → factory produce ProjectileBlueprint
+ *     → pool.acquire(blueprint, origin, direction)  ← vía pool si es posible
+ *     → bulletSpawner.accept(bullet) para añadirlo al mundo
  *
  * ── REGISTRO ──────────────────────────────────────────────────────────────
  *
- * Dos variantes de factory:
+ * Tres variantes de registro:
  *
  *   registerSimple(id, behaviorSupplier)
- *     → para proyectiles que solo necesitan behavior (datos del getDefaultData())
+ *     Para proyectiles que solo necesitan behavior, con dirección origin→target.
+ *     Usa CollisionProfile.ENEMY_BULLET por defecto (proyectiles de enemigos).
+ *
+ *   registerSimple(id, behaviorSupplier, baseSpeed)
+ *     Igual, con velocidad base explícita.
  *
  *   register(id, factory)
- *     → para proyectiles con lógica compleja:
- *         factory recibe (origin, target) y retorna el Bullet final
- *         (puede usar HomingMovement, velocidad custom, etc.)
- *
- * ── CÓMO AÑADIR UN TIPO DE PROYECTIL DE ENEMIGO ──────────────────────────
- *
- *   // En GameWorldBootstrap o en la inicialización de la fase del jefe:
- *   ProjectileRegistry.getInstance().registerSimple(
- *       "sans.bone",
- *       SansBoneBehavior::new
- *   );
- *
- *   // Para proyectiles más complejos con movimiento homing:
- *   ProjectileRegistry.getInstance().register(
- *       "sans.targeted_bone",
- *       (origin, target) -> {
- *           HomingMovement homing = new HomingMovement(() -> playerRef, 90, 8.0);
- *           SansBoneBehavior behavior = new SansBoneBehavior();
- *           Vector2D dir = target.subtract(origin).normalize();
- *           return new Bullet(origin, null, behavior, homing, 4.0, 0.0, 120, 15, 12, 12);
- *       }
- *   );
+ *     Para proyectiles con lógica compleja: factory recibe (origin, target)
+ *     y retorna el Blueprint final. Permite HomingMovement, modifiers custom, etc.
  */
 public final class ProjectileRegistry {
 
     private static ProjectileRegistry instance;
 
     /**
-     * Factory tipada: recibe (origin, target) y retorna un Bullet listo para spawnar.
+     * Factory tipada: recibe (origin, target) y retorna un ProjectileBlueprint.
      * target puede ser null si el emisor no tiene objetivo directo.
      */
     @FunctionalInterface
-    public interface ProjectileFactory {
-        Bullet create(Vector2D origin, Vector2D target);
+    public interface BlueprintFactory {
+        ProjectileBlueprint create(Vector2D origin, Vector2D target);
     }
 
-    private final Map<String, ProjectileFactory> factories = new LinkedHashMap<>();
+    private final Map<String, BlueprintFactory> factories = new LinkedHashMap<>();
+
+    /**
+     * Pool de proyectiles interno.
+     * resolve() lo usa para reutilizar instancias cuando el blueprint lo permite.
+     */
+    private final ProjectilePool pool = new ProjectilePool();
+
+    /**
+     * Subscription activa del listener de SpawnProjectileEvent.
+     * null = no hay listener instalado.
+     * Conservada para permitir cancelación limpia en uninstallListener().
+     */
+    private GameEventBus.Subscription listenerSubscription = null;
 
     private ProjectileRegistry() {}
 
@@ -89,39 +111,67 @@ public final class ProjectileRegistry {
         return instance;
     }
 
-    /** Limpia el registro (útil entre sesiones de juego o tests). */
+    /**
+     * Resetea el singleton.
+     *
+     * IMPORTANTE: llamar uninstallListener() o shutdown() ANTES de reset()
+     * para cancelar el listener en GameEventBus.GLOBAL. Si reset() se llama
+     * directamente sin cancelar el listener, el listener anterior queda
+     * huérfano en GLOBAL reteniendo referencias al registry destruido.
+     *
+     * Preferir shutdown() que hace ambas cosas en orden correcto.
+     *
+     * @deprecated Usar {@link #shutdown()} para limpieza completa con lifecycle correcto.
+     */
+    @Deprecated
     public static void reset() {
+        if (instance != null) {
+            instance.uninstallListener();
+        }
+        instance = null;
+    }
+
+    /**
+     * Cierra el registry limpiamente: cancela el listener del bus y destruye el singleton.
+     *
+     * Llamar cuando el World/Scene que owns este registry se destruye.
+     * Esto garantiza que GameEventBus.GLOBAL no retiene referencias al registry
+     * ni a los bulletSpawners capturados en el listener.
+     */
+    public static void shutdown() {
+        if (instance != null) {
+            instance.uninstallListener();
+            instance.pool.clear();
+        }
         instance = null;
     }
 
     // ── Registro ──────────────────────────────────────────────────────────
 
     /**
-     * Registra un tipo de proyectil con su factory completa.
+     * Registra un tipo de proyectil con su BlueprintFactory completa.
      *
      * La factory recibe (origin, target) donde target puede ser null.
-     * Es responsable de construir el Bullet completo.
+     * Retorna un ProjectileBlueprint listo para pasar a ProjectilePool.acquire()
+     * o BulletFactory.build().
      *
      * @param id      identificador único del tipo ("sans.bone", "fireball", etc.)
-     * @param factory factory que construye el Bullet
+     * @param factory factory que construye el Blueprint
      */
-    public ProjectileRegistry register(String id, ProjectileFactory factory) {
+    public ProjectileRegistry register(String id, BlueprintFactory factory) {
         if (factories.containsKey(id)) {
             throw new IllegalStateException("ProjectileType duplicado: '" + id + "'");
         }
         factories.put(id, factory);
-        return this; // fluent API para encadenar registros
+        return this;
     }
 
     /**
      * Registra un tipo de proyectil simple usando solo un BulletBehavior.
      *
-     * La velocidad, datos y movimiento vienen de getDefaultData() y
-     * getDefaultMovement() del behavior. La dirección se calcula de origin→target.
-     * Si target es null, la dirección por defecto es hacia la derecha (1,0).
-     *
-     * Conveniente para la mayoría de proyectiles de enemigos que solo necesitan
-     * un behavior concreto sin personalización adicional.
+     * La velocidad y datos vienen de getDefaultData() del behavior.
+     * La dirección se calcula de origin→target.
+     * CollisionProfile: ENEMY_BULLET (proyectiles de enemigos por defecto).
      *
      * @param id              identificador único del tipo
      * @param behaviorFactory factory que produce el BulletBehavior
@@ -130,36 +180,17 @@ public final class ProjectileRegistry {
                                              Supplier<BulletBehavior> behaviorFactory) {
         return register(id, (origin, target) -> {
             BulletBehavior behavior = behaviorFactory.get();
-            ProjectileData data     = behavior.getDefaultData();
+            double speed  = behavior.getDefaultData().speedFactor() * 8.0;
+            double damage = behavior.getDefaultData().damage();
 
-            Vector2D dir;
-            if (target != null) {
-                double dx = target.getX() - origin.getX();
-                double dy = target.getY() - origin.getY();
-                double len = Math.hypot(dx, dy);
-                dir = (len > 1e-6)
-                        ? new Vector2D(dx / len, dy / len)
-                        : new Vector2D(1, 0);
-            } else {
-                dir = new Vector2D(1, 0);
-            }
-
-            double speed  = data.speedFactor() * 8.0; // velocidad base por defecto
-            double damage = data.damage();
-
-            return BulletFactory.createBulletWithBehavior(
-                    origin.getX(), origin.getY(),
-                    dir,
-                    behavior,
-                    speed,
-                    damage
-            );
+            return ProjectileBlueprint.from(
+                    behavior, speed, damage,
+                    CollisionProfile.ENEMY_BULLET);
         });
     }
 
     /**
      * Registra un tipo de proyectil con velocidad base explícita.
-     * Usa getDefaultData() y getDefaultMovement() del behavior para todo lo demás.
      *
      * @param id              identificador único del tipo
      * @param behaviorFactory factory del BulletBehavior
@@ -170,34 +201,57 @@ public final class ProjectileRegistry {
                                              double baseSpeed) {
         return register(id, (origin, target) -> {
             BulletBehavior behavior = behaviorFactory.get();
-            ProjectileData data     = behavior.getDefaultData();
+            double speed  = baseSpeed * behavior.getDefaultData().speedFactor();
+            double damage = behavior.getDefaultData().damage();
 
-            Vector2D dir;
-            if (target != null) {
-                double dx = target.getX() - origin.getX();
-                double dy = target.getY() - origin.getY();
-                double len = Math.hypot(dx, dy);
-                dir = (len > 1e-6)
-                        ? new Vector2D(dx / len, dy / len)
-                        : new Vector2D(1, 0);
-            } else {
-                dir = new Vector2D(1, 0);
-            }
-
-            return BulletFactory.createBulletWithBehavior(
-                    origin.getX(), origin.getY(),
-                    dir,
-                    behavior,
-                    baseSpeed * data.speedFactor(),
-                    data.damage()
-            );
+            return ProjectileBlueprint.from(
+                    behavior, speed, damage,
+                    CollisionProfile.ENEMY_BULLET);
         });
     }
 
     // ── Resolución ────────────────────────────────────────────────────────
 
     /**
-     * Crea un proyectil dado un ID y origen/target.
+     * Crea un proyectil dado un ID, origen/target y propietario del disparo.
+     *
+     * ── RUTA ÚNICA DE CREACIÓN ────────────────────────────────────────────
+     *
+     * Usa el pool interno (pool.acquire) en lugar de BulletFactory.build()
+     * directamente. El pool decide si reutiliza una instancia existente o
+     * crea una nueva, según las propiedades del blueprint (isStateless,
+     * ResettableMovement). El resultado es indistinguible para el llamador.
+     *
+     * Esto garantiza una sola ruta de creación a través del registry — no
+     * existen dos caminos paralelos (pool vs. factory) para el mismo tipo.
+     *
+     * El owner se propaga al evento OnProjectileSpawn para tracking externo.
+     *
+     * @param id     tipo de proyectil registrado
+     * @param origin posición de spawn
+     * @param target posición objetivo (puede ser null)
+     * @param owner  el objeto que disparó el proyectil (puede ser null)
+     * @return Bullet listo para añadir al mundo, o null si el ID no está registrado
+     */
+    public Bullet resolve(String id, Vector2D origin, Vector2D target, Object owner) {
+        BlueprintFactory factory = factories.get(id);
+        if (factory == null) {
+            System.err.println("[ProjectileRegistry] Tipo desconocido: '" + id + "'");
+            return null;
+        }
+
+        ProjectileBlueprint blueprint = factory.create(origin, target);
+        if (blueprint == null) return null;
+
+        Vector2D direction = resolveDirection(origin, target);
+
+        // Usar pool interno — ruta única de creación para proyectiles del registry.
+        // El pool emite OnProjectileSpawn con el owner correcto.
+        return pool.acquire(blueprint, origin, direction, owner);
+    }
+
+    /**
+     * Crea un proyectil sin propietario conocido.
      *
      * @param id     tipo de proyectil registrado
      * @param origin posición de spawn
@@ -205,12 +259,7 @@ public final class ProjectileRegistry {
      * @return Bullet listo para añadir al mundo, o null si el ID no está registrado
      */
     public Bullet resolve(String id, Vector2D origin, Vector2D target) {
-        ProjectileFactory factory = factories.get(id);
-        if (factory == null) {
-            System.err.println("[ProjectileRegistry] Tipo desconocido: '" + id + "'");
-            return null;
-        }
-        return factory.create(origin, target);
+        return resolve(id, origin, target, null);
     }
 
     /** @return true si el ID está registrado */
@@ -219,34 +268,108 @@ public final class ProjectileRegistry {
     }
 
     /** Vista de solo lectura de los IDs registrados. */
-    public Map<String, ProjectileFactory> getAll() {
+    public Map<String, BlueprintFactory> getAll() {
         return Collections.unmodifiableMap(factories);
+    }
+
+    // ── Pool context ──────────────────────────────────────────────────────
+
+    /**
+     * Inyecta el ProjectileContext en el pool interno.
+     *
+     * Llamar desde GameWorldBootstrap después de crear el mundo:
+     *   registry.setProjectileContext(new WorldProjectileContext(worldManager));
+     *
+     * @param context contexto de interacción con el mundo
+     */
+    public void setProjectileContext(Game.Items.Types.Bullets.Definition.ProjectileContext context) {
+        pool.setContext(context);
+    }
+
+    /** Acceso de solo lectura al pool para estadísticas/diagnóstico. */
+    public ProjectilePool getPool() {
+        return pool;
     }
 
     // ── Listener de SpawnProjectileEvent ─────────────────────────────────
 
     /**
-     * Registra el listener de SpawnProjectileEvent en el bus global.
+     * Instala el listener de SpawnProjectileEvent en GameEventBus.GLOBAL.
      *
-     * Cuando un Enemy, Boss o Turret emite un SpawnProjectileEvent, el listener
-     * resuelve el proyectil y lo pasa al bulletSpawner para añadirlo al mundo.
+     * ── LIFECYCLE EXPLÍCITO ───────────────────────────────────────────────
      *
-     * Llamar una vez desde GameWorldBootstrap después de que el world esté
-     * configurado.
+     * Si ya hay un listener instalado, se cancela ANTES de instalar el nuevo.
+     * Esto garantiza que no se acumulan listeners duplicados si installListener()
+     * se llama múltiples veces (ej: reinicio del mundo, reconstrucción del bootstrap).
      *
-     * @param bulletSpawner callback que añade el Bullet al mundo (world::add)
+     * La Subscription queda conservada en this.listenerSubscription.
+     * Para cancelar el listener, llamar uninstallListener() o shutdown().
+     *
+     * @param bulletSpawner callback que añade el Bullet al mundo (world::add,
+     *                      worldManager::addDynamic, etc.)
      */
-    public void installListener(java.util.function.Consumer<Bullet> bulletSpawner) {
-        GameEventBus.GLOBAL.subscribe(SpawnProjectileEvent.class, event -> {
-            Vector2D origin = event.origin();
-            Vector2D target = event.target();
+    public void installListener(Consumer<Bullet> bulletSpawner) {
+        // Cancelar listener anterior si existe — evita duplicados
+        if (listenerSubscription != null && listenerSubscription.isActive()) {
+            listenerSubscription.cancel();
+        }
 
-            if (origin == null) return; // sin origen definido — ignorar
+        listenerSubscription = GameEventBus.GLOBAL.subscribe(
+            SpawnProjectileEvent.class,
+            event -> {
+                Vector2D origin = event.origin();
+                if (origin == null) return;
 
-            Bullet bullet = resolve(event.projectileTypeId(), origin, target);
-            if (bullet != null) {
-                bulletSpawner.accept(bullet);
+                // Propagar sourceEntity como owner del proyectil
+                Bullet bullet = resolve(
+                    event.projectileTypeId(),
+                    origin,
+                    event.target(),
+                    event.sourceEntity()
+                );
+                if (bullet != null) {
+                    bulletSpawner.accept(bullet);
+                }
             }
-        });
+        );
+    }
+
+    /**
+     * Cancela el listener de SpawnProjectileEvent si está instalado.
+     *
+     * Llamar cuando el World/Scene que gestiona este registry se destruye,
+     * para liberar la referencia al bulletSpawner y al registry en GLOBAL.
+     *
+     * Idempotente — puede llamarse aunque no haya listener instalado.
+     */
+    public void uninstallListener() {
+        if (listenerSubscription != null) {
+            listenerSubscription.cancel();
+            listenerSubscription = null;
+        }
+    }
+
+    /**
+     * @return true si hay un listener activo instalado en el bus.
+     */
+    public boolean isListenerInstalled() {
+        return listenerSubscription != null && listenerSubscription.isActive();
+    }
+
+    // ── Utilidad interna ──────────────────────────────────────────────────
+
+    /**
+     * Calcula la dirección normalizada de origin hacia target.
+     * Si target es null o coincide con origin, usa (1, 0) como default.
+     */
+    private static Vector2D resolveDirection(Vector2D origin, Vector2D target) {
+        if (target == null) return new Vector2D(1, 0);
+
+        double dx  = target.getX() - origin.getX();
+        double dy  = target.getY() - origin.getY();
+        double len = Math.hypot(dx, dy);
+        return (len > 1e-6)
+                ? new Vector2D(dx / len, dy / len)
+                : new Vector2D(1, 0);
     }
 }

@@ -2,9 +2,9 @@ package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
 import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
-import Game.Items.Types.Bullets.Bullet;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Items.Types.Bullets.ProjectileData;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.ProjectileData;
 
 /**
  * Proyectil estándar — daña a cualquier AbstractEntity y luego muere.

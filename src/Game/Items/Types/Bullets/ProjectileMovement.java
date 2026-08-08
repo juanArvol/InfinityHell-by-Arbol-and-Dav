@@ -1,5 +1,7 @@
 package Game.Items.Types.Bullets;
 
+import Game.Items.Types.Bullets.Definition.Bullet;
+
 /**
  * Estrategia de movimiento de un proyectil.
  *

@@ -1,14 +1,13 @@
 package Game.Items.Types.Bullets.Movement;
 
-import Game.Items.Types.Bullets.Bullet;
-import Game.Items.Types.Bullets.ProjectileMovement;
+import Game.Items.Types.Bullets.ResettableMovement;
+import Game.Items.Types.Bullets.Definition.Bullet;
 
 /**
  * Movimiento sinusoidal — el proyectil ondula perpendicularmente a su dirección.
  *
- * Añade un componente de velocidad oscilante en el eje Y (o perpendicular
- * a la trayectoria si se extiende con rotación). Produce el efecto "snake"
- * o "wave" visible en muchos bullet-hells.
+ * Añade un componente de velocidad oscilante en el eje Y. Produce el efecto
+ * "snake" o "wave" visible en bullet-hells.
  *
  * Casos de uso:
  *   - Proyectiles serpenteantes de jefes
@@ -24,8 +23,14 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *   ProjectileMovement m = new HomingMovement(target, 60, 7).andThen(
  *       new SinusoidalMovement(2.0, 0.3)
  *   );
+ *
+ * ── Pool ──────────────────────────────────────────────────────────────────
+ *
+ * Implementa ResettableMovement: frameCount puede resetearse a 0, lo que
+ * permite al ProjectilePool reutilizar instancias de proyectiles sinusoidales.
+ * El comportamiento post-reset es idéntico a una instancia recién creada.
  */
-public final class SinusoidalMovement implements ProjectileMovement {
+public final class SinusoidalMovement implements ResettableMovement {
 
     private final double amplitude;
     private final double frequency;
@@ -50,10 +55,20 @@ public final class SinusoidalMovement implements ProjectileMovement {
 
     /**
      * SinusoidalMovement tiene estado interno (frameCount).
-     * NO es seguro compartir una instancia entre proyectiles.
+     * No puede compartirse como singleton — cada proyectil necesita su propia instancia.
+     * El pool puede reutilizar mediante reset().
      */
     @Override
     public boolean isStateless() {
         return false;
+    }
+
+    /**
+     * Resetea el frame counter al estado inicial.
+     * Llamado por ProjectilePool antes de reutilizar el proyectil.
+     */
+    @Override
+    public void reset() {
+        frameCount = 0;
     }
 }

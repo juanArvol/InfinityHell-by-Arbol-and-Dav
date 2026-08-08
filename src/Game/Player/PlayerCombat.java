@@ -2,7 +2,7 @@ package Game.Player;
 
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Items.Types.Bullets.Bullet;
+import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Items.Types.Weapons.WeaponEvents;
 import Game.Items.Types.Weapons.WeaponInventory;

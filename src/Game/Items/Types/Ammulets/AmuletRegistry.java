@@ -3,11 +3,45 @@ package Game.Items.Types.Ammulets;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
-
 import java.util.*;
 
 /**
  * Registro central de amuletos y sistema de aplicación acumulativa.
+ *
+ * ── LIFECYCLE: SINGLETON DE APLICACIÓN CON ESTADO DE SCOPE WORLD ─────────
+ *
+ * AmuletRegistry tiene dos capas de estado con lifecycle diferente:
+ *
+ *   1. DEFINICIONES (scope de aplicación):
+ *      definitions, rarityOverrides — constantes del juego que no cambian
+ *      entre partidas. Sin reset(). Se inicializan UNA VEZ en GameState.init().
+ *
+ *   2. ENTITY PROVIDER (scope de World):
+ *      entityProvider — referencia al proveedor de entidades del mundo activo.
+ *      Debe inyectarse cuando el World arranca (GameWorldBootstrap) y limpiarse
+ *      cuando el World muere (GameWorldBootstrap.shutdown()).
+ *
+ * DECISIÓN ARQUITECTÓNICA PARA LAS DEFINICIONES:
+ *   Los amuletos son constantes del juego — sus efectos y rarezas no cambian
+ *   entre partidas. Por eso definitions no tiene reset(). Si en el futuro se
+ *   necesita recarga en caliente (DLC, modding), implementar un método de
+ *   recarga específico, no un reset general.
+ *
+ * DECISIÓN ARQUITECTÓNICA PARA EL ENTITY PROVIDER:
+ *   AmuletRegistry necesita acceso a entidades vivas para amuletos como
+ *   BounceAmuletWrapper (busca enemigos cercanos al impactar). Este acceso
+ *   se hace via Supplier para no acoplar el registry a WorldManager.
+ *
+ *   El Supplier tiene lifecycle de World: si el World se destruye y el Supplier
+ *   no se limpia, AmuletRegistry retiene una referencia a un WorldManager
+ *   destruido. Por eso GameWorldBootstrap.shutdown() llama:
+ *     AmuletRegistry.setEntityProvider(null);
+ *   Esto restaura el provider a un Supplier vacío seguro (List::of).
+ *
+ * SIN LISTENERS EN GAMEVENTBUS:
+ *   AmuletRegistry no instala listeners en GameEventBus. No necesita
+ *   Subscription ni cleanup del bus. Su única dependencia de scope World
+ *   es el entityProvider, gestionado explícitamente via setter.
  *
  * ── AMULETOS vs ARMAS/BALAS ───────────────────────────────────────────────
  * | Categoría      | Únicos por run | Apilables | Infinitos |
@@ -20,10 +54,12 @@ import java.util.*;
  *
  * ── FLUJO DE USO ─────────────────────────────────────────────────────────
  *  1. GameState.init() → AmuletRegistry.init() + registerDefaults()
- *  2. Loot/tienda → AmuletRegistry.buildOfferPool(count, random)
+ *  2. GameWorldBootstrap → AmuletRegistry.setEntityProvider(worldSupplier)
+ *  3. Loot/tienda → AmuletRegistry.buildOfferPool(count, random)
  *     (no recibe "ya obtenidos" — todos siempre son elegibles)
- *  3. Jugador recoge → PlayerAmulets.add(id)
- *  4. Al disparar → AmuletRegistry.applyAll(playerAmulets, stats, behavior)
+ *  4. Jugador recoge → PlayerAmulets.add(id)
+ *  5. Al disparar → AmuletRegistry.applyAll(playerAmulets, stats, behavior)
+ *  6. Al destruir el World → AmuletRegistry.setEntityProvider(null)
  *
  * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
  * Igual que WeaponRegistry: overrideRarity() permite al diseñador ajustar

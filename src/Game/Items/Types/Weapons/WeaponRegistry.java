@@ -6,6 +6,32 @@ import java.util.*;
 /**
  * Registro central de todas las armas disponibles en el juego.
  *
+ * ── LIFECYCLE: SINGLETON DE APLICACIÓN ───────────────────────────────────
+ *
+ * WeaponRegistry es un singleton de APLICACIÓN, no de partida ni de World.
+ * Vive desde la primera llamada a init() hasta que termina el proceso.
+ *
+ * DECISIÓN ARQUITECTÓNICA:
+ *   Las definiciones de armas (nombre, rareza, factory) son constantes del
+ *   juego — no cambian entre partidas, entre scenes ni entre Worlds.
+ *   Destruir y recrear el registry entre partidas sería un reset sin valor:
+ *   los mismos datos serían registrados nuevamente en el siguiente init().
+ *
+ *   Por eso WeaponRegistry NO tiene reset(). Si en el futuro se necesita
+ *   reconfiguración en caliente (ej: DLC, modding), implementar un método
+ *   de recarga específico, no un reset general.
+ *
+ * OWNERSHIP DE INICIALIZACIÓN:
+ *   GameState.init() llama WeaponRegistry.init() + registerDefaults() UNA VEZ.
+ *   Llamadas adicionales a init() son no-op (if instance == null guard).
+ *   Llamadas adicionales a registerDefaults() lanzarán IllegalStateException
+ *   porque register() detecta IDs duplicados — correcto: falla rápido.
+ *
+ * SIN LIFECYCLE DE WORLD:
+ *   WeaponRegistry no instala listeners en GameEventBus. No retiene referencias
+ *   a WorldManager, Player ni entidades del mundo. No necesita limpiarse
+ *   cuando un World se destruye.
+ *
  * ── DISEÑO ───────────────────────────────────────────────────────────────
  * Equivalente al ItemRegistry pero para armas. Cada arma es única por run:
  * el jugador la obtiene y la tiene permanentemente hasta que termina la run.
@@ -210,11 +236,11 @@ public final class WeaponRegistry {
      *
      * Centralizado aquí para que loot y tienda usen la misma lógica.
      */
-    public static List<Game.Items.Types.Bullets.BulletType> buildBulletOfferPool(
-            Set<Game.Items.Types.Bullets.BulletType> alreadyOwned, int maxCount, Random random) {
+    public static List<Game.Items.Types.Bullets.Definition.BulletType> buildBulletOfferPool(
+            Set<Game.Items.Types.Bullets.Definition.BulletType> alreadyOwned, int maxCount, Random random) {
 
-        List<Game.Items.Types.Bullets.BulletType> candidates = new ArrayList<>();
-        for (Game.Items.Types.Bullets.BulletType bt : Game.Items.Types.Bullets.BulletType.values()) {
+        List<Game.Items.Types.Bullets.Definition.BulletType> candidates = new ArrayList<>();
+        for (Game.Items.Types.Bullets.Definition.BulletType bt : Game.Items.Types.Bullets.Definition.BulletType.values()) {
             if (!alreadyOwned.contains(bt)) {
                 candidates.add(bt);
             }
@@ -225,15 +251,15 @@ public final class WeaponRegistry {
             .mapToInt(bt -> bt.defaultRarity.weight)
             .sum();
 
-        List<Game.Items.Types.Bullets.BulletType> result = new ArrayList<>();
-        Set<Game.Items.Types.Bullets.BulletType> selected = new HashSet<>();
+        List<Game.Items.Types.Bullets.Definition.BulletType> result = new ArrayList<>();
+        Set<Game.Items.Types.Bullets.Definition.BulletType> selected = new HashSet<>();
 
         int attempts = 0;
         while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
             attempts++;
             int roll = random.nextInt(totalWeight);
             int acc  = 0;
-            for (Game.Items.Types.Bullets.BulletType bt : candidates) {
+            for (Game.Items.Types.Bullets.Definition.BulletType bt : candidates) {
                 acc += bt.defaultRarity.weight;
                 if (roll < acc && !selected.contains(bt)) {
                     result.add(bt);
