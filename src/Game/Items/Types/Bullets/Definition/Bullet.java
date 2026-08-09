@@ -247,10 +247,16 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             return;
         }
 
-        movement.tick(this);
-        behavior.onUpdate(this);
-        moveByPhysics();
-        super.update();
+        movement.tick(this);       // actualiza velocity (ej: GravityMovement, Homing)
+        behavior.onUpdate(this);   // lógica de frame del behavior
+
+        // moveByPhysics() ya NO se llama aquí.
+        // CollisionsSystem FASE 1B integra la posición del proyectil con
+        // SweptAABB 2D completo (CCD), garantizando detección correcta de
+        // colisiones y normal del impacto disponible en onCollision().
+        // Llamarlo aquí además de en CollisionsSystem produciría doble movimiento.
+
+        super.update();            // actualiza Components registrados
     }
 
     // ── Colisión ──────────────────────────────────────────────────────────

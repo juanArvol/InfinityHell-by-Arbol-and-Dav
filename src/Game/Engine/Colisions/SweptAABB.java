@@ -14,10 +14,28 @@ import java.awt.Rectangle;
  *              1   = sin colisión este frame.
  *   normalX/Y — normal de la cara impactada. Indica qué eje frenar.
  *
- * ── Por qué se llama por eje (vx o vy = 0) ──────────────────────────────
- * CollisionsSystem resuelve X e Y por separado para evitar ambigüedad
- * en esquinas. Cuando se llama con vy=0, el eje Y se trata como "libre"
- * (tyEntry=-∞, tyExit=+∞) y solo importa el eje X, y viceversa.
+ * ── Dos modos de uso ────────────────────────────────────────────────────
+ *
+ * calculate(moving, target, vx, vy):
+ *   Sweep de un solo eje activo (el otro debe ser 0).
+ *   Usado por objetos SÓLIDOS — CollisionsSystem resuelve X e Y por separado
+ *   para evitar ambigüedad en esquinas al aplicar resolución de movimiento.
+ *   Cuando se llama con vy=0, solo importa el eje X, y viceversa.
+ *
+ * calculate2D(moving, target, vx, vy):
+ *   Sweep simultáneo de ambos ejes. Usado por TRIGGERS (bullets, sensores).
+ *   Los triggers no aplican resolución de movimiento eje-por-eje, por lo que
+ *   el sweep 2D completo es correcto — produce la normal real de la cara
+ *   impactada sin el sesgo de la resolución secuencial.
+ *   Este es el método que detecta tunneling completo (diagonal incluido).
+ *
+ * ── Diseño B — política unificada con respuesta especializada ────────────
+ *
+ * Ambos métodos comparten la misma matemática fundamental. La diferencia
+ * entre SÓLIDO y TRIGGER no está en la detección sino en qué ocurre después:
+ *
+ *   SÓLIDO  → calculate() por eje → resolución de velocidad + ContactState
+ *   TRIGGER → calculate2D()       → setLastContactNormal() + dispatch
  *
  * ── Edge case: penetración preexistente ─────────────────────────────────
  * Si el objeto ya se solapaba con el bloque en el eje perpendicular
@@ -26,9 +44,11 @@ import java.awt.Rectangle;
  * lo que causaba que colisiones reales en el eje activo se ignoraran
  * cuando había penetración mínima en el eje pasivo.
  *
- * Solución: solo el eje ACTIVO (el que tiene velocidad) decide la colisión.
- * Si txEntry < 0 pero el eje activo es X, hay penetración → reportar time=0
- * para que el sistema frene inmediatamente (no atraviesa más).
+ * Solución (calculate): solo el eje ACTIVO decide la colisión.
+ * Si txEntry < 0 pero el eje activo es X, hay penetración → reportar time=0.
+ *
+ * Solución (calculate2D): ambos ejes activos → si hay overlappen AMBOS,
+ * reportar time=0 con la normal del eje de menor penetración.
  */
 public final class SweptAABB {
 
@@ -60,7 +80,8 @@ public final class SweptAABB {
      * Calcula la colisión continua entre un rect en movimiento y uno estático.
      *
      * Diseñado para llamarse con UN solo eje activo a la vez (el otro en 0).
-     * CollisionsSystem resuelve primero en X (vy=0), luego en Y (vx=0).
+     * CollisionsSystem lo usa para objetos SÓLIDOS: primero en X (vy=0),
+     * luego en Y (vx=0). Esto evita ambigüedad en esquinas al resolver movimiento.
      *
      * @param moving   bounds actuales del objeto (antes de moverse este frame)
      * @param target   bounds del obstáculo estático
@@ -81,7 +102,6 @@ public final class SweptAABB {
             xEntry = (target.x + target.width) - moving.x;
             xExit  = target.x - (moving.x + moving.width);
         } else {
-            // Eje X inactivo: sin límite de tiempo en X
             xEntry = Double.NEGATIVE_INFINITY;
             xExit  = Double.POSITIVE_INFINITY;
         }
@@ -95,7 +115,6 @@ public final class SweptAABB {
             yEntry = (target.y + target.height) - moving.y;
             yExit  = target.y - (moving.y + moving.height);
         } else {
-            // Eje Y inactivo: sin límite de tiempo en Y
             yEntry = Double.NEGATIVE_INFINITY;
             yExit  = Double.POSITIVE_INFINITY;
         }
@@ -109,20 +128,11 @@ public final class SweptAABB {
         double entryTime = Math.max(txEntry, tyEntry);
         double exitTime  = Math.min(txExit,  tyExit);
 
-        // Sin superposición de intervalos → sin colisión
         if (entryTime > exitTime || exitTime <= 0.0) return Result.NONE;
-
-        // Colisión fuera del frame actual
         if (entryTime >= 1.0) return Result.NONE;
 
         // ── Edge case: penetración preexistente ───────────────────────────
-        // Si entryTime < 0, el objeto ya estaba solapando el bloque al inicio
-        // del frame (penetración de frames anteriores). En lugar de ignorarlo
-        // (lo que causa que siga atravesando), lo reportamos con time=0 para
-        // que CollisionsSystem frene la velocidad sin mover más en ese eje.
         if (entryTime < 0.0) {
-            // Solo reportar si el eje activo realmente se solapa.
-            // Verificar que hay superposición real en el eje activo:
             boolean overlapX = (moving.x < target.x + target.width) &&
                                (moving.x + moving.width > target.x);
             boolean overlapY = (moving.y < target.y + target.height) &&
@@ -130,7 +140,6 @@ public final class SweptAABB {
 
             if (!overlapX || !overlapY) return Result.NONE;
 
-            // Reportar colisión en tiempo 0: frenar sin mover
             int nx = 0, ny = 0;
             if (vx != 0.0) nx = (vx > 0) ? -1 : 1;
             if (vy != 0.0) ny = (vy > 0) ? -1 : 1;
@@ -146,5 +155,156 @@ public final class SweptAABB {
         }
 
         return new Result(entryTime, normalX, normalY);
+    }
+
+    /**
+     * Calcula la colisión continua entre un rect en movimiento y uno estático,
+     * con ambos ejes activos simultáneamente.
+     *
+     * ── Cuándo usar este método ────────────────────────────────────────────
+     * Usar para TRIGGERS (bullets, sensores, proyectiles) que no necesitan
+     * resolución de movimiento eje-por-eje. El sweep 2D completo garantiza:
+     *   - Detección correcta de tunneling en movimiento diagonal.
+     *   - Normal real de la cara impactada sin sesgo de resolución secuencial.
+     *   - CCD completo: la posición puede estar al otro lado del obstáculo y
+     *     aún así se detecta el impacto en time < 1.
+     *
+     * ── Eje estático con velocidad cero ───────────────────────────────────
+     * Si vx=0 o vy=0, ese eje debe tener overlap real para que haya colisión.
+     * El eje inactivo se trata como "ventana libre" solo si ya hay overlap;
+     * si no hay overlap en ese eje, no puede haber colisión.
+     * Esto evita falsos positivos cuando el objeto está muy separado en Y
+     * pero tiene movimiento solo en X.
+     *
+     * ── Edge case: penetración preexistente ───────────────────────────────
+     * Si entryTime < 0 (ya solapados), se reporta time=0 con la normal del
+     * eje de menor penetración (más probable que sea el eje correcto).
+     *
+     * @param moving   bounds actuales del objeto (antes de moverse este frame)
+     * @param target   bounds del obstáculo estático
+     * @param vx       velocidad horizontal (puede ser 0 si solo hay movimiento vertical)
+     * @param vy       velocidad vertical   (puede ser 0 si solo hay movimiento horizontal)
+     */
+    public static Result calculate2D(Rectangle moving, Rectangle target,
+                                     double vx, double vy) {
+
+        if (vx == 0.0 && vy == 0.0) return Result.NONE;
+
+        // ── Verificación de overlap en ejes inactivos ─────────────────────
+        // Si un eje tiene velocidad cero, el objeto no se acercará ni alejará
+        // en ese eje este frame. Para que haya colisión, debe haber overlap
+        // real en ese eje ya desde el inicio del frame.
+        if (vx == 0.0) {
+            boolean overlapX = (moving.x < target.x + target.width) &&
+                               (moving.x + moving.width > target.x);
+            if (!overlapX) return Result.NONE;
+        }
+        if (vy == 0.0) {
+            boolean overlapY = (moving.y < target.y + target.height) &&
+                               (moving.y + moving.height > target.y);
+            if (!overlapY) return Result.NONE;
+        }
+
+        // ── Distancias de entrada y salida en X ───────────────────────────
+        double txEntry, txExit;
+        if (vx > 0.0) {
+            txEntry = (target.x - (moving.x + moving.width)) / vx;
+            txExit  = ((target.x + target.width) - moving.x) / vx;
+        } else if (vx < 0.0) {
+            txEntry = ((target.x + target.width) - moving.x) / vx;
+            txExit  = (target.x - (moving.x + moving.width)) / vx;
+        } else {
+            // Eje X estático con overlap confirmado arriba
+            txEntry = Double.NEGATIVE_INFINITY;
+            txExit  = Double.POSITIVE_INFINITY;
+        }
+
+        // ── Distancias de entrada y salida en Y ───────────────────────────
+        double tyEntry, tyExit;
+        if (vy > 0.0) {
+            tyEntry = (target.y - (moving.y + moving.height)) / vy;
+            tyExit  = ((target.y + target.height) - moving.y) / vy;
+        } else if (vy < 0.0) {
+            tyEntry = ((target.y + target.height) - moving.y) / vy;
+            tyExit  = (target.y - (moving.y + moving.height)) / vy;
+        } else {
+            // Eje Y estático con overlap confirmado arriba
+            tyEntry = Double.NEGATIVE_INFINITY;
+            tyExit  = Double.POSITIVE_INFINITY;
+        }
+
+        // ── Overlap de intervalos ─────────────────────────────────────────
+        double entryTime = Math.max(txEntry, tyEntry);
+        double exitTime  = Math.min(txExit,  tyExit);
+
+        // Sin superposición de intervalos → sin colisión
+        if (entryTime > exitTime || exitTime <= 0.0) return Result.NONE;
+
+        // Colisión fuera del frame actual
+        if (entryTime >= 1.0) return Result.NONE;
+
+        // ── Edge case: penetración preexistente ───────────────────────────
+        if (entryTime < 0.0) {
+            boolean overlapX = (moving.x < target.x + target.width) &&
+                               (moving.x + moving.width > target.x);
+            boolean overlapY = (moving.y < target.y + target.height) &&
+                               (moving.y + moving.height > target.y);
+
+            if (!overlapX || !overlapY) return Result.NONE;
+
+            double penX = vx != 0 ? Math.min(
+                    (moving.x + moving.width) - target.x,
+                    (target.x + target.width) - moving.x
+            ) : Double.MAX_VALUE;
+            double penY = vy != 0 ? Math.min(
+                    (moving.y + moving.height) - target.y,
+                    (target.y + target.height) - moving.y
+            ) : Double.MAX_VALUE;
+
+            int nx = 0, ny = 0;
+            if (penX <= penY && vx != 0.0) {
+                nx = (vx > 0) ? -1 : 1;
+            } else if (vy != 0.0) {
+                ny = (vy > 0) ? -1 : 1;
+            } else if (vx != 0.0) {
+                nx = (vx > 0) ? -1 : 1;
+            }
+            return new Result(0.0, nx, ny);
+        }
+
+        // ── Normal: el eje que entró ÚLTIMO determina la cara impactada ───
+        int normalX = 0, normalY = 0;
+        if (txEntry >= tyEntry) {
+            normalX = (vx > 0.0) ? -1 : 1;
+        } else {
+            normalY = (vy > 0.0) ? -1 : 1;
+        }
+
+        return new Result(entryTime, normalX, normalY);
+    }
+
+    /**
+     * Calcula el bounding box del swept path de un rect con velocidad (vx, vy).
+     *
+     * El swept AABB es el AABB que contiene todas las posiciones que el objeto
+     * puede ocupar durante el movimiento completo de un frame. Se usa como
+     * broad phase: cualquier obstáculo que NO intersecte con este bounds
+     * es imposible que sea impactado por el objeto en este frame.
+     *
+     * @param bounds  bounds actuales del objeto en movimiento
+     * @param vx      velocidad horizontal del frame
+     * @param vy      velocidad vertical del frame
+     * @return Rectangle que envuelve el path completo del frame
+     */
+    public static Rectangle sweptBounds(Rectangle bounds, double vx, double vy) {
+        int x = bounds.x, y = bounds.y;
+        int w = bounds.width, h = bounds.height;
+
+        int newX = (int)(vx < 0 ? x + vx : x);
+        int newY = (int)(vy < 0 ? y + vy : y);
+        int newW = (int)(w + Math.abs(vx)) + 1;
+        int newH = (int)(h + Math.abs(vy)) + 1;
+
+        return new Rectangle(newX, newY, newW, newH);
     }
 }
