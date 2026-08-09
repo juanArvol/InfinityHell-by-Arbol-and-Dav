@@ -1,50 +1,63 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
-import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
-import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.Entity.Components.SurfaceComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Engine.GameObjects;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
-import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 /**
- * FIX: Se agregaron getAirControl() y getAccelScale() que faltaban tras la
- * refactorización de SurfaceMaterial de clase a interface con 4 métodos.
- * Su ausencia causaba AbstractMethodError/crash al colisionar con obstáculos.
+ * Obstáculo estático del mundo.
+ *
+ * ── HRFC — World Objects extensibles ─────────────────────────────────────
+ *
+ * @deprecated Usar {@link WorldObject} directamente.
+ *
+ * Obstacle es ahora un alias de conveniencia sobre WorldObject.
+ * Se mantiene para no romper {@link Game.World.Generator.Layer.Objects.ObstacleLayer}
+ * ni {@link WorldObjectFactory} durante la transición.
+ *
+ * DIFERENCIA CON BlockWorld (pre-HRFC):
+ *   Antes: Obstacle recibía coordenadas (int x, int y) en lugar de Vector2D.
+ *          Esa diferencia de firma era la única razón por la que existían
+ *          dos clases para el mismo concepto.
+ *   Ahora: Ambos son WorldObject. Obstacle adapta la firma legacy.
+ *
+ * MIGRACIÓN:
+ *
+ *   // Antes
+ *   new Obstacle(x, y, w, h, texture)
+ *   new Obstacle(x, y, w, h, texture, SurfaceMaterial.ICE)
+ *
+ *   // Después
+ *   new WorldObject(new Vector2D(x, y), texture, w, h)
+ *       .withDefaultSurface()
+ *
+ *   new WorldObject(new Vector2D(x, y), texture, w, h)
+ *       .withSurface(SurfaceMaterial.ICE)
  */
-public class Obstacle extends GameObjects implements SurfaceMaterial {
+@Deprecated(forRemoval = true)
+public class Obstacle extends WorldObject {
 
-    private final SurfaceMaterial material;
-
+    /**
+     * Constructor de compatibilidad — coordenadas enteras, material por defecto.
+     *
+     * @deprecated Usar {@code new WorldObject(new Vector2D(x, y), texture, w, h).withDefaultSurface()}
+     */
+    @Deprecated(forRemoval = true)
     public Obstacle(int x, int y, int width, int height, BufferedImage texture) {
         this(x, y, width, height, texture, SurfaceMaterial.DEFAULT);
     }
 
+    /**
+     * Constructor de compatibilidad — coordenadas enteras, material configurable.
+     *
+     * @deprecated Usar {@code new WorldObject(new Vector2D(x, y), texture, w, h).withSurface(material)}
+     */
+    @Deprecated(forRemoval = true)
     public Obstacle(int x, int y, int width, int height,
                     BufferedImage texture, SurfaceMaterial material) {
-
-        this.material = material;
-        getTransform().setPosition(new Vector2D(x, y));
-
-        ColliderComponent collider = new ColliderComponent(width, height, CollisionProfile.WORLD);
-        addComponent(collider);
-
-        addComponent(new HitBoxComponent(Color.RED));
-
-        if (texture != null) {
-            addComponent(new SpriteRendererComponent(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
-        }
+        super(new Vector2D(x, y), texture, width, height, CollisionProfile.WORLD);
+        addComponent(new SurfaceComponent(material));
     }
-
-    @Override public double getFriction()   { return material.getFriction();   }
-    @Override public double getDrag()       { return material.getDrag();       }
-    @Override public double getAirControl() { return material.getAirControl(); }  // FIX: faltaba
-    @Override public double getAccelScale() { return material.getAccelScale(); }  // FIX: faltaba
-
-    @Override
-    public void update() { super.update(); }
 }

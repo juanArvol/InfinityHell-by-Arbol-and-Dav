@@ -57,7 +57,33 @@ public final class Layer {
     public static final int BULLET = 8;   // bit 3
 
     /** Objetos recogibles (ítems, monedas, loot). */
-    public static final int ITEM   = 16;  // bit 4
+    public static final int ITEM         = 16;  // bit 4
+
+    /**
+     * Objetos sólidos dinámicos del mundo (cajas, barriles, plataformas móviles).
+     *
+     * ── HRFC — World Objects extensibles ─────────────────────────────────
+     *
+     * DISTINCIÓN respecto a WORLD:
+     *   WORLD         → terreno estático (BlockWorld, suelo, paredes fijas).
+     *                   No se mueve. Nunca tiene Physics2DComponent.
+     *                   CollisionsSystem lo trata como superficie inerte.
+     *
+     *   WORLD_DYNAMIC → objeto del mundo que puede moverse o ser empujado.
+     *                   Puede tener Physics2DComponent y PushableComponent.
+     *                   CollisionsSystem lo mueve en FASE 1 si tiene física.
+     *                   Puede además proveer SurfaceComponent.
+     *
+     * Esta distinción permite que:
+     *   - Los sistemas de física separen terreno (inerte) de objeto dinámico (activo).
+     *   - CollisionProfile filtre correctamente: un Crate choca con WORLD y PLAYER
+     *     pero su layer WORLD_DYNAMIC no lo confunde con terreno estático.
+     *   - Futuras mecánicas (plataformas móviles, cajas apilables) usen WORLD_DYNAMIC
+     *     sin modificar el comportamiento de WORLD estático.
+     *
+     * Uso: WorldObject con Physics2DComponent y/o PushableComponent.
+     */
+    public static final int WORLD_DYNAMIC = 32;  // bit 5
 
     // ── Base para capas de gameplay definidas fuera del Engine ────────────
 
@@ -65,16 +91,19 @@ public final class Layer {
      * Primer bit disponible para capas definidas por el Game.
      *
      * Los módulos del Game definen sus capas a partir de este valor,
-     * garantizando que no colisionan con las capas base del Engine:
+     * garantizando que no colisionan con las capas base del Engine.
      *
-     *   int TRAP   = Layer.GAME_LAYER_BASE;       // 32
-     *   int NPC    = Layer.GAME_LAYER_BASE << 1;  // 64
-     *   int SHIELD = Layer.GAME_LAYER_BASE << 2;  // 128
+     * NOTA: WORLD_DYNAMIC usa el bit 5 (32). Las capas de gameplay
+     * deben empezar en el bit 6 (64) para no colisionar:
      *
-     * El bitmask de colisión tiene 32 bits, por lo que hay 27 bits disponibles
-     * para capas de gameplay (bits 5–31).
+     *   int TRAP   = Layer.GAME_LAYER_BASE;       // 64
+     *   int NPC    = Layer.GAME_LAYER_BASE << 1;  // 128
+     *   int SHIELD = Layer.GAME_LAYER_BASE << 2;  // 256
+     *
+     * El bitmask de colisión tiene 32 bits, por lo que hay 26 bits disponibles
+     * para capas de gameplay (bits 6–31).
      */
-    public static final int GAME_LAYER_BASE = 32; // bit 5
+    public static final int GAME_LAYER_BASE = 64; // bit 6
 
     private Layer() {}
 }

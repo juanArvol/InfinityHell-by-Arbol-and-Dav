@@ -1,73 +1,67 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
-import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
-import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.Entity.Components.SurfaceComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Engine.GameObjects;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
-import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 /**
  * Bloque estático del mundo.
  *
- * Implementa SurfaceMaterial para que CollisionsSystem pueda leer
- * las propiedades físicas de este bloque cuando un objeto aterriza sobre él.
+ * ── HRFC — World Objects extensibles ─────────────────────────────────────
  *
- * FIX: Se agregaron getAirControl() y getAccelScale() que faltaban tras la
- * refactorización de SurfaceMaterial de clase a interface con 4 métodos.
- * Su ausencia causaba AbstractMethodError/crash al colisionar con el suelo.
+ * @deprecated Usar {@link WorldObject} directamente.
  *
- * Para crear un bloque de hielo:
+ * BlockWorld es ahora un alias de conveniencia sobre WorldObject.
+ * Se mantiene para no romper las capas de generación ({@link Game.World.Generator.Layer.Objects.TerrainLayer})
+ * ni el código existente de {@link WorldObjectFactory} durante la transición.
+ *
+ * MIGRACIÓN:
+ *
+ *   // Antes
+ *   new BlockWorld(pos, texture, w, h)
  *   new BlockWorld(pos, texture, w, h, SurfaceMaterial.ICE)
  *
- * Para crear un bloque custom:
- *   new BlockWorld(pos, texture, w, h, SurfaceMaterial.of(0.3, 0.95, 0.8, 1.0));
+ *   // Después
+ *   new WorldObject(pos, texture, w, h)
+ *       .withDefaultSurface()
+ *
+ *   new WorldObject(pos, texture, w, h)
+ *       .withSurface(SurfaceMaterial.ICE)
+ *
+ * DIFERENCIA ARQUITECTÓNICA:
+ *   BlockWorld implementaba SurfaceMaterial directamente en la clase.
+ *   WorldObject delega esa responsabilidad en {@link SurfaceComponent}.
+ *   CollisionsSystem FASE 0 ahora resuelve surface via getComponent(SurfaceComponent.class)
+ *   con fallback a instanceof SurfaceMaterial para compatibilidad temporal.
  */
-public class BlockWorld extends GameObjects implements SurfaceMaterial {
+@Deprecated(forRemoval = true)
+public class BlockWorld extends WorldObject {
 
-    private final SurfaceMaterial material;
-
-    // Constructor con material por defecto (suelo normal)
+    /**
+     * Constructor de compatibilidad — suelo normal.
+     *
+     * @deprecated Usar {@code new WorldObject(position, texture, width, height).withDefaultSurface()}
+     */
+    @Deprecated(forRemoval = true)
     public BlockWorld(Vector2D position, BufferedImage texture, int width, int height) {
         this(position, texture, width, height, SurfaceMaterial.DEFAULT);
     }
 
-    // Constructor con material explícito
+    /**
+     * Constructor de compatibilidad — material configurable.
+     *
+     * @deprecated Usar {@code new WorldObject(position, texture, width, height).withSurface(material)}
+     */
+    @Deprecated(forRemoval = true)
     public BlockWorld(Vector2D position, BufferedImage texture,
                       int width, int height, SurfaceMaterial material) {
-
-        this.material = material;
-        getTransform().setPosition(position);
-
-        // ================= COLLIDER =================
-
-        ColliderComponent collider = new ColliderComponent(width, height, CollisionProfile.WORLD);
-        addComponent(collider);
-
-        // ================= DEBUG =================
-
-        addComponent(new HitBoxComponent(Color.BLUE));
-
-        // ================= RENDER =================
-
-        if (texture != null) {
-            addComponent(new SpriteRendererComponent(texture, SizeSyncMode.COLLIDER_TO_SPRITE));
-        }
-    }
-
-    // ── SurfaceMaterial ───────────────────────────────────────────────────
-
-    @Override public double getFriction()   { return material.getFriction();   }
-    @Override public double getDrag()       { return material.getDrag();       }
-    @Override public double getAirControl() { return material.getAirControl(); }  // FIX: faltaba
-    @Override public double getAccelScale() { return material.getAccelScale(); }  // FIX: faltaba
-
-    @Override
-    public void update() {
-        super.update();
+        super(position, texture, width, height, CollisionProfile.WORLD);
+        // Capacidad de superficie via SurfaceComponent — no via implementación de clase.
+        // CollisionsSystem resuelve surface via getComponent(SurfaceComponent.class);
+        // si no existe, hace fallback a instanceof SurfaceMaterial (ruta legacy).
+        // Al usar SurfaceComponent aquí, este objeto ya usa la ruta nueva correcta.
+        addComponent(new SurfaceComponent(material));
     }
 }

@@ -1,6 +1,7 @@
 package Sprites;
 
 import Sprites.Entity.Bullets.BulletAssets;
+import Sprites.Entity.Enemys.Boss.sans.sansAssets;
 import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 import Sprites.Entity.Player.PlayerAssets;
 import Sprites.Enviroment.Around.AroundAssets;
@@ -50,5 +51,6 @@ public final class Assets {
         BulletAssets.init();
         AroundAssets.init();
         ObstaclesAssets.init();
+        sansAssets.init();
     }
 }

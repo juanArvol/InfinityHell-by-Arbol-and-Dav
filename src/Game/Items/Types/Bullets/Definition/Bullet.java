@@ -8,6 +8,8 @@ import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
+import Game.Engine.Lifecycle.EntityContext;
+import Game.Engine.Lifecycle.SimulationLifecycle;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletLife;
@@ -82,11 +84,38 @@ import java.awt.Color;
  *   Si el flyweight cambió (tipo diferente), se actualiza el sprite y el
  *   collisionProfile del collider existente — sin recrear componentes.
  *   Los comportamientos se restauran al estado del nuevo blueprint.
+ *
+ * ── CONSUMO DE INFRAESTRUCTURA DEL ENGINE ────────────────────────────────
+ *
+ *   Bullet consume las siguientes capacidades del Engine:
+ *
+ *   Engine.Lifecycle (SimulationLifecycle)
+ *       → getSimulationContext() / shouldSimulate() delegados a BulletLife.
+ *         El Engine puede determinar si simular este proyectil sin acoplarse
+ *         a la lógica específica de BulletLife.
+ *
+ *   Engine.Spatial (radio declarado vía getInteractionRadius())
+ *       → Bullet declara su radio de interacción. El Engine realiza la
+ *         búsqueda espacial; Bullet no implementa la búsqueda.
+ *
+ *   Engine.Pooling (via ProjectilePool → AbstractObjectPool<Bullet>)
+ *       → El pooling usa infraestructura general. Bullet no gestiona
+ *         el pool directamente — solo se auto-devuelve vía ownerPool.
+ *
+ *   Engine.Resources (via BulletFlyweightCache → ResourceCache<K,V>)
+ *       → Los recursos compartidos (textura, profile) usan el cache
+ *         general del Engine.
  */
-public class Bullet extends GameObjects implements Game.Engine.Destroyable {
+public class Bullet extends GameObjects implements Game.Engine.Destroyable, SimulationLifecycle {
 
     private final BulletLife         bulletLife;
     private final Physics2DComponent physicsComponent;
+    /**
+     * EntityContext cacheado — evita crear una nueva lambda en cada llamada
+     * a getSimulationContext(). Se inicializa justo después de bulletLife
+     * en el constructor para capturar la referencia correcta.
+     */
+    private EntityContext simulationContext;
 
     /**
      * Flyweight compartido — recursos inmutables del tipo de proyectil.
@@ -176,6 +205,11 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable {
         this.movement   = (movement != null) ? movement : LinearMovement.INSTANCE;
         this.damage     = damage;
         this.bulletLife = new BulletLife(lifeTime);
+        // EntityContext cacheado: envuelve BulletLife sin duplicar su estado.
+        // bulletLife::isAlive expresa "este proyectil tiene razón para existir
+        // mientras tenga tiempo de vida activo" — que es el contexto de simulación
+        // correcto para un proyectil (su contexto ES su lifetime finito).
+        this.simulationContext = bulletLife::isAlive;
 
         // ── Render ────────────────────────────────────────────────────────
         // La texture viene del Flyweight — compartida con todas las Bullets
@@ -277,6 +311,61 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable {
 
     public BulletPhysics getPhysics() {
         return (BulletPhysics) physicsComponent.getPhysics();
+    }
+
+    // ── Engine.Lifecycle — SimulationLifecycle ─────────────────────────────
+
+    /**
+     * Contexto de simulación del proyectil.
+     *
+     * Retorna el EntityContext cacheado que envuelve BulletLife.isAlive().
+     * El proyectil tiene razón para seguir simulándose mientras tenga tiempo
+     * de vida activo — su lifetime finito ES su contexto de simulación.
+     *
+     * No se usa LifetimeContext (del Engine) porque BulletLife es el estado
+     * canónico de vida del proyectil, con semántica específica para piercing
+     * y bounce (kill/revive/extend). Duplicarlo en un LifetimeContext paralelo
+     * introduciría dos fuentes de verdad sobre la misma información.
+     *
+     * El campo simulationContext se inicializa una vez en el constructor —
+     * sin allocations en el hot path de getSimulationContext().
+     */
+    @Override
+    public EntityContext getSimulationContext() {
+        return simulationContext;
+    }
+
+    /**
+     * Retorna true mientras el proyectil tenga vida restante.
+     *
+     * Delegación directa a BulletLife.isAlive() — sin lógica adicional.
+     * El valor es idéntico al que usa isPendingDestruction() internamente.
+     */
+    @Override
+    public boolean shouldSimulate() {
+        return bulletLife.isAlive();
+    }
+
+    // ── Engine.Spatial — radio de interacción ─────────────────────────────
+
+    /**
+     * Radio de interacción espacial de este proyectil.
+     *
+     * Delega a {@link BulletBehavior#getInteractionRadius(Bullet)} para que
+     * cada tipo de proyectil pueda declarar su propio radio. El default en
+     * BulletBehavior conserva el comportamiento original: la dimensión mayor
+     * del collider dividida por 2.
+     *
+     * Uso típico desde BulletBehavior:
+     *   ctx.findEntitiesInRadius(
+     *       bullet.getTransform().getPosition(),
+     *       bullet.getInteractionRadius()
+     *   );
+     *
+     * @return radio de interacción en unidades del mundo (px)
+     */
+    public double getInteractionRadius() {
+        return behavior.getInteractionRadius(this);
     }
 
     /**

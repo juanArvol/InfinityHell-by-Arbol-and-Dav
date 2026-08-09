@@ -103,6 +103,41 @@ public abstract class BulletBehavior {
         return LinearMovement.INSTANCE;
     }
 
+    /**
+     * Radio de interacción espacial de este tipo de proyectil.
+     *
+     * ── POR QUÉ ESTÁ AQUÍ ────────────────────────────────────────────────
+     *
+     * El radio de detección es una decisión del TYPE de proyectil, no de la
+     * geometría del sprite. BulletBehavior define el tipo; Bullet es la entidad.
+     * Colocarlo aquí permite que cada tipo concreto declare su propio radio
+     * sin tocar Bullet, siguiendo el mismo patrón que getDefaultData() y
+     * getDefaultMovement().
+     *
+     * ── DEFAULT ──────────────────────────────────────────────────────────
+     *
+     * El default conserva el comportamiento original de Bullet: la dimensión
+     * mayor del collider dividida por 2. Cualquier tipo que no sobreescriba
+     * este método mantiene exactamente el mismo radio que antes.
+     *
+     * ── SOBREESCRITURA ───────────────────────────────────────────────────
+     *
+     * Sobreescribir para tipos que requieran un radio diferente:
+     *
+     *   {@code @Override}
+     *   {@code public double getInteractionRadius(Bullet bullet) { return 15; }}
+     *
+     * El parámetro bullet está disponible por si el radio depende de estado
+     * individual (p.ej. un multiplicador de daño). Para radios fijos por tipo,
+     * ignorarlo y retornar la constante directamente.
+     *
+     * @param bullet el proyectil que consulta su propio radio
+     * @return radio de interacción en unidades del mundo (px)
+     */
+    public double getInteractionRadius(Bullet bullet) {
+        return Math.max(bullet.getFlyweight().width(), bullet.getFlyweight().height()) / 2.0;
+    }
+
     // ── Ciclo de vida del behavior ────────────────────────────────────────
 
     /**
@@ -145,7 +180,7 @@ public abstract class BulletBehavior {
      *   - expiración por tiempo (lifeTime agotado)
      *   - muerte por colisión (kill() desde onCollision)
      *   - muerte manual (kill() desde exterior)
-     *   - pool release (PooledBullet antes de volver al pool)
+     *   - pool release (devuelta al pool via ownerPool.release())
      *
      * Es el único hook con esa garantía. No depender de onExpire ni onDetached
      * para liberación de recursos — esos no están garantizados en todos los paths.

@@ -3,7 +3,6 @@ package Game.Items.Types.Bullets.Definition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletClass.*;
-
 import java.util.function.Supplier;
 
 /**
@@ -34,13 +33,13 @@ public enum BulletType {
     // ── Tipos base ────────────────────────────────────────────────────────
 
     /** Proyectil estándar — base para el arma de inicio. */
-    VOID_SHARD   (BulletNormal::new, ItemRarity.COMMON,
+    NORMALBULLET   (BulletNormal::new, ItemRarity.COMMON,
                   "Esquirla del Vacío",
                   "Un fragmento de energía pura, sin forma ni afinidad."),
 
     /** La bala impacta al enemigo y genera un impulso de salto. */
     SPRINGBULLET   (BulletJump::new,   ItemRarity.UNCOMMON,
-                  "Tiro Resorte",
+                  "Bala saltarina",
                   "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."),
 
     // ── Efectos elementales (pendientes de implementar sus behaviors) ─────

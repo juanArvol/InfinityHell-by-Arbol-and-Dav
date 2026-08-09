@@ -1,17 +1,32 @@
 package Game.Items.Types.Bullets.Definition;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Pooling.AbstractObjectPool;
 import Game.Items.Types.Bullets.BulletFactory;
-import Game.Items.Types.Bullets.ProjectileBlueprint;
-import Game.Items.Types.Bullets.ResettableMovement;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweightCache;
-
-import java.util.ArrayDeque;
-import java.util.Deque;
+import Game.Items.Types.Bullets.ProjectileBlueprint;
+import Game.Items.Types.Bullets.ResettableMovement;
 
 /**
  * Pool dinámico de proyectiles — reutilización de instancias para reducir GC pressure.
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ * ProjectilePool extiende AbstractObjectPool<Bullet> del Engine, consumiendo
+ * la infraestructura general de pooling en lugar de reimplementarla.
+ *
+ * La infraestructura genérica aporta:
+ *   - Cola de disponibles (Deque sin límite, LIFO)
+ *   - Estadísticas: totalAcquires, poolHits, poolMisses, hitRate
+ *   - Protocolo acquire/release con separación de creación y reset
+ *
+ * La lógica específica de Bullet que permanece aquí:
+ *   - Compatibilidad de reutilización (mismo tipo behavior + movement)
+ *   - Firma extendida acquire(blueprint, position, direction, owner)
+ *   - Inyección de ProjectileContext y ownerPool en cada adquisición
+ *   - Delegación de construcción a BulletFactory (única autoridad)
+ *   - Emisión de OnProjectileSpawn (un único punto, para nuevas y reutilizadas)
  *
  * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
@@ -87,28 +102,18 @@ import java.util.Deque;
  *   - ownerPool y projectileContext reinyectados después de resetState().
  *   - Flyweight actualizado in-place si el tipo de proyectil cambió.
  */
-public final class ProjectilePool {
-
-    /**
-     * Cola de instancias disponibles para reutilización.
-     *
-     * Deque sin límite superior. El pool crece hasta el pico de demanda
-     * concurrente y luego reutiliza esas instancias indefinidamente.
-     *
-     * La búsqueda de compatibilidad es O(n) sobre las disponibles.
-     * En práctica n es pequeño: los proyectiles activos se van liberando
-     * antes del siguiente disparo, y los tipos distintos en el pool son pocos.
-     */
-    private final Deque<Bullet> available = new ArrayDeque<>();
+public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
     /** Contexto inyectado en cada proyectil adquirido. NULL por defecto. */
     private ProjectileContext context = ProjectileContext.NULL;
 
-    // ── Estadísticas ──────────────────────────────────────────────────────
-
-    private int totalAcquires = 0;
-    private int poolHits      = 0;
-    private int poolMisses    = 0;
+    /**
+     * Blueprint en uso durante la llamada actual a acquire().
+     * Se asigna antes de delegar a findReusable() / createInstance()
+     * para que esos métodos puedan acceder a él.
+     * null fuera de una llamada acquire().
+     */
+    private ProjectileBlueprint currentBlueprint = null;
 
     // ── Context ───────────────────────────────────────────────────────────
 
@@ -124,7 +129,7 @@ public final class ProjectilePool {
         this.context = (ctx != null) ? ctx : ProjectileContext.NULL;
     }
 
-    // ── Acquire ───────────────────────────────────────────────────────────
+    // ── Acquire con firma específica de Bullet ────────────────────────────
 
     /**
      * Obtiene un proyectil listo para usar. Emite OnProjectileSpawn con owner = null.
@@ -154,16 +159,19 @@ public final class ProjectilePool {
                           Vector2D position,
                           Vector2D direction,
                           Object owner) {
-        totalAcquires++;
 
         double xSpeed = direction.getX() * blueprint.speed();
         double ySpeed = direction.getY() * blueprint.speed();
 
-        Bullet bullet = findCompatible(blueprint);
+        // Exponer blueprint para createInstance() y canReuse() del base
+        this.currentBlueprint = blueprint;
+
+        // findReusable() del base llama canReuse(candidate) — que usa currentBlueprint
+        Bullet bullet = findReusable();
 
         if (bullet != null) {
             // ── Reutilizar instancia compatible ───────────────────────────
-            poolHits++;
+            recordAcquireHit();
 
             BulletFlyweight newFlyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
 
@@ -187,9 +195,10 @@ public final class ProjectilePool {
             // buildForPool() construye sin emitir el evento de spawn:
             // el pool lo emitirá a continuación con el owner correcto,
             // en el mismo punto que las instancias reutilizadas.
-            poolMisses++;
-            bullet = BulletFactory.buildForPool(blueprint, position, direction);
-        }
+            recordAcquireMiss();
+            bullet = BulletFactory.buildForPool(blueprint, position, direction);        }
+
+        this.currentBlueprint = null; // limpiar referencia temporal
 
         // Inyectar referencia al pool — mecanismo de auto-devolución.
         // Cuando bullet.isPendingDestruction() detecte destrucción,
@@ -207,7 +216,7 @@ public final class ProjectilePool {
         return bullet;
     }
 
-    // ── Release ───────────────────────────────────────────────────────────
+    // ── Release (package-private para Bullet) ────────────────────────────
 
     /**
      * Devuelve una Bullet al pool para reutilización futura.
@@ -218,53 +227,87 @@ public final class ProjectilePool {
      * onRelease() ya fue invocado por Bullet.emitDestroy() antes de llegar
      * aquí — el cleanup del behavior está garantizado.
      *
-     * package-private: solo accesible desde Bullet (mismo paquete).
+     * Aunque este método es public (requerido por el contrato ObjectPool<T>),
+     * solo debe ser llamado desde Bullet.isPendingDestruction() dentro del
+     * mismo paquete. No llamar desde código externo.
      */
-    void release(Bullet bullet) {
-        available.addFirst(bullet);
+    @Override
+    public void release(Bullet bullet) {
+        super.release(bullet);
     }
 
-    // ── Estadísticas ──────────────────────────────────────────────────────
-
-    public int    getPoolSize()      { return available.size(); }
-    public int    getTotalAcquires() { return totalAcquires; }
-    public int    getPoolHits()      { return poolHits; }
-    public int    getPoolMisses()    { return poolMisses; }
-    public double getHitRate() {
-        return (totalAcquires == 0) ? 0.0 : (double) poolHits / totalAcquires;
-    }
-
-    /** Vacía el pool. Llamar en shutdown del mundo para liberar referencias. */
-    public void clear() { available.clear(); }
-
-    // ── Búsqueda de instancia compatible ─────────────────────────────────
+    // ── AbstractObjectPool<Bullet> — hooks requeridos ────────────────────
 
     /**
-     * Busca y extrae la primera instancia disponible compatible con el blueprint.
+     * Creación de instancia nueva — delegada a BulletFactory.
      *
-     * Compatible = misma clase de behavior + misma clase de movement +
-     *              blueprint permite reutilización (stateless o ResettableMovement).
+     * No se usa directamente porque acquire() con blueprint tiene su propio
+     * flujo. Este método existe para satisfacer el contrato de AbstractObjectPool
+     * y nunca se llama en el flujo normal de acquire(blueprint, ...).
      *
-     * Retorna null si no hay ninguna instancia compatible.
-     * Complejidad O(n) sobre las instancias disponibles — aceptable en práctica.
+     * Si se llama (por ejemplo desde el acquire() genérico heredado del base),
+     * lanzará UnsupportedOperationException: ProjectilePool require un
+     * blueprint para construir una Bullet y acquire() genérico no lo provee.
      */
-    private Bullet findCompatible(ProjectileBlueprint blueprint) {
-        if (!canReuse(blueprint)) return null;
-
-        Class<?> behaviorClass = blueprint.behavior().getClass();
-        Class<?> movementClass = blueprint.movement().getClass();
-
-        var it = available.iterator();
-        while (it.hasNext()) {
-            Bullet candidate = it.next();
-            if (candidate.getBehavior().getClass() == behaviorClass
-                    && candidate.getMovement().getClass() == movementClass) {
-                it.remove();
-                return candidate;
-            }
-        }
-        return null;
+    @Override
+    protected Bullet createInstance() {
+        throw new UnsupportedOperationException(
+            "ProjectilePool.createInstance() no soportado sin blueprint. " +
+            "Usar acquire(blueprint, position, direction)."
+        );
     }
+
+    /**
+     * Reset de instancia — no usado en el flujo normal.
+     *
+     * El reset real ocurre en bullet.resetState(...) con todos los parámetros
+     * del blueprint. Este hook del base no tiene suficiente contexto para
+     * resetear correctamente una Bullet.
+     */
+    @Override
+    protected void resetInstance(Bullet bullet) {
+        // No-op: el reset concreto ocurre en acquire() via bullet.resetState(...)
+        // con los parámetros completos del blueprint.
+    }
+
+    /**
+     * Compatibilidad de reutilización — lógica específica de Bullet.
+     *
+     * Una Bullet es reutilizable si:
+     *   1. El blueprint actual permite reutilización (behavior stateless + movement
+     *      stateless o ResettableMovement).
+     *   2. El behavior de la Bullet disponible es del mismo tipo que el del blueprint.
+     *   3. El movement de la Bullet disponible es del mismo tipo que el del blueprint.
+     *
+     * Si currentBlueprint es null (llamada fuera de acquire(blueprint,...)),
+     * retorna false conservadoramente.
+     */
+    @Override
+    protected boolean canReuse(Bullet candidate) {
+        ProjectileBlueprint bp = this.currentBlueprint;
+        if (bp == null) return false;
+        if (!isBlueprintReusable(bp)) return false;
+
+        return candidate.getBehavior().getClass() == bp.behavior().getClass()
+            && candidate.getMovement().getClass() == bp.movement().getClass();
+    }
+
+    // ── acquire() genérico del base — bloqueado ───────────────────────────
+
+    /**
+     * Bloqueado: ProjectilePool requiere un blueprint para construir y resetear
+     * una Bullet. Usar acquire(blueprint, position, direction) en su lugar.
+     *
+     * @throws UnsupportedOperationException siempre
+     */
+    @Override
+    public Bullet acquire() {
+        throw new UnsupportedOperationException(
+            "Usar ProjectilePool.acquire(blueprint, position, direction)."
+        );
+    }
+
+    // ── Helpers privados ──────────────────────────────────────────────────
 
     /**
      * Determina si el blueprint permite reutilizar una instancia del pool.
@@ -273,9 +316,15 @@ public final class ProjectilePool {
      *   - Behavior stateful: no hay garantía de que su estado pueda resetearse.
      *   - Movement stateful + no ResettableMovement: no hay mecanismo de reset.
      */
-    private static boolean canReuse(ProjectileBlueprint blueprint) {
+    private static boolean isBlueprintReusable(ProjectileBlueprint blueprint) {
         if (!blueprint.behavior().isBehaviorStateless()) return false;
         if (blueprint.movement().isStateless()) return true;
         return blueprint.movement() instanceof ResettableMovement;
+    }
+
+    /** Vacía el pool. Llamar en shutdown del mundo para liberar referencias. */
+    @Override
+    public void clear() {
+        super.clear();
     }
 }

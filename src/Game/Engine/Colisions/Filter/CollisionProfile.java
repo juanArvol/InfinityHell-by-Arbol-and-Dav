@@ -99,6 +99,32 @@ public final class CollisionProfile {
             Layer.WORLD | Layer.PLAYER
     );
 
+    /**
+     * Objeto sólido dinámico del mundo (caja, barril, plataforma móvil, etc.).
+     *
+     * ── HRFC — World Objects extensibles ─────────────────────────────────
+     *
+     * DISTINCIÓN respecto a WORLD:
+     *   WORLD         → terreno estático inerte (BlockWorld, suelo, paredes).
+     *                   CollisionsSystem no lo mueve en FASE 1.
+     *
+     *   WORLD_DYNAMIC → objeto del mundo que puede tener Physics2DComponent
+     *                   y ser movido/empujado. CollisionsSystem lo incluye
+     *                   en FASE 1 si tiene física. Puede además proveer
+     *                   SurfaceComponent para propiedades de superficie.
+     *
+     * Choca con: WORLD (terreno), PLAYER, ENEMY, BULLET y otros WORLD_DYNAMIC.
+     *
+     * Uso canónico:
+     *   WorldObject crate = new WorldObject(pos, tex, w, h, CollisionProfile.WORLD_DYNAMIC);
+     *   crate.addComponent(new Physics2DComponent(cratePhysics));
+     *   crate.addComponent(new PushableComponent(0.8));
+     */
+    public static final CollisionProfile WORLD_DYNAMIC = new CollisionProfile(
+            Layer.WORLD_DYNAMIC,
+            Layer.WORLD | Layer.PLAYER | Layer.ENEMY | Layer.BULLET | Layer.WORLD_DYNAMIC
+    );
+
     // ── Utilidad ──────────────────────────────────────────────────────────
 
     /** @return true si este perfil puede chocar con el otro según las masks. */

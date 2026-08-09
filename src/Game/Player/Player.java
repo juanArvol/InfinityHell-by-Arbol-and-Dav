@@ -131,7 +131,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         entityStats = new EntityStats();
         entityStats.setMaxHp(BASE_HP_MAX);
         // Movimiento base: los sistemas leerán de runtimeStats.getMovement()
-        entityStats.movement().setSpeed(3.0);
+        entityStats.movement().setSpeed(8.0);
 
         // ── RuntimeStats — atributos efectivos ───────────────────────────
         // Construido sobre entityStats. Los StatusEffects aplican aquí.

@@ -20,7 +20,7 @@ import Game.Items.Types.Bullets.Definition.ProjectileData;
 public class BulletNormal extends BulletBehavior {
 
     private static final ProjectileData DEFAULT_DATA =
-            ProjectileData.flat(15, 1.0, 10);
+            ProjectileData.flat(15, 1.0, 10000);
     @Override
     public ProjectileData getDefaultData() {
         return DEFAULT_DATA;

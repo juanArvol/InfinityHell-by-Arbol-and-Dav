@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.BulletComport.BulletClass;
 import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
@@ -30,6 +31,8 @@ public class BulletJump extends BulletBehavior {
     private static final ProjectileMovement GRAVITY =
             new GravityMovement(1);
 
+    private static final double INTERACTION_RADIUS = 100.0;
+
     private static final double JUMP_BOOST    = -14.0;
     private static final double FRICTION      = 1.01; // divisor de vx en cada rebote
 
@@ -44,18 +47,53 @@ public class BulletJump extends BulletBehavior {
     }
 
     @Override
+    public double getInteractionRadius(Bullet bullet) {
+        return INTERACTION_RADIUS;
+    }
+
+    @Override
     public void onCollision(Bullet bullet, GameObjects other) {
         if (other instanceof AbstractEntity) {
             // Impacto con entidad viva — el proyectil muere
             bullet.getBulletLife().kill();
+            return;
+        }
+
+        // Impacto con el mundo — usar los flags de contacto ya escritos por
+        // CollisionsSystem en Physics2D antes de que llegue el dispatch.
+        BulletPhysics physics = bullet.getPhysics();
+
+        if (physics.getOnGround()) {
+            // Suelo → rebote vertical hacia arriba
+            physics.setYspeed(JUMP_BOOST);
+            physics.setXspeed(physics.getXspeed() / FRICTION);
+            bullet.getBulletLife().extend(1);
+
+        } else if (physics.getOnCeiling()) {
+            // Techo → reflejar componente vertical (invertir)
+            physics.setYspeed(-physics.getYspeed());
+            physics.setXspeed(physics.getXspeed() / FRICTION);
+
+        } else if (physics.getOnWall()) {
+            // Pared → reflejar componente horizontal (invertir)
+            physics.setXspeed(-physics.getXspeed() / FRICTION);
+
         } else {
-            // Impacto con objeto del mundo — rebotar si baja
-            if (bullet.getPhysics().getYspeed() > 0) {
-                bullet.getPhysics().setYspeed(JUMP_BOOST);
+            // Fallback: sin flag de contacto disponible (p.ej. contacto diagonal
+            // o colisión resuelta por trigger), usar la velocidad como heurística.
+            if (physics.getYspeed() > 0) {
+                // Venía bajando → tratar como suelo
+                physics.setYspeed(JUMP_BOOST);
+                physics.setXspeed(physics.getXspeed() / FRICTION);
                 bullet.getBulletLife().extend(1);
+            } else if (physics.getYspeed() < 0) {
+                // Venía subiendo → tratar como techo
+                physics.setYspeed(-physics.getYspeed());
+                physics.setXspeed(physics.getXspeed() / FRICTION);
+            } else {
+                // Solo movimiento horizontal → tratar como pared
+                physics.setXspeed(-physics.getXspeed() / FRICTION);
             }
-            // Reducir ligeramente la velocidad horizontal en cada rebote
-            bullet.getPhysics().setXspeed((bullet.getPhysics().getXspeed() / FRICTION)*1.1);
         }
     }
 }

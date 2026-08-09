@@ -1,14 +1,30 @@
 package Game.Items.Types.Bullets.Flyweight;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Resources.ResourceCache;
 import Game.Items.Types.Bullets.BulletAssetResolver;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
 import java.awt.image.BufferedImage;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Cache central de BulletFlyweights.
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ * BulletFlyweightCache delega el almacenamiento al ResourceCache<K,V> genérico
+ * del Engine en lugar de gestionar su propio ConcurrentHashMap. La lógica
+ * específica de proyectiles (FlyweightKey, resolución de asset, construcción
+ * de BulletFlyweight) permanece aquí.
+ *
+ * Engine.Resources.ResourceCache aporta:
+ *   - Almacenamiento ConcurrentHashMap thread-safe
+ *   - Protocolo getOrCreate(key, resolver) con computeIfAbsent semántica
+ *   - clear() / size() / contains()
+ *
+ * BulletFlyweightCache aporta:
+ *   - FlyweightKey (clave de dominio: assetKey + profile + w + h)
+ *   - Resolución de asset via BulletAssetResolver
+ *   - API conveniente get(blueprint) y get(assetKey, profile, w, h)
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -35,8 +51,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  *
- * Usa ConcurrentHashMap con computeIfAbsent — seguro para acceso desde
- * múltiples threads (aunque el GameLoop suele ser single-thread).
+ * Garantizada por ResourceCache (ConcurrentHashMap + computeIfAbsent).
  *
  * ── SINGLETON DE APLICACIÓN ───────────────────────────────────────────────
  *
@@ -59,7 +74,14 @@ public final class BulletFlyweightCache {
     /** Punto de acceso global al cache. */
     public static final BulletFlyweightCache INSTANCE = new BulletFlyweightCache();
 
-    private final Map<FlyweightKey, BulletFlyweight> cache = new ConcurrentHashMap<>();
+    /**
+     * Cache genérico del Engine que respalda este cache de Flyweights.
+     *
+     * Tipo: ResourceCache<FlyweightKey, BulletFlyweight>
+     * La clave FlyweightKey identifica un tipo de proyectil por sus recursos.
+     * El valor BulletFlyweight es el recurso inmutable compartido.
+     */
+    private final ResourceCache<FlyweightKey, BulletFlyweight> cache = new ResourceCache<>();
 
     private BulletFlyweightCache() {}
 
@@ -78,7 +100,7 @@ public final class BulletFlyweightCache {
      */
     public BulletFlyweight get(ProjectileBlueprint blueprint) {
         FlyweightKey key = FlyweightKey.from(blueprint);
-        return cache.computeIfAbsent(key, this::create);
+        return cache.getOrCreate(key, this::create);
     }
 
     /**
@@ -88,7 +110,7 @@ public final class BulletFlyweightCache {
     public BulletFlyweight get(String assetKey, CollisionProfile profile,
                                int width, int height) {
         FlyweightKey key = new FlyweightKey(assetKey, profile, width, height);
-        return cache.computeIfAbsent(key, this::create);
+        return cache.getOrCreate(key, this::create);
     }
 
     // ── Estadísticas ──────────────────────────────────────────────────────

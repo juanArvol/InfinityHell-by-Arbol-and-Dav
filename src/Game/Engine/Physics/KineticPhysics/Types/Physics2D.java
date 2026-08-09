@@ -73,6 +73,8 @@ public class Physics2D {
     protected double accel;
 
     protected boolean onGround;
+    protected boolean onWall;
+    protected boolean onCeiling;
     protected boolean salto;
     protected boolean running;
 
@@ -170,9 +172,10 @@ public class Physics2D {
      */
     public void moveX(double inputX, boolean onGround, boolean running) {
         // NOTA: this.onGround NO se toca aquí.
-        // Es responsabilidad exclusiva de CollisionsSystem (FASE 0) via setOnGround().
-        // Sobreescribirlo acá causaba que el groundCheck correcto de FASE 0 quedara
-        // pisado por el valor del frame anterior antes de que applyGravity() lo viera.
+        // Es responsabilidad exclusiva de CollisionsSystem via setOnGround().
+        // CollisionsSystem resetea onGround a false en FASE 0.5 (post-gravedad)
+        // y lo vuelve a establecer en FASE 1 según la normal del contacto SweptAABB.
+        // Modificarlo aquí pisaría el valor correcto establecido por el sistema.
         this.inputX   = inputX;
         this.running  = running;
 
@@ -261,6 +264,12 @@ public class Physics2D {
     public double getOposite(double x)       { return -x; }
     public boolean getOnGround()             { return onGround; }
     public void setOnGround(boolean v)       { this.onGround = v; }
+
+    public boolean getOnWall()               { return onWall; }
+    public void setOnWall(boolean v)         { this.onWall = v; }
+
+    public boolean getOnCeiling()            { return onCeiling; }
+    public void setOnCeiling(boolean v)      { this.onCeiling = v; }
 
     public void addForce(double fx, double fy) {
         velocity.setX(velocity.getX() + (fx / mass));

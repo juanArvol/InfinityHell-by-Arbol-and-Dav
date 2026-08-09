@@ -143,7 +143,7 @@ public final class GameWorldBootstrap {
         // ── Spawn inicial de enemigos ─────────────────────────────────────────
         // EnemySpawner.spawn() llama world.addDynamic() → externalRegistry
         // → globalDynamicRegistry. Los enemigos quedan en el registry global.
-        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 1);
+        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 2);
     }
 
     /** El Player creado durante el bootstrap. */
