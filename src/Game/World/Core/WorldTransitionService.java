@@ -36,7 +36,7 @@ public final class WorldTransitionService {
 
     public WorldTransitionService(WorldCache cache,
                                    Game.World.Generator.WorldGenerator generator,
-                                   Game.Engine.Events.GameEventBus eventBus,
+                                   Game.Engine.GameEventBus eventBus,
                                    java.util.function.Supplier<World> currentWorldSupplier) {
         this.transitionSystem = new TransitionSystem(
             currentWorldSupplier, cache, generator, eventBus

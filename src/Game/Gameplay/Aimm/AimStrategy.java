@@ -1,50 +1,64 @@
 package Game.Gameplay.Aimm;
 
-import Game.Player.Player;
+import Game.Player.PlayerState;
 
 /**
- * Estrategia de apuntado.
+ * Estrategia de apuntado — calculadora pura de dirección.
  *
- * ─── REFACTOR (Entradas v2) ───────────────────────────────────────────────────
+ * ── HRFC — Player Reengineering ───────────────────────────────────────────
  *
- *  · Eliminados los campos de estado de teclado (up/down/left/right/c) y la
- *    lectura directa de KeyBoard.* dentro de aim(). Esos campos eran un segundo
- *    snapshot redundante del input — el primero ya ocurre en KeyBoard.update().
+ * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
  *
- *  · aim() ahora simplemente delega en calculateDirection(player), que es el
- *    método que cada estrategia concreta debe implementar. Cualquier consulta
- *    de input se hace allí via KeyBoard.getState("stateKey").
+ *   ELIMINADO:
+ *     private boolean dir
+ *     private boolean aimingUpOrDown
+ *     setDir() / getDir()
+ *     setAimingUpOrDown() / getAimingUpOrDown()
+ *     aim(Player player) — dependencia directa de Player
+ *     class abstract — convertida a @FunctionalInterface
  *
- *  · dir y AorA se mantienen como estado interno pero sus setters/getters se
- *    limpian (naming corregido: AorA → aimingUpOrDown).
+ *   MOTIVACIÓN:
+ *     AimStrategy mantenía dir y aimingUpOrDown como estado interno,
+ *     duplicando lo que PlayerState ya almacena. Eso creaba dos fuentes
+ *     de verdad con riesgo de divergencia entre frames.
+ *
+ *     La estrategia de apuntado es una CALCULADORA, no un PROPIETARIO de
+ *     estado. Su responsabilidad es:
+ *
+ *       PlayerState → AimStrategy → AimDirection
+ *
+ *     Convertirla a @FunctionalInterface permite usar lambdas directamente
+ *     en AimSelection, eliminando la necesidad de subclases anónimas.
+ *
+ * ── CONTRATO ──────────────────────────────────────────────────────────────
+ *
+ *   Cada implementación recibe PlayerState y devuelve un AimDirection.
+ *   Si necesita actualizar el estado (ej. cambiar mirandoDerecha o
+ *   verticalAim), lo hace directamente sobre PlayerState — que es la
+ *   única fuente de verdad.
+ *
+ *   No se retiene ninguna referencia entre llamadas.
+ *
+ * ── USO ───────────────────────────────────────────────────────────────────
+ *
+ *   AimSelection.apply(state) — punto de entrada único por frame.
+ *   Las implementaciones concretas (AidleStrategy, lambdas en AimSelection)
+ *   no necesitan conocer Player — solo PlayerState.
  */
-public abstract class AimStrategy {
-
-    private boolean dir;           // true = mirando derecha
-    private boolean aimingUpOrDown;
-
-    /** Delegación directa a la estrategia concreta. */
-    public AimDirection aim(Player player) {
-        return calculateDirection(player);
-    }
-
-    protected void setDir(boolean facingRight) {
-        this.dir = facingRight;
-    }
-    public boolean getDir() {
-        return dir;
-    }
-
-    protected void setAimingUpOrDown(boolean value) {
-        this.aimingUpOrDown = value;
-    }
-    public boolean getAimingUpOrDown() {
-        return aimingUpOrDown;
-    }
+@FunctionalInterface
+public interface AimStrategy {
 
     /**
-     * Cada estrategia concreta calcula la dirección de apuntado en este método.
-     * Para leer input usa KeyBoard.getState("stateKey").
+     * Calcula la dirección de apuntado para este frame.
+     *
+     * <p>La implementación puede leer y escribir en {@code state} para
+     * reflejar los cambios de dirección (mirandoDerecha, verticalAim,
+     * aimDirection). No debe almacenar ningún valor entre llamadas.
+     *
+     * <p>Para leer input usa {@link Inputs.KeyBoard#getState(String)}.
+     *
+     * @param state estado del jugador. Nunca null.
+     * @return dirección calculada para este frame. Nunca null.
      */
-    protected abstract AimDirection calculateDirection(Player player);
+    AimDirection calculateDirection(PlayerState state);
 }

@@ -1,98 +1,91 @@
 package Game.Player;
 
-import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
-import Game.Engine.Entity.Components.HealthComponent;
-import Game.Engine.Entity.Components.StatusEffectComponent;
-import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
-import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.Entity.EntityInfoProvider;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
-import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
+import Game.Gameplay.Aimm.AimSelection;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.Definition.Bullet;
-import Game.Items.Types.Bullets.Definition.BulletType;
-import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponPistola;
 import Sprites.Entity.Player.PlayerAssets;
-import java.awt.Color;
 import java.util.function.Consumer;
 
 /**
- * Jugador.
+ * Jugador — entidad que compone y expone; los módulos especializados ejecutan.
  *
- * ── HRFC-013 — Consolidación Definitiva del Dominio Entity ───────────────
+ * ── HRFC — Player Reengineering ───────────────────────────────────────────
  *
- * Player posee un EntityStats propio que actúa como única fuente de verdad
- * para todos sus atributos base (salud, velocidad, daño, resistencias, etc.),
- * igual que Enemy. HealthComponent se construye en modo enlazado:
- * new HealthComponent(entityStats) — no almacena estado propio.
+ * ── PRINCIPIO FUNDAMENTAL ─────────────────────────────────────────────────
  *
- * ── HRFC-014 — Player implementa EntityInfoProvider (GAP-9) ─────────────
+ *   Player compone y expone.
+ *   Los módulos especializados ejecutan.
+ *   Engine proporciona las abstracciones genéricas.
+ *   PlayerAssembler conecta ambos mundos.
  *
- * Player implementa EntityInfoProvider (el mismo contrato que Enemy), lo que
- * significa que cualquier sistema puede tratarlo como una entidad con stats RPG
- * completos sin saber su tipo concreto.
+ * ── LO QUE PLAYER NO HACE ────────────────────────────────────────────────
  *
- * Contrato implementado:
- *   getStats()        → EntityStats   (única fuente de verdad de atributos base)
- *   getRuntimeStats() → RuntimeStats  (atributos efectivos con modificadores)
- *   getFlags()        → EntityFlags   (capabilities/states/impairments)
- *   getAttributes()   → EntityAttributes (facción, clase, elemento)
- *   getAttackSources()→ AttackSources
+ *   ✗ No construye concretamente ningún subsistema.
+ *   ✗ No instancia armas (WeaponPistola, ModifiedWeapon).
+ *   ✗ No configura EntityStats ni RuntimeStats.
+ *   ✗ No añade Components.
+ *   ✗ No implementa lógica de Aim.
+ *   ✗ No duplica stats de EntityStats/RuntimeStats.
+ *   ✗ No implementa las leyes físicas.
  *
- * Esto permite el patrón estándar de revocación en StatusEffects:
+ * ── LO QUE PLAYER HACE ────────────────────────────────────────────────────
  *
- *   if (entity instanceof EntityInfoProvider living)
- *       living.getRuntimeStats().revoke(this);
+ *   ✓ Recibe todos sus módulos ya construidos (inyección de dependencias).
+ *   ✓ Coordina el ciclo de actualización de sus módulos en update().
+ *   ✓ Implementa EntityInfoProvider — contrato de entidad genérica del Engine.
+ *   ✓ Expone una API pública pequeña y semántica.
+ *   ✓ Aplica daño con política de invulnerabilidad (receiveDamage).
  *
- * ── PlayerStats — su rol correcto ───────────────────────────────────────
+ * ── CONSTRUCCIÓN ──────────────────────────────────────────────────────────
  *
- * PlayerStats NO es una fuente alternativa de stats. Su rol es:
- *   - Fachada de solo lectura hacia HealthComponent para la UI (HealthView).
- *   - Invulnerabilidad post-golpe (lógica específica del Player).
- *   - Multiplicadores de gameplay que complementan EntityStats.
+ *   No usar el constructor directamente.
+ *   Usar PlayerAssembler.assemble() que es el único punto de entrada.
  *
- * Para leer stats en sistemas de gameplay: siempre usar getStats() o
- * getRuntimeStats(), nunca getPlayerStats().
+ *   // Loadout por defecto:
+ *   Player player = PlayerAssembler.assemble(spawn, world::add, eventBus);
  *
- * ── FLUJO DE DAÑO ────────────────────────────────────────────────────────
- *
- *   // Con invulnerabilidad (proyectil, contacto enemigo):
- *   player.receiveDamage(amount);
- *
- *   // Sin invulnerabilidad (efecto de estado, caída, lava):
- *   player.damage(amount);  // Entity → HealthComponent → HealthStats
+ *   // Loadout custom:
+ *   Player player = PlayerAssembler.assemble(spawn, world::add, eventBus,
+ *       PlayerLoadout.builder().weapon(WeaponType.PISTOLA).build());
  *
  * ── JERARQUÍA ─────────────────────────────────────────────────────────────
  *
  *   GameObjects → AbstractEntity → MovingObjects → Player
  *   Player implements EntityInfoProvider
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ *                        Player
+ *                          │
+ *            ┌─────────────┼──────────────┐
+ *            │             │              │
+ *            ▼             ▼              ▼
+ *      PlayerStats    PlayerCombat   PlayerController
+ *            │             │              │
+ *            │             ▼              ▼
+ *            │       WeaponInventory  PlayerPhysics
+ *            │
+ *            ▼
+ *      Entity Systems
+ *            │
+ *   ┌────────┼───────────┐
+ *   ▼        ▼           ▼
+ * EntityStats RuntimeStats HealthComponent
  */
 public class Player extends MovingObjects implements EntityInfoProvider {
 
-    // ── Configuración base de salud ───────────────────────────────────────
-    private static final int    BASE_HP      = 100;
-    private static final int    BASE_HP_MAX  = 200;
-    private static final double BASE_GRAVITY = 0.78;
-
-    // ── EntityInfoProvider — única fuente de verdad ───────────────────────
-    //
-    // entityStats    → valores permanentes (base). Configura Assemblers y fases.
-    // runtimeStats   → valores efectivos con modificadores. Todo el gameplay
-    //                  debe leer de aquí, no de entityStats directamente.
-    // entityFlags    → capabilities/states/impairments del Player.
-    // entityAttributes → facción PLAYER, clase PLAYER, alineación ALLY.
-    // attackSources  → fuentes de ataque (WEAPON por defecto).
+    // ── EntityInfoProvider — única fuente de verdad de stats ─────────────
     private final EntityStats      entityStats;
     private final RuntimeStats     runtimeStats;
     private final EntityFlags      entityFlags;
@@ -102,136 +95,84 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     // ── Módulos específicos del Player ────────────────────────────────────
     private final PlayerController controller;
     private final PlayerCombat     combat;
-
-    /**
-     * Fachada de UI y atributos de gameplay específicos del Player.
-     * NO es fuente de stats. Para stats usar getStats() / getRuntimeStats().
-     */
     private final PlayerStats      playerStats;
     private final PlayerState      state;
-
-    /** Amuletos acumulados en la run actual. Referencia compartida con ModifiedWeapon. */
     private final PlayerAmulets    playerAmulets;
 
-    private final Inventory     inventory;
-    private final EquippedItems equippedItems;
+    // ── Inventario ────────────────────────────────────────────────────────
+    private Inventory     inventory;
+    private EquippedItems equippedItems;
 
-    /**
-     * @param spawn         posición inicial en el mundo
-     * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
-     * @param eventBus      bus de eventos del juego
-     */
-    public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner, GameEventBus eventBus) {
-        super(spawn,
-              PlayerAssets.handle,
-              new PlayerPhysics(BASE_GRAVITY),
-              SizeSyncMode.NONE);
+    // ── Constructor — solo inyección, sin construcción concreta ──────────
+    //
+    // Este constructor es package-private. El único punto de entrada público
+    // es PlayerAssembler.assemble(). No crear Player directamente.
 
-        // ── EntityStats — fuente de verdad única ──────────────────────────
-        // Toda la configuración de salud, movimiento y combate del Player
-        // vive aquí. setMaxHp() inicializa también currentHp al máximo.
-        entityStats = new EntityStats();
-        entityStats.setMaxHp(BASE_HP_MAX);
-        // Movimiento base: los sistemas leerán de runtimeStats.getMovement()
-        entityStats.movement().setSpeed(8.0);
+    Player(Vector2D spawn,
+           PlayerPhysics physics,
+           EntityStats entityStats,
+           RuntimeStats runtimeStats,
+           EntityFlags entityFlags,
+           EntityAttributes entityAttributes,
+           AttackSources attackSources,
+           PlayerState state,
+           PlayerStats playerStats,
+           PlayerAmulets playerAmulets,
+           PlayerController controller,
+           PlayerCombat combat) {
 
-        // ── RuntimeStats — atributos efectivos ───────────────────────────
-        // Construido sobre entityStats. Los StatusEffects aplican aquí.
-        runtimeStats = new RuntimeStats(entityStats);
+        super(spawn, PlayerAssets.handle, physics, SizeSyncMode.NONE);
 
-        // ── EntityFlags / Attributes / AttackSources ─────────────────────
-        entityFlags      = new EntityFlags();
-        entityAttributes = new EntityAttributes();
-        entityAttributes.setFaction(EntityAttributes.Faction.PLAYER);
-        entityAttributes.setAlignment(EntityAttributes.Alignment.ALLY);
-        entityAttributes.setEntityClass(EntityAttributes.EntityClass.PLAYER);
-        attackSources = new AttackSources();
-
-        // ── HealthComponent en modo enlazado ─────────────────────────────
-        // Delega sobre entityStats.health(). No almacena estado propio.
-        addComponent(new HealthComponent(entityStats) {
-            @Override
-            protected void onDeath() {
-                // Hook de muerte del Player — emitir evento, mostrar game-over.
-            }
-        });
-
-        // StatusEffectComponent: efectos de estado (veneno, quemadura, etc.)
-        addComponent(new StatusEffectComponent());
-
-        // ── Módulos de gameplay ───────────────────────────────────────────
-        state         = new PlayerState();
-        playerStats   = new PlayerStats();
-        playerAmulets = new PlayerAmulets();
-
-        // Vincular HealthComponent a PlayerStats (fachada de UI solamente).
-        // LifeHUD → PlayerStats.getLife() → HealthComponent.getCurrent()
-        playerStats.bindHealth(getHealth());
-
-        PlayerPhysics physics = (PlayerPhysics) getPhysics();
-        controller = new PlayerController(physics, state);
-
-        combat = new PlayerCombat(
-            state,
-            () -> getTransform().getPosition(),
-            bulletSpawner,
-            eventBus
-        );
-
-        // ── Loadout inicial ───────────────────────────────────────────────
-        // ModifiedWeapon recibe el comport, el tipo de bala y los amuletos
-        // del jugador (referencia compartida — si el jugador recoge un amuleto
-        // lo verá el arma automáticamente en el próximo disparo).
-        combat.addWeapon(new ModifiedWeapon(
-                new WeaponPistola(),
-                BulletType.NORMALBULLET,
-                playerAmulets,
-                this,
-                eventBus
-        ));
-
-        // ── Colisión y visual ─────────────────────────────────────────────
-        ColliderComponent collider = getComponent(ColliderComponent.class);
-        if (collider != null) {
-            collider.setProfile(CollisionProfile.PLAYER);
-            collider.setSize(15, 24);
-            collider.setOffset(4, 0);
-        }
-
-        addComponent(new HitBoxComponent(Color.RED));
-        addComponent(new AnimationControllerComponent(PlayerAssets.handle));
-        addComponent(new PlayerRenderer(state));
-
-        // ── Inventario y equipamiento ─────────────────────────────────────
-        inventory     = new Inventory(playerStats.getMaxInventorySlots());
-        equippedItems = new EquippedItems();
-
-        // HP inicial = BASE_HP (menor que BASE_HP_MAX).
-        // initCurrentHP escribe en HealthStats sin disparar hooks.
-        if (BASE_HP < BASE_HP_MAX) {
-            getHealth().initCurrentHP(BASE_HP);
-        }
+        this.entityStats      = entityStats;
+        this.runtimeStats     = runtimeStats;
+        this.entityFlags      = entityFlags;
+        this.entityAttributes = entityAttributes;
+        this.attackSources    = attackSources;
+        this.state            = state;
+        this.playerStats      = playerStats;
+        this.playerAmulets    = playerAmulets;
+        this.controller       = controller;
+        this.combat           = combat;
     }
 
-    // ── Update ────────────────────────────────────────────────────────────
+    // ── Post-construcción — llamado por PlayerAssembler ───────────────────
+
+    /**
+     * Inyecta el inventario y los ítems equipados tras la construcción.
+     * Solo PlayerAssembler llama este método.
+     *
+     * @param inventory     inventario del jugador
+     * @param equippedItems ítems actualmente equipados
+     */
+    void initInventory(Inventory inventory, EquippedItems equippedItems) {
+        this.inventory     = inventory;
+        this.equippedItems = equippedItems;
+    }
+
+    // ── Update — coordinación del ciclo de juego ──────────────────────────
 
     @Override
     public void update() {
-        // Sincronizar onGround de física → PlayerState (para controller y animaciones).
+        // 1. Sincronizar onGround de física → PlayerState
+        //    (necesario para Controller y Renderer)
         if (physicsComponent != null) {
             state.setEnElSuelo(physicsComponent.getPhysics().getOnGround());
         }
 
+        // 2. Aim — calcular dirección y escribirla en PlayerState
+        AimSelection.apply(state);
+
+        // 3. Controller — procesar input de movimiento
         controller.update();
+
+        // 4. Combat — procesar input de disparo
         combat.update();
 
-        // applyGravity() y flushAccumulatedForces() los aplica CollisionsSystem
-        // en FASE 0.5, después de actualizar onGround (FASE 0).
+        // 5. Engine Components (HealthComponent, StatusEffectComponent, Renderer…)
+        super.update();
 
-        super.update(); // actualiza Component registrados (HealthComponent, StatusEffectComponent…)
-
-        // PlayerStats no es Component: se actualiza manualmente después de los Components
-        // para que los frames de invulnerabilidad decrementen tras aplicar el daño del frame.
+        // 6. PlayerStats — decrementar frames de invulnerabilidad
+        //    (después de super.update() para que el daño del frame ya se haya aplicado)
         playerStats.update();
     }
 
@@ -239,63 +180,70 @@ public class Player extends MovingObjects implements EntityInfoProvider {
 
     /**
      * Aplica daño al Player respetando frames de invulnerabilidad post-golpe.
-     * Usar para daño directo (proyectil, contacto).
-     * Para daño de efecto de estado usar damage() heredado de AbstractEntity.
+     *
+     * Usar para daño directo (proyectil, contacto con enemigo).
+     * Para daño de efecto de estado usar {@code damage(amount)} heredado,
+     * que no aplica invulnerabilidad.
+     *
+     * @param amount cantidad de daño a aplicar.
      */
     public void receiveDamage(int amount) {
         if (playerStats.isInvulnerable()) return;
-        damage(amount);  // AbstractEntity → HealthComponent → HealthStats
+        damage(amount);                         // AbstractEntity → HealthComponent
         playerStats.triggerInvulnerability();
     }
 
     // ── EntityInfoProvider ────────────────────────────────────────────────
 
-    /**
-     * Estadísticas base del Player.
-     * Única fuente de verdad de atributos permanentes.
-     * En gameplay, leer siempre desde getRuntimeStats().
-     */
-    @Override
-    public EntityStats getStats() { return entityStats; }
+    @Override public EntityStats      getStats()         { return entityStats;      }
+    @Override public RuntimeStats     getRuntimeStats()  { return runtimeStats;     }
+    @Override public EntityFlags      getFlags()         { return entityFlags;      }
+    @Override public EntityAttributes getAttributes()    { return entityAttributes; }
+    @Override public AttackSources    getAttackSources() { return attackSources;    }
+
+    // ── API pública del Player ────────────────────────────────────────────
+
+    /** Estado lógico del Player (movimiento, aim, combate). */
+    public PlayerState getState()           { return state;         }
+
+    /** Controlador de input. */
+    public PlayerController getController() { return controller;    }
+
+    /** Módulo de combate. */
+    public PlayerCombat getCombat()         { return combat;        }
 
     /**
-     * Estadísticas efectivas con todos los modificadores activos.
-     * Todo el código de combate y sistemas debe leer de aquí.
+     * Fachada de dominio: acceso contextual a stats, salud e invulnerabilidad.
+     * No usar para leer stats de gameplay — usar getStats() / getRuntimeStats().
      */
-    @Override
-    public RuntimeStats getRuntimeStats() { return runtimeStats; }
+    public PlayerStats getPlayerStats()     { return playerStats;   }
 
-    /** Flags de capabilities/states/impairments del Player. */
-    @Override
-    public EntityFlags getFlags() { return entityFlags; }
+    /** Inventario de ítems de la run. */
+    public Inventory getInventory()         { return inventory;     }
 
-    /** Atributos de dominio: facción PLAYER, clase PLAYER, alineación ALLY. */
-    @Override
-    public EntityAttributes getAttributes() { return entityAttributes; }
+    /** Ítems actualmente equipados. */
+    public EquippedItems getEquippedItems() { return equippedItems; }
 
-    /** Fuentes de ataque disponibles (WEAPON, etc.). */
-    @Override
-    public AttackSources getAttackSources() { return attackSources; }
+    /** Inventario de amuletos de la run. */
+    public PlayerAmulets getAmulets()       { return playerAmulets; }
 
-    // ── Getters de módulos específicos del Player ─────────────────────────
+    /** Posición actual en el mundo (shortcut de conveniencia). */
+    public Vector2D getPosition()           { return getTransform().getPosition(); }
 
-    public Vector2D         getPosition()      { return getTransform().getPosition(); }
-    public PlayerState      getState()         { return state; }
-    public PlayerController getController()    { return controller; }
-    public PlayerCombat     getCombat()        { return combat; }
-    public Inventory        getInventory()     { return inventory; }
-    public EquippedItems    getEquippedItems() { return equippedItems; }
-
-        /** Inventario de amuletos de la run actual. */
-    public PlayerAmulets    getAmulets()       { return playerAmulets; }
+    // ── Factory — punto de entrada recomendado ────────────────────────────
 
     /**
-     * Fachada de UI e invulnerabilidad específica del Player.
-     * NO usar para stats de gameplay — usar getStats() / getRuntimeStats().
+     * Crea un Player con el loadout por defecto.
+     * Delega en {@link PlayerAssembler#assemble(Vector2D, Consumer, Game.Engine.GameEventBus)}.
+     *
+     * @param spawn         posición inicial
+     * @param bulletSpawner callback para añadir balas al mundo
+     * @param eventBus      bus de eventos
+     * @return Player completamente ensamblado
      */
-    public PlayerStats getPlayerStats() { return playerStats; }
-
-    // ── Colisiones ────────────────────────────────────────────────────────
-    // onCollisionWith(GameObjects) heredado — default vacío correcto.
-    // El daño recibido desde proyectiles enemigos lo gestiona el emisor.
+    public static Player create(Vector2D spawn,
+                                Consumer<Bullet> bulletSpawner,
+                                Game.Engine.GameEventBus eventBus) {
+        return PlayerAssembler.assemble(spawn, bulletSpawner, eventBus);
+    }
 }

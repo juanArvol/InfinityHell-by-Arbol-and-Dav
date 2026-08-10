@@ -3,7 +3,7 @@ package Game.Enemys.Core;
 import Game.Enemys.EnemyTypes.Flying.FlyingEnemyAssembler;
 import Game.Enemys.EnemyTypes.Hybrid.HybridAssembler;
 import Game.Enemys.EnemyTypes.Zombie.ZombieAssembler;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**

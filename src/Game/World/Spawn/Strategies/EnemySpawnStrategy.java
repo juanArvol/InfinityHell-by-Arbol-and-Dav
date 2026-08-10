@@ -3,7 +3,7 @@ package Game.World.Spawn.Strategies;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyFactory;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.World.Spawn.SpawnStrategy;
 

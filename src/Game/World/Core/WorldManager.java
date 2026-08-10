@@ -107,7 +107,7 @@ public class WorldManager {
     private final DynamicEntityRegistry    globalDynamicRegistry;
 
     // ── Bus de eventos ────────────────────────────────────────────────────
-    private final Game.Engine.Events.GameEventBus eventBus;
+    private final Game.Engine.GameEventBus eventBus;
 
     // ── Estado activo ──────────────────────────────────────────────────────
 
@@ -135,7 +135,7 @@ public class WorldManager {
                         DebugSettings settings,
                         double targetFps) {
         this(width, height, virtualWidth, virtualHeight, generator, settings, targetFps,
-             new Game.Engine.Events.GameEventBus());
+             new Game.Engine.GameEventBus());
     }
 
     public WorldManager(int width, int height,
@@ -143,14 +143,14 @@ public class WorldManager {
                         WorldGenerator generator,
                         DebugSettings settings,
                         double targetFps,
-                        Game.Engine.Events.GameEventBus eventBus) {
+                        Game.Engine.GameEventBus eventBus) {
         this.logicalWidth    = width;
         this.logicalHeight   = height;
         this.generator       = generator;
         this.targetFps       = targetFps;
         this.cameraDeltaTime = 1.0 / targetFps;
         this.currentCoord    = new WorldCoordinator(0, 0);
-        this.eventBus        = (eventBus != null) ? eventBus : new Game.Engine.Events.GameEventBus();
+        this.eventBus        = (eventBus != null) ? eventBus : new Game.Engine.GameEventBus();
 
         this.cache    = new WorldCache();
         this.renderer = new SceneRenderer(settings);
@@ -398,7 +398,7 @@ public class WorldManager {
      * Bus de eventos del mundo. Usar para registrar listeners y emitir eventos
      * sin necesidad de un bus global estático.
      */
-    public Game.Engine.Events.GameEventBus getEventBus() { return eventBus; }
+    public Game.Engine.GameEventBus getEventBus() { return eventBus; }
 
     public void setCameraController(CameraController controller) {
         cameraSystem.setCameraController(controller);

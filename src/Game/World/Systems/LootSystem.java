@@ -1,6 +1,6 @@
 package Game.World.Systems;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.OnEnemyDeathEvent;
 import Game.Items.Creation.ItemDefinition;

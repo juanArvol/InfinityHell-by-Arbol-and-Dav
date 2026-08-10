@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets.Definition;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Pooling.AbstractObjectPool;
 import Game.Items.Types.Bullets.BulletFactory;

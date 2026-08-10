@@ -5,7 +5,7 @@ import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Engine.Lifecycle.EntityContext;

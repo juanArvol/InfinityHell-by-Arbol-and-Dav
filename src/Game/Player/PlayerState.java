@@ -3,48 +3,70 @@ package Game.Player;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
- * Estado lógico del jugador.
+ * Estado lógico específico del jugador utilizado por sus subsistemas.
  *
- * ── REFACTOR: DETECTAR Y DOCUMENTAR ESTADOS IMPOSIBLES ───────────────────
+ * ── HRFC — Player Reengineering ───────────────────────────────────────────
  *
- * PROBLEMA ORIGINAL:
- *   PlayerState usaba booleans separados para direcciones verticales:
- *     private boolean mirandoArriba;
- *     private boolean mirandoAbajo;
+ * ── AUDITORÍA DE RESPONSABILIDADES ───────────────────────────────────────
  *
- *   Nada impedía que ambos fueran true simultáneamente — un estado
- *   imposible que podría causar bugs en animaciones o lógica de disparo.
- *   El flag "congelado" convivía con "running" sin relación explícita
- *   entre ellos (si estás congelado, ¿puedes seguir corriendo?).
+ * PlayerState gestiona únicamente el estado lógico que los subsistemas
+ * del Player (Controller, Combat, Renderer, AimSystem) necesitan leer
+ * y escribir frame a frame. NO duplica estado que ya vive en EntityFlags.
  *
- * SOLUCIÓN:
- *   Introducir VerticalAim enum para reemplazar los dos booleans de
- *   dirección vertical. Un enum es mutuamente excluyente por definición:
- *   no puede ser ARRIBA y ABAJO a la vez.
+ * Mapa de propietarios definitivo:
  *
- *   Se mantienen los getters boolean (isMirandoArriba/isMirandoAbajo)
- *   para retrocompatibilidad; internamente delegan al enum.
+ *   Movement
+ *     enElSuelo  → aquí  (estado de contacto físico, leído por Controller)
+ *     running    → aquí  (modificador de movimiento, leído por Controller)
+ *     agachado   → aquí  (postura, leído por Controller y Renderer)
  *
- * BENEFICIO:
- *   - Estado imposible (arriba Y abajo) es inexpresable en el tipo.
- *   - isMirandoArribaOAbajo() sigue funcionando: verticalAim != NONE.
- *   - Agregar más estados verticales (DIAGONAL) requiere solo ampliar el enum.
- *   - El flag "congelado" queda documentado para futura refactorización.
+ *   Aim
+ *     mirandoDerecha  → aquí  (orientación, única fuente de verdad)
+ *     verticalAim     → aquí  (enum mutuamente excluyente: NONE/ARRIBA/ABAJO)
+ *     aimDirection    → aquí  (vector normalizado para combate)
+ *     aiming          → aquí  (modo apuntado activo por tecla C)
  *
- * ── NOTA SOBRE "congelado" ────────────────────────────────────────────────
+ *   Combat
+ *     reloading  → aquí  (estado de recarga, leído por Combat y Renderer)
  *
- * "congelado" es un flag de gameplay con implicaciones en múltiples sistemas
- * (movement, combat, animation). Actualmente PlayerController no lo verifica —
- * si se activa, el jugador sigue moviéndose. Esto es un TODO de lógica, no
- * de arquitectura: cuando se implemente, PlayerController debe verificar
- * state.isCongelado() antes de procesar input.
+ *   Gameplay — estados genéricos que podrían ir a EntityFlags:
+ *     congelado  → aquí  (flag de gameplay específico del Player — ver nota)
+ *
+ * ── NOTA SOBRE 'congelado' ────────────────────────────────────────────────
+ *
+ * 'congelado' representa una inhibición total del jugador (cutscenes, trampas,
+ * diálogos). EntityFlags.impairments.frozen representa el efecto de estado
+ * "Frozen" (hielo) que proviene del sistema de StatusEffects.
+ *
+ * Son conceptualmente distintos:
+ *   - congelado = intención del sistema de juego de bloquear al Player
+ *   - frozen    = efecto físico/elemental del sistema de efectos de estado
+ *
+ * La consulta compuesta correcta para "¿puede el jugador actuar?" es:
+ *   !state.isCongelado() && !entityFlags.isAbleToMove() == false
+ *
+ * Para evitar que ambos sean necesarios simultáneamente, en el futuro
+ * 'congelado' podría redirigirse a EntityFlags.states (StateFlags), pero
+ * ese refactor requiere que el sistema que lo activa (cutscenes, trampas)
+ * conozca EntityFlags. Mientras ese sistema no exista, congelado vive aquí
+ * con el propietario actual bien documentado.
+ *
+ * ── CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR ───────────────────────────────
+ *
+ *   AÑADIDO:
+ *     boolean aiming — true mientras la tecla C está presionada.
+ *     Getters/setters: isAiming() / setAiming(boolean).
+ *
+ *   SIN CAMBIOS:
+ *     VerticalAim enum — sigue siendo la representación mutuamente excluyente
+ *     del eje vertical. Los booleans mirandoArriba/mirandoAbajo se mantienen
+ *     como delegaciones de compatibilidad.
  */
 public class PlayerState {
 
     /**
      * Dirección vertical de apuntado.
-     * Reemplaza los dos booleans mirandoArriba/mirandoAbajo para
-     * eliminar el estado imposible "ambos true".
+     * Enum mutuamente excluyente: no puede ser ARRIBA y ABAJO a la vez.
      */
     public enum VerticalAim {
         NONE,
@@ -52,48 +74,61 @@ public class PlayerState {
         ABAJO
     }
 
-    private boolean     congelado;
-    private boolean     enElSuelo;
+    // ── Movement ──────────────────────────────────────────────────────────
+    private boolean enElSuelo;
+    private boolean running;
+    private boolean agachado;
+
+    // ── Aim ───────────────────────────────────────────────────────────────
     private boolean     mirandoDerecha = true;
     private VerticalAim verticalAim    = VerticalAim.NONE;
-    private boolean     agachado;
-    private boolean     running;
-    private boolean     reloading;
+    private Vector2D    aimDirection   = new Vector2D(1, 0);
 
-    private Vector2D aimDirection = new Vector2D(1, 0);
+    /**
+     * true mientras la tecla C está presionada (modo apuntado activo).
+     *
+     * Cuando aiming == true:
+     *   - PlayerController inhibe el movimiento horizontal normal.
+     *   - AimSelection solo actualiza el eje vertical.
+     *   - El drop-through es evaluado por PlayerController si verticalAim == ABAJO
+     *     y el jugador está sobre una plataforma traversable.
+     */
+    private boolean aiming;
 
-    // ── Recarga ───────────────────────────────────────────────────────────
+    // ── Combat ────────────────────────────────────────────────────────────
+    private boolean reloading;
 
-    public boolean isReloading()        { return reloading; }
-    public void    setReloading(boolean v) { reloading = v; }
+    // ── Gameplay ──────────────────────────────────────────────────────────
+    /**
+     * Inhibición total del jugador por el sistema de juego (cutscenes, trampas).
+     * Distinto de EntityFlags.impairments.frozen — ver nota de clase.
+     */
+    private boolean congelado;
 
-    // ── Estados básicos ───────────────────────────────────────────────────
-
-    public boolean isCongelado()           { return congelado; }
-    public void    setCongelado(boolean v) { congelado = v; }
+    // ── Movement — getters/setters ────────────────────────────────────────
 
     public boolean isEnElSuelo()           { return enElSuelo; }
     public void    setEnElSuelo(boolean v) { enElSuelo = v; }
 
+    public boolean isRunning()             { return running; }
+    public void    setRunning(boolean v)   { running = v; }
+
+    public boolean isAgachado()            { return agachado; }
+    public void    setAgachado(boolean v)  { agachado = v; }
+
+    // ── Aim — getters/setters ─────────────────────────────────────────────
+
     public boolean isDer()           { return mirandoDerecha; }
     public void    setDer(boolean v) { mirandoDerecha = v; }
 
-    public boolean isAgachado()           { return agachado; }
-    public void    setAgachado(boolean v) { agachado = v; }
-
-    public boolean isRunning()           { return running; }
-    public void    setRunning(boolean v) { running = v; }
-
-    // ── Dirección vertical (via enum — mutuamente excluyente) ─────────────
-
-    public VerticalAim getVerticalAim()           { return verticalAim; }
+    public VerticalAim getVerticalAim()              { return verticalAim; }
     public void        setVerticalAim(VerticalAim v) { verticalAim = v; }
 
-    // Getters de compatibilidad — mantienen la API original
+    /** Getters de compatibilidad — delegan en el enum. */
     public boolean isMirandoArriba() { return verticalAim == VerticalAim.ARRIBA; }
-    public boolean isMirandoAbajo()  { return verticalAim == VerticalAim.ABAJO; }
+    public boolean isMirandoAbajo()  { return verticalAim == VerticalAim.ABAJO;  }
 
-    // Setters de compatibilidad — redirigen al enum
+    /** Setters de compatibilidad — redirigen al enum. */
     public void setMirandoArriba(boolean v) {
         if (v) verticalAim = VerticalAim.ARRIBA;
         else if (verticalAim == VerticalAim.ARRIBA) verticalAim = VerticalAim.NONE;
@@ -103,12 +138,26 @@ public class PlayerState {
         else if (verticalAim == VerticalAim.ABAJO) verticalAim = VerticalAim.NONE;
     }
 
-    public boolean isMirandoArribaOAbajo() {
-        return verticalAim != VerticalAim.NONE;
-    }
-
-    // ── Aim ───────────────────────────────────────────────────────────────
+    /** True si hay apuntado vertical activo (ARRIBA o ABAJO). */
+    public boolean isMirandoArribaOAbajo() { return verticalAim != VerticalAim.NONE; }
 
     public Vector2D getAimDirection()           { return aimDirection; }
     public void     setAimDirection(Vector2D d) { aimDirection = d; }
+
+    /**
+     * True mientras la tecla C está presionada (modo apuntado activo).
+     * PlayerController inhibe el movimiento horizontal cuando esto es true.
+     */
+    public boolean isAiming()           { return aiming; }
+    public void    setAiming(boolean v) { aiming = v; }
+
+    // ── Combat — getters/setters ──────────────────────────────────────────
+
+    public boolean isReloading()           { return reloading; }
+    public void    setReloading(boolean v) { reloading = v; }
+
+    // ── Gameplay — getters/setters ────────────────────────────────────────
+
+    public boolean isCongelado()           { return congelado; }
+    public void    setCongelado(boolean v) { congelado = v; }
 }

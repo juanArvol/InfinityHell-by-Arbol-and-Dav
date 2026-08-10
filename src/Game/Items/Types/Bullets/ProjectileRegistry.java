@@ -1,7 +1,7 @@
 package Game.Items.Types.Bullets;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.SpawnProjectileEvent;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;

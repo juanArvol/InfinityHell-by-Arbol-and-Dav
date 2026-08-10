@@ -1,6 +1,6 @@
 package Game.Enemys.Core;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.util.HashMap;
 import java.util.Map;

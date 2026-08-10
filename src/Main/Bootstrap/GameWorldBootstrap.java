@@ -1,7 +1,7 @@
 package Main.Bootstrap;
 
 import Game.Enemys.Core.EnemySpawner;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
@@ -78,8 +78,9 @@ public final class GameWorldBootstrap {
         );
 
         // ── Player ───────────────────────────────────────────────────────
-        // El bus se inyecta en Player → PlayerCombat → WeaponInventory → ModifiedWeapon
-        player = new Player(spawnPos,
+        // PlayerAssembler.assemble() construye y conecta todos los módulos.
+        // El bus se inyecta en PlayerAssembler → PlayerCombat → WeaponInventory → ModifiedWeapon
+        player = Player.create(spawnPos,
             obj -> worldManager.addDynamic(obj),
             eventBus
         );

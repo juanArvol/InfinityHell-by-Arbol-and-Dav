@@ -1,6 +1,6 @@
 package Game.Items.Types.Weapons;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Ammulets.AmuletRegistry;

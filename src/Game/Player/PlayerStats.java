@@ -1,118 +1,134 @@
 package Game.Player;
 
 import Game.Engine.Entity.Components.HealthComponent;
+import Game.Engine.Entity.Flags.EntityFlags;
+import Game.Engine.Entity.Stats.EntityStats;
+import Game.Engine.Entity.Stats.RuntimeStats;
 import Game.Gameplay.UI.HealthView;
 
 /**
- * Estadísticas específicas del jugador.
+ * Fachada de dominio del Player hacia los sistemas genéricos de Entity.
  *
- * ── REFACTOR: SEPARACIÓN DEFINITIVA DE HealthComponent ───────────────────
+ * ── HRFC — Player Reengineering ───────────────────────────────────────────
  *
- * PROBLEMA ORIGINAL:
- *   PlayerStats contenía dos responsabilidades mezcladas:
+ * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
- *   (a) Gestión de vida: life, lifeMax, receiveDamage(), heal(), isDead(),
- *       invulnerabilityFrames, update(). Exactamente la misma responsabilidad
- *       que HealthComponent — dos sistemas resolviendo el mismo problema.
+ * PlayerStats es el puente específico del dominio Player hacia los sistemas
+ * de estadísticas, salud y flags genéricos del Engine. No es una fuente
+ * alternativa de stats — es una fachada de acceso contextual.
  *
- *   (b) Espacio para stats de gameplay (velocidad, fuerza...) que aún no
- *       existían pero cuyo lugar natural era esta clase.
+ * Lo que gestiona PlayerStats:
  *
- *   Mantener la lógica de vida en PlayerStats significaba:
- *   - Duplicación conceptual con HealthComponent.
- *   - Player con dos fuentes de verdad para su estado de salud.
- *   - Imposibilidad de que sistemas genéricos (UI de HP, sistemas de daño)
- *     usaran HealthComponent para el Player sin refactorizar todo.
+ *   1. HealthView (delegación pura a HealthComponent)
+ *      Para que la UI (LifeHUD) consulte la vida sin conocer HealthComponent.
  *
- * SOLUCIÓN:
- *   Eliminar completamente la lógica de vida de PlayerStats.
- *   La salud del Player la gestiona ahora HealthComponent, que Player
- *   añade en su constructor (addComponent(new HealthComponent(maxHp))).
- *   Los shortcuts de Entity (damage, heal, isDead) lo exponen limpiamente.
+ *   2. Invulnerabilidad post-golpe (lógica específica del Player)
+ *      Los enemigos no tienen frames de invulnerabilidad post-golpe.
+ *      Un Boss podría tenerlos con reglas distintas. No pertenece a
+ *      HealthComponent ni a EntityFlags — es política del dominio Player.
  *
- *   PlayerStats queda como sistema complementario de atributos del jugador:
- *   modificadores, multiplicadores, configuración específica del Player.
- *   Complementa a HealthComponent; no compite con él.
+ *   3. Acceso de conveniencia a EntityStats, RuntimeStats, EntityFlags
+ *      Para que sistemas externos puedan ir a PlayerStats como punto de
+ *      entrada al dominio del Player sin conocer la composición interna.
  *
- * ── RESPONSABILIDAD ACTUAL ────────────────────────────────────────────────
+ * Lo que NO gestiona PlayerStats:
  *
- * PlayerStats gestiona los atributos que modifican el comportamiento del
- * jugador: velocidad, daño base, multiplicadores, slots de equipamiento.
- * Son valores que los sistemas leen para calcular resultados, pero la
- * ejecución de esos resultados (aplicar daño, curar) la hace HealthComponent.
+ *   ✗ HP propio (vive en EntityStats.health() vía HealthComponent)
+ *   ✗ HP máximo propio (ídem)
+ *   ✗ Velocidad (vive en EntityStats.movement() + RuntimeStats)
+ *   ✗ Daño (vive en EntityStats.combat() + RuntimeStats)
+ *   ✗ SpeedMultiplier / DamageMultiplier como campos propios
+ *     → Los modificadores de stats se aplican vía RuntimeStats.apply(contributor)
+ *       usando el sistema StatContributor. No se duplican aquí.
+ *   ✗ maxInventorySlots
+ *     → Pertenece a la construcción del Inventory, no a las stats del Player.
  *
- * Ejemplo de flujo:
- *   int rawDamage = 10;
- *   int finalDamage = (int)(rawDamage * stats.getDamageMultiplier());
- *   player.damage(finalDamage);  // → HealthComponent.damage()
+ * ── FLUJO DE DAÑO ─────────────────────────────────────────────────────────
  *
- * ── INVULNERABILIDAD ─────────────────────────────────────────────────────
+ *   Damage Source
+ *        │
+ *        ▼
+ *   player.receiveDamage(amount)
+ *        │
+ *        ├── ¿isInvulnerable()? → sí → rechazar (PlayerStats.isInvulnerable)
+ *        │
+ *        ▼
+ *   HealthComponent.damage(amount) → EntityStats.health().currentHp
+ *        │
+ *        ▼
+ *   PlayerStats.triggerInvulnerability()
  *
- * Los frames de invulnerabilidad post-daño son responsabilidad de PlayerStats
- * porque son específicos del jugador, no un concepto genérico de salud.
- * Un enemigo no tiene invulnerabilidad post-golpe. Un Boss podría tenerla
- * con reglas distintas. Por tanto no pertenece a HealthComponent.
+ * ── HEALTHVIEW ────────────────────────────────────────────────────────────
  *
- * PlayerStats expone isInvulnerable() para que los sistemas de daño lo
- * consulten antes de llamar a player.damage():
+ *   LifeHUD → PlayerStats (HealthView) → HealthComponent → EntityStats.health()
  *
- *   if (!player.getPlayerStats().isInvulnerable()) {
- *       player.damage(amount);
- *       player.getPlayerStats().triggerInvulnerability();
- *   }
+ *   getLife() y getLifeMax() son delegaciones puras — sin cálculo propio.
  *
- * ── HealthView (RESTAURADO) ───────────────────────────────────────────────
+ * ── RELACIÓN ARQUITECTÓNICA ───────────────────────────────────────────────
  *
- * PlayerStats implementa HealthView para que LifeHUD consulte la vida del
- * jugador a través de PlayerStats, manteniendo la cadena:
- *
- *   LifeHUD → PlayerStats → HealthComponent
- *
- * PlayerStats actúa como fachada de solo lectura del HealthComponent.
- * No muta la salud — solo la expone al sistema de UI.
- *
- * Esta cadena es coherente con la arquitectura: PlayerStats es el punto de
- * acceso a los datos del jugador para sistemas externos (UI, buff system,
- * persistence). LifeHUD no debería saber nada de HealthComponent.
- *
- * Para futuros HUDs (EnemyLifeHUD, BossLifeHUD), sus respectivos portadores
- * (Enemy, Boss) implementarán HealthView directamente o expondrán un getter
- * que retorne HealthView — el HUD siempre depende de la interfaz, no del tipo.
- *
- * Véase: Game.UI.HealthView
+ *   PlayerStats
+ *       ├── EntityStats      (acceso de conveniencia — fuente de verdad base)
+ *       ├── RuntimeStats     (acceso de conveniencia — fuente de verdad efectiva)
+ *       ├── HealthComponent  (delegación para HealthView e invulnerabilidad)
+ *       └── EntityFlags      (acceso de conveniencia — capabilities/states)
  */
 public class PlayerStats implements HealthView {
 
-    // ── HealthComponent (fachada de solo lectura) ─────────────────────────
+    // ── Sistemas genéricos — inyectados por PlayerAssembler ───────────────
     //
-    // Se inyecta desde Player.init() después de que el HealthComponent
-    // es añadido como componente. PlayerStats NO muta la salud — solo
-    // la expone a través de HealthView.
+    // PlayerStats no construye estos objetos. Los recibe ya construidos.
+    // Son las fuentes de verdad canónicas del Engine.
 
+    private EntityStats    entityStats;
+    private RuntimeStats   runtimeStats;
+    private EntityFlags    entityFlags;
     private HealthComponent healthComponent;
 
+    // ── Binding ───────────────────────────────────────────────────────────
+
     /**
-     * Vincula el HealthComponent del Player a esta fachada.
-     * Llamar desde Player.init() una vez que el componente existe:
+     * Vincula los sistemas genéricos del Engine a esta fachada.
      *
-     *   stats.bindHealth(getHealth());
+     * Llamar desde PlayerAssembler una vez que los sistemas están construidos.
+     * Todos los parámetros son requeridos.
      *
-     * Este método no forma parte del contrato HealthView — es solo la
-     * inicialización interna de la fachada.
+     * @param entityStats    estadísticas base. No puede ser null.
+     * @param runtimeStats   estadísticas efectivas. No puede ser null.
+     * @param entityFlags    flags de capabilities/states/impairments. No puede ser null.
+     * @param health         componente de salud. No puede ser null.
      */
-    public void bindHealth(HealthComponent health) {
+    public void bind(EntityStats entityStats,
+                     RuntimeStats runtimeStats,
+                     EntityFlags entityFlags,
+                     HealthComponent health) {
+        if (entityStats  == null) throw new IllegalArgumentException("entityStats es requerido");
+        if (runtimeStats == null) throw new IllegalArgumentException("runtimeStats es requerido");
+        if (entityFlags  == null) throw new IllegalArgumentException("entityFlags es requerido");
+        if (health       == null) throw new IllegalArgumentException("health es requerido");
+        this.entityStats    = entityStats;
+        this.runtimeStats   = runtimeStats;
+        this.entityFlags    = entityFlags;
         this.healthComponent = health;
     }
 
-    // ── HealthView ────────────────────────────────────────────────────────
+    /**
+     * Vincula solo el HealthComponent (para casos donde los demás sistemas
+     * ya están disponibles vía Player.getStats() / getRuntimeStats() / getFlags()).
+     *
+     * Mantiene retrocompatibilidad con código que solo llama bindHealth().
+     *
+     * @param health componente de salud. No puede ser null.
+     */
+    public void bindHealth(HealthComponent health) {
+        if (health == null) throw new IllegalArgumentException("health es requerido");
+        this.healthComponent = health;
+    }
+
+    // ── HealthView — delegación pura ──────────────────────────────────────
 
     /**
      * HP actual del jugador.
-     * Delega en HealthComponent — fuente de verdad de la salud.
-     *
-     * CORRECCIÓN F-01: la versión anterior calculaba (int)(maxHP * healthPercent),
-     * que es un roundtrip double innecesario. HealthComponent.getCurrent() ya
-     * devuelve el valor entero exacto, sin pérdida de precisión.
+     * Delegación pura a HealthComponent — sin cálculo propio.
      */
     @Override
     public int getLife() {
@@ -121,20 +137,25 @@ public class PlayerStats implements HealthView {
     }
 
     /**
-     * HP máxima del jugador.
-     * Delega en HealthComponent — fuente de verdad de la salud.
+     * HP máximo del jugador.
+     * Delegación pura a HealthComponent — sin cálculo propio.
+     * Retorna 1 si no está vinculado para evitar división por cero en HUDs.
      */
     @Override
     public int getLifeMax() {
-        if (healthComponent == null) return 1; // evitar división por cero en HUDs
+        if (healthComponent == null) return 1;
         return healthComponent.getMaxHP();
     }
 
-    // ── Invulnerabilidad post-daño (específica del Player) ────────────────
+    // ── Invulnerabilidad post-daño (política específica del Player) ────────
 
     private static final int INV_FRAMES_ON_HIT = 20;
     private int invulnerabilityFrames = 0;
 
+    /**
+     * Actualiza el contador de invulnerabilidad.
+     * Llamar una vez por frame desde Player.update(), después de super.update().
+     */
     public void update() {
         if (invulnerabilityFrames > 0) {
             invulnerabilityFrames--;
@@ -143,42 +164,47 @@ public class PlayerStats implements HealthView {
 
     /**
      * Activa los frames de invulnerabilidad tras recibir un golpe.
-     * Llamar desde el sistema de daño después de aplicar el daño real.
+     * Llamar desde player.receiveDamage() después de aplicar el daño.
      */
     public void triggerInvulnerability() {
         invulnerabilityFrames = INV_FRAMES_ON_HIT;
     }
 
-    /** True si el jugador está en frames de invulnerabilidad post-golpe. */
+    /**
+     * True si el Player está en frames de invulnerabilidad post-golpe.
+     */
     public boolean isInvulnerable() {
         return invulnerabilityFrames > 0;
     }
 
-    // ── Atributos base del jugador ────────────────────────────────────────
+    // ── Acceso de conveniencia a sistemas genéricos ───────────────────────
     //
-    // Estos valores son leídos por sistemas (combate, movimiento, UI) para
-    // calcular los resultados finales. La ejecución ocurre en los componentes
-    // correspondientes (HealthComponent, PlayerPhysics, etc.)
-
-    private float speedMultiplier  = 1.0f;
-    private float damageMultiplier = 1.0f;
-    private int   maxInventorySlots = 20;
-
-    public float getSpeedMultiplier()   { return speedMultiplier; }
-    public float getDamageMultiplier()  { return damageMultiplier; }
-    public int   getMaxInventorySlots() { return maxInventorySlots; }
-
-    public void setSpeedMultiplier(float v)  { speedMultiplier  = Math.max(0f, v); }
-    public void setDamageMultiplier(float v) { damageMultiplier = Math.max(0f, v); }
-
-    // ── Modificadores temporales ──────────────────────────────────────────
+    // Estos métodos permiten que sistemas externos usen PlayerStats como
+    // punto de entrada al dominio del Player. No duplican datos — delegan.
     //
-    // Futuros modificadores de stats (buffs de equipamiento, pociones, etc.)
-    // se añaden aquí, no en HealthComponent. PlayerStats es el agregador
-    // de atributos; HealthComponent es el ejecutor de salud.
-    //
-    // Ejemplo futuro:
-    //   public void applySpeedBuff(float amount, int durationFrames) { ... }
-    //   public void applyDamageBuff(float amount, int durationFrames) { ... }
+    // Para stats de gameplay: preferir getEntityStats() / getRuntimeStats()
+    // sobre cualquier campo local. No existen campos locales de stats.
+
+    /**
+     * Estadísticas base del Player (fuente de verdad permanente).
+     * Null si bind() no fue llamado.
+     */
+    public EntityStats getEntityStats() { return entityStats; }
+
+    /**
+     * Estadísticas efectivas con modificadores activos (fuente de verdad runtime).
+     * Null si bind() no fue llamado.
+     */
+    public RuntimeStats getRuntimeStats() { return runtimeStats; }
+
+    /**
+     * Flags de capabilities, states e impairments del Player.
+     * Null si bind() no fue llamado.
+     */
+    public EntityFlags getEntityFlags() { return entityFlags; }
+
+    /**
+     * Componente de salud. Null si bindHealth() / bind() no fue llamado.
+     */
+    public HealthComponent getHealthComponent() { return healthComponent; }
 }
-

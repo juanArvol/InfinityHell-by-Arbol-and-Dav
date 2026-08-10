@@ -5,12 +5,12 @@ import Game.Enemys.Core.Controllers.EnemyAttackController;
 import Game.Enemys.Core.Controllers.EnemyComponentRegistry;
 import Game.Enemys.Core.Controllers.EnemyMovementController;
 import Game.Enemys.Core.Controllers.EnemyPhaseController;
+import Game.Engine.GameEventBus;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
-import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**

@@ -1,6 +1,6 @@
 package Game.Player;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Bullets.Definition.Bullet;
@@ -47,7 +47,7 @@ public class PlayerCombat implements MouseActionListener {
 
     private final PlayerState        state;
     private final WeaponInventory    inventory;
-    private final Supplier<Vector2D> positionSupplier;
+    private       Supplier<Vector2D> positionSupplier;
     private final Consumer<Bullet>   bulletSpawner;
     private final GameEventBus       eventBus;
 
@@ -89,6 +89,22 @@ public class PlayerCombat implements MouseActionListener {
 
     public WeaponInventory getInventory() {
         return inventory;
+    }
+
+    /**
+     * Actualiza el proveedor de posición del portador.
+     *
+     * Necesario porque PlayerAssembler construye PlayerCombat antes de que
+     * el Player exista, y luego actualiza el supplier una vez que la entidad
+     * está disponible. El supplier null inicial es seguro: no se llama hasta
+     * que update() se ejecuta por primera vez tras el ensamblado completo.
+     *
+     * @param positionSupplier nuevo proveedor de posición. No puede ser null.
+     */
+    public void setPositionSupplier(Supplier<Vector2D> positionSupplier) {
+        if (positionSupplier == null)
+            throw new IllegalArgumentException("positionSupplier no puede ser null");
+        this.positionSupplier = positionSupplier;
     }
 
     // ── MouseActionListener ────────────────────────────────────────────────

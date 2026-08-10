@@ -3,7 +3,7 @@ package Game.Enemys.Bosses.Sans.Patterns;
 import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.AttackPattern;
 import Game.Enemys.Core.Enemy;
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Gameplay.Events.SpawnProjectileEvent;
 
 /**

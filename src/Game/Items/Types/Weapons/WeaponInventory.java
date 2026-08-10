@@ -1,6 +1,6 @@
 package Game.Items.Types.Weapons;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Gameplay.Events.WeaponEvents;
 import java.util.ArrayList;
 import java.util.Collections;

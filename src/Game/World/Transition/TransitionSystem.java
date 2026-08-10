@@ -1,6 +1,6 @@
 package Game.World.Transition;
 
-import Game.Engine.Events.GameEventBus;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameObjects;
 import Game.Gameplay.Events.TransitionEvent;
 import Game.World.Core.World;
