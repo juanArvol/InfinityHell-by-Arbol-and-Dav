@@ -2,9 +2,9 @@ package Game.Player;
 
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponEvents;
 import Game.Items.Types.Weapons.WeaponInventory;
 import Inputs.Listeners.MouseActionListener;
 import Inputs.MouseInput;
@@ -49,6 +49,7 @@ public class PlayerCombat implements MouseActionListener {
     private final WeaponInventory    inventory;
     private final Supplier<Vector2D> positionSupplier;
     private final Consumer<Bullet>   bulletSpawner;
+    private final GameEventBus       eventBus;
 
     /** Edge-click registrado este frame (disparo puntual en SemiAuto/Burst). */
     private boolean clickFired = false;
@@ -57,16 +58,19 @@ public class PlayerCombat implements MouseActionListener {
      * @param state            estado del jugador (congelado, apuntado, recargando)
      * @param positionSupplier proveedor de posición actual del portador
      * @param bulletSpawner    callback para añadir proyectiles al mundo
+     * @param eventBus         bus de eventos para emitir eventos de arma
      */
     public PlayerCombat(
             PlayerState state,
             Supplier<Vector2D> positionSupplier,
-            Consumer<Bullet> bulletSpawner
+            Consumer<Bullet> bulletSpawner,
+            GameEventBus eventBus
     ) {
         this.state            = state;
         this.positionSupplier = positionSupplier;
         this.bulletSpawner    = bulletSpawner;
-        this.inventory        = new WeaponInventory();
+        this.eventBus         = eventBus;
+        this.inventory        = new WeaponInventory(eventBus);
     }
 
     // ── Loadout ────────────────────────────────────────────────────────────
@@ -111,8 +115,8 @@ public class PlayerCombat implements MouseActionListener {
             currentWeapon.reload();
 
             // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
-            if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnReloadStart.class)) {
-                GameEventBus.GLOBAL.post(new WeaponEvents.OnReloadStart(
+            if (eventBus.hasListeners(WeaponEvents.OnReloadStart.class)) {
+                eventBus.post(new WeaponEvents.OnReloadStart(
                         currentWeapon, currentWeapon.getComport().getStats().getCooldown()));
             }
         }
@@ -123,16 +127,16 @@ public class PlayerCombat implements MouseActionListener {
             if (!wasReloading) {
                 // La recarga se completó este frame
                 state.setReloading(false);
-                if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnReloadComplete.class)) {
-                    GameEventBus.GLOBAL.post(new WeaponEvents.OnReloadComplete(currentWeapon));
+                if (eventBus.hasListeners(WeaponEvents.OnReloadComplete.class)) {
+                    eventBus.post(new WeaponEvents.OnReloadComplete(currentWeapon));
                 }
             }
         }
 
         // ── Cargador vacío ────────────────────────────────────────────────
         if (clickFired && currentWeapon.getCurrentAmmo() <= 0 && !currentWeapon.isReloading()) {
-            if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnEmptyMagazine.class)) {
-                GameEventBus.GLOBAL.post(new WeaponEvents.OnEmptyMagazine(currentWeapon));
+            if (eventBus.hasListeners(WeaponEvents.OnEmptyMagazine.class)) {
+                eventBus.post(new WeaponEvents.OnEmptyMagazine(currentWeapon));
             }
         }
 

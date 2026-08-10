@@ -1,12 +1,11 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
-import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletBehaviorWrapper;
 import Game.Items.Types.Bullets.Definition.Bullet;
-import Game.Items.Types.Bullets.Definition.ProjectileEvents;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -145,8 +144,9 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
         bullet.getBulletLife().revive();
 
         // Evento de rebote
-        if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileBounce.class)) {
-            GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileBounce(bullet, hitEntity));
+        var bus = bullet.getEventBus();
+        if (bus != null && bus.hasListeners(ProjectileEvents.OnProjectileBounce.class)) {
+            bus.post(new ProjectileEvents.OnProjectileBounce(bullet, hitEntity));
         }
     }
 

@@ -1,5 +1,7 @@
 package Game.World.Transition;
 
+import Game.Engine.Entity.Capabilities.GameplayCapability;
+
 /**
  * Capacidad de transición como marcador para entidades del Engine.
  *
@@ -37,7 +39,7 @@ package Game.World.Transition;
  *   BLOCKS_TRANSITION → bloquea transiciones de otras entidades que lo impacten
  */
 public final class TransitionCapability
-        implements Game.Gameplay.Core.Capabilities.GameplayCapability {
+        implements GameplayCapability {
 
     // ── Capacidades de transición ─────────────────────────────────────────
 

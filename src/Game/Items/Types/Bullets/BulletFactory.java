@@ -2,9 +2,9 @@ package Game.Items.Types.Bullets;
 
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Game.Items.Types.Bullets.Definition.Bullet;
-import Game.Items.Types.Bullets.Definition.ProjectileEvents;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweightCache;
 import Game.Items.Types.Bullets.Movement.CompositeMovement;
@@ -66,37 +66,36 @@ public final class BulletFactory {
     /**
      * Construye un Bullet y emite OnProjectileSpawn con owner = null.
      *
-     * Ruta estándar para proyectiles que no pasan por un pool.
-     *
+     * @param bus       bus de eventos para inyectar en el proyectil
      * @param blueprint definición completa y resuelta del proyectil
      * @param position  posición de spawn en coordenadas del mundo
      * @param direction dirección normalizada de vuelo
      * @return Bullet listo para añadir al mundo
      */
-    public static Bullet build(ProjectileBlueprint blueprint,
+    public static Bullet build(GameEventBus bus,
+                               ProjectileBlueprint blueprint,
                                Vector2D position,
                                Vector2D direction) {
-        return build(blueprint, position, direction, null);
+        return build(bus, blueprint, position, direction, null);
     }
 
     /**
      * Construye un Bullet, emite OnProjectileSpawn propagando el owner.
      *
-     * owner es Object — la Factory es ignorante de la jerarquía de entidades.
-     * owner puede ser null: proyectil sin dueño rastreable.
-     *
+     * @param bus       bus de eventos para inyectar en el proyectil
      * @param blueprint definición completa y resuelta del proyectil
      * @param position  posición de spawn en coordenadas del mundo
      * @param direction dirección normalizada de vuelo
      * @param owner     el objeto que originó el disparo (puede ser null)
      * @return Bullet listo para añadir al mundo
      */
-    public static Bullet build(ProjectileBlueprint blueprint,
+    public static Bullet build(GameEventBus bus,
+                               ProjectileBlueprint blueprint,
                                Vector2D position,
                                Vector2D direction,
                                Object owner) {
         Bullet bullet = construct(blueprint, position, direction);
-        emitSpawn(bullet, owner);
+        emitSpawn(bus, bullet, owner);
         return bullet;
     }
 
@@ -177,18 +176,23 @@ public final class BulletFactory {
     // ── Emisión de evento (separada para reutilizar desde el pool) ────────
 
     /**
-     * Emite OnProjectileSpawn si hay suscriptores.
+     * Emite OnProjectileSpawn si hay suscriptores en el bus dado.
      *
      * Separado de construct() para que ProjectilePool pueda emitir el evento
      * una vez, en el mismo punto, tanto para instancias nuevas como para
      * instancias reutilizadas — garantizando que el owner es siempre el correcto.
      *
-     * Llamar desde ProjectilePool.acquire() después de inyectar ownerPool
-     * y projectileContext. No llamar en otros contextos.
+     * También inyecta el bus en el bullet para que pueda emitir eventos
+     * de colisión/expiración/destrucción durante su ciclo de vida.
+     *
+     * @param bus    bus de eventos activo. Null = no se emite nada.
+     * @param bullet proyectil recién construido o reutilizado
+     * @param owner  objeto que disparó el proyectil (puede ser null)
      */
-    public static void emitSpawn(Bullet bullet, Object owner) {
-        if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileSpawn.class)) {
-            GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileSpawn(bullet, owner));
+    public static void emitSpawn(GameEventBus bus, Bullet bullet, Object owner) {
+        bullet.setEventBus(bus);
+        if (bus != null && bus.hasListeners(ProjectileEvents.OnProjectileSpawn.class)) {
+            bus.post(new ProjectileEvents.OnProjectileSpawn(bullet, owner));
         }
     }
 

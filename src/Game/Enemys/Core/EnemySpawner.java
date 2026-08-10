@@ -1,5 +1,6 @@
 package Game.Enemys.Core;
 
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.World.Core.World;
 import Game.World.Spawn.SpawnDescriptor;
@@ -59,12 +60,18 @@ public class EnemySpawner {
      * @param count número de enemies a generar.
      */
     public void spawn(World world, int count) {
+        spawn(world, count, null);
+    }
+
+    /**
+     * Spawna {@code count} enemies aleatorios en el mundo con bus de eventos.
+     */
+    public void spawn(World world, int count, GameEventBus eventBus) {
         EnemyFactory.EnemyId[] types = EnemyFactory.EnemyId.values();
         for (int i = 0; i < count; i++) {
             EnemyFactory.EnemyId type = types[(int)(Math.random() * types.length)];
             Vector2D pos   = randomPosition(world);
-            Enemy    enemy = EnemyFactory.create(type, pos);
-            // addDynamic: enemigos son entidades dinámicas — no pertenecen a chunks
+            Enemy    enemy = EnemyFactory.create(type, pos, eventBus);
             world.addDynamic(enemy);
         }
     }
@@ -77,7 +84,11 @@ public class EnemySpawner {
      * @param pos   posición exacta de spawn.
      */
     public void spawnAt(World world, EnemyFactory.EnemyId type, Vector2D pos) {
-        Enemy enemy = EnemyFactory.create(type, pos);
+        spawnAt(world, type, pos, null);
+    }
+
+    public void spawnAt(World world, EnemyFactory.EnemyId type, Vector2D pos, GameEventBus eventBus) {
+        Enemy enemy = EnemyFactory.create(type, pos, eventBus);
         world.addDynamic(enemy);
     }
 
@@ -89,7 +100,11 @@ public class EnemySpawner {
      * @param pos       posición de spawn.
      */
     public void spawnWith(World world, EnemyAssembler assembler, Vector2D pos) {
-        Enemy enemy = EnemyFactory.create(assembler, pos);
+        spawnWith(world, assembler, pos, null);
+    }
+
+    public void spawnWith(World world, EnemyAssembler assembler, Vector2D pos, GameEventBus eventBus) {
+        Enemy enemy = EnemyFactory.create(assembler, pos, eventBus);
         world.addDynamic(enemy);
     }
 
@@ -107,17 +122,16 @@ public class EnemySpawner {
      * @param count       número de enemies a spawnar
      */
     public void spawnViaSystem(SpawnSystem spawnSystem, World world, int count) {
-        // SpawnPoint.worldBounds con dimensiones estándar de chunk.
-        // En el nuevo modelo World no tiene dimensiones propias —
-        // el spawn se distribuye dentro de los primeros 1280×720 px globales.
-        SpawnPoint point = SpawnPoint.worldBounds(1280, 720, 60);
+        spawnViaSystem(spawnSystem, world, count, null);
+    }
 
+    public void spawnViaSystem(SpawnSystem spawnSystem, World world, int count, GameEventBus eventBus) {
+        SpawnPoint point = SpawnPoint.worldBounds(1280, 720, 60);
         SpawnDescriptor desc = SpawnDescriptor.builder()
             .id("enemy_spawner_" + System.nanoTime())
-            .strategy(EnemySpawnStrategy.random())
+            .strategy(EnemySpawnStrategy.random(eventBus))
             .point(point)
             .build();
-
         for (int i = 0; i < count; i++) {
             spawnSystem.register(SpawnRequest.immediate(desc));
         }

@@ -1,6 +1,5 @@
 package Game.Gameplay.Aimm;
 
-import Game.Gameplay.Aimm.Dirrection.AidleStrategy;
 import Game.Player.Player;
 import Inputs.KeyBoard;
 

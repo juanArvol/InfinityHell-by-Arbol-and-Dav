@@ -1,5 +1,6 @@
 package Game.Items.Types.Bullets.Definition;
 
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Pooling.AbstractObjectPool;
 import Game.Items.Types.Bullets.BulletFactory;
@@ -108,10 +109,13 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
     private ProjectileContext context = ProjectileContext.NULL;
 
     /**
+     * Bus de eventos inyectado en cada proyectil adquirido.
+     * null = los proyectiles no emiten eventos.
+     */
+    private GameEventBus eventBus = null;
+
+    /**
      * Blueprint en uso durante la llamada actual a acquire().
-     * Se asigna antes de delegar a findReusable() / createInstance()
-     * para que esos métodos puedan acceder a él.
-     * null fuera de una llamada acquire().
      */
     private ProjectileBlueprint currentBlueprint = null;
 
@@ -119,14 +123,19 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
     /**
      * Configura el ProjectileContext inyectado en cada proyectil adquirido.
-     *
-     * Llamar una vez al inicializar el pool:
-     *   pool.setContext(new WorldProjectileContext(world));
-     *
-     * @param ctx contexto a inyectar (null = ProjectileContext.NULL)
      */
     public void setContext(ProjectileContext ctx) {
         this.context = (ctx != null) ? ctx : ProjectileContext.NULL;
+    }
+
+    /**
+     * Configura el bus de eventos inyectado en cada proyectil adquirido.
+     * Llamar desde GameWorldBootstrap después de crear el bus.
+     *
+     * @param bus bus activo (null = proyectiles sin eventos)
+     */
+    public void setEventBus(GameEventBus bus) {
+        this.eventBus = bus;
     }
 
     // ── Acquire con firma específica de Bullet ────────────────────────────
@@ -209,9 +218,8 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
         bullet.setProjectileContext(context);
 
         // ── Único punto de emisión de OnProjectileSpawn ───────────────────
-        // Tanto instancias nuevas como reutilizadas emiten aquí, con el
-        // mismo owner. Las instancias nuevas no emitieron en buildForPool().
-        BulletFactory.emitSpawn(bullet, owner);
+        // También inyecta el eventBus en el bullet para eventos de ciclo de vida.
+        BulletFactory.emitSpawn(eventBus, bullet, owner);
 
         return bullet;
     }

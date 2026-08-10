@@ -20,10 +20,10 @@ import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.OnEnemyDeathEvent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
+import Game.Gameplay.Events.OnEnemyDeathEvent;
 import Sprites.Core.SpriteHandle;
 
 /**
@@ -99,9 +99,11 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     private final HealthComponent       health;
     private final StatusEffectComponent effects;
 
+    // ── Bus de eventos ────────────────────────────────────────────────────
+    private final GameEventBus eventBus;
+
     // ── Ciclo de vida ─────────────────────────────────────────────────────
     private boolean pendingRemoval = false;
-
     // ── Constructor — todos los módulos son inyectados ────────────────────
 
     /**
@@ -125,7 +127,8 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
                  EntityStats stats,
                  EntityFlags flags,
                  EntityAttributes attributes,
-                 AttackSources attackSources) {
+                 AttackSources attackSources,
+                 GameEventBus eventBus) {
 
         super(position, handle, physics, SizeSyncMode.NONE);
 
@@ -138,6 +141,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
         if (flags              == null) throw new IllegalArgumentException("Enemy: flags is required");
         if (attributes         == null) throw new IllegalArgumentException("Enemy: attributes is required");
         if (attackSources      == null) throw new IllegalArgumentException("Enemy: attackSources is required");
+        if (eventBus           == null) throw new IllegalArgumentException("Enemy: eventBus is required");
 
         this.aiController       = aiController;
         this.movementController = movementController;
@@ -150,6 +154,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
         this.flags         = flags;
         this.attributes    = attributes;
         this.attackSources = attackSources;
+        this.eventBus      = eventBus;
 
         this.state = new EnemyState();
 
@@ -214,7 +219,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     // ── Muerte ────────────────────────────────────────────────────────────
 
     private void onDeath() {
-        GameEventBus.GLOBAL.post(new OnEnemyDeathEvent(this, getTransform().getPosition()));
+        eventBus.post(new OnEnemyDeathEvent(this, getTransform().getPosition()));
         markForRemoval();
     }
 
@@ -343,4 +348,13 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     public Physics2DComponent getPhysicsComponent() {
         return getComponent(Physics2DComponent.class);
     }
+
+    // ── Bus de eventos ────────────────────────────────────────────────────
+
+    /**
+     * Bus de eventos de esta instancia.
+     * Los patrones de ataque y componentes que necesitan emitir eventos
+     * deben obtenerlo desde aquí en lugar de acceder a cualquier instancia global.
+     */
+    public GameEventBus getEventBus() { return eventBus; }
 }

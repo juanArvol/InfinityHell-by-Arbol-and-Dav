@@ -38,7 +38,7 @@ public final class SansPhase2 implements EnemyPhase {
 
         // ── Ataques: mismo patrón, cooldown reducido → más agresivo ───────
         enemy.getAttackController().clearPatterns();
-        enemy.getAttackController().addPattern(new BoneBarragePattern());
+        enemy.getAttackController().addPattern(new BoneBarragePattern(enemy.getEventBus()));
 
         // ── Stats: valores de fase 2 ──────────────────────────────────────
         enemy.getStats()

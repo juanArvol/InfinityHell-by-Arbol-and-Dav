@@ -1,11 +1,12 @@
 package Main.Bootstrap;
 
 import Game.Engine.Camera.GameCamera;
+import Game.Gameplay.UI.UIManager;
+import Game.Gameplay.UI.Types.AmmoHUD;
+import Game.Gameplay.UI.Types.CrossHairHUD;
+import Game.Gameplay.UI.Types.LifeHUD;
 import Game.Player.Player;
-import Game.UI.Types.AmmoHUD;
-import Game.UI.Types.CrossHairHUD;
-import Game.UI.Types.LifeHUD;
-import Game.UI.UIManager;
+
 import java.util.function.Supplier;
 
 /**

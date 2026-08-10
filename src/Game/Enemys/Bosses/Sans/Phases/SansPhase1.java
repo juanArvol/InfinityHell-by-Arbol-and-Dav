@@ -42,7 +42,7 @@ public final class SansPhase1 implements EnemyPhase {
 
         // ── Ataques: lluvia de huesos lenta ───────────────────────────────
         enemy.getAttackController().clearPatterns();
-        enemy.getAttackController().addPattern(new BoneBarragePattern());
+        enemy.getAttackController().addPattern(new BoneBarragePattern(enemy.getEventBus()));
 
         // ── Stats: valores de fase 1 ──────────────────────────────────────
         enemy.getStats()

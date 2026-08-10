@@ -2,6 +2,7 @@ package Game.Engine.Systems;
 
 import Game.Engine.Colisions.CollisionDetector;
 import Game.Engine.Colisions.CollisionDispatcher;
+import Game.Engine.Colisions.CollisionHandler;
 import Game.Engine.Colisions.CollisionResult;
 import Game.Engine.Colisions.SweptAABB;
 import Game.Engine.Component;
@@ -12,7 +13,6 @@ import Game.Engine.Entity.Components.InteractionSideComponent.SideInteraction;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.Entity.Components.SurfaceComponent;
-import Game.Engine.Events.CollisionListenerEvent;
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Contact.ContactState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
@@ -93,6 +93,46 @@ public class CollisionsSystem {
             this.surface = surface;
         }
     }
+
+    /**
+     * Epsilon de sub-pixel aplicado al trigger en contactos CCD limpios (time > 0).
+     *
+     * ── Justificación ─────────────────────────────────────────────────────
+     * ColliderComponent.getBounds() hace (int) pos.getX() — truncado hacia cero.
+     * Con un time exactamente calculado por SweptAABB, la posición double queda
+     * en el borde geométrico real. El truncado (int) puede reportar al objeto
+     * 0–0.999px dentro del collider aunque la posición double esté en el borde
+     * o apenas fuera.
+     *
+     * Para contactos CCD limpios (time > 0) basta un epsilon de 0.5:
+     *   - Es sub-pixel: no desplaza visiblemente el proyectil.
+     *   - Sobrevive al truncado (int): pos_double = borde + 0.5 → (int) = borde,
+     *     que es exactamente el borde del collider, no dentro de él.
+     *   - No produce overshoot: 0.5 < 1 unidad, por lo que nunca puede
+     *     penetrar un collider adyacente (tamaño mínimo 4px en bullets).
+     *
+     * ── Por qué NO 1.0 (el valor anterior) ──────────────────────────────
+     * 1.0 producía oscilación en contactos tangenciales:
+     *   frame N  → bullet en borde exacto → separar 1.0 en dirección normal
+     *   frame N+1 → bullet 1.0px fuera → velocidad reflejada la devuelve al borde
+     *   frame N+2 → contacto de nuevo con time ≈ 0 → separar 1.0 otra vez → loop
+     * Con 0.5 la separación es sub-pixel, la velocidad reflejada aleja la bullet
+     * más que 0.5px por frame (velocidad mínima de bullets > 1px/frame),
+     * así que el ciclo de re-contacto no ocurre.
+     *
+     * ── Para time = 0 (ya solapado) ──────────────────────────────────────
+     * Se usa computePenetrationSeparation() para calcular el desplazamiento
+     * exacto necesario para salir del solapamiento + CONTACT_EPSILON.
+     */
+    private static final double CONTACT_EPSILON = 0.5;
+
+    /**
+     * Separación adicional sobre la penetración real para contactos time=0.
+     * Se suma a la penetración calculada para garantizar que el objeto quede
+     * fuera del collider después de la separación.
+     * Mismo valor que CONTACT_EPSILON — coherencia arquitectural.
+     */
+    private static final double PENETRATION_EPSILON = 0.5;
 
     /**
      * Contactos activos del frame anterior, por objeto.
@@ -397,6 +437,55 @@ public class CollisionsSystem {
             PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
 
             if (hitObj != null) {
+                // ── Separación de contacto — corrección geométrica ────────────
+                //
+                // CAUSA DE LA OSCILACIÓN (diagnosticada en Mini-HRFC):
+                //
+                // El parche anterior aplicaba una separación fija de 1.0px en
+                // dirección de la normal en TODOS los casos (time > 0 y time = 0).
+                // Eso producía oscilación por dos razones distintas:
+                //
+                //   CASO time > 0 (contacto CCD limpio):
+                //     moveWith(vx*t, vy*t) deja la bullet en el borde geométrico.
+                //     Separar 1.0px en dirección normal → bullet demasiado lejos.
+                //     La velocidad reflejada (ej: JUMP_BOOST = -14) devuelve la
+                //     bullet al borde en el siguiente frame → re-contacto → 1.0px
+                //     de nuevo → loop de oscilación a 1px de la superficie.
+                //
+                //   CASO time = 0 (penetración preexistente por truncado int):
+                //     moveWith(0, 0) → posición sin cambio.
+                //     Separar 1.0px fijo: puede ser demasiado (si la penetración
+                //     real es 0.1px, 1.0px lo mete en el collider adyacente) o
+                //     insuficiente (si la penetración real es 1.5px).
+                //
+                // SOLUCIÓN CORRECTA:
+                //
+                //   CASO time > 0 → solo aplicar CONTACT_EPSILON (0.5px sub-pixel).
+                //     0.5px sobrevive al truncado (int) sin desplazar visiblemente
+                //     el proyectil. La velocidad reflejada siempre aleja la bullet
+                //     más de 0.5px/frame (velocidad mínima de bullets > 1px/frame).
+                //
+                //   CASO time = 0 → calcular la penetración real y desplazar
+                //     exactamente pen + PENETRATION_EPSILON. Esto garantiza salida
+                //     mínima del overlap sin overshoot hacia colliders adyacentes.
+                //
+                // La separación solo se aplica en el eje de la normal para no
+                // desplazar lateralmente la bullet (el eje perpendicular es libre).
+                Rectangle hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
+                double sepX, sepY;
+                if (nearestTime > 0.0) {
+                    // Contacto CCD limpio: separación sub-pixel
+                    sepX = hitNormalX * CONTACT_EPSILON;
+                    sepY = hitNormalY * CONTACT_EPSILON;
+                } else {
+                    // time = 0: penetración preexistente — calcular profundidad real
+                    Rectangle trigBounds = colA.getBounds();
+                    double pen = computePenetrationDepth(trigBounds, hitBounds, hitNormalX, hitNormalY);
+                    sepX = hitNormalX * (pen + PENETRATION_EPSILON);
+                    sepY = hitNormalY * (pen + PENETRATION_EPSILON);
+                }
+                PhysicsStepper.moveWith(obj, sepX, sepY);
+
                 // Escribir normal en BulletPhysics ANTES del dispatch
                 // para que onCollision() pueda leerla
                 if (physics instanceof BulletPhysics bp) {
@@ -407,6 +496,26 @@ public class CollisionsSystem {
                 detector.markDispatched(obj, hitObj);
 
                 CollisionDispatcher.dispatch(obj, hitObj);
+
+                // ── Guard post-contacto: V·N debe ser positivo ────────────────
+                //
+                // Después del dispatch, el behavior (BulletJump, etc.) ha modificado
+                // la velocidad. Verificar que la componente de velocidad en la
+                // dirección de la normal sea positiva (alejándose del collider).
+                //
+                // Si la velocidad resultante apunta HACIA el collider (V·N < 0),
+                // forzarla a cero en esa componente. Esto corta el ciclo de
+                // re-contacto inmediato sin modificar la reflexión del behavior.
+                //
+                // Casos que activan el guard:
+                //   1. El behavior no modificó la velocidad (bug en el behavior).
+                //   2. Doble dispatch por FASE 2 que invirtió la velocidad ya corregida.
+                //   3. Contacto de esquina con normal inconsistente.
+                //
+                // El guard es un safety net del sistema, no un reemplazo de la
+                // reflexión correcta en el behavior. No debe activarse en condiciones
+                // normales si el behavior está bien implementado.
+                enforcePostContactVelocity(physics, hitNormalX, hitNormalY);
             }
         } // fin loop FASE 1B
 
@@ -446,7 +555,7 @@ public class CollisionsSystem {
         }
 
         for (GameObjects obj : objects) {
-            List<CollisionListenerEvent> listeners = collectListeners(obj);
+            List<CollisionHandler> listeners = collectListeners(obj);
             if (listeners.isEmpty()) continue;
 
             Set<GameObjects> current  = currentContacts.getOrDefault(obj, Set.of());
@@ -455,12 +564,12 @@ public class CollisionsSystem {
 
             for (GameObjects contact : current) {
                 if (!previous.contains(contact)) {
-                    for (CollisionListenerEvent listener : listeners) {
+                    for (CollisionHandler listener : listeners) {
                         if (isTrigger) listener.onTriggerEnter(contact);
                         else           listener.onCollisionEnter(contact);
                     }
                 } else {
-                    for (CollisionListenerEvent listener : listeners) {
+                    for (CollisionHandler listener : listeners) {
                         if (isTrigger) listener.onTriggerStay(contact);
                         else           listener.onCollisionStay(contact);
                     }
@@ -469,7 +578,7 @@ public class CollisionsSystem {
 
             for (GameObjects contact : previous) {
                 if (!current.contains(contact)) {
-                    for (CollisionListenerEvent listener : listeners) {
+                    for (CollisionHandler listener : listeners) {
                         if (isTrigger) listener.onTriggerExit(contact);
                         else           listener.onCollisionExit(contact);
                     }
@@ -578,10 +687,10 @@ public class CollisionsSystem {
 
     // ── Helpers privados de FASE 4 ────────────────────────────────────────
 
-    private static List<CollisionListenerEvent> collectListeners(GameObjects obj) {
-        List<CollisionListenerEvent> result = null;
+    private static List<CollisionHandler> collectListeners(GameObjects obj) {
+        List<CollisionHandler> result = null;
         for (Component c : obj.getComponents()) {
-            if (c instanceof CollisionListenerEvent cle) {
+            if (c instanceof CollisionHandler cle) {
                 if (result == null) result = new ArrayList<>(2);
                 result.add(cle);
             }
@@ -592,5 +701,96 @@ public class CollisionsSystem {
     private static boolean isTriggerObj(GameObjects obj) {
         ColliderComponent col = obj.getComponent(ColliderComponent.class);
         return col != null && col.isTrigger();
+    }
+
+    // ── Helpers de separación de contacto ────────────────────────────────
+
+    /**
+     * Calcula la profundidad de penetración del trigger dentro del hit en el
+     * eje de la normal del impacto.
+     *
+     * Se usa exclusivamente para contactos con time=0 (penetración preexistente),
+     * donde SweptAABB ya no puede calcular el desplazamiento correcto porque el
+     * objeto ya está dentro del obstáculo.
+     *
+     * ── Cálculo ───────────────────────────────────────────────────────────
+     * Para normal (nx=1, ny=0) — pared derecha:
+     *   La bullet viene desde la derecha y penetró la pared.
+     *   pen = (hit.x + hit.width) - trig.x  → cuánto solapan en X desde la izquierda.
+     *   Pero la normal es +X (bullet saldrá hacia la derecha), así que pen es:
+     *   pen = (hit.x + hit.width) - trig.x
+     *
+     * La fórmula general es el overlap en el eje activo de la normal:
+     *   Si nx != 0: pen = solapamiento en X = min(trig.x+trig.w, hit.x+hit.w) - max(trig.x, hit.x)
+     *   Si ny != 0: pen = solapamiento en Y = min(trig.y+trig.h, hit.y+hit.h) - max(trig.y, hit.y)
+     *
+     * Retorna 0.0 si no hay overlap real (caso defensivo — no debería ocurrir
+     * si el caller verificó time=0 correctamente).
+     *
+     * @param trig      bounds del trigger (ya puede estar solapando)
+     * @param hit       bounds del collider impactado
+     * @param normalX   normal en X del impacto (-1, 0, +1)
+     * @param normalY   normal en Y del impacto (-1, 0, +1)
+     * @return profundidad de penetración en el eje de la normal (>= 0)
+     */
+    private static double computePenetrationDepth(Rectangle trig, Rectangle hit,
+                                                   int normalX, int normalY) {
+        if (normalX != 0) {
+            // Eje X: calcular overlap horizontal
+            double overlapLeft  = (trig.x + trig.width) - hit.x;
+            double overlapRight = (hit.x + hit.width) - trig.x;
+            double pen = Math.min(overlapLeft, overlapRight);
+            return Math.max(0.0, pen);
+        } else {
+            // Eje Y: calcular overlap vertical
+            double overlapTop    = (trig.y + trig.height) - hit.y;
+            double overlapBottom = (hit.y + hit.height) - trig.y;
+            double pen = Math.min(overlapTop, overlapBottom);
+            return Math.max(0.0, pen);
+        }
+    }
+
+    /**
+     * Garantiza que la velocidad del trigger apunte FUERA del collider tras el
+     * dispatch de contacto.
+     *
+     * ── Por qué existe este guard ─────────────────────────────────────────
+     * Después del dispatch, el behavior puede haber modificado la velocidad
+     * incorrectamente (inversión doble por doble-dispatch, fallback incorrecto,
+     * velocidad sin cambios por un behavior que no maneja el caso). Si la
+     * velocidad resultante apunta hacia el collider — es decir, V·N < 0 —
+     * el siguiente frame detectará inmediatamente otro contacto: oscilación.
+     *
+     * El guard asegura que la componente de velocidad en la dirección de la
+     * normal sea >= 0 (el objeto no está penetrando la superficie).
+     * Solo actúa en el eje de la normal, sin tocar la componente perpendicular.
+     *
+     * ── Semántica ─────────────────────────────────────────────────────────
+     * V·N > 0 significa que el objeto se aleja del collider → correcto.
+     * V·N = 0 significa que el objeto se mueve paralelo → neutro, aceptable.
+     * V·N < 0 significa que el objeto penetra → forzar a 0 en ese eje.
+     *
+     * Forzar a 0 es más conservador que invertir la velocidad (que podría
+     * producir rebotes no deseados). El behavior ya aplicó la reflexión que
+     * consideró correcta; el guard solo interviene si esa reflexión falló.
+     *
+     * @param physics   física del trigger (se modificará si V·N < 0)
+     * @param normalX   normal del contacto en X
+     * @param normalY   normal del contacto en Y
+     */
+    private static void enforcePostContactVelocity(Physics2D physics,
+                                                    int normalX, int normalY) {
+        double vx = physics.getVelocity().getX();
+        double vy = physics.getVelocity().getY();
+
+        // Producto punto V·N
+        double dot = vx * normalX + vy * normalY;
+
+        if (dot < 0.0) {
+            // La velocidad sigue apuntando hacia el collider — neutralizar esa componente.
+            // Solo se toca el eje de la normal (el perpendicular no cambia).
+            if (normalX != 0) physics.getVelocity().setX(0.0);
+            if (normalY != 0) physics.getVelocity().setY(0.0);
+        }
     }
 }

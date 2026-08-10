@@ -2,6 +2,7 @@ package Game.Items.Types.Weapons;
 
 import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
@@ -60,9 +61,7 @@ public class ModifiedWeapon {
 
     /**
      * Pool de proyectiles para reutilización de instancias.
-     *
      * null = sin pooling — usa BulletFactory directamente.
-     * Inyectado en construcción por quien crea el arma (Player, Turret, etc.).
      */
     private final ProjectilePool pool;
 
@@ -71,46 +70,57 @@ public class ModifiedWeapon {
      */
     private final Object owner;
 
+    /**
+     * Bus de eventos para emitir OnWeaponFired y propagar a los proyectiles.
+     * null = no se emiten eventos de arma.
+     */
+    private final GameEventBus eventBus;
+
     // ── Constructores ─────────────────────────────────────────────────────
 
     /**
-     * Constructor completo con pool y owner explícitos.
+     * Constructor completo con pool, owner y bus explícitos.
      *
      * @param comport    comportamiento del arma (cadencia, cooldown, munición)
      * @param bulletType tipo de proyectil base
      * @param amulets    amuletos del portador del arma
      * @param pool       pool de proyectiles para reutilización (null = sin pooling)
      * @param owner      el objeto portador del arma (Player, Turret, etc.), o null
+     * @param eventBus   bus de eventos (null = sin eventos de arma)
      */
     public ModifiedWeapon(WeaponComport comport,
                           BulletType bulletType,
                           PlayerAmulets amulets,
                           ProjectilePool pool,
-                          Object owner) {
+                          Object owner,
+                          GameEventBus eventBus) {
         this.comport    = comport;
         this.bulletType = bulletType;
         this.amulets    = amulets;
         this.pool       = pool;
         this.owner      = owner;
+        this.eventBus   = eventBus;
     }
 
     /**
-     * Constructor con owner sin pool — sin reutilización de instancias.
+     * Constructor con owner y bus sin pool — sin reutilización de instancias.
      */
     public ModifiedWeapon(WeaponComport comport,
                           BulletType bulletType,
                           PlayerAmulets amulets,
-                          Object owner) {
-        this(comport, bulletType, amulets, null, owner);
+                          Object owner,
+                          GameEventBus eventBus) {
+        this(comport, bulletType, amulets, null, owner, eventBus);
     }
 
     /**
      * Constructor sin owner ni pool — compatibilidad con código existente.
+     * No emite eventos de arma ni de spawn de proyectil.
      */
     public ModifiedWeapon(WeaponComport comport,
                           BulletType bulletType,
                           PlayerAmulets amulets) {
-        this(comport, bulletType, amulets, null, null);
+        this(comport, bulletType, amulets, null, null, null);
     }
 
     // ── Input ─────────────────────────────────────────────────────────────
@@ -175,14 +185,11 @@ public class ModifiedWeapon {
                     behavior, finalSpeed, finalDamage);
 
             // ── Adquisición unificada ─────────────────────────────────────
-            // Si hay pool: acquire() → reutiliza o delega a BulletFactory.
-            // Si no hay pool: BulletFactory.build() → instancia directa.
-            // Ambos caminos usan el mismo Blueprint y producen Bullets idénticas.
             Bullet bullet;
             if (pool != null) {
                 bullet = pool.acquire(blueprint, new Vector2D(x, y), spreadDir, owner);
             } else {
-                bullet = BulletFactory.build(blueprint, new Vector2D(x, y), spreadDir, owner);
+                bullet = BulletFactory.build(eventBus, blueprint, new Vector2D(x, y), spreadDir, owner);
             }
             bullets.add(bullet);
         }
@@ -199,8 +206,8 @@ public class ModifiedWeapon {
         }
 
         // 7. Evento de disparo
-        if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnWeaponFired.class)) {
-            GameEventBus.GLOBAL.post(new WeaponEvents.OnWeaponFired(this, bullets.size()));
+        if (eventBus != null && eventBus.hasListeners(WeaponEvents.OnWeaponFired.class)) {
+            eventBus.post(new WeaponEvents.OnWeaponFired(this, bullets.size()));
         }
 
         return bullets;

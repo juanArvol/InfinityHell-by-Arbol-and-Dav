@@ -3,6 +3,7 @@ package Game.Enemys.Core;
 import Game.Enemys.EnemyTypes.Flying.FlyingEnemyAssembler;
 import Game.Enemys.EnemyTypes.Hybrid.HybridAssembler;
 import Game.Enemys.EnemyTypes.Zombie.ZombieAssembler;
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
@@ -67,28 +68,24 @@ public final class EnemyFactory {
     /**
      * Crea un Enemy del tipo indicado por enum.
      *
-     * Garantiza que el tipo ha sido registrado (el bloque static lo hace
-     * al cargar la clase). Usar para tipos base conocidos en tiempo de compilación.
-     *
      * @param id       identificador tipado del tipo de enemy.
      * @param position posición inicial en el mundo.
+     * @param eventBus bus de eventos inyectado en el Enemy.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyId id, Vector2D position) {
-        return EnemyRegistry.create(id.registryId, position);
+    public static Enemy create(EnemyId id, Vector2D position, GameEventBus eventBus) {
+        return EnemyRegistry.create(id.registryId, position, eventBus);
     }
 
     /**
      * Crea un Enemy usando un Assembler externo.
      *
-     * Permite crear enemies con assemblers custom (Bosses, tests, minions con
-     * configuración especial) sin necesidad de registrarlos globalmente.
-     *
      * @param assembler assembler a usar.
      * @param position  posición inicial en el mundo.
+     * @param eventBus  bus de eventos inyectado en el Enemy.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyAssembler assembler, Vector2D position) {
-        return EnemyRegistry.create(assembler, position);
+    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus) {
+        return EnemyRegistry.create(assembler, position, eventBus);
     }
 }

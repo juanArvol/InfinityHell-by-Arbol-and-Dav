@@ -1,11 +1,10 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
-import Game.Engine.Events.GameEventBus;
+import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletBehaviorWrapper;
 import Game.Items.Types.Bullets.Definition.Bullet;
-import Game.Items.Types.Bullets.Definition.ProjectileEvents;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
@@ -93,10 +92,10 @@ public class PiercingAmuletWrapper extends BulletBehaviorWrapper {
             // El proyectil perfora — sigue vivo
             bullet.getBulletLife().revive();
 
-            if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectilePierce.class)) {
-                GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectilePierce(bullet, entity));
-            }
-        }
+            var bus = bullet.getEventBus();
+            if (bus != null && bus.hasListeners(ProjectileEvents.OnProjectilePierce.class)) {
+                bus.post(new ProjectileEvents.OnProjectilePierce(bullet, entity));
+            }        }
         // Si superó maxPierces, el inner ya mató el proyectil con kill()
     }
 

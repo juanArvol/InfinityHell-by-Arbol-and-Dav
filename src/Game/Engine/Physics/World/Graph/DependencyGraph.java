@@ -4,16 +4,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 
 /**
  * Motor genérico de grafos dirigidos con nodos tipados.
  *
  * ── HRFC-016 — Consolidación del modelo emergente ────────────────────────
+ * ── Mini-HRFC correctivo — Identidad de nodo por referencia ─────────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * DependencyGraph<T> es el único motor de grafos del Engine.
@@ -25,7 +25,7 @@ import java.util.function.Function;
  *
  *   DependencyGraph<PhysicalProperty>   → relaciones entre propiedades físicas
  *   DependencyGraph<GameplayProperty>   → dependencias propias del Gameplay
- *   DependencyGraph<Property>           → dependencias generales entre propiedades
+ *   DependencyGraph<PropertyKey<?>>     → dependencias generales entre propiedades
  *
  * Estas especializaciones representan únicamente distintos tipos de nodo.
  * Nunca distintos motores. Toda la lógica de almacenamiento, recorrido,
@@ -37,9 +37,9 @@ import java.util.function.Function;
  * que producen efectos sin modificar un dominio específico.
  *
  * Estructura de índices:
- *   bySource → nodoId → lista de aristas salientes
- *   byTarget → nodoId → lista de aristas entrantes
- *   byTag    → tag    → lista de aristas con ese tag (para remoción O(1))
+ *   bySource → nodo T  → lista de aristas salientes
+ *   byTarget → nodo T  → lista de aristas entrantes
+ *   byTag    → tag     → lista de aristas con ese tag (para remoción O(1))
  *   allEdges → lista completa ordenada por prioridad (lazy sort)
  *
  * ── DETECCIÓN DE CICLOS ──────────────────────────────────────────────────
@@ -47,13 +47,14 @@ import java.util.function.Function;
  * camino de B → A). Usar addEdgeUnchecked() para ciclos controlados.
  *
  * ── IDENTIDAD DE NODO ────────────────────────────────────────────────────
- * El grafo necesita identificar nodos por una cadena única. Esto se provee
- * mediante una Function<T, String> nodeId inyectada en construcción, que
- * extrae el identificador string del nodo T.
+ * La identidad del nodo se mantiene mediante referencia de objeto Java.
+ * Los índices bySource y byTarget usan IdentityHashMap<T, ...> para garantizar
+ * que dos nodos con el mismo equals() pero distinta referencia se traten como
+ * nodos distintos. El grafo no exige ninguna implementación particular de
+ * equals()/hashCode() en T, ni ningún método id()/displayName().
  *
- * Por ejemplo:
- *   DependencyGraph<PhysicalProperty>  → nodeId = PhysicalProperty::id
- *   DependencyGraph<PropertyKey<?>>    → nodeId = PropertyKey::id
+ * El tipo T es el propio nodo; no existe ninguna transformación T → String,
+ * T → int ni T → hash para identificar nodos internamente.
  *
  * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * No es thread-safe. Usar exclusivamente desde el game loop thread.
@@ -62,16 +63,21 @@ import java.util.function.Function;
  */
 public final class DependencyGraph<T> {
 
-    /** Función que extrae el id único de un nodo. */
-    private final Function<T, String> nodeId;
+    /**
+     * Índice de aristas salientes: referencia del nodo origen → lista de aristas.
+     * IdentityHashMap garantiza identidad referencial independientemente de
+     * equals()/hashCode() del tipo T.
+     */
+    private final Map<T, List<GraphEdge<T>>> bySource = new IdentityHashMap<>();
 
-    /** Índice de aristas salientes: id del nodo origen → lista de aristas. */
-    private final Map<String, List<GraphEdge<T>>> bySource = new HashMap<>();
+    /**
+     * Índice de aristas entrantes: referencia del nodo destino → lista de aristas.
+     * IdentityHashMap garantiza identidad referencial independientemente de
+     * equals()/hashCode() del tipo T.
+     */
+    private final Map<T, List<GraphEdge<T>>> byTarget = new IdentityHashMap<>();
 
-    /** Índice de aristas entrantes: id del nodo destino → lista de aristas. */
-    private final Map<String, List<GraphEdge<T>>> byTarget = new HashMap<>();
-
-    /** Índice por tag para remoción eficiente. */
+    /** Índice por tag para remoción eficiente. El tag es metadata de arista, no identidad de nodo. */
     private final Map<String, List<GraphEdge<T>>> byTag = new HashMap<>();
 
     /** Lista completa de aristas en orden de inserción / prioridad. */
@@ -82,15 +88,8 @@ public final class DependencyGraph<T> {
 
     // ── Constructor ───────────────────────────────────────────────────────
 
-    /**
-     * Crea un grafo con la función de identidad de nodo indicada.
-     *
-     * @param nodeId función que extrae el id único de un nodo T. No puede ser null.
-     */
-    public DependencyGraph(Function<T, String> nodeId) {
-        if (nodeId == null) throw new IllegalArgumentException("nodeId no puede ser null");
-        this.nodeId = nodeId;
-    }
+    /** Crea un grafo vacío. La identidad de nodo se mantiene por referencia de objeto. */
+    public DependencyGraph() {}
 
     // ── Mutación ──────────────────────────────────────────────────────────
 
@@ -107,15 +106,14 @@ public final class DependencyGraph<T> {
     public void addEdge(GraphEdge<T> edge) {
         if (edge == null) return;
 
-        if (edge.getTarget() != null) {
-            String srcId = nodeId.apply(edge.getSource());
-            String dstId = nodeId.apply(edge.getTarget());
-            if (canReach(dstId, srcId)) {
-                throw new IllegalStateException(
-                    "Ciclo detectado al añadir '" + srcId + " → " + dstId
-                    + "': ya existe un camino '" + dstId + " → " + srcId + "'."
-                );
-            }
+        T source = edge.getSource();
+        T target = edge.getTarget();
+
+        if (target != null && canReach(target, source)) {
+            throw new IllegalStateException(
+                "Ciclo detectado al añadir '" + source + " → " + target
+                + "': ya existe un camino '" + target + " → " + source + "'."
+            );
         }
 
         insertEdge(edge);
@@ -154,13 +152,11 @@ public final class DependencyGraph<T> {
         if (toRemove == null) return;
 
         for (GraphEdge<T> edge : toRemove) {
-            String srcId = nodeId.apply(edge.getSource());
-            List<GraphEdge<T>> srcList = bySource.get(srcId);
+            List<GraphEdge<T>> srcList = bySource.get(edge.getSource());
             if (srcList != null) srcList.removeIf(e -> e.getTag().equals(tag));
 
             if (edge.getTarget() != null) {
-                String dstId = nodeId.apply(edge.getTarget());
-                List<GraphEdge<T>> dstList = byTarget.get(dstId);
+                List<GraphEdge<T>> dstList = byTarget.get(edge.getTarget());
                 if (dstList != null) dstList.removeIf(e -> e.getTag().equals(tag));
             }
         }
@@ -188,7 +184,7 @@ public final class DependencyGraph<T> {
      */
     public List<GraphEdge<T>> getEdgesFrom(T node) {
         if (node == null) return Collections.emptyList();
-        List<GraphEdge<T>> edges = bySource.get(nodeId.apply(node));
+        List<GraphEdge<T>> edges = bySource.get(node);
         if (edges == null || edges.isEmpty()) return Collections.emptyList();
         List<GraphEdge<T>> sorted = new ArrayList<>(edges);
         sorted.sort(Comparator.comparingInt(GraphEdge::getPriority));
@@ -203,7 +199,7 @@ public final class DependencyGraph<T> {
      */
     public List<GraphEdge<T>> getEdgesTo(T node) {
         if (node == null) return Collections.emptyList();
-        List<GraphEdge<T>> edges = byTarget.get(nodeId.apply(node));
+        List<GraphEdge<T>> edges = byTarget.get(node);
         if (edges == null || edges.isEmpty()) return Collections.emptyList();
         List<GraphEdge<T>> sorted = new ArrayList<>(edges);
         sorted.sort(Comparator.comparingInt(GraphEdge::getPriority));
@@ -245,7 +241,7 @@ public final class DependencyGraph<T> {
      */
     public boolean hasEdgesFrom(T node) {
         if (node == null) return false;
-        List<GraphEdge<T>> edges = bySource.get(nodeId.apply(node));
+        List<GraphEdge<T>> edges = bySource.get(node);
         return edges != null && !edges.isEmpty();
     }
 
@@ -256,7 +252,7 @@ public final class DependencyGraph<T> {
      */
     public boolean hasEdgesTo(T node) {
         if (node == null) return false;
-        List<GraphEdge<T>> edges = byTarget.get(nodeId.apply(node));
+        List<GraphEdge<T>> edges = byTarget.get(node);
         return edges != null && !edges.isEmpty();
     }
 
@@ -278,31 +274,34 @@ public final class DependencyGraph<T> {
     // ── Detección de ciclos ───────────────────────────────────────────────
 
     /**
-     * True si existe un camino dirigido desde el nodo con id {@code fromId}
-     * hasta el nodo con id {@code toId}.
+     * True si existe un camino dirigido desde el nodo {@code from}
+     * hasta el nodo {@code to}.
      *
-     * Usado internamente para la verificación de ciclos en addEdge().
+     * La comparación usa identidad referencial (mismo objeto Java),
+     * consistente con el uso de IdentityHashMap en los índices.
      *
-     * @param fromId id del nodo de inicio.
-     * @param toId   id del nodo destino buscado.
-     * @return true si existe camino de fromId a toId.
+     * Usado internamente para la verificación de ciclos en addEdge() y
+     * expuesto como API pública para consultas de alcanzabilidad.
+     *
+     * @param from nodo de inicio.
+     * @param to   nodo destino buscado.
+     * @return true si existe camino de {@code from} a {@code to}.
      */
-    public boolean canReach(String fromId, String toId) {
-        if (fromId.equals(toId)) return true;
-        Set<String> visited = new HashSet<>();
-        return dfsCanReach(fromId, toId, visited);
+    public boolean canReach(T from, T to) {
+        if (from == null || to == null) return false;
+        if (from == to) return true;
+        // El conjunto de visitados también usa identidad referencial.
+        Set<T> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        return dfsCanReach(from, to, visited);
     }
 
     // ── Implementación interna ────────────────────────────────────────────
 
     private void insertEdge(GraphEdge<T> edge) {
-        String srcId = nodeId.apply(edge.getSource());
-
-        bySource.computeIfAbsent(srcId, k -> new ArrayList<>()).add(edge);
+        bySource.computeIfAbsent(edge.getSource(), k -> new ArrayList<>()).add(edge);
 
         if (edge.getTarget() != null) {
-            String dstId = nodeId.apply(edge.getTarget());
-            byTarget.computeIfAbsent(dstId, k -> new ArrayList<>()).add(edge);
+            byTarget.computeIfAbsent(edge.getTarget(), k -> new ArrayList<>()).add(edge);
         }
 
         byTag.computeIfAbsent(edge.getTag(), k -> new ArrayList<>()).add(edge);
@@ -310,7 +309,7 @@ public final class DependencyGraph<T> {
         dirty = true;
     }
 
-    private boolean dfsCanReach(String current, String target, Set<String> visited) {
+    private boolean dfsCanReach(T current, T target, Set<T> visited) {
         if (visited.contains(current)) return false;
         visited.add(current);
 
@@ -318,10 +317,10 @@ public final class DependencyGraph<T> {
         if (edges == null) return false;
 
         for (GraphEdge<T> edge : edges) {
-            if (edge.getTarget() == null) continue;
-            String nextId = nodeId.apply(edge.getTarget());
-            if (nextId.equals(target)) return true;
-            if (dfsCanReach(nextId, target, visited)) return true;
+            T next = edge.getTarget();
+            if (next == null) continue;
+            if (next == target) return true;
+            if (dfsCanReach(next, target, visited)) return true;
         }
         return false;
     }

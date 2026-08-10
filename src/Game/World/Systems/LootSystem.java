@@ -1,8 +1,8 @@
 package Game.World.Systems;
 
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.OnEnemyDeathEvent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.OnEnemyDeathEvent;
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
@@ -30,22 +30,16 @@ import java.util.function.Consumer;
  *
  * ── LIFECYCLE DE LISTENER ─────────────────────────────────────────────────
  *
- * register() retorna una {@link GameEventBus.Subscription} que el caller debe
+ * register(bus) retorna una {@link GameEventBus.Subscription} que el caller debe
  * conservar. Llamar subscription.cancel() cuando el World que owns este
  * LootSystem se destruye, para liberar la referencia al itemSpawner en el bus.
- *
- * Ownership:
- *   LootSystem tiene lifecycle de World/Scene — no es un singleton de aplicación.
- *   Su listener en GLOBAL captura itemSpawner, que a su vez puede capturar
- *   referencias al worldManager. Si no se cancela, esas referencias quedan
- *   vivas en GLOBAL.listeners impidiendo GC del World destruido.
  *
  * Patrón de uso correcto:
  * <pre>
  *   // Al crear el World:
  *   LootSystem loot = new LootSystem(world::addDynamic);
  *   loot.addEntry("gold", ItemRarity.COMMON, 0.8f, 1, 3);
- *   GameEventBus.Subscription lootSub = loot.register();
+ *   GameEventBus.Subscription lootSub = loot.register(eventBus);
  *
  *   // Al destruir el World:
  *   lootSub.cancel();
@@ -82,20 +76,11 @@ public class LootSystem {
     // ── Activación ────────────────────────────────────────────────────────
 
     /**
-     * Registra el handler en el bus de eventos global.
-     *
-     * @return Subscription que debe conservarse para cancelar el listener
-     *         cuando el World/Scene que owns este LootSystem se destruya.
-     */
-    public GameEventBus.Subscription register() {
-        return GameEventBus.GLOBAL.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);
-    }
-
-    /**
-     * Registra el handler en una instancia específica del bus.
+     * Registra el handler en el bus indicado.
      *
      * @param bus bus de eventos donde registrar el listener
-     * @return Subscription para cancelar cuando ya no sea necesario
+     * @return Subscription para cancelar cuando el World/Scene que owns este
+     *         LootSystem se destruya.
      */
     public GameEventBus.Subscription register(GameEventBus bus) {
         return bus.subscribe(OnEnemyDeathEvent.class, this::onEnemyDeath);

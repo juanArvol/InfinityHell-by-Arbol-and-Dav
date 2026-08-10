@@ -43,17 +43,6 @@ public final class WorldTransitionService {
         );
     }
 
-    /**
-     * Constructor de compatibilidad mínimo (usa GameEventBus.GLOBAL).
-     * Preferir el constructor completo para mayor control.
-     */
-    public WorldTransitionService(WorldCache cache,
-                                   Game.World.Generator.WorldGenerator generator) {
-        this(cache, generator,
-             Game.Engine.Events.GameEventBus.GLOBAL,
-             () -> null);   // supplier temporal — WorldManager lo reconfigura
-    }
-
     // ── API de configuración ──────────────────────────────────────────────
 
     /**

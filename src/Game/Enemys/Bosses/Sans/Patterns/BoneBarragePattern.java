@@ -4,7 +4,7 @@ import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.AttackPattern;
 import Game.Enemys.Core.Enemy;
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.SpawnProjectileEvent;
+import Game.Gameplay.Events.SpawnProjectileEvent;
 
 /**
  * Patrón de ataque de Sans — lluvia de huesos.
@@ -19,6 +19,9 @@ import Game.Engine.Events.SpawnProjectileEvent;
  * OnWeaponFireEvent está diseñado para el sistema de armas del jugador.
  * SpawnProjectileEvent es el canal genérico para cualquier entidad del mundo.
  *
+ * ── HRFC — Instancias explícitas ─────────────────────────────────────────
+ * El bus se inyecta en el constructor — no se accede a ninguna instancia global.
+ *
  * ── Descripción ──────────────────────────────────────────────────────────
  * BoneBarragePattern es stateful solo en su cooldown interno.
  * El cooldown actual lo lee de EnemyStats cada vez que se ejecuta,
@@ -26,7 +29,17 @@ import Game.Engine.Events.SpawnProjectileEvent;
  */
 public final class BoneBarragePattern implements AttackPattern {
 
+    private final GameEventBus eventBus;
     private int cooldownTimer = 0;
+
+    /**
+     * @param eventBus bus de eventos donde publicar SpawnProjectileEvent.
+     *                 Inyectado desde el Assembler que construye este patrón.
+     */
+    public BoneBarragePattern(GameEventBus eventBus) {
+        if (eventBus == null) throw new IllegalArgumentException("BoneBarragePattern: eventBus is required");
+        this.eventBus = eventBus;
+    }
 
     @Override
     public String id() { return "sans.bone_barrage"; }
@@ -51,7 +64,7 @@ public final class BoneBarragePattern implements AttackPattern {
         // Emitir SpawnProjectileEvent — el sistema de proyectiles lo procesa.
         // "sans.bone" identifica el tipo de proyectil a instanciar.
         // origin: centro del enemy / target: centro del jugador.
-        GameEventBus.GLOBAL.post(new SpawnProjectileEvent(
+        eventBus.post(new SpawnProjectileEvent(
             "sans.bone",
             enemy.getTransform().getPosition(),
             ctx.getPosition(),

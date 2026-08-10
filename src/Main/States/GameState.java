@@ -3,8 +3,8 @@ package Main.States;
 import Display.Surface.LayerIndex;
 import Display.Surface.RenderFrame;
 import Game.Gameplay.Mechanics;
+import Game.Gameplay.UI.UIManager;
 import Game.Player.Player;
-import Game.UI.UIManager;
 import Game.World.Core.WorldManager;
 import Inputs.MouseInput;
 import Main.Bootstrap.GameWorldBootstrap;
@@ -45,13 +45,13 @@ public class GameState {
     /**
      * Referencia al bootstrap para poder llamar shutdown() al destruir el GameState.
      *
-     * GameWorldBootstrap instala listeners y referencias de scope World en
-     * GameEventBus.GLOBAL y AmuletRegistry:
-     *   - ProjectileRegistry.listener (SpawnProjectileEvent en GLOBAL)
+     * GameWorldBootstrap instala listeners y referencias de scope World en el bus
+     * del WorldManager y en AmuletRegistry:
+     *   - ProjectileRegistry.listener (SpawnProjectileEvent en el bus del mundo)
      *   - AmuletRegistry.entityProvider (referencia al WorldManager)
      *
-     * bootstrap.shutdown() libera ambas referencias, evitando que el
-     * GameEventBus.GLOBAL y AmuletRegistry retengan objetos del World destruido.
+     * bootstrap.shutdown() libera ambas referencias, evitando que el bus
+     * y AmuletRegistry retengan objetos del World destruido.
      */
     private final GameWorldBootstrap   worldBootstrap;
 
@@ -155,8 +155,8 @@ public class GameState {
     /** Libera recursos al cerrar la aplicación o destruir este GameState.
      *
      * Orden de shutdown correcto:
-     *   1. worldBootstrap.shutdown() — cancela listeners de scope World en
-     *      GameEventBus.GLOBAL y limpia AmuletRegistry.entityProvider.
+     *   1. worldBootstrap.shutdown() — cancela listeners de scope World en el bus
+     *      del mundo y limpia AmuletRegistry.entityProvider.
      *      Debe hacerse ANTES de que worldManager sea liberado.
      *   2. worldManager.shutdown() — libera ExecutorService y recursos del mundo.
      *

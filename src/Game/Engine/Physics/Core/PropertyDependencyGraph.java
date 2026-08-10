@@ -71,10 +71,10 @@ public final class PropertyDependencyGraph {
     /**
      * Motor de grafo subyacente.
      * Nodo: PhysicalProperty. Payload: PhysicalRelation.
-     * nodeId extrae el id del descriptor del nodo.
+     * La identidad de nodo se mantiene por referencia de objeto (IdentityHashMap interno).
      */
     private final DependencyGraph<PhysicalProperty> graph =
-        new DependencyGraph<>(PhysicalProperty::getId);
+        new DependencyGraph<>();
 
     // ── Mutación ──────────────────────────────────────────────────────────
 

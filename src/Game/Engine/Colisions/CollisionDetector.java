@@ -46,7 +46,13 @@ import java.util.*;
  *   4. El eje de menor penetración determina la normal
  *
  * Esta normal es aproximada (no es tan precisa como la de SweptAABB) pero
- * es correcta para el caso de use de FASE 2: overlaps residuales estáticos.
+ * correcta para overlaps residuales estáticos.
+ *
+ * GARANTÍA: computeOverlapNormal() nunca retorna (0,0) cuando hay overlap
+ * real — si la penetración es cero en un eje (borde exacto por truncado int),
+ * usa el vector centro-a-centro como fallback geométrico. Esto garantiza que
+ * los behaviors como BulletJump siempre tengan una normal válida en FASE 2
+ * y no necesiten recurrir al fallback heurístico de velocidad.
  */
 public final class CollisionDetector {
 
@@ -209,14 +215,18 @@ public final class CollisionDetector {
      * Calcula la normal aproximada de un overlap AABB estático.
      *
      * La normal se calcula por el eje de menor penetración:
-     *   - Si la penetración en X es menor que en Y → la cara impactada es lateral → normalX != 0
-     *   - Si la penetración en Y es menor que en X → la cara impactada es vertical → normalY != 0
+     *   - Si la penetración en X es menor que en Y → cara lateral → normalX != 0
+     *   - Si la penetración en Y es menor que en X → cara vertical → normalY != 0
      *
      * La dirección se determina por qué centro está a la izquierda/arriba del otro.
      *
-     * Esta normal es útil para behaviors como BulletJump que necesitan saber desde
-     * qué cara llegó el impacto, incluso cuando el contacto fue detectado como overlap
-     * estático (no swept).
+     * ── Garantía de normal no-nula ────────────────────────────────────────
+     * Si las penetraciones calculadas son ambas cero o negativas (puede ocurrir
+     * por el truncado (int) en ColliderComponent.getBounds() cuando los objetos
+     * se tocan exactamente en un borde), se usa el vector centro-a-centro como
+     * fallback geométrico. Esto garantiza que un overlap detectado por AABB
+     * produzca siempre una normal válida — nunca (0,0) — para que los behaviors
+     * como BulletJump no caigan al fallback heurístico por velocidad.
      *
      * @param ra bounds del objeto A
      * @param rb bounds del objeto B
@@ -237,8 +247,21 @@ public final class CollisionDetector {
         double penY = (ra.height + rb.height) * 0.5 - Math.abs(dy);
 
         if (penX <= 0 || penY <= 0) {
-            // No hay overlap real (puede ocurrir por margen de floating point)
-            return new int[]{0, 0};
+            // Overlap mínimo en un eje — los objetos se tocan exactamente en un borde.
+            // Esto ocurre por el truncado (int) en getBounds() cuando la posición
+            // double está en el límite exacto. Usar el vector centro-a-centro para
+            // producir una normal geométricamente coherente en lugar de (0,0).
+            // Un (0,0) forzaría a BulletJump al fallback heurístico de velocidad,
+            // que es menos preciso que esta información espacial.
+            if (dx == 0 && dy == 0) {
+                // Centros exactamente superpuestos — caso degenerado extremo.
+                // Usar eje X como fallback arbitrario pero documentado.
+                return new int[]{1, 0};
+            }
+            // Normal apunta desde B hacia A en el eje de mayor separación
+            return Math.abs(dx) >= Math.abs(dy)
+                    ? new int[]{ dx > 0 ? 1 : -1, 0 }
+                    : new int[]{ 0, dy > 0 ? 1 : -1 };
         }
 
         // El eje de menor penetración determina la normal

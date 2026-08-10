@@ -3,6 +3,7 @@ package Game.World.WorldObjects;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Items.Savement.ItemStack;
@@ -41,6 +42,13 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
     private ItemStack itemStack;
     private boolean pendingRemoval = false;
 
+    /**
+     * Bus de eventos para publicar OnPickupEvent.
+     * Inyectado desde el sistema que crea el WorldItem (LootSystem, PickupBootstrap, etc.).
+     * Si es null, el pickup ocurre pero no se emite el evento.
+     */
+    private GameEventBus eventBus;
+
     public WorldItem(Vector2D position, ItemStack itemStack, BufferedImage icon) {
         this.itemStack = itemStack;
 
@@ -68,7 +76,7 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
         }
 
         // Delegar a PickupSystem para desacoplar la lógica de inventario
-        PickupSystem.handlePickup(player, this);
+        PickupSystem.handlePickup(eventBus, player, this);
     }
 
     @Override
@@ -91,6 +99,14 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
     public void setItemStack(ItemStack stack)   { this.itemStack = stack; }
     public boolean isPendingRemoval()           { return pendingRemoval; }
     public void markForRemoval()                { pendingRemoval = true; }
+
+    /**
+     * Inyecta el bus de eventos para publicar OnPickupEvent al recoger el ítem.
+     * Llamar desde el sistema que crea y añade el WorldItem al mundo.
+     *
+     * @param bus bus de eventos activo. Null = el evento no se emite.
+     */
+    public void setEventBus(GameEventBus bus)   { this.eventBus = bus; }
 
     /** Implementa Destroyable — WorldObjectsContainer elimina el ítem cuando se recoge. */
     @Override

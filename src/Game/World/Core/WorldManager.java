@@ -106,6 +106,9 @@ public class WorldManager {
      */
     private final DynamicEntityRegistry    globalDynamicRegistry;
 
+    // ── Bus de eventos ────────────────────────────────────────────────────
+    private final Game.Engine.Events.GameEventBus eventBus;
+
     // ── Estado activo ──────────────────────────────────────────────────────
 
     /**
@@ -131,12 +134,23 @@ public class WorldManager {
                         WorldGenerator generator,
                         DebugSettings settings,
                         double targetFps) {
+        this(width, height, virtualWidth, virtualHeight, generator, settings, targetFps,
+             new Game.Engine.Events.GameEventBus());
+    }
+
+    public WorldManager(int width, int height,
+                        int virtualWidth, int virtualHeight,
+                        WorldGenerator generator,
+                        DebugSettings settings,
+                        double targetFps,
+                        Game.Engine.Events.GameEventBus eventBus) {
         this.logicalWidth    = width;
         this.logicalHeight   = height;
         this.generator       = generator;
         this.targetFps       = targetFps;
         this.cameraDeltaTime = 1.0 / targetFps;
         this.currentCoord    = new WorldCoordinator(0, 0);
+        this.eventBus        = (eventBus != null) ? eventBus : new Game.Engine.Events.GameEventBus();
 
         this.cache    = new WorldCache();
         this.renderer = new SceneRenderer(settings);
@@ -145,7 +159,7 @@ public class WorldManager {
 
         this.transitionService = new WorldTransitionService(
             cache, generator,
-            Game.Engine.Events.GameEventBus.GLOBAL,
+            this.eventBus,
             this::getCurrentWorld
         );
 
@@ -379,6 +393,12 @@ public class WorldManager {
     public GameCamera             getCamera()            { return cameraSystem.getCamera(); }
     public CameraSystem           getCameraSystem()      { return cameraSystem;             }
     public SimulationRegion       getSimulationRegion()  { return simulationRegion;         }
+
+    /**
+     * Bus de eventos del mundo. Usar para registrar listeners y emitir eventos
+     * sin necesidad de un bus global estático.
+     */
+    public Game.Engine.Events.GameEventBus getEventBus() { return eventBus; }
 
     public void setCameraController(CameraController controller) {
         cameraSystem.setCameraController(controller);

@@ -1,5 +1,6 @@
 package Game.Enemys.Core;
 
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import java.util.HashMap;
 import java.util.Map;
@@ -98,30 +99,29 @@ public final class EnemyRegistry {
      *
      * @param id       identificador del tipo de enemy registrado.
      * @param position posición inicial en el mundo.
+     * @param eventBus bus de eventos inyectado en el Enemy.
      * @return Enemy listo para añadir al mundo.
      * @throws IllegalArgumentException si el ID no está registrado.
      */
-    public static Enemy create(String id, Vector2D position) {
+    public static Enemy create(String id, Vector2D position, GameEventBus eventBus) {
         Supplier<EnemyAssembler> supplier = registry.get(id);
         if (supplier == null) {
             throw new IllegalArgumentException(
                 "EnemyRegistry: no assembler registered for id='" + id + "'"
             );
         }
-        return supplier.get().assemble(position);
+        return supplier.get().assemble(position, eventBus);
     }
 
     /**
      * Crea un Enemy usando un Assembler externo sin necesidad de registrarlo.
      *
-     * Útil para Bosses únicos, minions de scripting o instancias de prueba
-     * que no necesitan vivir en el registro global.
-     *
      * @param assembler assembler a usar.
      * @param position  posición inicial en el mundo.
+     * @param eventBus  bus de eventos inyectado en el Enemy.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyAssembler assembler, Vector2D position) {
-        return assembler.assemble(position);
+    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus) {
+        return assembler.assemble(position, eventBus);
     }
 }

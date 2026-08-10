@@ -11,6 +11,7 @@ import Game.Engine.GameObjects;
 import Game.Engine.Lifecycle.EntityContext;
 import Game.Engine.Lifecycle.SimulationLifecycle;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
+import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletLife;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
@@ -150,19 +151,16 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     /**
      * Pool al que esta instancia pertenece, o null si no está gestionada por un pool.
-     *
-     * Inyectado por ProjectilePool.acquire() vía assignPool() después de construir.
-     * Cuando la Bullet es destruida (isPendingDestruction() == true) y ownerPool != null,
-     * se auto-devuelve al pool invocando ownerPool.release(this).
-     *
-     * Este campo es la única diferencia entre una Bullet "simple" y una "pooled":
-     * no hay subclase, no hay constructor alternativo, no hay lógica duplicada.
-     * La Factory construye siempre una Bullet plana. El Pool inyecta la referencia.
-     *
-     * Se limpia a null en resetState() y se reinyecta en cada acquire(), garantizando
-     * que al resetear el pool también está actualizado si cambia la instancia de pool.
      */
     private ProjectilePool ownerPool = null;
+
+    /**
+     * Bus de eventos para emitir eventos de ciclo de vida del proyectil.
+     * Inyectado desde ProjectilePool.acquire() o BulletFactory.build().
+     * Null = no se emiten eventos (proyectil sin suscriptores registrados).
+     * package-private: acceso desde ProjectilePool y BulletFactory (mismo paquete).
+     */
+    GameEventBus eventBus = null;
 
     /**
      * Contexto de interacción con el mundo para el hook onExpire.
@@ -263,8 +261,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     @Override
     public void onCollisionWith(GameObjects other) {
-        if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileHit.class)) {
-            GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileHit(this, other));
+        if (eventBus != null && eventBus.hasListeners(ProjectileEvents.OnProjectileHit.class)) {
+            eventBus.post(new ProjectileEvents.OnProjectileHit(this, other));
         }
 
         behavior.onCollision(this, other);
@@ -314,6 +312,17 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     public BulletBehavior     getBehavior()   { return behavior; }
     public ProjectileMovement getMovement()   { return movement; }
     public BulletFlyweight    getFlyweight()  { return flyweight; }
+
+    /** Bus de eventos activo de este proyectil. Null si no fue inyectado. */
+    public GameEventBus getEventBus() { return eventBus; }
+
+    /**
+     * Inyecta el bus de eventos en este proyectil.
+     * Llamado por BulletFactory.emitSpawn() y ProjectilePool.acquire().
+     * package-accessible: visible en el paquete Definition y desde BulletFactory
+     * via acceso explícito.
+     */
+    public void setEventBus(GameEventBus bus) { this.eventBus = bus; }
 
     public BulletPhysics getPhysics() {
         return (BulletPhysics) physicsComponent.getPhysics();
@@ -431,8 +440,9 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         bulletLife.resetTo(lifeTime);
         this.damage = damage;
         this.destroyEventFired = false;
-        // ownerPool se limpia aquí; el pool lo reinyecta justo después via assignPool()
+        // ownerPool y eventBus se limpian aquí; el pool los reinyecta justo después
         this.ownerPool = null;
+        this.eventBus  = null;
 
         // Actualizar Flyweight si cambió — sin recrear componentes
         if (this.flyweight != newFlyweight) {
@@ -529,8 +539,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     private void emitExpireAndDestroy() {
         behavior.onExpire(this, projectileContext);
 
-        if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileExpire.class)) {
-            GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileExpire(this));
+        if (eventBus != null && eventBus.hasListeners(ProjectileEvents.OnProjectileExpire.class)) {
+            eventBus.post(new ProjectileEvents.OnProjectileExpire(this));
         }
         emitDestroy();
     }
@@ -546,8 +556,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         if (!destroyEventFired) {
             destroyEventFired = true;
             behavior.onRelease(this);
-            if (GameEventBus.GLOBAL.hasListeners(ProjectileEvents.OnProjectileDestroy.class)) {
-                GameEventBus.GLOBAL.post(new ProjectileEvents.OnProjectileDestroy(this));
+            if (eventBus != null && eventBus.hasListeners(ProjectileEvents.OnProjectileDestroy.class)) {
+                eventBus.post(new ProjectileEvents.OnProjectileDestroy(this));
             }
         }
     }

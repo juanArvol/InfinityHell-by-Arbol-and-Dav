@@ -47,8 +47,16 @@ import java.awt.Rectangle;
  * Solución (calculate): solo el eje ACTIVO decide la colisión.
  * Si txEntry < 0 pero el eje activo es X, hay penetración → reportar time=0.
  *
- * Solución (calculate2D): ambos ejes activos → si hay overlappen AMBOS,
+ * Solución (calculate2D): ambos ejes activos → si hay overlap en AMBOS,
  * reportar time=0 con la normal del eje de menor penetración.
+ *
+ * ── Corner normal tie-breaking ───────────────────────────────────────────
+ * Cuando txEntry == tyEntry (esquina exacta), ambos ejes "entran" al mismo
+ * tiempo y ninguno tiene precedencia geométrica absoluta. En ese caso se
+ * usa el eje de mayor velocidad absoluta como desempate: el eje más rápido
+ * es el que "alcanza" el borde con mayor certeza. Esto es determinista,
+ * independiente del orden de los objetos, y produce una normal coherente
+ * con la intención de movimiento del proyectil.
  */
 public final class SweptAABB {
 
@@ -180,6 +188,11 @@ public final class SweptAABB {
      * Si entryTime < 0 (ya solapados), se reporta time=0 con la normal del
      * eje de menor penetración (más probable que sea el eje correcto).
      *
+     * ── Corner normal tie-breaking ───────────────────────────────────────────
+     * Cuando txEntry == tyEntry (esquina exacta o near-corner dentro de 1e-8),
+     * el desempate se hace por el eje de mayor velocidad absoluta. Esto es
+     * determinista e independiente del orden de los objetos.
+     *
      * @param moving   bounds actuales del objeto (antes de moverse este frame)
      * @param target   bounds del obstáculo estático
      * @param vx       velocidad horizontal (puede ser 0 si solo hay movimiento vertical)
@@ -273,8 +286,30 @@ public final class SweptAABB {
         }
 
         // ── Normal: el eje que entró ÚLTIMO determina la cara impactada ───
+        //
+        // Tie-breaking para esquina exacta (txEntry == tyEntry):
+        //   Cuando ambos ejes alcanzan el borde al mismo instante (vértice de
+        //   esquina), ninguno tiene precedencia geométrica absoluta. Se usa el
+        //   eje de mayor velocidad absoluta como desempate: el eje más rápido
+        //   contribuye más al movimiento y es el eje de contacto primario.
+        //   Esto produce una normal determinista e independiente del orden de
+        //   objetos, coherente con la dirección de movimiento del proyectil.
+        //
+        //   TOLERANCIA: se compara con un epsilon para capturar casos near-corner
+        //   donde floating point produce txEntry ≈ tyEntry pero la geometría es
+        //   una esquina. El epsilon es 1e-8 — suficientemente pequeño para no
+        //   afectar casos de contacto de cara normal (~1/velocidad de diferencia).
         int normalX = 0, normalY = 0;
-        if (txEntry >= tyEntry) {
+        double cornerEps = 1e-8;
+        boolean txDominates;
+        if (Math.abs(txEntry - tyEntry) <= cornerEps) {
+            // Esquina exacta o near-corner: desempate por velocidad
+            txDominates = Math.abs(vx) >= Math.abs(vy);
+        } else {
+            txDominates = txEntry > tyEntry;
+        }
+
+        if (txDominates) {
             normalX = (vx > 0.0) ? -1 : 1;
         } else {
             normalY = (vy > 0.0) ? -1 : 1;

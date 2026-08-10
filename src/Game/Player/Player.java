@@ -12,6 +12,7 @@ import Game.Engine.Entity.EntityInfoProvider;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
+import Game.Engine.Events.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
@@ -21,7 +22,7 @@ import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponEscopeta;
+import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponPistola;
 import Sprites.Entity.Player.PlayerAssets;
 import java.awt.Color;
 import java.util.function.Consumer;
@@ -118,8 +119,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     /**
      * @param spawn         posición inicial en el mundo
      * @param bulletSpawner callback para añadir balas al mundo (ej: world::add)
+     * @param eventBus      bus de eventos del juego
      */
-    public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner) {
+    public Player(Vector2D spawn, Consumer<Bullet> bulletSpawner, GameEventBus eventBus) {
         super(spawn,
               PlayerAssets.handle,
               new PlayerPhysics(BASE_GRAVITY),
@@ -172,7 +174,8 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         combat = new PlayerCombat(
             state,
             () -> getTransform().getPosition(),
-            bulletSpawner
+            bulletSpawner,
+            eventBus
         );
 
         // ── Loadout inicial ───────────────────────────────────────────────
@@ -180,9 +183,11 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         // del jugador (referencia compartida — si el jugador recoge un amuleto
         // lo verá el arma automáticamente en el próximo disparo).
         combat.addWeapon(new ModifiedWeapon(
-                new WeaponEscopeta(),
-                BulletType.SPRINGBULLET,
-                playerAmulets
+                new WeaponPistola(),
+                BulletType.NORMALBULLET,
+                playerAmulets,
+                this,
+                eventBus
         ));
 
         // ── Colisión y visual ─────────────────────────────────────────────

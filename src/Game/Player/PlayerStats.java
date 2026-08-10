@@ -1,7 +1,7 @@
 package Game.Player;
 
 import Game.Engine.Entity.Components.HealthComponent;
-import Game.UI.HealthView;
+import Game.Gameplay.UI.HealthView;
 
 /**
  * Estadísticas específicas del jugador.

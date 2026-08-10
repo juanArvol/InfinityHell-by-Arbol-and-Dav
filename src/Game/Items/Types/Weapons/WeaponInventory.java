@@ -1,6 +1,7 @@
 package Game.Items.Types.Weapons;
 
 import Game.Engine.Events.GameEventBus;
+import Game.Gameplay.Events.WeaponEvents;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -24,6 +25,17 @@ public class WeaponInventory {
 
     private final List<ModifiedWeapon> weapons = new ArrayList<>();
     private int currentIndex = 0;
+
+    /** Bus de eventos para emitir OnWeaponSwitch. */
+    private final GameEventBus eventBus;
+
+    /**
+     * @param eventBus bus de eventos para emitir OnWeaponSwitch al cambiar de arma.
+     */
+    public WeaponInventory(GameEventBus eventBus) {
+        if (eventBus == null) throw new IllegalArgumentException("WeaponInventory: eventBus is required");
+        this.eventBus = eventBus;
+    }
 
     // ── Gestión de armas ──────────────────────────────────────────────────
 
@@ -82,9 +94,9 @@ public class WeaponInventory {
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private static void emitSwitch(ModifiedWeapon previous, ModifiedWeapon current) {
-        if (GameEventBus.GLOBAL.hasListeners(WeaponEvents.OnWeaponSwitch.class)) {
-            GameEventBus.GLOBAL.post(new WeaponEvents.OnWeaponSwitch(previous, current));
+    private void emitSwitch(ModifiedWeapon previous, ModifiedWeapon current) {
+        if (eventBus.hasListeners(WeaponEvents.OnWeaponSwitch.class)) {
+            eventBus.post(new WeaponEvents.OnWeaponSwitch(previous, current));
         }
     }
 }

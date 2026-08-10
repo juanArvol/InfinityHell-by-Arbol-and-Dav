@@ -2,8 +2,8 @@ package Game.Items.Types.Bullets;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.SpawnProjectileEvent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.Events.SpawnProjectileEvent;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectilePool;
@@ -25,8 +25,8 @@ import java.util.function.Supplier;
  *
  * ── LIFECYCLE DE LISTENER ─────────────────────────────────────────────────
  *
- * installListener() registra exactamente UN listener en GameEventBus.GLOBAL y
- * conserva la Subscription para poder desregistrarlo limpiamente.
+ * installListener(bus, bulletSpawner) registra exactamente UN listener en el
+ * bus proporcionado y conserva la Subscription para poder desregistrarlo limpiamente.
  *
  * Si se llama installListener() nuevamente (ej: reinicio del mundo), el
  * listener anterior se cancela antes de instalar el nuevo — nunca se acumulan.
@@ -34,8 +34,7 @@ import java.util.function.Supplier;
  * uninstallListener() cancela el listener explícitamente. Debe llamarse cuando
  * el World/Scene que owns este registry se destruye.
  *
- * shutdown() combina uninstallListener() + reset del estado interno. Es el
- * punto correcto de limpieza cuando el registry tiene lifecycle de World.
+ * shutdown() combina uninstallListener() + reset del estado interno.
  *
  * ── POOL INTEGRADO ────────────────────────────────────────────────────────
  *
@@ -49,8 +48,7 @@ import java.util.function.Supplier;
  * ── PIPELINE ──────────────────────────────────────────────────────────────
  *
  *   Emisor (Enemy, Boss):
- *     GameEventBus.GLOBAL.post(new SpawnProjectileEvent(
- *         "sans.bone", origin, target, enemy));
+ *     bus.post(new SpawnProjectileEvent("sans.bone", origin, target, enemy));
  *
  *   ProjectileRegistry escucha SpawnProjectileEvent:
  *     → busca la factory por "sans.bone"
@@ -115,9 +113,9 @@ public final class ProjectileRegistry {
      * Resetea el singleton.
      *
      * IMPORTANTE: llamar uninstallListener() o shutdown() ANTES de reset()
-     * para cancelar el listener en GameEventBus.GLOBAL. Si reset() se llama
-     * directamente sin cancelar el listener, el listener anterior queda
-     * huérfano en GLOBAL reteniendo referencias al registry destruido.
+     * para cancelar el listener en el bus. Si reset() se llama directamente
+     * sin cancelar el listener, el listener anterior queda huérfano en el bus
+     * reteniendo referencias al registry destruido.
      *
      * Preferir shutdown() que hace ambas cosas en orden correcto.
      *
@@ -135,7 +133,7 @@ public final class ProjectileRegistry {
      * Cierra el registry limpiamente: cancela el listener del bus y destruye el singleton.
      *
      * Llamar cuando el World/Scene que owns este registry se destruye.
-     * Esto garantiza que GameEventBus.GLOBAL no retiene referencias al registry
+     * Esto garantiza que el bus no retiene referencias al registry
      * ni a los bulletSpawners capturados en el listener.
      */
     public static void shutdown() {
@@ -294,7 +292,7 @@ public final class ProjectileRegistry {
     // ── Listener de SpawnProjectileEvent ─────────────────────────────────
 
     /**
-     * Instala el listener de SpawnProjectileEvent en GameEventBus.GLOBAL.
+     * Instala el listener de SpawnProjectileEvent en el bus indicado.
      *
      * ── LIFECYCLE EXPLÍCITO ───────────────────────────────────────────────
      *
@@ -305,16 +303,18 @@ public final class ProjectileRegistry {
      * La Subscription queda conservada en this.listenerSubscription.
      * Para cancelar el listener, llamar uninstallListener() o shutdown().
      *
+     * @param bus          bus de eventos donde registrar el listener
      * @param bulletSpawner callback que añade el Bullet al mundo (world::add,
      *                      worldManager::addDynamic, etc.)
      */
-    public void installListener(Consumer<Bullet> bulletSpawner) {
+    public void installListener(GameEventBus bus, Consumer<Bullet> bulletSpawner) {
+        if (bus == null) throw new IllegalArgumentException("ProjectileRegistry.installListener: bus is required");
         // Cancelar listener anterior si existe — evita duplicados
         if (listenerSubscription != null && listenerSubscription.isActive()) {
             listenerSubscription.cancel();
         }
 
-        listenerSubscription = GameEventBus.GLOBAL.subscribe(
+        listenerSubscription = bus.subscribe(
             SpawnProjectileEvent.class,
             event -> {
                 Vector2D origin = event.origin();

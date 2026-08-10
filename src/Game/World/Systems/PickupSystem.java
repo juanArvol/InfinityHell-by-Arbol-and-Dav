@@ -1,7 +1,7 @@
 package Game.World.Systems;
 
 import Game.Engine.Events.GameEventBus;
-import Game.Engine.Events.OnPickupEvent;
+import Game.Gameplay.Events.OnPickupEvent;
 import Game.Items.Savement.ItemStack;
 import Game.Player.Player;
 import Game.World.WorldObjects.WorldItem;
@@ -18,10 +18,10 @@ import Game.World.WorldObjects.WorldItem;
  *
  * FLUJO:
  *   1. WorldItem.onCollisionWith(GameObjects) detecta instanceof Player
- *   2. Llama PickupSystem.handlePickup(player, worldItem)
+ *   2. Llama PickupSystem.handlePickup(bus, player, worldItem)
  *   3. PickupSystem intenta añadir el ItemStack al inventario del Player
  *   4. Si el inventario acepta todo → WorldItem.markForRemoval()
- *   5. En todos los casos que haya pickup se dispara OnPickupEvent
+ *   5. En todos los casos que haya pickup se dispara OnPickupEvent en el bus
  */
 public final class PickupSystem {
 
@@ -31,8 +31,12 @@ public final class PickupSystem {
      * Intenta que el jugador recoja el item del world.
      * Modifica el ItemStack del WorldItem si el pickup es parcial.
      * Marca el WorldItem para remoción si el stack queda vacío.
+     *
+     * @param bus       bus de eventos donde publicar OnPickupEvent
+     * @param player    jugador que recoge el ítem
+     * @param worldItem ítem del mundo a recoger
      */
-    public static void handlePickup(Player player, WorldItem worldItem) {
+    public static void handlePickup(GameEventBus bus, Player player, WorldItem worldItem) {
         if (player == null || worldItem == null) return;
 
         var inventory = player.getInventory();
@@ -51,8 +55,8 @@ public final class PickupSystem {
         int after    = stack.getCount();
         int pickedUp = before - after;
 
-        if (pickedUp > 0) {
-            GameEventBus.GLOBAL.post(new OnPickupEvent(player, stack.getDefinition(), pickedUp));
+        if (pickedUp > 0 && bus != null) {
+            bus.post(new OnPickupEvent(player, stack.getDefinition(), pickedUp));
         }
 
         if (fullyAdded || stack.isEmpty()) {
