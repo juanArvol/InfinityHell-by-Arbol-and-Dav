@@ -108,6 +108,14 @@ public final class PlayerAssembler {
     /**
      * Ensambla un Player completo con el loadout indicado.
      *
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     *
+     * CONSTRUCCIÓN SIMPLIFICADA:
+     *   • Eliminado el hack Vector2D[] positionRef
+     *   • Construcción en orden lógico sin dependencias circulares artificiales
+     *   • PlayerRuntime y PlayerInventory se crean antes de PlayerCombat
+     *   • Inyección de dependencias limpia sin referencias diferidas
+     *
      * @param spawn         posición inicial en el mundo
      * @param bulletSpawner callback para añadir balas al mundo
      * @param eventBus      bus de eventos del juego
@@ -123,15 +131,12 @@ public final class PlayerAssembler {
         if (eventBus      == null) throw new IllegalArgumentException("eventBus es requerido");
         if (loadout       == null) throw new IllegalArgumentException("loadout es requerido");
 
-        // ── 1. EntityStats — fuente de verdad única ───────────────────────
+        // ── 1. Entity Systems — configuración de sistemas genéricos ──────
         EntityStats entityStats = new EntityStats();
         entityStats.setMaxHp(BASE_HP_MAX);
         entityStats.movement().setSpeed(BASE_SPEED);
 
-        // ── 2. RuntimeStats — stats efectivos con modificadores ───────────
         RuntimeStats runtimeStats = new RuntimeStats(entityStats);
-
-        // ── 3. EntityFlags / Attributes / AttackSources ───────────────────
         EntityFlags entityFlags = new EntityFlags();
 
         EntityAttributes entityAttributes = new EntityAttributes();
@@ -141,30 +146,29 @@ public final class PlayerAssembler {
 
         AttackSources attackSources = new AttackSources();
 
-        // ── 4. PlayerPhysics ──────────────────────────────────────────────
+        // ── 2. Player-specific modules — sin dependencias entre ellos ─────
         PlayerPhysics physics = new PlayerPhysics(BASE_GRAVITY);
+        PlayerState state = new PlayerState();
+        PlayerStats playerStats = new PlayerStats();
+        PlayerAmulets amulets = new PlayerAmulets();
 
-        // ── 5. Estado y módulos del Player ────────────────────────────────
-        PlayerState  state       = new PlayerState();
-        PlayerStats  playerStats = new PlayerStats();
-        PlayerAmulets amulets   = new PlayerAmulets();
+        // ── 3. Inventory y Runtime — independientes de Player ─────────────
+        PlayerInventory playerInventory = new PlayerInventory();
+        PlayerRuntime playerRuntime = new PlayerRuntime(playerInventory);
 
-        // ── 6. PlayerController (recibe EntityFlags para respetar impairments)
+        // ── 4. Controllers y Combat — dependen de módulos básicos ─────────
+        // EntityFlags es obligatorio desde HRFC v2
         PlayerController controller = new PlayerController(physics, state, entityFlags);
-
-        // ── 7. PlayerCombat ───────────────────────────────────────────────
-        // positionSupplier se actualiza en el paso 8b, una vez que Player existe.
-        // Se usa un array de un elemento para capturar la referencia diferida
-        // sin requerir que Player exista antes de construir PlayerCombat.
-        Vector2D[] positionRef = new Vector2D[1];
+        
         PlayerCombat combat = new PlayerCombat(
             state,
-            () -> positionRef[0],
+            playerRuntime,
+            null,  // positionSupplier será inyectado después
             bulletSpawner,
             eventBus
         );
 
-        // ── 8. Player — entidad base ──────────────────────────────────────
+        // ── 5. Player — entidad principal ────────────────────────────────
         Player player = new Player(
             spawn,
             physics,
@@ -180,12 +184,10 @@ public final class PlayerAssembler {
             combat
         );
 
-        // 8b. Apuntar la referencia diferida a la posición real del Player.
-        // Desde este momento, el lambda de positionSupplier devuelve la
-        // posición correcta. Es thread-safe porque el game loop es single-threaded.
-        positionRef[0] = player.getTransform().getPosition();
+        // ── 6. Post-construcción — inyección de dependencias diferidas ────
+        combat.setPositionSupplier(() -> player.getTransform().getPosition());
 
-        // ── 9. HealthComponent (modo enlazado con EntityStats) ────────────
+        // ── 7. Components — añadir componentes al Player ──────────────────
         HealthComponent healthComponent = new HealthComponent(entityStats) {
             @Override
             protected void onDeath() {
@@ -194,24 +196,34 @@ public final class PlayerAssembler {
             }
         };
         player.addComponent(healthComponent);
-
-        // ── 10. StatusEffectComponent ─────────────────────────────────────
         player.addComponent(new StatusEffectComponent());
 
-        // ── 11. Loadout — construir armas desde WeaponType ────────────────
+        // ── 8. Loadout — materializar configuración inicial ───────────────
+        List<ModifiedWeapon> loadoutWeapons = new ArrayList<>();
+        
+        // Construir armas desde WeaponType (sin BulletType fijo)
         for (WeaponType weaponType : loadout.getWeapons()) {
             WeaponComport comport = weaponType.createComport();
             ModifiedWeapon weapon = new ModifiedWeapon(
                 comport,
-                loadout.getBulletType(),
                 amulets,
                 player,
                 eventBus
             );
-            combat.addWeapon(weapon);
+            loadoutWeapons.add(weapon);
+        }
+        
+        // Inicializar inventario con las armas construidas
+        for (ModifiedWeapon weapon : loadoutWeapons) {
+            playerInventory.addWeapon(weapon);
+        }
+        
+        // Añadir todas las balas del loadout al inventario
+        for (BulletType bulletType : loadout.getBullets()) {
+            playerInventory.addBullet(bulletType);
         }
 
-        // ── 12. Colisión ──────────────────────────────────────────────────
+        // ── 9. Collision y Rendering ──────────────────────────────────────
         ColliderComponent collider = player.getComponent(ColliderComponent.class);
         if (collider != null) {
             collider.setProfile(CollisionProfile.PLAYER);
@@ -219,20 +231,20 @@ public final class PlayerAssembler {
             collider.setOffset(COLLIDER_OX, COLLIDER_OY);
         }
 
-        // ── 13. Componentes visuales ──────────────────────────────────────
         player.addComponent(new HitBoxComponent(Color.RED));
         player.addComponent(new AnimationControllerComponent(PlayerAssets.handle));
         player.addComponent(new PlayerRenderer(state));
 
-        // ── 14. Inventario ────────────────────────────────────────────────
+        // ── 10. Inventario general y Runtime ──────────────────────────────
         Inventory     inventory     = new Inventory(INVENTORY_SLOTS);
         EquippedItems equippedItems = new EquippedItems();
         player.initInventory(inventory, equippedItems);
+        player.initRuntime(playerRuntime);
 
-        // ── 15. Vincular PlayerStats con los sistemas construidos ─────────
+        // ── 11. Vinculación final de sistemas ─────────────────────────────
         playerStats.bind(entityStats, runtimeStats, entityFlags, healthComponent);
 
-        // ── 16. HP inicial menor que el máximo ────────────────────────────
+        // ── 12. Inicialización final ──────────────────────────────────────
         if (BASE_HP < BASE_HP_MAX) {
             healthComponent.initCurrentHP(BASE_HP);
         }

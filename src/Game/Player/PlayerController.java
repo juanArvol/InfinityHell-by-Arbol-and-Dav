@@ -5,9 +5,13 @@ import Inputs.KeyBoard;
 /**
  * Controlador de input del jugador.
  *
- * ── HRFC — Player Reengineering ───────────────────────────────────────────
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
  *
  * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ *
+ *   ELIMINADO:
+ *     - Constructor legacy sin EntityFlags — ahora es obligatorio
+ *     - Compatibilidad con entityFlags == null
  *
  *   AÑADIDO:
  *     - Manejo de tecla C (modo apuntado): inhibe movimiento horizontal normal
@@ -15,7 +19,7 @@ import Inputs.KeyBoard;
  *     - Drop-through: cuando C + ↓ + en suelo, el jugador cae a través de
  *       la plataforma (drop-through incondicional; extensible en el futuro
  *       para solo plataformas one-way).
- *     - EntityFlags check: respeta isAbleToMove() para inhibición por
+ *     - EntityFlags check obligatorio: respeta isAbleToMove() para inhibición por
  *       efectos de estado (frozen, stunned, rooted) además de congelado.
  *
  *   SIN CAMBIOS:
@@ -56,10 +60,8 @@ import Inputs.KeyBoard;
  *
  * ── ENTITYFLAGS ───────────────────────────────────────────────────────────
  *
- *   Si se inyecta EntityFlags en el constructor, el Controller respeta
- *   isAbleToMove() para inhibiciones por efectos de estado (frozen, stun…).
- *   Si entityFlags es null (constructor de retrocompatibilidad), solo se
- *   verifica state.isCongelado().
+ *   EntityFlags es obligatorio. El Controller siempre respeta isAbleToMove()
+ *   para inhibiciones por efectos de estado (frozen, stun…) además de state.isCongelado().
  */
 public class PlayerController {
 
@@ -68,35 +70,33 @@ public class PlayerController {
 
     /**
      * EntityFlags del Player para respetar impairments genéricos (frozen, stunned…).
-     * Puede ser null — en ese caso solo se verifica state.isCongelado().
+     * Obligatorio desde HRFC v2 — nunca null.
      */
     private final Game.Engine.Entity.Flags.EntityFlags entityFlags;
 
-    // ── Constructores ─────────────────────────────────────────────────────
+    // ── Constructor ───────────────────────────────────────────────────────
 
     /**
-     * Constructor completo.
+     * Constructor único.
+     *
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     *
+     * EntityFlags es ahora obligatorio. Se eliminó la compatibilidad legacy.
      *
      * @param physics     física del Player. No puede ser null.
      * @param state       estado del Player. No puede ser null.
-     * @param entityFlags flags de la entidad para respetar impairments. Puede ser null.
+     * @param entityFlags flags de la entidad para respetar impairments. No puede ser null.
      */
     public PlayerController(PlayerPhysics physics,
                             PlayerState state,
                             Game.Engine.Entity.Flags.EntityFlags entityFlags) {
         if (physics == null) throw new IllegalArgumentException("physics es requerido");
         if (state   == null) throw new IllegalArgumentException("state es requerido");
+        if (entityFlags == null) throw new IllegalArgumentException("entityFlags es requerido");
+        
         this.physics     = physics;
         this.state       = state;
         this.entityFlags = entityFlags;
-    }
-
-    /**
-     * Constructor de retrocompatibilidad sin EntityFlags.
-     * Equivale a {@code PlayerController(physics, state, null)}.
-     */
-    public PlayerController(PlayerPhysics physics, PlayerState state) {
-        this(physics, state, null);
     }
 
     // ── Update ────────────────────────────────────────────────────────────
@@ -106,7 +106,8 @@ public class PlayerController {
         if (state.isCongelado()) return;
 
         // Prioridad 2: inhibición por efectos de estado genéricos (frozen, stun…).
-        if (entityFlags != null && !entityFlags.isAbleToMove()) return;
+        // EntityFlags es ahora obligatorio — sin fallback null
+        if (!entityFlags.isAbleToMove()) return;
 
         // Tecla C: activar/desactivar modo apuntado antes de procesar movimiento.
         boolean cPressed = KeyBoard.getState("c");

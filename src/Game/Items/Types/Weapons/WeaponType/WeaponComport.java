@@ -131,7 +131,23 @@ public abstract class WeaponComport {
     public int     getCooldown()    { return stats.getCooldown(); }
     public int     getCurrentAmmo() { return currentAmmo; }
     public int     getChargerSize() { return chargerSize; }
+    
+    /**
+     * Estado interno de recarga del arma (mecánica).
+     * 
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     * 
+     * IMPORTANTE: Para el estado lógico del Player ("El Player está recargando"),
+     * consultar PlayerState.isReloading(). Este método retorna únicamente el
+     * estado de la mecánica interna del arma.
+     * 
+     * Flujo correcto:
+     *   - UI/Renderer → PlayerState.isReloading()
+     *   - PlayerCombat → coordina entre PlayerState y WeaponComport
+     *   - WeaponComport → gestiona su mecánica interna
+     */
     public boolean isReloading()    { return reloading; }
+    
     public int     getBurstCount()  { return burstCount; }
 
     /** True si el arma puede disparar ahora mismo (no recargando, tiene ammo). */

@@ -15,6 +15,13 @@ import java.util.function.Supplier;
 /**
  * HUD del crosshair y preview de trayectoria.
  *
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ *
+ * CAMBIO ARQUITECTÓNICO:
+ *   - CrossHairHUD ahora consulta player.getState().isReloading() en lugar de weapon.isReloading()
+ *   - PlayerState es la fuente de verdad del estado lógico del Player
+ *   - weapon.isReloading() representa únicamente la mecánica interna del arma
+ *
  * ── HRFC-001: usa GameCamera (entidad del Engine) ─────────────────────────
  *
  * La cámara se inyecta como Supplier<GameCamera>. La conversión de
@@ -75,7 +82,8 @@ public class CrossHairHUD implements UIElement {
         Color prevColor = g.getColor();
 
         // Color según estado del arma
-        if (weapon.isReloading()) {
+        // ── HRFC: Consultar PlayerState para recarga ─────────────────────────
+        if (player.getState().isReloading()) {
             g.setColor(Color.YELLOW);
         } else if (weapon.getFireWait() == 0) {
             g.setColor(Color.GREEN);

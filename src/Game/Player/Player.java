@@ -99,6 +99,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     private final PlayerState      state;
     private final PlayerAmulets    playerAmulets;
 
+    // ── Runtime del Player ────────────────────────────────────────────────
+    private PlayerRuntime playerRuntime;
+
     // ── Inventario ────────────────────────────────────────────────────────
     private Inventory     inventory;
     private EquippedItems equippedItems;
@@ -149,6 +152,16 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         this.equippedItems = equippedItems;
     }
 
+    /**
+     * Inyecta el runtime del Player tras la construcción.
+     * Solo PlayerAssembler llama este método.
+     *
+     * @param playerRuntime runtime del Player para gestión de inventario y equipamiento
+     */
+    void initRuntime(PlayerRuntime playerRuntime) {
+        this.playerRuntime = playerRuntime;
+    }
+
     // ── Update — coordinación del ciclo de juego ──────────────────────────
 
     @Override
@@ -165,13 +178,18 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         // 3. Controller — procesar input de movimiento
         controller.update();
 
-        // 4. Combat — procesar input de disparo
+        // 4. Runtime — coordinar inventario y equipamiento
+        if (playerRuntime != null) {
+            playerRuntime.update();
+        }
+
+        // 5. Combat — procesar input de disparo
         combat.update();
 
-        // 5. Engine Components (HealthComponent, StatusEffectComponent, Renderer…)
+        // 6. Engine Components (HealthComponent, StatusEffectComponent, Renderer…)
         super.update();
 
-        // 6. PlayerStats — decrementar frames de invulnerabilidad
+        // 7. PlayerStats — decrementar frames de invulnerabilidad
         //    (después de super.update() para que el daño del frame ya se haya aplicado)
         playerStats.update();
     }
@@ -193,12 +211,41 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         playerStats.triggerInvulnerability();
     }
 
-    // ── EntityInfoProvider ────────────────────────────────────────────────
+    // ── EntityInfoProvider — integración con Engine Systems ──────────────
 
+    /**
+     * EntityStats base para integración con Engine Systems.
+     * 
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     * 
+     * Para código específico del Player, usar getPlayerStats().getEntityStats()
+     * en lugar de acceso directo. EntityInfoProvider se mantiene para
+     * integración con sistemas genéricos del Engine (StatusEffectSystem, etc.)
+     */
     @Override public EntityStats      getStats()         { return entityStats;      }
+    
+    /**
+     * RuntimeStats efectivos para integración con Engine Systems.
+     * Para código específico del Player, usar getPlayerStats().getRuntimeStats().
+     */
     @Override public RuntimeStats     getRuntimeStats()  { return runtimeStats;     }
+    
+    /**
+     * EntityFlags para integración con Engine Systems.
+     * Para código específico del Player, usar getPlayerStats().getEntityFlags().
+     */
     @Override public EntityFlags      getFlags()         { return entityFlags;      }
+    
+    /**
+     * EntityAttributes para integración con Engine Systems.
+     * Para código específico del Player, usar getPlayerStats().getAttributes().
+     */
     @Override public EntityAttributes getAttributes()    { return entityAttributes; }
+    
+    /**
+     * AttackSources para integración con Engine Systems.
+     * Para código específico del Player, usar getPlayerStats().getAttackSources().
+     */
     @Override public AttackSources    getAttackSources() { return attackSources;    }
 
     // ── API pública del Player ────────────────────────────────────────────
@@ -217,6 +264,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
      * No usar para leer stats de gameplay — usar getStats() / getRuntimeStats().
      */
     public PlayerStats getPlayerStats()     { return playerStats;   }
+
+    /** Runtime del Player — coordina inventario y equipamiento. */
+    public PlayerRuntime getRuntime()       { return playerRuntime; }
 
     /** Inventario de ítems de la run. */
     public Inventory getInventory()         { return inventory;     }

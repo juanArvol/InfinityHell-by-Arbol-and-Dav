@@ -4,8 +4,8 @@ import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponInventory;
 import Inputs.Listeners.MouseActionListener;
 import Inputs.MouseInput;
 import java.util.List;
@@ -13,40 +13,61 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Combate del jugador — responsable de conectar input, arma y mundo.
+ * Combate del jugador — ejecuta combate consumiendo desde inventario externo.
  *
- * ── HRFC — Weapon & Projectile System ────────────────────────────────────
- *
- * PlayerCombat ahora usa {@link ModifiedWeapon} directamente como tipo
- * de arma, eliminando la capa de indirección de WeaponSelected + Weapon
- * que no añadía valor. El pipeline de disparo completo (FireMode →
- * amuletos → BulletBehavior compuesto → proyectiles) vive en ModifiedWeapon.
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
  *
  * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
- *   1. Leer input de mouse (click puntual, botón mantenido).
- *   2. Gestionar la recarga manual.
- *   3. Delegar el disparo a la ModifiedWeapon activa.
- *   4. Pasar los proyectiles resultantes al bulletSpawner inyectado.
- *   5. Emitir eventos de ciclo de vida del arma (cargador vacío, recarga).
+ *   1. Leer input de combate (click, botón mantenido, recarga, cambio de arma/bala)
+ *   2. Obtener arma y bala activas desde PlayerRuntime
+ *   3. Gestionar recarga (coordinar con PlayerState)
+ *   4. Ejecutar pipeline de disparo via ModifiedWeapon
+ *   5. Pasar proyectiles al bulletSpawner inyectado
+ *   6. Emitir eventos de combate
  *
- * ── LO QUE NO HACE ────────────────────────────────────────────────────────
+ * ── LO QUE NO ALMACENA ────────────────────────────────────────────────────
  *
- *   - No conoce World, WorldManager ni cómo añadir objetos al mundo.
- *   - No conoce Player directamente (recibe un Supplier<Vector2D> para posición).
- *   - No construye armas (eso lo hace Player o un sistema de loadout).
+ *   ✗ Lista de armas
+ *   ✗ Lista de balas
+ *   ✗ Posesiones
+ *   ✗ Adquisiciones
+ *   ✗ WeaponInventory
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ *   PlayerRuntime
+ *          │
+ *          │ consulta
+ *          ▼
+ *   PlayerCombat
+ *          │
+ *          ├── obtiene arma activa
+ *          ├── obtiene bala activa
+ *          │
+ *          ▼
+ *   ModifiedWeapon.handleInput(bala activa)
+ *          │
+ *          ▼
+ *   ProjectileBlueprint → BulletFactory → Bullet
+ *
+ * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ *
+ *   PlayerInventory → almacenamiento (qué posee)
+ *   PlayerRuntime   → selección activa (qué está equipado)
+ *   PlayerCombat    → ejecución (cómo se utiliza lo equipado)
  *
  * ── DEPENDENCY INJECTION ─────────────────────────────────────────────────
  *
- *   positionSupplier → proveedor de posición del portador. Lazy.
- *   bulletSpawner    → callback que añade proyectiles al mundo.
- *
- *   Esto hace PlayerCombat testeable sin ningún sistema de mundo real.
+ *   playerRuntime    → proveedor de arma/bala activas
+ *   positionSupplier → proveedor de posición del portador
+ *   bulletSpawner    → callback que añade proyectiles al mundo
+ *   eventBus         → bus de eventos para emitir eventos de combate
  */
 public class PlayerCombat implements MouseActionListener {
 
     private final PlayerState        state;
-    private final WeaponInventory    inventory;
+    private final PlayerRuntime      playerRuntime;
     private       Supplier<Vector2D> positionSupplier;
     private final Consumer<Bullet>   bulletSpawner;
     private final GameEventBus       eventBus;
@@ -56,48 +77,40 @@ public class PlayerCombat implements MouseActionListener {
 
     /**
      * @param state            estado del jugador (congelado, apuntado, recargando)
-     * @param positionSupplier proveedor de posición actual del portador
+     * @param playerRuntime    runtime del jugador para obtener arma/bala activas
+     * @param positionSupplier proveedor de posición actual del portador (puede ser null inicialmente)
      * @param bulletSpawner    callback para añadir proyectiles al mundo
      * @param eventBus         bus de eventos para emitir eventos de arma
      */
     public PlayerCombat(
             PlayerState state,
+            PlayerRuntime playerRuntime,
             Supplier<Vector2D> positionSupplier,
             Consumer<Bullet> bulletSpawner,
             GameEventBus eventBus
     ) {
+        if (state == null) throw new IllegalArgumentException("state es requerido");
+        if (playerRuntime == null) throw new IllegalArgumentException("playerRuntime es requerido");
+        if (bulletSpawner == null) throw new IllegalArgumentException("bulletSpawner es requerido");
+        if (eventBus == null) throw new IllegalArgumentException("eventBus es requerido");
+        
         this.state            = state;
-        this.positionSupplier = positionSupplier;
+        this.playerRuntime    = playerRuntime;
+        this.positionSupplier = positionSupplier;  // Puede ser null inicialmente
         this.bulletSpawner    = bulletSpawner;
         this.eventBus         = eventBus;
-        this.inventory        = new WeaponInventory(eventBus);
     }
 
-    // ── Loadout ────────────────────────────────────────────────────────────
-
-    /**
-     * Añade un arma al inventario del jugador.
-     *
-     * Llamar desde Player o desde un sistema de loadout externo.
-     * Si es la primera arma, pasa a ser el arma activa automáticamente.
-     *
-     * @param weapon arma ya construida con su WeaponComport, BulletType y amulets
-     */
-    public void addWeapon(ModifiedWeapon weapon) {
-        inventory.addWeapon(weapon);
-    }
-
-    public WeaponInventory getInventory() {
-        return inventory;
-    }
+    // ── Actualización del proveedor de posición ──────────────────────────
 
     /**
      * Actualiza el proveedor de posición del portador.
      *
-     * Necesario porque PlayerAssembler construye PlayerCombat antes de que
-     * el Player exista, y luego actualiza el supplier una vez que la entidad
-     * está disponible. El supplier null inicial es seguro: no se llama hasta
-     * que update() se ejecuta por primera vez tras el ensamblado completo.
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     *
+     * Elimina la necesidad del hack Vector2D[] positionRef. PlayerAssembler
+     * ahora crea PlayerCombat con positionSupplier=null y luego lo inyecta
+     * una vez que Player existe, evitando referencias circulares artificiales.
      *
      * @param positionSupplier nuevo proveedor de posición. No puede ser null.
      */
@@ -121,13 +134,20 @@ public class PlayerCombat implements MouseActionListener {
     public void update() {
         if (state.isCongelado()) return;
 
-        ModifiedWeapon currentWeapon = inventory.getCurrentWeapon();
+        ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
         if (currentWeapon == null) return;
+
+        // ── Input de cambio de arma/bala ──────────────────────────────────
+        handleWeaponSwitching();
+        handleBulletSwitching();
 
         // ── Recarga manual ────────────────────────────────────────────────
         boolean reloadKeyPressed = Inputs.KeyBoard.getState("reload");
         if (reloadKeyPressed && !state.isReloading() && !currentWeapon.isFullyLoaded()) {
+            // PlayerState es la fuente de verdad del estado lógico del Player
             state.setReloading(true);
+            
+            // El arma ejecuta su mecánica interna de recarga
             currentWeapon.reload();
 
             // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
@@ -138,10 +158,12 @@ public class PlayerCombat implements MouseActionListener {
         }
 
         // ── Sincronizar estado de recarga ─────────────────────────────────
+        // PlayerState controla el estado lógico, WeaponComport maneja la mecánica
         if (state.isReloading()) {
-            boolean wasReloading = currentWeapon.isReloading();
-            if (!wasReloading) {
-                // La recarga se completó este frame
+            // Verificar si el arma completó su mecánica de recarga
+            boolean weaponStillReloading = currentWeapon.isReloading();
+            if (!weaponStillReloading) {
+                // La mecánica del arma se completó → actualizar estado del Player
                 state.setReloading(false);
                 if (eventBus.hasListeners(WeaponEvents.OnReloadComplete.class)) {
                     eventBus.post(new WeaponEvents.OnReloadComplete(currentWeapon));
@@ -158,17 +180,12 @@ public class PlayerCombat implements MouseActionListener {
 
         // ── Disparo ───────────────────────────────────────────────────────
         boolean holding  = MouseInput.getButtonState("leftPressed");
-        Vector2D pos     = positionSupplier.get();
+        Vector2D pos     = (positionSupplier != null) ? positionSupplier.get() : new Vector2D(0, 0);
         Vector2D aim     = state.getAimDirection();
+        BulletType currentBullet = playerRuntime.getCurrentBullet();
 
-        List<Bullet> newBullets = currentWeapon.handleInput(
-                holding,
-                clickFired,
-                pos.getX(),
-                pos.getY(),
-                state.isDer(),
-                aim
-        );
+        List<Bullet> newBullets = handleShooting(currentWeapon, currentBullet, 
+                                                 holding, clickFired, pos, aim, state.isDer());
 
         clickFired = false;
 
@@ -181,8 +198,93 @@ public class PlayerCombat implements MouseActionListener {
         currentWeapon.update();
     }
 
-    // ── Cambio de arma ────────────────────────────────────────────────────
+    // ── Disparo con bala runtime ──────────────────────────────────────────
 
-    public void nextWeapon()     { inventory.nextWeapon();     }
-    public void previousWeapon() { inventory.previousWeapon(); }
+    /**
+     * Maneja el disparo usando la bala actualmente seleccionada.
+     * Utiliza el nuevo sistema de balas runtime.
+     */
+    private List<Bullet> handleShooting(ModifiedWeapon weapon, BulletType bulletType,
+                                       boolean holding, boolean clickFired,
+                                       Vector2D pos, Vector2D aim, boolean facingRight) {
+        if (bulletType == null) {
+            // Sin bala seleccionada, no se puede disparar
+            return List.of();
+        }
+        
+        // Usar el nuevo handleInput que acepta BulletType como parámetro
+        return weapon.handleInput(bulletType, holding, clickFired, 
+                                 pos.getX(), pos.getY(), facingRight, aim);
+    }
+
+    // ── Input de cambio de equipamiento ───────────────────────────────────
+
+    /**
+     * Maneja el input de cambio de arma.
+     */
+    private void handleWeaponSwitching() {
+        // Rueda del mouse o teclas para cambiar arma
+        if (Inputs.KeyBoard.getState("nextWeapon")) {
+            ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
+            playerRuntime.nextWeapon();
+            ModifiedWeapon current = playerRuntime.getCurrentWeapon();
+            emitWeaponSwitch(previous, current);
+        }
+        
+        if (Inputs.KeyBoard.getState("prevWeapon")) {
+            ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
+            playerRuntime.previousWeapon();
+            ModifiedWeapon current = playerRuntime.getCurrentWeapon();
+            emitWeaponSwitch(previous, current);
+        }
+    }
+
+    /**
+     * Maneja el input de cambio de bala.
+     */
+    private void handleBulletSwitching() {
+        // Teclas para cambiar tipo de bala
+        if (Inputs.KeyBoard.getState("nextBullet")) {
+            playerRuntime.nextBullet();
+        }
+        
+        if (Inputs.KeyBoard.getState("prevBullet")) {
+            playerRuntime.previousBullet();
+        }
+    }
+
+    // ── Cambio de arma (delegación a PlayerRuntime) ──────────────────────
+
+    /**
+     * Avanza al siguiente arma.
+     * Delega en PlayerRuntime — PlayerCombat no gestiona la selección.
+     */
+    public void nextWeapon() { 
+        ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
+        playerRuntime.nextWeapon(); 
+        ModifiedWeapon current = playerRuntime.getCurrentWeapon();
+        emitWeaponSwitch(previous, current);
+    }
+    
+    /**
+     * Retrocede al arma anterior.
+     * Delega en PlayerRuntime — PlayerCombat no gestiona la selección.
+     */
+    public void previousWeapon() { 
+        ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
+        playerRuntime.previousWeapon(); 
+        ModifiedWeapon current = playerRuntime.getCurrentWeapon();
+        emitWeaponSwitch(previous, current);
+    }
+
+    // ── Eventos ───────────────────────────────────────────────────────────
+
+    /**
+     * Emite evento de cambio de arma si hay suscriptores.
+     */
+    private void emitWeaponSwitch(ModifiedWeapon previous, ModifiedWeapon current) {
+        if (previous != current && eventBus.hasListeners(WeaponEvents.OnWeaponSwitch.class)) {
+            eventBus.post(new WeaponEvents.OnWeaponSwitch(previous, current));
+        }
+    }
 }

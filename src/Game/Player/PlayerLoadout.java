@@ -9,70 +9,81 @@ import java.util.List;
 /**
  * Configuración declarativa del equipamiento inicial del jugador.
  *
- * ── HRFC — Player Reengineering ───────────────────────────────────────────
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
- * PlayerLoadout declara QUÉ armas y QUÉ tipo de bala comienza equipados
- * el jugador al inicio de la run. No construye nada — solo describe.
+ * PlayerLoadout responde exclusivamente:
  *
- * La construcción real (new ModifiedWeapon, new WeaponPistola) ocurre en
- * PlayerAssembler, que lee el loadout y produce las instancias concretas.
+ *   > "¿Con qué comienza el Player?"
  *
- * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ * NO responde:
  *
- *   PlayerLoadout   → QUÉ armas y balas comienza equipadas (configuración)
- *   PlayerAssembler → construye las instancias concretas (construcción)
- *   PlayerCombat    → ciclo de disparo runtime (ejecución)
+ *   > "¿Qué posee actualmente el Player?" ← PlayerRuntime/PlayerInventory
  *
- * Antes, estas tres responsabilidades estaban mezcladas en el constructor
- * de Player:
+ * ── SEPARACIÓN LOADOUT vs RUNTIME ────────────────────────────────────────
  *
- *   combat.addWeapon(new ModifiedWeapon(new WeaponPistola(), BulletType.NORMALBULLET, ...))
+ *   PlayerLoadout   → configuración inicial (inmutable)
+ *   PlayerRuntime   → estado actual de la run (mutable)
+ *   PlayerInventory → almacenamiento de posesiones
  *
- * Ahora:
+ * ── FLUJO ARQUITECTÓNICO ─────────────────────────────────────────────────
  *
- *   PlayerLoadout.defaultLoadout()  →  PlayerAssembler.assemble()  →  Player
+ *   PlayerLoadout
+ *        │
+ *        │ describe
+ *        ▼
+ *   PlayerAssembler
+ *        │
+ *        │ materializa
+ *        ▼
+ *   PlayerRuntime / PlayerInventory
+ *        │
+ *        ▼
+ *   Player
+ *
+ * Una vez completado el ensamblado, PlayerLoadout deja de tener relevancia.
+ *
+ * ── ARMAS Y BALAS INDEPENDIENTES ─────────────────────────────────────────
+ *
+ * El loadout puede declarar múltiples armas y múltiples tipos de bala:
+ *
+ *   PlayerLoadout.builder()
+ *       .weapon(WeaponType.PISTOLA)
+ *       .weapon(WeaponType.ESCOPETA)
+ *       .bullet(BulletType.NORMALBULLET)
+ *       .bullet(BulletType.BULLETJUMP)
+ *       .build()
+ *
+ * El Player comenzará con todas las armas y todas las balas disponibles
+ * para selección independiente.
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
  *
- * Diferentes perfiles de inicio (tutorial, challenge, custom run) pueden
- * definirse creando diferentes instancias de PlayerLoadout sin tocar ni
- * PlayerCombat ni Player:
+ * Diferentes perfiles de inicio pueden definirse sin tocar PlayerCombat:
  *
- *   PlayerLoadout.defaultLoadout()
- *   PlayerLoadout.shotgunStart()
- *   PlayerLoadout.fromSaveFile(saveData)
+ *   PlayerLoadout.defaultLoadout()      // principiante
+ *   PlayerLoadout.shotgunStart()        // challenge
+ *   PlayerLoadout.fromSaveFile(data)    // continuación
  *
  * ── INVARIANTES ───────────────────────────────────────────────────────────
  *
- *   - Al menos una entrada de arma es requerida (validado en build()).
- *   - La primera entrada en la lista es el arma activa al inicio.
- *   - bulletType es el tipo de bala base equipado al inicio de la run.
- *
- * ── EJEMPLO DE USO ────────────────────────────────────────────────────────
- *
- *   // Loadout por defecto — pistola + bala normal:
- *   PlayerLoadout loadout = PlayerLoadout.defaultLoadout();
- *
- *   // Loadout custom:
- *   PlayerLoadout loadout = PlayerLoadout.builder()
- *       .weapon(WeaponType.PISTOLA)
- *       .weapon(WeaponType.ESCOPETA)
- *       .bulletType(BulletType.NORMALBULLET)
- *       .build();
+ *   • Al menos un arma es requerida (validado en build())
+ *   • Al menos una bala es requerida (validado en build())
+ *   • La primera arma en la lista es la activa al inicio
+ *   • La primera bala en la lista es la activa al inicio
  */
 public final class PlayerLoadout {
 
     /** Tipos de arma que el jugador comienza equipados, en orden. */
     private final List<WeaponType> weapons;
 
-    /** Tipo de bala base equipado al inicio de la run. */
-    private final BulletType bulletType;
+    /** Tipos de bala que el jugador comienza equipados, en orden. */
+    private final List<BulletType> bullets;
 
-    private PlayerLoadout(List<WeaponType> weapons, BulletType bulletType) {
-        this.weapons    = Collections.unmodifiableList(new ArrayList<>(weapons));
-        this.bulletType = bulletType;
+    private PlayerLoadout(List<WeaponType> weapons, List<BulletType> bullets) {
+        this.weapons = Collections.unmodifiableList(new ArrayList<>(weapons));
+        this.bullets = Collections.unmodifiableList(new ArrayList<>(bullets));
     }
 
     // ── Factory — loadouts predefinidos ───────────────────────────────────
@@ -86,7 +97,22 @@ public final class PlayerLoadout {
     public static PlayerLoadout defaultLoadout() {
         return builder()
             .weapon(WeaponType.PISTOLA)
-            .bulletType(BulletType.NORMALBULLET)
+            .bullet(BulletType.NORMALBULLET)
+            .build();
+    }
+
+    /**
+     * Loadout avanzado: pistola + escopeta + múltiples balas.
+     * Ejemplo de configuración con más opciones.
+     *
+     * @return loadout avanzado.
+     */
+    public static PlayerLoadout advancedLoadout() {
+        return builder()
+            .weapon(WeaponType.PISTOLA)
+            .weapon(WeaponType.ESCOPETA)
+            .bullet(BulletType.NORMALBULLET)
+            .bullet(BulletType.BULLETJUMP)
             .build();
     }
 
@@ -101,11 +127,22 @@ public final class PlayerLoadout {
     public List<WeaponType> getWeapons() { return weapons; }
 
     /**
-     * Tipo de bala base equipado al inicio de la run.
+     * Lista inmutable de tipos de bala del loadout, en orden.
+     * El primer elemento es la bala activa al inicio.
      *
-     * @return BulletType. Nunca null.
+     * @return lista no vacía de BulletType. Nunca null.
      */
-    public BulletType getBulletType() { return bulletType; }
+    public List<BulletType> getBullets() { return bullets; }
+
+    /**
+     * Tipo de bala base (primera en la lista) — método de compatibilidad.
+     * 
+     * @deprecated Usar getBullets().get(0) o getBullets() para acceso completo
+     */
+    @Deprecated
+    public BulletType getBulletType() { 
+        return bullets.isEmpty() ? BulletType.NORMALBULLET : bullets.get(0); 
+    }
 
     // ── Builder ───────────────────────────────────────────────────────────
 
@@ -115,8 +152,8 @@ public final class PlayerLoadout {
     /** Builder de PlayerLoadout. */
     public static final class Builder {
 
-        private final List<WeaponType> weapons    = new ArrayList<>();
-        private BulletType             bulletType = BulletType.NORMALBULLET;
+        private final List<WeaponType> weapons = new ArrayList<>();
+        private final List<BulletType> bullets = new ArrayList<>();
 
         private Builder() {}
 
@@ -135,28 +172,51 @@ public final class PlayerLoadout {
         }
 
         /**
-         * Establece el tipo de bala base del loadout.
+         * Añade un tipo de bala al loadout.
+         * La primera bala añadida será la activa al inicio.
          *
-         * @param bulletType tipo de bala. No puede ser null.
+         * @param bulletType tipo de bala a equipar. No puede ser null.
          * @return this.
          */
+        public Builder bullet(BulletType bulletType) {
+            if (bulletType == null)
+                throw new IllegalArgumentException("bulletType no puede ser null");
+            bullets.add(bulletType);
+            return this;
+        }
+
+        /**
+         * Establece el tipo de bala base del loadout — método de compatibilidad.
+         * Equivale a bullet(bulletType) si no se han añadido balas aún,
+         * o reemplaza la primera bala si ya hay alguna.
+         *
+         * @deprecated Usar bullet(bulletType) para mayor claridad
+         */
+        @Deprecated
         public Builder bulletType(BulletType bulletType) {
             if (bulletType == null)
                 throw new IllegalArgumentException("bulletType no puede ser null");
-            this.bulletType = bulletType;
+            if (bullets.isEmpty()) {
+                bullets.add(bulletType);
+            } else {
+                bullets.set(0, bulletType);
+            }
             return this;
         }
 
         /**
          * Construye el PlayerLoadout.
          *
-         * @throws IllegalStateException si no se añadió ningún arma.
+         * @throws IllegalStateException si no se añadió ningún arma o ninguna bala.
          */
         public PlayerLoadout build() {
             if (weapons.isEmpty())
                 throw new IllegalStateException(
                     "PlayerLoadout: debe declararse al menos un arma");
-            return new PlayerLoadout(weapons, bulletType);
+            if (bullets.isEmpty())
+                throw new IllegalStateException(
+                    "PlayerLoadout: debe declararse al menos una bala");
+            return new PlayerLoadout(weapons, bullets);
         }
     }
 }

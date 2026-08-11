@@ -5,11 +5,19 @@ import Game.Gameplay.UI.UIElement;
 import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Items.Types.Weapons.WeaponInventory;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
+import Game.Player.PlayerState;
 import java.awt.Color;
 import java.awt.Graphics2D;
 
 /**
  * HUD de munición — refactorizado para coordenadas virtuales + UIAnchor.
+ *
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ *
+ * CAMBIO ARQUITECTÓNICO:
+ *   - AmmoHUD ahora consulta PlayerState.isReloading() para el estado de recarga
+ *   - weapon.isReloading() representa únicamente la mecánica interna del arma
+ *   - PlayerState es la fuente de verdad del estado lógico del Player
  *
  * CAMBIOS respecto al original:
  *
@@ -41,9 +49,32 @@ public class AmmoHUD implements UIElement {
     private int y;
 
     private final WeaponInventory inventory;
+    private final PlayerState playerState;  // Nueva dependencia para estado de recarga
 
+    /**
+     * Constructor actualizado que requiere PlayerState.
+     * 
+     * @param inventory inventario de armas para obtener arma activa
+     * @param playerState estado del Player para consultar recarga
+     * @param virtualWidth ancho virtual
+     * @param virtualHeight alto virtual
+     */
+    public AmmoHUD(WeaponInventory inventory, PlayerState playerState, int virtualWidth, int virtualHeight) {
+        this.inventory = inventory;
+        this.playerState = playerState;
+        recalcPosition(virtualWidth, virtualHeight);
+    }
+
+    /**
+     * Constructor legacy sin PlayerState — DEPRECATED.
+     * Mantiene compatibilidad pero perderá información de recarga correcta.
+     * 
+     * @deprecated Usar AmmoHUD(inventory, playerState, virtualWidth, virtualHeight)
+     */
+    @Deprecated
     public AmmoHUD(WeaponInventory inventory, int virtualWidth, int virtualHeight) {
         this.inventory = inventory;
+        this.playerState = null;  // Sin acceso al estado del Player
         recalcPosition(virtualWidth, virtualHeight);
     }
 
@@ -77,7 +108,10 @@ public class AmmoHUD implements UIElement {
 
         double percent = cooldown > 0 ? 1.0 - (fireWait / (double) cooldown) : 1.0;
 
-        if (weapon.isReloading())
+        // ── HRFC: Consultar PlayerState para recarga ─────────────────────────
+        boolean isReloading = (playerState != null) ? playerState.isReloading() : weapon.isReloading();
+        
+        if (isReloading)
             g.setColor(Color.YELLOW);
         else if (fireWait == 0)
             g.setColor(Color.GREEN);
@@ -89,7 +123,7 @@ public class AmmoHUD implements UIElement {
         // ── TEXTO ─────────────────────────────────────────────────────────────
         g.setColor(Color.BLACK);
         g.drawString("Ammo: "    + weapon.getCurrentAmmo() + "/" + weapon.getMaxAmmo(), x, y + 30);
-        if (weapon.isReloading()) g.drawString("RELOADING", x, y + 45);
+        if (isReloading) g.drawString("RELOADING", x, y + 45);
         g.drawString("Damage: "  + stats.getDamageBonusByWeapon(),  x, y + 60);
         g.drawString("Speed: "   + stats.getBulletSpeedBase(),      x, y + 75);
         g.drawString("Pellets: " + stats.getBulletsPerShot(),        x, y + 90);

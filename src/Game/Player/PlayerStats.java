@@ -79,24 +79,57 @@ public class PlayerStats implements HealthView {
     // PlayerStats no construye estos objetos. Los recibe ya construidos.
     // Son las fuentes de verdad canónicas del Engine.
 
-    private EntityStats    entityStats;
-    private RuntimeStats   runtimeStats;
-    private EntityFlags    entityFlags;
-    private HealthComponent healthComponent;
+    private EntityStats      entityStats;
+    private RuntimeStats     runtimeStats;
+    private EntityFlags      entityFlags;
+    private EntityAttributes entityAttributes;
+    private AttackSources    attackSources;
+    private HealthComponent  healthComponent;
 
     // ── Binding ───────────────────────────────────────────────────────────
 
     /**
-     * Vincula los sistemas genéricos del Engine a esta fachada.
+     * Vincula todos los sistemas genéricos del Engine a esta fachada.
      *
-     * Llamar desde PlayerAssembler una vez que los sistemas están construidos.
-     * Todos los parámetros son requeridos.
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
      *
-     * @param entityStats    estadísticas base. No puede ser null.
-     * @param runtimeStats   estadísticas efectivas. No puede ser null.
-     * @param entityFlags    flags de capabilities/states/impairments. No puede ser null.
-     * @param health         componente de salud. No puede ser null.
+     * Expandido para incluir EntityAttributes y AttackSources, haciendo
+     * PlayerStats el gateway completo a los sistemas Entity.
+     *
+     * @param entityStats      estadísticas base. No puede ser null.
+     * @param runtimeStats     estadísticas efectivas. No puede ser null.
+     * @param entityFlags      flags de capabilities/states/impairments. No puede ser null.
+     * @param entityAttributes atributos de entidad (facción, clase). No puede ser null.
+     * @param attackSources    fuentes de ataque. No puede ser null.
+     * @param health           componente de salud. No puede ser null.
      */
+    public void bind(EntityStats entityStats,
+                     RuntimeStats runtimeStats,
+                     EntityFlags entityFlags,
+                     EntityAttributes entityAttributes,
+                     AttackSources attackSources,
+                     HealthComponent health) {
+        if (entityStats      == null) throw new IllegalArgumentException("entityStats es requerido");
+        if (runtimeStats     == null) throw new IllegalArgumentException("runtimeStats es requerido");
+        if (entityFlags      == null) throw new IllegalArgumentException("entityFlags es requerido");
+        if (entityAttributes == null) throw new IllegalArgumentException("entityAttributes es requerido");
+        if (attackSources    == null) throw new IllegalArgumentException("attackSources es requerido");
+        if (health           == null) throw new IllegalArgumentException("health es requerido");
+        
+        this.entityStats      = entityStats;
+        this.runtimeStats     = runtimeStats;
+        this.entityFlags      = entityFlags;
+        this.entityAttributes = entityAttributes;
+        this.attackSources    = attackSources;
+        this.healthComponent  = health;
+    }
+
+    /**
+     * Vincula los sistemas básicos del Engine (método de compatibilidad).
+     * 
+     * @deprecated Usar bind(entityStats, runtimeStats, entityFlags, entityAttributes, attackSources, health)
+     */
+    @Deprecated
     public void bind(EntityStats entityStats,
                      RuntimeStats runtimeStats,
                      EntityFlags entityFlags,
@@ -105,23 +138,12 @@ public class PlayerStats implements HealthView {
         if (runtimeStats == null) throw new IllegalArgumentException("runtimeStats es requerido");
         if (entityFlags  == null) throw new IllegalArgumentException("entityFlags es requerido");
         if (health       == null) throw new IllegalArgumentException("health es requerido");
+        
         this.entityStats    = entityStats;
         this.runtimeStats   = runtimeStats;
         this.entityFlags    = entityFlags;
         this.healthComponent = health;
-    }
-
-    /**
-     * Vincula solo el HealthComponent (para casos donde los demás sistemas
-     * ya están disponibles vía Player.getStats() / getRuntimeStats() / getFlags()).
-     *
-     * Mantiene retrocompatibilidad con código que solo llama bindHealth().
-     *
-     * @param health componente de salud. No puede ser null.
-     */
-    public void bindHealth(HealthComponent health) {
-        if (health == null) throw new IllegalArgumentException("health es requerido");
-        this.healthComponent = health;
+        // entityAttributes y attackSources quedan null con este método legacy
     }
 
     // ── HealthView — delegación pura ──────────────────────────────────────
@@ -204,7 +226,30 @@ public class PlayerStats implements HealthView {
     public EntityFlags getEntityFlags() { return entityFlags; }
 
     /**
-     * Componente de salud. Null si bindHealth() / bind() no fue llamado.
+     * Componente de salud. Null si bind() no fue llamado.
      */
     public HealthComponent getHealthComponent() { return healthComponent; }
+
+    // ── Gateway completo — acceso a todos los sistemas Entity ─────────────
+
+    /**
+     * EntityAttributes del Player (facción, alineación, clase).
+     * 
+     * ── HRFC — Player Reengineering v2 ────────────────────────────────────
+     * 
+     * Añadido para hacer PlayerStats el gateway completo a sistemas Entity.
+     * Null si se usó el método bind() legacy.
+     */
+    public EntityAttributes getAttributes() {
+        return entityAttributes;
+    }
+
+    /**
+     * AttackSources del Player.
+     * Añadido para completar el gateway a sistemas Entity.
+     * Null si se usó el método bind() legacy.
+     */
+    public AttackSources getAttackSources() {
+        return attackSources;
+    }
 }
