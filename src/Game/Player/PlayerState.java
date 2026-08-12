@@ -101,7 +101,7 @@ public class PlayerState {
     // ── Gameplay ──────────────────────────────────────────────────────────
     /**
      * Inhibición total del jugador por el sistema de juego, permite cancelar input para apuntado
-     * Antes llamado "congelado"
+     * Antes llamado "congelado "
      */
     private boolean apuntando;
 
