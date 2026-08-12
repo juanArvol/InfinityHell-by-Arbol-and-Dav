@@ -1,5 +1,7 @@
 package Game.Player;
 
+import Game.Engine.Entity.Attributes.EntityAttributes;
+import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.HealthComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;

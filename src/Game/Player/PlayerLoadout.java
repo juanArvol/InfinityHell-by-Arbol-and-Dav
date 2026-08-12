@@ -112,7 +112,7 @@ public final class PlayerLoadout {
             .weapon(WeaponType.PISTOLA)
             .weapon(WeaponType.ESCOPETA)
             .bullet(BulletType.NORMALBULLET)
-            .bullet(BulletType.BULLETJUMP)
+            .bullet(BulletType.SPRINGBULLET)
             .build();
     }
 

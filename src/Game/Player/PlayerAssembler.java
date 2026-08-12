@@ -17,6 +17,7 @@ import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
@@ -27,7 +28,7 @@ import java.util.function.Consumer;
 /**
  * Ensamblador del Player — responsable de toda la construcción concreta.
  *
- * ── HRFC — Player Reengineering ───────────────────────────────────────────
+ * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -42,12 +43,12 @@ import java.util.function.Consumer;
  *   4. Crea y añade StatusEffectComponent
  *   5. Construye PlayerState, PlayerStats, PlayerAmulets
  *   6. Construye PlayerPhysics y PlayerController (con EntityFlags)
- *   7. Construye PlayerCombat
- *   8. Lee PlayerLoadout y construye las ModifiedWeapons, pasa a PlayerCombat
+ *   7. Construye PlayerCombat con PlayerRuntime
+ *   8. Lee PlayerLoadout y materializa armas y balas en PlayerInventory
  *   9. Configura el collider (tamaño, perfil, offset)
  *   10. Añade HitBoxComponent, AnimationControllerComponent, PlayerRenderer
  *   11. Construye Inventory y EquippedItems
- *   12. Vincula PlayerStats con los sistemas construidos
+ *   12. Vincula PlayerStats con TODOS los sistemas Entity (gateway completo)
  *   13. Inicializa HP a BASE_HP
  *
  * ── SEPARACIÓN CONSTRUCTION / RUNTIME ────────────────────────────────────
@@ -70,6 +71,8 @@ import java.util.function.Consumer;
  *       PlayerLoadout.builder()
  *           .weapon(WeaponType.PISTOLA)
  *           .weapon(WeaponType.ESCOPETA)
+ *           .bullet(BulletType.NORMALBULLET)
+ *           .bullet(BulletType.BULLETJUMP)
  *           .build());
  */
 public final class PlayerAssembler {
@@ -79,7 +82,6 @@ public final class PlayerAssembler {
     private static final int    BASE_HP      = 100;
     private static final int    BASE_HP_MAX  = 200;
     private static final double BASE_GRAVITY = 0.78;
-    private static final double BASE_SPEED   = 8.0;
     private static final int    INVENTORY_SLOTS = 20;
 
     // ── Collider ──────────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ public final class PlayerAssembler {
      *   • Construcción en orden lógico sin dependencias circulares artificiales
      *   • PlayerRuntime y PlayerInventory se crean antes de PlayerCombat
      *   • Inyección de dependencias limpia sin referencias diferidas
+     *   • PlayerStats vincula TODOS los sistemas Entity (gateway completo)
      *
      * @param spawn         posición inicial en el mundo
      * @param bulletSpawner callback para añadir balas al mundo
@@ -134,7 +137,7 @@ public final class PlayerAssembler {
         // ── 1. Entity Systems — configuración de sistemas genéricos ──────
         EntityStats entityStats = new EntityStats();
         entityStats.setMaxHp(BASE_HP_MAX);
-        entityStats.movement().setSpeed(BASE_SPEED);
+        // NOTA: BASE_SPEED eliminado - PlayerPhysics es la fuente de verdad
 
         RuntimeStats runtimeStats = new RuntimeStats(entityStats);
         EntityFlags entityFlags = new EntityFlags();
@@ -199,8 +202,6 @@ public final class PlayerAssembler {
         player.addComponent(new StatusEffectComponent());
 
         // ── 8. Loadout — materializar configuración inicial ───────────────
-        List<ModifiedWeapon> loadoutWeapons = new ArrayList<>();
-        
         // Construir armas desde WeaponType (sin BulletType fijo)
         for (WeaponType weaponType : loadout.getWeapons()) {
             WeaponComport comport = weaponType.createComport();
@@ -210,11 +211,6 @@ public final class PlayerAssembler {
                 player,
                 eventBus
             );
-            loadoutWeapons.add(weapon);
-        }
-        
-        // Inicializar inventario con las armas construidas
-        for (ModifiedWeapon weapon : loadoutWeapons) {
             playerInventory.addWeapon(weapon);
         }
         
@@ -242,7 +238,8 @@ public final class PlayerAssembler {
         player.initRuntime(playerRuntime);
 
         // ── 11. Vinculación final de sistemas ─────────────────────────────
-        playerStats.bind(entityStats, runtimeStats, entityFlags, healthComponent);
+        // PlayerStats ahora es gateway completo a sistemas Entity
+        playerStats.bind(entityStats, runtimeStats, entityFlags, entityAttributes, attackSources, healthComponent);
 
         // ── 12. Inicialización final ──────────────────────────────────────
         if (BASE_HP < BASE_HP_MAX) {

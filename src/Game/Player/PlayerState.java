@@ -100,10 +100,10 @@ public class PlayerState {
 
     // ── Gameplay ──────────────────────────────────────────────────────────
     /**
-     * Inhibición total del jugador por el sistema de juego (cutscenes, trampas).
-     * Distinto de EntityFlags.impairments.frozen — ver nota de clase.
+     * Inhibición total del jugador por el sistema de juego, permite cancelar input para apuntado
+     * Antes llamado "congelado"
      */
-    private boolean congelado;
+    private boolean apuntando;
 
     // ── Movement — getters/setters ────────────────────────────────────────
 
@@ -158,6 +158,6 @@ public class PlayerState {
 
     // ── Gameplay — getters/setters ────────────────────────────────────────
 
-    public boolean isCongelado()           { return congelado; }
-    public void    setCongelado(boolean v) { congelado = v; }
+    public boolean isCongelado()           { return apuntando; }
+    public void    setCongelado(boolean v) { apuntando = v; }
 }
