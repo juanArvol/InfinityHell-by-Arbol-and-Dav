@@ -158,6 +158,6 @@ public class PlayerState {
 
     // ── Gameplay — getters/setters ────────────────────────────────────────
 
-    public boolean isCongelado()           { return apuntando; }
-    public void    setCongelado(boolean v) { apuntando = v; }
+    public boolean isApuntando()           { return apuntando; }
+    public void    setApuntando(boolean v) { apuntando = v; }
 }

@@ -155,7 +155,7 @@ public final class RelationResolver {
      * @param objects   objetos activos en el mundo este frame.
      * @param deltaTime tiempo del frame en segundos.
      */
-    public void evaluate(PropertyResolver.ResolutionPlan plan,
+    public void evaluate(PhysicsPropertyResolver.ResolutionPlan plan,
                          List<GameObjects>               objects,
                          double                          deltaTime) {
         if (plan == null || plan.isEmpty()) return;
@@ -163,7 +163,7 @@ public final class RelationResolver {
         if (registry.isEmpty()) return;
 
         // ── Paso acíclico: evaluar cada step en orden ──────────────────
-        for (PropertyDependencyGraph.PropagationStep step : plan.getSteps()) {
+        for (PhysicsPropertyDependencyGraph.PropagationStep step : plan.getSteps()) {
             PhysicalRelation relation = step.getRelation();
             if (relation != null) {
                 executeSingleRelation(relation, objects, deltaTime);
@@ -185,7 +185,7 @@ public final class RelationResolver {
                 }
             }
             if (!cyclicRelations.isEmpty()) {
-                for (int i = 0; i < PropertyResolver.MAX_CYCLE_ITERATIONS; i++) {
+                for (int i = 0; i < PhysicsPropertyResolver.MAX_CYCLE_ITERATIONS; i++) {
                     executeRelations(cyclicRelations, objects, deltaTime);
                 }
             }

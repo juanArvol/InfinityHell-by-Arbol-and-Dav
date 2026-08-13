@@ -109,25 +109,8 @@ public final class ProjectileRegistry {
         return instance;
     }
 
-    /**
-     * Resetea el singleton.
-     *
-     * IMPORTANTE: llamar uninstallListener() o shutdown() ANTES de reset()
-     * para cancelar el listener en el bus. Si reset() se llama directamente
-     * sin cancelar el listener, el listener anterior queda huérfano en el bus
-     * reteniendo referencias al registry destruido.
-     *
-     * Preferir shutdown() que hace ambas cosas en orden correcto.
-     *
-     * @deprecated Usar {@link #shutdown()} para limpieza completa con lifecycle correcto.
-     */
-    @Deprecated
-    public static void reset() {
-        if (instance != null) {
-            instance.uninstallListener();
-        }
-        instance = null;
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // reset() fue eliminado. Usar shutdown() en su lugar para lifecycle correcto.
 
     /**
      * Cierra el registry limpiamente: cancela el listener del bus y destruye el singleton.

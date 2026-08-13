@@ -134,15 +134,9 @@ public final class PlayerLoadout {
      */
     public List<BulletType> getBullets() { return bullets; }
 
-    /**
-     * Tipo de bala base (primera en la lista) — método de compatibilidad.
-     * 
-     * @deprecated Usar getBullets().get(0) o getBullets() para acceso completo
-     */
-    @Deprecated
-    public BulletType getBulletType() { 
-        return bullets.isEmpty() ? BulletType.NORMALBULLET : bullets.get(0); 
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // getBulletType() fue eliminado. PlayerLoadout ahora maneja listas completas.
+    // Migración: usar getBullets().get(0) para la primera bala o getBullets() para todas.
 
     // ── Builder ───────────────────────────────────────────────────────────
 
@@ -185,24 +179,8 @@ public final class PlayerLoadout {
             return this;
         }
 
-        /**
-         * Establece el tipo de bala base del loadout — método de compatibilidad.
-         * Equivale a bullet(bulletType) si no se han añadido balas aún,
-         * o reemplaza la primera bala si ya hay alguna.
-         *
-         * @deprecated Usar bullet(bulletType) para mayor claridad
-         */
-        @Deprecated
-        public Builder bulletType(BulletType bulletType) {
-            if (bulletType == null)
-                throw new IllegalArgumentException("bulletType no puede ser null");
-            if (bullets.isEmpty()) {
-                bullets.add(bulletType);
-            } else {
-                bullets.set(0, bulletType);
-            }
-            return this;
-        }
+        // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────
+        // Builder.bulletType() fue eliminado. Usar Builder.bullet() en su lugar.
 
         /**
          * Construye el PlayerLoadout.

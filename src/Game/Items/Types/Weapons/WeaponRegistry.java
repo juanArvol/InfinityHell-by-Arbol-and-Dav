@@ -229,45 +229,4 @@ public final class WeaponRegistry {
         }
         return Collections.unmodifiableList(result);
     }
-
-    /**
-     * Construye un pool de BulletTypes disponibles (no obtenidos aún),
-     * con selección ponderada por rareza.
-     *
-     * Centralizado aquí para que loot y tienda usen la misma lógica.
-     */
-    public static List<Game.Items.Types.Bullets.Definition.BulletType> buildBulletOfferPool(
-            Set<Game.Items.Types.Bullets.Definition.BulletType> alreadyOwned, int maxCount, Random random) {
-
-        List<Game.Items.Types.Bullets.Definition.BulletType> candidates = new ArrayList<>();
-        for (Game.Items.Types.Bullets.Definition.BulletType bt : Game.Items.Types.Bullets.Definition.BulletType.values()) {
-            if (!alreadyOwned.contains(bt)) {
-                candidates.add(bt);
-            }
-        }
-        if (candidates.isEmpty()) return List.of();
-
-        int totalWeight = candidates.stream()
-            .mapToInt(bt -> bt.defaultRarity.weight)
-            .sum();
-
-        List<Game.Items.Types.Bullets.Definition.BulletType> result = new ArrayList<>();
-        Set<Game.Items.Types.Bullets.Definition.BulletType> selected = new HashSet<>();
-
-        int attempts = 0;
-        while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
-            attempts++;
-            int roll = random.nextInt(totalWeight);
-            int acc  = 0;
-            for (Game.Items.Types.Bullets.Definition.BulletType bt : candidates) {
-                acc += bt.defaultRarity.weight;
-                if (roll < acc && !selected.contains(bt)) {
-                    result.add(bt);
-                    selected.add(bt);
-                    break;
-                }
-            }
-        }
-        return Collections.unmodifiableList(result);
-    }
 }

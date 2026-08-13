@@ -76,13 +76,8 @@ public final class BulletLife {
         return !dead;
     }
 
-    /**
-     * @deprecated Usar {@link #advance()}. Alias de compatibilidad.
-     */
-    @Deprecated
-    public boolean tick() {
-        return advance();
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // tick() fue eliminado. Usar advance() en su lugar.
 
     // ── Consulta de estado ────────────────────────────────────────────────
 
@@ -110,13 +105,8 @@ public final class BulletLife {
         dead = true;
     }
 
-    /**
-     * @deprecated Usar {@link #kill()}. Alias de compatibilidad.
-     */
-    @Deprecated
-    public void setDead() {
-        kill();
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // setDead() fue eliminado. Usar kill() en su lugar.
 
     /**
      * Reactiva un proyectil muerto si aún tiene vida restante.
@@ -145,14 +135,8 @@ public final class BulletLife {
         dead = false; // extender vida reactiva el proyectil
     }
 
-    /**
-     * @deprecated Usar {@link #extend(int)}. Alias de compatibilidad.
-     *             La semántica es idéntica: añade ticks a la vida restante.
-     */
-    @Deprecated
-    public void reset(int count) {
-        extend(count);
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // reset(int) fue eliminado. Usar extend(int) en su lugar.
 
     /**
      * Reinicia completamente el ciclo de vida a un nuevo valor.

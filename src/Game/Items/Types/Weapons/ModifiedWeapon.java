@@ -10,10 +10,11 @@ import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.Definition.ProjectilePool;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
-import Game.Items.Types.Projectiles.ProjectileResolver;
+import Game.Items.Types.Bullets.ProjectileResolver;
 import Game.Items.Types.Weapons.WeaponType.FireMode.FireModeResolution;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
+import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import Sprites.Source.Sounds;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,8 +54,32 @@ import java.util.List;
  *   - No conoce Player, Enemy ni ninguna entidad concreta.
  *   - No gestiona el ciclo de vida de los proyectiles.
  *   - No llama setCollisionProfile() manualmente.
+ *
+ * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────────
+ *
+ * ModifiedWeapon conserva la identidad de su WeaponType para permitir:
+ *   - WeaponInventory.hasWeapon(WeaponType)
+ *   - PlayerRuntime.selectWeapon(WeaponType)
+ *   - Selección correcta de arma por tipo en runtime
+ *
+ * La identidad se establece durante la construcción y permanece inmutable.
  */
 public class ModifiedWeapon {
+
+    /**
+     * Identidad declarativa de este arma — tipo del arma que representa.
+     * Inmutable después de la construcción.
+     *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * Este campo resuelve la pérdida de identidad que impedía:
+     *   - hasWeapon(WeaponType) — no podía determinar el tipo
+     *   - selectWeapon(WeaponType) — no podía encontrar el arma correcta
+     *
+     * La identidad runtime conserva el WeaponType que creó esta instancia,
+     * sin necesidad de registries externos, reflexión o comparación de clases.
+     */
+    private final WeaponType weaponType;
 
     private final WeaponComport    comport;
     private final AmuletInventory  amulets;
@@ -81,17 +106,28 @@ public class ModifiedWeapon {
     /**
      * Constructor completo con pool, owner y bus explícitos.
      *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * WeaponType es obligatorio — toda arma runtime debe tener identidad.
+     *
+     * @param weaponType tipo declarativo del arma (requerido)
      * @param comport    comportamiento del arma (cadencia, cooldown, munición)
      * @param amulets    amuletos del portador del arma
      * @param pool       pool de proyectiles para reutilización (null = sin pooling)
      * @param owner      el objeto portador del arma (Player, Turret, etc.), o null
      * @param eventBus   bus de eventos (null = sin eventos de arma)
      */
-    public ModifiedWeapon(WeaponComport comport,
+    public ModifiedWeapon(WeaponType weaponType,
+                          WeaponComport comport,
                           AmuletInventory amulets,
                           ProjectilePool pool,
                           Object owner,
                           GameEventBus eventBus) {
+        if (weaponType == null) throw new IllegalArgumentException("weaponType es requerido");
+        if (comport == null) throw new IllegalArgumentException("comport es requerido");
+        if (amulets == null) throw new IllegalArgumentException("amulets es requerido");
+
+        this.weaponType = weaponType;
         this.comport    = comport;
         this.amulets    = amulets;
         this.pool       = pool;
@@ -101,21 +137,31 @@ public class ModifiedWeapon {
 
     /**
      * Constructor con owner y bus sin pool — sin reutilización de instancias.
+     *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * WeaponType es obligatorio en todos los constructores.
      */
-    public ModifiedWeapon(WeaponComport comport,
+    public ModifiedWeapon(WeaponType weaponType,
+                          WeaponComport comport,
                           AmuletInventory amulets,
                           Object owner,
                           GameEventBus eventBus) {
-        this(comport, amulets, null, owner, eventBus);
+        this(weaponType, comport, amulets, null, owner, eventBus);
     }
 
     /**
      * Constructor sin owner ni pool — compatibilidad con código existente.
      * No emite eventos de arma ni de spawn de proyectil.
+     *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * WeaponType es obligatorio en todos los constructores.
      */
-    public ModifiedWeapon(WeaponComport comport,
+    public ModifiedWeapon(WeaponType weaponType,
+                          WeaponComport comport,
                           AmuletInventory amulets) {
-        this(comport, amulets, null, null, null);
+        this(weaponType, comport, amulets, null, null, null);
     }
 
     /**
@@ -246,7 +292,7 @@ public class ModifiedWeapon {
      * no debería tener:
      * - Acceso a WeaponComport y FireMode
      * - Diferencia entre queryResolution() vs handleInput()  
-     * - Uso de ProjectileResolver.resolveWithFireModeQuery()
+     * - Uso de ProjectileResolver.resolve() con multiplicadores explícitos
      * - Derivación de BulletStats via BulletFactory.statsFrom()
      *
      * PlayerCombat simplemente llama este método y recibe el preview listo para usar.
@@ -291,11 +337,12 @@ public class ModifiedWeapon {
         
         // ── Resolución sin side-effects ───────────────────────────────────
         // Usar exactamente la misma fuente de resolución que el disparo real
-        ProjectileBlueprint blueprint = ProjectileResolver.resolveWithFireModeQuery(
-                comport.getStats(),     // WeaponStats base
-                bulletType,             // BulletType seleccionado  
-                amulets.getAll(),       // Amuletos del jugador
-                resolution              // FireMode query (sin side-effects)
+        ProjectileBlueprint blueprint = ProjectileResolver.resolve(
+                comport.getStats(),              // WeaponStats base
+                bulletType,                      // BulletType seleccionado  
+                amulets.getAll(),                // Amuletos del jugador
+                resolution.damageMultiplier(),   // Multiplicador de daño
+                resolution.speedMultiplier()     // Multiplicador de velocidad
         );
 
         // ── Derivar BulletStats para UI ───────────────────────────────────
@@ -365,6 +412,26 @@ public class ModifiedWeapon {
     public double  getBulletSpeedBase() { return comport.getStats().getBulletSpeedBase(); }
 
     // ── Acceso a subcomponentes ────────────────────────────────────────────
+
+    /**
+     * Tipo declarativo de este arma.
+     *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * Retorna el WeaponType que define la identidad de esta instancia runtime.
+     * La identidad permanece inmutable independientemente de las modificaciones
+     * aplicadas al arma (amuletos, stats modificados, etc.).
+     *
+     * Permite:
+     *   - WeaponInventory.hasWeapon(WeaponType) — verificar posesión por tipo
+     *   - PlayerRuntime.selectWeapon(WeaponType) — seleccionar arma correcta
+     *   - Comparación directa sin reflexión, IDs String o registries
+     *
+     * @return WeaponType de esta arma. Nunca null.
+     */
+    public WeaponType getWeaponType() {
+        return weaponType;
+    }
 
     public WeaponComport    getComport()    { return comport;    }
     public AmuletInventory  getAmulets()    { return amulets;    }

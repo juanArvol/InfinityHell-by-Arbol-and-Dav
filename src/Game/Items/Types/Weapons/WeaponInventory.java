@@ -129,12 +129,22 @@ public class WeaponInventory {
     /**
      * True si el portador posee un arma del tipo indicado.
      *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * Implementado usando la identidad tipada de ModifiedWeapon.getWeaponType().
+     * No usa reflexión, IDs String, ni comparación de clases de WeaponComport.
+     *
      * @param weaponType tipo de arma a verificar
      * @return true si se posee al menos una arma de ese tipo
      */
     public boolean hasWeapon(WeaponType weaponType) {
-        // TODO: Implementar cuando ModifiedWeapon exponga WeaponType
-        // Por ahora retornar false como placeholder para mantener compatibilidad
+        if (weaponType == null) return false;
+        
+        for (ModifiedWeapon weapon : weapons) {
+            if (weapon.getWeaponType() == weaponType) {
+                return true;
+            }
+        }
         return false;
     }
     

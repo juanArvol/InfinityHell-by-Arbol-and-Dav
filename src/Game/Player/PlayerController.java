@@ -103,7 +103,7 @@ public class PlayerController {
 
     public void update() {
         // Prioridad 1: inhibición por sistema de juego (cutscene, trampa).
-        if (state.isCongelado()) return;
+        if (state.isApuntando()) return;
 
         // Prioridad 2: inhibición por efectos de estado genéricos (frozen, stun…).
         // EntityFlags es ahora obligatorio — sin fallback null

@@ -74,10 +74,10 @@ import java.util.List;
 public final class PhysicsCoordinator {
 
     /** Grafo de dependencias físicas del universo. */
-    private final PropertyDependencyGraph graph;
+    private final PhysicsPropertyDependencyGraph graph;
 
     /** Resolver que determina qué propiedades recalcular. */
-    private final PropertyResolver propertyResolver;
+    private final PhysicsPropertyResolver propertyResolver;
 
     /** Resolver que evalúa las relaciones físicas. */
     private final RelationResolver relationResolver;
@@ -92,7 +92,7 @@ public final class PhysicsCoordinator {
 
     private PhysicsCoordinator(Builder b) {
         this.graph            = b.graph;
-        this.propertyResolver = new PropertyResolver(b.graph);
+        this.propertyResolver = new PhysicsPropertyResolver(b.graph);
         this.relationResolver = new RelationResolver(b.registry, b.evaluators);
     }
 
@@ -133,7 +133,7 @@ public final class PhysicsCoordinator {
             relationResolver.evaluateAll(objects, deltaTime);
             firstFrame = false;
         } else {
-            PropertyResolver.ResolutionPlan plan = propertyResolver.resolve();
+            PhysicsPropertyResolver.ResolutionPlan plan = propertyResolver.resolve();
             if (plan.isEmpty()) return;
             relationResolver.evaluate(plan, objects, deltaTime);
         }
@@ -148,7 +148,7 @@ public final class PhysicsCoordinator {
      *
      * @return el PropertyDependencyGraph de este coordinator.
      */
-    public PropertyDependencyGraph graph() {
+    public PhysicsPropertyDependencyGraph graph() {
         return graph;
     }
 
@@ -160,7 +160,7 @@ public final class PhysicsCoordinator {
      *
      * @return el PropertyResolver de este coordinator.
      */
-    public PropertyResolver propertyResolver() {
+    public PhysicsPropertyResolver propertyResolver() {
         return propertyResolver;
     }
 
@@ -221,7 +221,7 @@ public final class PhysicsCoordinator {
      */
     public static final class Builder {
 
-        private PropertyDependencyGraph graph      = new PropertyDependencyGraph();
+        private PhysicsPropertyDependencyGraph graph      = new PhysicsPropertyDependencyGraph();
         private RelationRegistry        registry   = new RelationRegistry();
         private EvaluatorRegistry       evaluators = new EvaluatorRegistry();
 
@@ -233,7 +233,7 @@ public final class PhysicsCoordinator {
          * @param graph el grafo de dependencias. Ignorado si null.
          * @return this.
          */
-        public Builder graph(PropertyDependencyGraph graph) {
+        public Builder graph(PhysicsPropertyDependencyGraph graph) {
             if (graph != null) this.graph = graph;
             return this;
         }

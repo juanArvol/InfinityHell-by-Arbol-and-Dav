@@ -4,7 +4,7 @@ import Game.Engine.GameObjects;
 import Game.Engine.Physics.Core.PhysicalRelation;
 import Game.Engine.Physics.Core.PhysicsCoordinator;
 import Game.Engine.Physics.Core.PhysicsModule;
-import Game.Engine.Physics.Core.PropertyDependencyGraph;
+import Game.Engine.Physics.Core.PhysicsPropertyDependencyGraph;
 import Game.Engine.Physics.Core.RelationRegistry;
 import Game.Engine.Physics.Electrical.ElectricalModule;
 import Game.Engine.Physics.Fluid.FluidModule;
@@ -370,7 +370,7 @@ public final class WorldSimulation {
          * @param graph el grafo de dependencias. Ignorado si null.
          * @return this.
          */
-        public Builder graph(PropertyDependencyGraph graph) {
+        public Builder graph(PhysicsPropertyDependencyGraph graph) {
             coordinatorBuilder.graph(graph);
             return this;
         }

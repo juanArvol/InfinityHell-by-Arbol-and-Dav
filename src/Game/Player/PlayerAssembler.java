@@ -203,9 +203,15 @@ public final class PlayerAssembler {
 
         // ── 8. Loadout — materializar configuración inicial ───────────────
         // Construir armas desde WeaponType (sin BulletType fijo)
+        //
+        // ── HRFC — Weapon Type Runtime Identity ──────────────────────────
+        // 
+        // WeaponType se pasa explícitamente a ModifiedWeapon constructor para
+        // conservar la identidad declarativa en la instancia runtime.
         for (WeaponType weaponType : loadout.getWeapons()) {
             WeaponComport comport = weaponType.createComport();
             ModifiedWeapon weapon = new ModifiedWeapon(
+                weaponType,  // Identidad declarativa conservada
                 comport,
                 amulets,
                 player,

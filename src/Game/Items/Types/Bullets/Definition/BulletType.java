@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.Definition;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletClass.*;
+import java.util.*;
 import java.util.function.Supplier;
 
 /**
@@ -97,5 +98,69 @@ public enum BulletType {
      */
     public BulletBehavior create() {
         return factory.get();
+    }
+
+    // ── Pool de oferta ────────────────────────────────────────────────────
+
+    /**
+     * Construye un pool de BulletTypes disponibles (no obtenidos aún),
+     * con selección ponderada por rareza.
+     *
+     * ── OWNERSHIP ─────────────────────────────────────────────────────────
+     * Este método pertenece a BulletType porque:
+     *   - BulletType conoce todos los tipos existentes (values())
+     *   - BulletType posee la autoridad sobre defaultRarity
+     *   - La lógica de oferta depende únicamente de información del dominio Bullets
+     *
+     * Centralizado aquí para que loot y tienda usen la misma lógica.
+     * No duplicar este algoritmo.
+     *
+     * ── ALGORITMO ─────────────────────────────────────────────────────────
+     * Usa selección ponderada por ruleta (weighted roulette selection):
+     *   1. Filtra tipos ya obtenidos por el jugador
+     *   2. Calcula peso total (suma de defaultRarity.weight de candidatos)
+     *   3. Selecciona aleatoriamente según peso hasta llenar maxCount
+     *   4. Evita duplicados en la misma oferta
+     *
+     * @param alreadyOwned tipos que el jugador ya posee en esta run
+     * @param maxCount     máximo de opciones a ofrecer
+     * @param random       fuente de aleatoriedad
+     * @return lista inmutable de BulletTypes disponibles (ya filtrados y seleccionados)
+     */
+    public static List<BulletType> buildOfferPool(
+            Set<BulletType> alreadyOwned, int maxCount, Random random) {
+
+        // Pool de candidatos: todos los tipos que el jugador aún no tiene
+        List<BulletType> candidates = new ArrayList<>();
+        for (BulletType bt : BulletType.values()) {
+            if (!alreadyOwned.contains(bt)) {
+                candidates.add(bt);
+            }
+        }
+        if (candidates.isEmpty()) return List.of();
+
+        // Selección ponderada por rareza (ruleta)
+        int totalWeight = candidates.stream()
+            .mapToInt(bt -> bt.defaultRarity.weight)
+            .sum();
+
+        List<BulletType> result = new ArrayList<>();
+        Set<BulletType> selected = new HashSet<>();
+
+        int attempts = 0;
+        while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
+            attempts++;
+            int roll = random.nextInt(totalWeight);
+            int acc  = 0;
+            for (BulletType bt : candidates) {
+                acc += bt.defaultRarity.weight;
+                if (roll < acc && !selected.contains(bt)) {
+                    result.add(bt);
+                    selected.add(bt);
+                    break;
+                }
+            }
+        }
+        return Collections.unmodifiableList(result);
     }
 }

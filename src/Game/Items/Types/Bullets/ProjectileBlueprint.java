@@ -120,8 +120,8 @@ public final class ProjectileBlueprint {
         // Resolución de gravedad: una sola fuente de verdad.
         // Si el behavior declara gravityValue en ProjectileData Y el movement
         // base no incluye ya GravityMovement, se compone aquí.
-        // Esta lógica ya NO existe en BulletFactory.
-        if (data.hasGravity() && !containsGravity(movement)) {
+        // Delegamos a BulletFactory.containsGravity() — única fuente de verdad.
+        if (data.hasGravity() && !BulletFactory.containsGravity(movement)) {
             movement = movement.andThen(new GravityMovement(data.gravityValue()));
         }
 
@@ -221,27 +221,7 @@ public final class ProjectileBlueprint {
     public String             assetKey()          { return assetKey;          }
     public CollisionProfile   collisionProfile()  { return collisionProfile;  }
 
-    // ── Utilidad interna ──────────────────────────────────────────────────
 
-    /**
-     * Comprueba si un ProjectileMovement incluye ya un GravityMovement.
-     *
-     * ── HRFC §17/§18 — Single source of truth ────────────────────────────
-     *
-     * Inspección recursiva sobre CompositeMovement para detectar GravityMovement
-     * en cualquier nivel del árbol. Usado para evitar doble gravedad cuando el
-     * behavior declara gravityValue en ProjectileData Y su getDefaultMovement()
-     * ya retorna (o contiene) GravityMovement.
-     */
-    private static boolean containsGravity(ProjectileMovement movement) {
-        if (movement instanceof GravityMovement) return true;
-        if (movement instanceof Game.Items.Types.Bullets.Movement.CompositeMovement composite) {
-            for (ProjectileMovement component : composite.getComponents()) {
-                if (containsGravity(component)) return true;
-            }
-        }
-        return false;
-    }
 
     // ── Behavior vacío de fallback (defensive) ────────────────────────────
 

@@ -126,27 +126,10 @@ public class PlayerStats implements HealthView {
         this.healthComponent  = health;
     }
 
-    /**
-     * Vincula los sistemas básicos del Engine (método de compatibilidad).
-     * 
-     * @deprecated Usar bind(entityStats, runtimeStats, entityFlags, entityAttributes, attackSources, health)
-     */
-    @Deprecated
-    public void bind(EntityStats entityStats,
-                     RuntimeStats runtimeStats,
-                     EntityFlags entityFlags,
-                     HealthComponent health) {
-        if (entityStats  == null) throw new IllegalArgumentException("entityStats es requerido");
-        if (runtimeStats == null) throw new IllegalArgumentException("runtimeStats es requerido");
-        if (entityFlags  == null) throw new IllegalArgumentException("entityFlags es requerido");
-        if (health       == null) throw new IllegalArgumentException("health es requerido");
-        
-        this.entityStats    = entityStats;
-        this.runtimeStats   = runtimeStats;
-        this.entityFlags    = entityFlags;
-        this.healthComponent = health;
-        // entityAttributes y attackSources quedan null con este método legacy
-    }
+    // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
+    // El overload bind(4-param) fue eliminado. PlayerAssembler usa únicamente
+    // la versión completa con EntityAttributes y AttackSources.
+    // Si código externo necesita compatibilidad, pasar null para los nuevos parámetros.
 
     // ── HealthView — delegación pura ──────────────────────────────────────
 

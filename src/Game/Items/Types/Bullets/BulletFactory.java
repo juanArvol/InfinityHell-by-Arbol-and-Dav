@@ -201,12 +201,19 @@ public final class BulletFactory {
     /**
      * Determina si un ProjectileMovement incluye gravedad real.
      *
+     * ── HRFC 1 — Consolidación de ProjectileResolver §13 ─────────────────
+     *
+     * Única fuente de verdad para la detección de gravedad en proyectiles.
+     * Usado por:
+     *   - ProjectileBlueprint.from() para evitar doble composición de gravedad
+     *   - BulletFactory.statsFrom() para derivar BulletStats.hasGravity
+     *
      * Inspección recursiva:
      *   - GravityMovement directo → true.
      *   - CompositeMovement → inspecciona cada componente recursivamente.
      *   - Cualquier otro movement → false.
      */
-    static boolean containsGravity(ProjectileMovement movement) {
+    public static boolean containsGravity(ProjectileMovement movement) {
         if (movement instanceof GravityMovement) return true;
         if (movement instanceof CompositeMovement composite) {
             for (ProjectileMovement component : composite.getComponents()) {

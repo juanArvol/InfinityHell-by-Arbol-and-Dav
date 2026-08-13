@@ -119,15 +119,20 @@ public final class PlayerRuntime {
      * Selecciona un arma por tipo.
      * No afecta la bala actualmente seleccionada.
      *
+     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
+     *
+     * Implementado usando la identidad tipada de ModifiedWeapon.getWeaponType().
+     * Busca el arma que coincide con el WeaponType solicitado y la selecciona.
+     *
      * @param weaponType tipo de arma a seleccionar
      * @return true si se encontró y seleccionó el arma, false si no se posee
      */
     public boolean selectWeapon(WeaponType weaponType) {
+        if (weaponType == null) return false;
+
         for (int i = 0; i < inventory.getWeaponCount(); i++) {
             ModifiedWeapon weapon = inventory.weapons().getWeapon(i);
-            if (weapon != null) {
-                // TODO: Comparar por tipo cuando ModifiedWeapon exponga WeaponType
-                // Por ahora solo verificar que existe
+            if (weapon != null && weapon.getWeaponType() == weaponType) {
                 currentWeaponIndex = i;
                 return true;
             }

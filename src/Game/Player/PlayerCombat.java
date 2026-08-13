@@ -70,8 +70,8 @@ import java.util.function.Supplier;
  *
  * GARANTÍA DE CONSISTENCIA:
  * El preview de trayectoria usa exactamente la misma resolución que el disparo real:
- * - Mismo FireMode.handleInput() con estado actual de input
- * - Mismo ProjectileResolver.resolveWithFireMode() 
+ * - Mismo FireMode.queryResolution() para obtener multiplicadores
+ * - Mismo ProjectileResolver.resolve() con multiplicadores explícitos
  * - Mismos multiplicadores de daño y velocidad
  * - Misma aplicación de amuletos y efectos
  * 
@@ -222,7 +222,7 @@ public class PlayerCombat implements MouseActionListener {
     // ── Update ─────────────────────────────────────────────────────────────
 
     public void update() {
-        if (state.isCongelado()) return;
+        if (state.isApuntando()) return;
 
         ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
         if (currentWeapon == null) return;
@@ -230,14 +230,14 @@ public class PlayerCombat implements MouseActionListener {
         // ── Recarga manual ────────────────────────────────────────────────
         boolean reloadKeyPressed = Inputs.KeyBoard.getState("reload");
         if (reloadKeyPressed && !state.isReloading() && !currentWeapon.isFullyLoaded()) {
-            // PlayerState es la fuente de verdad del estado lógico del Player
-            state.setReloading(true);
-            
-            // El arma ejecuta su mecánica interna de recarga
-            currentWeapon.reload();
+                // PlayerState es la fuente de verdad del estado lógico del Player
+                state.setReloading(true);
+                
+                // El arma ejecuta su mecánica interna de recarga
+                currentWeapon.reload();
 
-            // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
-            if (eventBus.hasListeners(WeaponEvents.OnReloadStart.class)) {
+                // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
+                if (eventBus.hasListeners(WeaponEvents.OnReloadStart.class)) {
                 eventBus.post(new WeaponEvents.OnReloadStart(
                         currentWeapon, currentWeapon.getCooldown()));
             }
@@ -330,7 +330,7 @@ public class PlayerCombat implements MouseActionListener {
      *
      * ANTES: PlayerCombat accedía directamente a los internals del arma:
      *   - currentWeapon.getComport().getFireMode().queryResolution()
-     *   - ProjectileResolver.resolveWithFireModeQuery() 
+     *   - ProjectileResolver.resolve() con multiplicadores explícitos
      *   - BulletFactory.statsFrom()
      *
      * AHORA: PlayerCombat delega al dominio del arma:
