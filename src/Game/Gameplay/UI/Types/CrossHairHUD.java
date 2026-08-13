@@ -3,10 +3,8 @@ package Game.Gameplay.UI.Types;
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.UI.UIElement;
-import Game.Items.Types.Bullets.BulletComport.BulletStats;
-import Game.Items.Types.Bullets.BulletFactory;
-import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Player.Player;
+import Game.Player.PlayerCombat;
 import Inputs.MouseInput;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -15,12 +13,29 @@ import java.util.function.Supplier;
 /**
  * HUD del crosshair y preview de trayectoria.
  *
- * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ * ── HRFC — Player Inventory & Domain Ownership Consolidation ──────────────
  *
  * CAMBIO ARQUITECTÓNICO:
- *   - CrossHairHUD ahora consulta player.getState().isReloading() en lugar de weapon.isReloading()
+ *   - CrossHairHUD ahora usa player.getCombat().getProjectilePreview()
+ *   - Eliminado uso directo de weapon.getBulletType(), BulletFactory, ProjectileBlueprint
  *   - PlayerState es la fuente de verdad del estado lógico del Player
  *   - weapon.isReloading() representa únicamente la mecánica interna del arma
+ *
+ * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ *
+ * CrossHairHUD NO debe:
+ *   ✗ crear BulletBehavior
+ *   ✗ crear ProjectileBlueprint  
+ *   ✗ invocar BulletFactory
+ *   ✗ resolver BulletType
+ *   ✗ conocer detalles internos del pipeline de disparo
+ *   ✗ depender de ModifiedWeapon.getBulletType()
+ *
+ * CrossHairHUD SÍ debe:
+ *   ✓ consultar ProjectilePreview desde PlayerCombat
+ *   ✓ renderizar crosshair según estado del arma
+ *   ✓ dibujar trayectoria matemática usando stats de preview
+ *   ✓ convertir coordenadas mundo → pantalla virtual
  *
  * ── HRFC-001: usa GameCamera (entidad del Engine) ─────────────────────────
  *
@@ -74,10 +89,12 @@ public class CrossHairHUD implements UIElement {
 
         if (!MouseInput.getButtonState("rightPressed")) return;
 
-        ModifiedWeapon weapon = player.getCombat()
-                                      .getInventory()
-                                      .getCurrentWeapon();
-        if (weapon == null) return;
+        // ── HRFC — Player Inventory & Domain Ownership Consolidation ─────
+        // Usar ProjectilePreview desde PlayerCombat en lugar de reconstruir
+        // manualmente el pipeline de disparo desde CrossHairHUD.
+        PlayerCombat.ProjectilePreview preview = player.getCombat().getProjectilePreview();
+        
+        if (preview == null) return; // Sin arma o bala activa
 
         Color prevColor = g.getColor();
 
@@ -85,7 +102,8 @@ public class CrossHairHUD implements UIElement {
         // ── HRFC: Consultar PlayerState para recarga ─────────────────────────
         if (player.getState().isReloading()) {
             g.setColor(Color.YELLOW);
-        } else if (weapon.getFireWait() == 0) {
+        } else if (player.getRuntime().getCurrentWeapon() != null 
+                   && player.getRuntime().getCurrentWeapon().getFireWait() == 0) {
             g.setColor(Color.GREEN);
         } else {
             g.setColor(Color.RED);
@@ -96,39 +114,22 @@ public class CrossHairHUD implements UIElement {
         g.drawLine(centerX - HAIR_SIZE, centerY, centerX + HAIR_SIZE, centerY);
         g.drawLine(centerX, centerY - HAIR_SIZE, centerX, centerY + HAIR_SIZE);
 
-        // ── Trayectoria matemática ────────────────────────────────────────
-        // Construir el Blueprint del arma actual para obtener stats reales.
-        // BulletFactory.statsFrom() deriva hasGravity del movement efectivo
-        // del Blueprint — no de una propiedad declarativa de ProjectileData.
-        var behavior   = weapon.getBulletType().create();
-        double speed   = weapon.getStats().getBulletSpeedBase()
-                         * behavior.getDefaultData().speedFactor();
-        double damage  = weapon.getStats().getDamageBonusByWeapon()
-                         + behavior.getDefaultData().damage();
-        var blueprint  = Game.Items.Types.Bullets.ProjectileBlueprint.from(
-                behavior, speed, damage);
-        BulletStats stats = BulletFactory.statsFrom(blueprint);
-
+        // ── Trayectoria matemática desde ProjectilePreview ───────────────
         // Offset de cámara para convertir coordenadas de mundo → pantalla virtual.
-        // GameCamera.getX/Y() devuelve el offset top-left (igual que Camera.getX/Y()).
         GameCamera camera = cameraSupplier.get();
         double camX = (camera != null) ? camera.getX() : 0;
         double camY = (camera != null) ? camera.getY() : 0;
 
-        // Spawn del proyectil en coordenadas MUNDO
-        double worldSpawnX = player.getPosition().getX() + 20;
-        double worldSpawnY = player.getPosition().getY() + 20;
-
-        // Convertir a coordenadas de PANTALLA VIRTUAL
-        double screenSpawnX = worldSpawnX - camX;
-        double screenSpawnY = worldSpawnY - camY;
+        // Convertir spawn de MUNDO a PANTALLA VIRTUAL
+        double screenSpawnX = preview.spawnPosition().getX() - camX;
+        double screenSpawnY = preview.spawnPosition().getY() - camY;
 
         Vector2D aim = player.getState().getAimDirection();
 
-        double velX    = aim.getX() * stats.getSpeed();
-        double velY    = aim.getY() * stats.getSpeed();
-        double gravity = stats.hasGravity() ? 0.4 : 0.0;
-        int    steps   = stats.getLifeTime();
+        double velX    = aim.getX() * preview.speed();
+        double velY    = aim.getY() * preview.speed();
+        double gravity = preview.hasGravity() ? 0.4 : 0.0;
+        int    steps   = preview.lifeTime();
 
         double px = screenSpawnX;
         double py = screenSpawnY;
@@ -137,7 +138,7 @@ public class CrossHairHUD implements UIElement {
         for (int i = 0; i < steps; i++) {
             px += velX;
             py += vy;
-            if (stats.hasGravity()) vy += gravity;
+            if (preview.hasGravity()) vy += gravity;
             g.fillOval((int) px, (int) py, 4, 4);
         }
 

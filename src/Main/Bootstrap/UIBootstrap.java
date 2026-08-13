@@ -1,12 +1,11 @@
 package Main.Bootstrap;
 
 import Game.Engine.Camera.GameCamera;
-import Game.Gameplay.UI.UIManager;
 import Game.Gameplay.UI.Types.AmmoHUD;
 import Game.Gameplay.UI.Types.CrossHairHUD;
 import Game.Gameplay.UI.Types.LifeHUD;
+import Game.Gameplay.UI.UIManager;
 import Game.Player.Player;
-
 import java.util.function.Supplier;
 
 /**
@@ -42,7 +41,7 @@ public final class UIBootstrap {
                        int virtualHeight) {
 
         uiManager.add(new LifeHUD(player.getPlayerStats(), virtualWidth, virtualHeight));
-        uiManager.add(new AmmoHUD(player.getCombat().getInventory(), virtualWidth, virtualHeight));
+        uiManager.add(new AmmoHUD(player.getRuntime(), player.getState(), virtualWidth, virtualHeight));
         uiManager.add(new CrossHairHUD(player, cameraSupplier, virtualWidth, virtualHeight));
     }
 }

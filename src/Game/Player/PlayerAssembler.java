@@ -15,7 +15,7 @@ import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
-import Game.Items.Types.Ammulets.PlayerAmulets;
+import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
@@ -153,7 +153,7 @@ public final class PlayerAssembler {
         PlayerPhysics physics = new PlayerPhysics(BASE_GRAVITY);
         PlayerState state = new PlayerState();
         PlayerStats playerStats = new PlayerStats();
-        PlayerAmulets amulets = new PlayerAmulets();
+        AmuletInventory amulets = new AmuletInventory();
 
         // ── 3. Inventory y Runtime — independientes de Player ─────────────
         PlayerInventory playerInventory = new PlayerInventory();

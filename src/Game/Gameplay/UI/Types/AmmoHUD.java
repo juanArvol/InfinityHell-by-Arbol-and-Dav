@@ -3,8 +3,8 @@ package Game.Gameplay.UI.Types;
 import Game.Gameplay.UI.UIAnchor;
 import Game.Gameplay.UI.UIElement;
 import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponInventory;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
+import Game.Player.PlayerRuntime;
 import Game.Player.PlayerState;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -12,12 +12,17 @@ import java.awt.Graphics2D;
 /**
  * HUD de munición — refactorizado para coordenadas virtuales + UIAnchor.
  *
- * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ * ── HRFC — Player Architecture Consolidation ──────────────────────────────
  *
  * CAMBIO ARQUITECTÓNICO:
- *   - AmmoHUD ahora consulta PlayerState.isReloading() para el estado de recarga
+ *   - AmmoHUD ahora usa PlayerRuntime en lugar del legacy WeaponInventory
+ *   - PlayerRuntime.getCurrentWeapon() proporciona el arma activa
+ *   - PlayerState.isReloading() es la fuente de verdad del estado de recarga
  *   - weapon.isReloading() representa únicamente la mecánica interna del arma
- *   - PlayerState es la fuente de verdad del estado lógico del Player
+ *
+ * ARQUITECTURA CORRECTA:
+ *   AmmoHUD → PlayerRuntime → getCurrentWeapon()
+ *   AmmoHUD → PlayerState → isReloading()
  *
  * CAMBIOS respecto al original:
  *
@@ -48,33 +53,20 @@ public class AmmoHUD implements UIElement {
     private int x;
     private int y;
 
-    private final WeaponInventory inventory;
-    private final PlayerState playerState;  // Nueva dependencia para estado de recarga
+    private final PlayerRuntime runtime;
+    private final PlayerState playerState;
 
     /**
-     * Constructor actualizado que requiere PlayerState.
+     * Constructor actualizado que usa PlayerRuntime.
      * 
-     * @param inventory inventario de armas para obtener arma activa
+     * @param runtime runtime del Player para obtener arma activa
      * @param playerState estado del Player para consultar recarga
      * @param virtualWidth ancho virtual
      * @param virtualHeight alto virtual
      */
-    public AmmoHUD(WeaponInventory inventory, PlayerState playerState, int virtualWidth, int virtualHeight) {
-        this.inventory = inventory;
+    public AmmoHUD(PlayerRuntime runtime, PlayerState playerState, int virtualWidth, int virtualHeight) {
+        this.runtime = runtime;
         this.playerState = playerState;
-        recalcPosition(virtualWidth, virtualHeight);
-    }
-
-    /**
-     * Constructor legacy sin PlayerState — DEPRECATED.
-     * Mantiene compatibilidad pero perderá información de recarga correcta.
-     * 
-     * @deprecated Usar AmmoHUD(inventory, playerState, virtualWidth, virtualHeight)
-     */
-    @Deprecated
-    public AmmoHUD(WeaponInventory inventory, int virtualWidth, int virtualHeight) {
-        this.inventory = inventory;
-        this.playerState = null;  // Sin acceso al estado del Player
         recalcPosition(virtualWidth, virtualHeight);
     }
 
@@ -88,7 +80,7 @@ public class AmmoHUD implements UIElement {
 
     @Override
     public void draw(Graphics2D g) {
-        ModifiedWeapon weapon = inventory.getCurrentWeapon();
+        ModifiedWeapon weapon = runtime.getCurrentWeapon();
         if (weapon == null) return;
 
         WeaponStats stats = weapon.getStats();

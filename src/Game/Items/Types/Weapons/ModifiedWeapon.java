@@ -3,8 +3,8 @@ package Game.Items.Types.Weapons;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
+import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Ammulets.AmuletRegistry;
-import Game.Items.Types.Ammulets.PlayerAmulets;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.Definition.Bullet;
@@ -55,8 +55,8 @@ import java.util.List;
  */
 public class ModifiedWeapon {
 
-    private final WeaponComport  comport;
-    private final PlayerAmulets  amulets;
+    private final WeaponComport    comport;
+    private final AmuletInventory  amulets;
 
     /**
      * Pool de proyectiles para reutilización de instancias.
@@ -87,7 +87,7 @@ public class ModifiedWeapon {
      * @param eventBus   bus de eventos (null = sin eventos de arma)
      */
     public ModifiedWeapon(WeaponComport comport,
-                          PlayerAmulets amulets,
+                          AmuletInventory amulets,
                           ProjectilePool pool,
                           Object owner,
                           GameEventBus eventBus) {
@@ -102,7 +102,7 @@ public class ModifiedWeapon {
      * Constructor con owner y bus sin pool — sin reutilización de instancias.
      */
     public ModifiedWeapon(WeaponComport comport,
-                          PlayerAmulets amulets,
+                          AmuletInventory amulets,
                           Object owner,
                           GameEventBus eventBus) {
         this(comport, amulets, null, owner, eventBus);
@@ -113,55 +113,27 @@ public class ModifiedWeapon {
      * No emite eventos de arma ni de spawn de proyectil.
      */
     public ModifiedWeapon(WeaponComport comport,
-                          PlayerAmulets amulets) {
+                          AmuletInventory amulets) {
         this(comport, amulets, null, null, null);
     }
 
     /**
-     * Constructor legacy con BulletType fijo — DEPRECATED.
-     * Mantiene compatibilidad con código existente que no ha migrado
-     * al nuevo sistema de balas runtime.
+     * Constructor legacy con BulletType fijo — ELIMINADO.
      * 
-     * @deprecated Usar constructores sin BulletType y pasar la bala a handleInput()
+     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     * 
+     * Los constructores legacy con BulletType fijo han sido eliminados porque
+     * las armas ya no tienen BulletType fijo. El tipo de bala se pasa como
+     * parámetro a handleInput() en runtime.
+     * 
+     * Migrar a:
+     *   ModifiedWeapon(comport, amulets, pool, owner, eventBus)
+     *   ModifiedWeapon(comport, amulets, owner, eventBus)  
+     *   ModifiedWeapon(comport, amulets)
+     * 
+     * Y usar:
+     *   weapon.handleInput(bulletType, held, pressed, x, y, right, direction)
      */
-    @Deprecated
-    public ModifiedWeapon(WeaponComport comport,
-                          BulletType bulletType,
-                          PlayerAmulets amulets,
-                          ProjectilePool pool,
-                          Object owner,
-                          GameEventBus eventBus) {
-        this.comport    = comport;
-        this.amulets    = amulets;
-        this.pool       = pool;
-        this.owner      = owner;
-        this.eventBus   = eventBus;
-        // Ignorar bulletType - será pasado como parámetro a handleInput
-    }
-
-    /**
-     * Constructor legacy — DEPRECATED.
-     * @deprecated Usar ModifiedWeapon(comport, amulets, owner, eventBus)
-     */
-    @Deprecated
-    public ModifiedWeapon(WeaponComport comport,
-                          BulletType bulletType,
-                          PlayerAmulets amulets,
-                          Object owner,
-                          GameEventBus eventBus) {
-        this(comport, amulets, owner, eventBus);
-    }
-
-    /**
-     * Constructor legacy — DEPRECATED.
-     * @deprecated Usar ModifiedWeapon(comport, amulets)
-     */
-    @Deprecated
-    public ModifiedWeapon(WeaponComport comport,
-                          BulletType bulletType,
-                          PlayerAmulets amulets) {
-        this(comport, amulets);
-    }
 
     // ── Input ─────────────────────────────────────────────────────────────
 
@@ -190,22 +162,16 @@ public class ModifiedWeapon {
     }
 
     /**
-     * Método legacy que usa el BulletType fijo (DEPRECATED).
-     * Mantiene compatibilidad con código que no ha migrado al sistema runtime.
+     * Método legacy que usa el BulletType fijo (ELIMINADO).
      * 
-     * @deprecated Usar handleInput(BulletType, boolean, boolean, double, double, boolean, Vector2D)
+     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     * 
+     * El método handleInput() legacy sin BulletType ha sido eliminado porque
+     * las armas ya no tienen BulletType fijo. 
+     * 
+     * Migrar a:
+     *   weapon.handleInput(bulletType, held, pressed, x, y, right, direction)
      */
-    @Deprecated
-    public List<Bullet> handleInput(
-            boolean held,
-            boolean pressed,
-            double x, double y,
-            boolean right,
-            Vector2D direction) {
-        // Para compatibilidad, usar un bulletType por defecto
-        // El código legacy deberá migrar gradualmente
-        return handleInput(BulletType.NORMALBULLET, held, pressed, x, y, right, direction);
-    }
 
     // ── Disparo ───────────────────────────────────────────────────────────
 
@@ -308,22 +274,24 @@ public class ModifiedWeapon {
 
     // ── Acceso a subcomponentes ────────────────────────────────────────────
 
-    public WeaponComport getComport()    { return comport;    }
-    public PlayerAmulets getAmulets()    { return amulets;    }
-    public WeaponStats   getStats()      { return comport.getStats(); }
-    public Object        getOwner()      { return owner; }
+    public WeaponComport    getComport()    { return comport;    }
+    public AmuletInventory  getAmulets()    { return amulets;    }
+    public WeaponStats      getStats()      { return comport.getStats(); }
+    public Object           getOwner()      { return owner; }
     public ProjectilePool getPool()      { return pool; }
     
     /**
-     * Método legacy para obtener BulletType fijo (DEPRECATED).
-     * Retorna null ya que las armas ya no tienen BulletType fijo.
+     * Método legacy para obtener BulletType fijo (ELIMINADO).
      * 
-     * @deprecated Las balas son ahora runtime - usar PlayerRuntime.getCurrentBullet()
+     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     * 
+     * getBulletType() ha sido eliminado porque las armas ya no tienen BulletType fijo.
+     * El tipo de bala se resuelve en runtime desde PlayerRuntime.getCurrentBullet().
+     * 
+     * Migrar a:
+     *   player.getRuntime().getCurrentBullet()  // desde Player
+     *   playerRuntime.getCurrentBullet()        // desde PlayerRuntime
      */
-    @Deprecated
-    public BulletType getBulletType() { 
-        return null; // Las armas ya no tienen BulletType fijo
-    }
 
     // ── Helper ────────────────────────────────────────────────────────────
 

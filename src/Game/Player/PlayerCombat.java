@@ -3,9 +3,14 @@ package Game.Player;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
+import Game.Items.Types.Ammulets.AmuletRegistry;
+import Game.Items.Types.Bullets.BulletComport.BulletStats;
+import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
+import Game.Items.Types.Bullets.ProjectileBlueprint;
 import Game.Items.Types.Weapons.ModifiedWeapon;
+import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import Inputs.Listeners.MouseActionListener;
 import Inputs.MouseInput;
 import java.util.List;
@@ -25,6 +30,7 @@ import java.util.function.Supplier;
  *   4. Ejecutar pipeline de disparo via ModifiedWeapon
  *   5. Pasar proyectiles al bulletSpawner inyectado
  *   6. Emitir eventos de combate
+ *   7. Proveer ProjectilePreview para UI (CrossHairHUD)
  *
  * ── LO QUE NO ALMACENA ────────────────────────────────────────────────────
  *
@@ -56,6 +62,13 @@ import java.util.function.Supplier;
  *   PlayerInventory → almacenamiento (qué posee)
  *   PlayerRuntime   → selección activa (qué está equipado)
  *   PlayerCombat    → ejecución (cómo se utiliza lo equipado)
+ *
+ * ── PROJECTILE PREVIEW ────────────────────────────────────────────────────
+ *
+ * CrossHairHUD necesita stats del proyectil sin disparar realmente.
+ * PlayerCombat provee getProjectilePreview() que calcula el ProjectileBlueprint
+ * usando el mismo pipeline que el disparo real, luego deriva BulletStats
+ * via BulletFactory.statsFrom().
  *
  * ── DEPENDENCY INJECTION ─────────────────────────────────────────────────
  *
@@ -287,4 +300,99 @@ public class PlayerCombat implements MouseActionListener {
             eventBus.post(new WeaponEvents.OnWeaponSwitch(previous, current));
         }
     }
+
+    // ── ProjectilePreview — para UI (CrossHairHUD) ────────────────────────
+
+    /**
+     * Calcula las estadísticas del proyectil que se dispararía actualmente.
+     * Usa el mismo pipeline que el disparo real, pero sin crear Bullet.
+     *
+     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     *
+     * Esta API reemplaza el uso directo de weapon.getBulletType().create()
+     * y BulletFactory desde CrossHairHUD. El HUD no debe conocer los detalles
+     * internos del pipeline de disparo.
+     *
+     * @return ProjectilePreview con stats calculados, o null si no hay arma/bala
+     */
+    public ProjectilePreview getProjectilePreview() {
+        ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
+        BulletType currentBullet = playerRuntime.getCurrentBullet();
+
+        if (currentWeapon == null || currentBullet == null) {
+            return null;
+        }
+
+        // Replicar el pipeline de ModifiedWeapon.tryShoot() sin disparar
+        WeaponStats effectiveStats = copyStats(currentWeapon.getStats());
+        var behavior = currentBullet.create();
+        
+        // Aplicar amuletos del jugador (igual que en disparo real)
+        behavior = AmuletRegistry.applyAll(
+            playerRuntime.getInventory().amulets().getIds(), 
+            effectiveStats, 
+            behavior
+        );
+
+        double finalSpeed = effectiveStats.getBulletSpeedBase() 
+                           * behavior.getDefaultData().speedFactor();
+        double finalDamage = effectiveStats.getDamageBonusByWeapon() 
+                            + behavior.getDefaultData().damage();
+
+        // Crear ProjectileBlueprint (igual que en disparo real)
+        ProjectileBlueprint blueprint = ProjectileBlueprint.from(
+            behavior, finalSpeed, finalDamage
+        );
+
+        // Derivar BulletStats via BulletFactory.statsFrom()
+        BulletStats stats = BulletFactory.statsFrom(blueprint);
+
+        Vector2D spawnPosition = (positionSupplier != null) 
+            ? positionSupplier.get().add(new Vector2D(20, 20))  // Offset del spawn
+            : new Vector2D(20, 20);
+
+        return new ProjectilePreview(
+            stats.getSpeed(),
+            stats.getDamage(), 
+            stats.getLifeTime(),
+            stats.hasGravity(),
+            spawnPosition
+        );
+    }
+
+    /**
+     * Copia mutable de WeaponStats — helper compartido con ModifiedWeapon.
+     */
+    private static WeaponStats copyStats(WeaponStats src) {
+        return new WeaponStats(
+            src.getCooldown(),
+            src.getBulletsPerShot(),
+            src.getSpread(),
+            src.getDamageBonusByWeapon(),
+            src.getBulletSpeedBase()
+        );
+    }
+
+    /**
+     * Preview de proyectil para UI — encapsula stats calculados.
+     *
+     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     *
+     * Reemplaza el uso directo de weapon.getBulletType() + ProjectileBlueprint
+     * + BulletFactory desde CrossHairHUD. El HUD consulta este record inmutable
+     * en lugar de reconstruir manualmente el pipeline de disparo.
+     *
+     * @param speed        velocidad del proyectil (unidades/frame)
+     * @param damage       daño del proyectil
+     * @param lifeTime     frames de vida máximos
+     * @param hasGravity   true si el proyectil tiene gravedad
+     * @param spawnPosition posición de spawn del proyectil (mundo)
+     */
+    public record ProjectilePreview(
+        double speed,
+        double damage,
+        int lifeTime,
+        boolean hasGravity,
+        Vector2D spawnPosition
+    ) {}
 }

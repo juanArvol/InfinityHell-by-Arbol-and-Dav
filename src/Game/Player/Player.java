@@ -12,7 +12,7 @@ import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.Gameplay.Aimm.AimSelection;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
-import Game.Items.Types.Ammulets.PlayerAmulets;
+import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Sprites.Entity.Player.PlayerAssets;
 import java.util.function.Consumer;
@@ -97,7 +97,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     private final PlayerCombat     combat;
     private final PlayerStats      playerStats;
     private final PlayerState      state;
-    private final PlayerAmulets    playerAmulets;
+    private final AmuletInventory  amulets;
 
     // ── Runtime del Player ────────────────────────────────────────────────
     private PlayerRuntime playerRuntime;
@@ -120,7 +120,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
            AttackSources attackSources,
            PlayerState state,
            PlayerStats playerStats,
-           PlayerAmulets playerAmulets,
+           AmuletInventory amulets,
            PlayerController controller,
            PlayerCombat combat) {
 
@@ -133,7 +133,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         this.attackSources    = attackSources;
         this.state            = state;
         this.playerStats      = playerStats;
-        this.playerAmulets    = playerAmulets;
+        this.amulets          = amulets;
         this.controller       = controller;
         this.combat           = combat;
     }
@@ -275,7 +275,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     public EquippedItems getEquippedItems() { return equippedItems; }
 
     /** Inventario de amuletos de la run. */
-    public PlayerAmulets getAmulets()       { return playerAmulets; }
+    public AmuletInventory getAmulets()     { return amulets;       }
 
     /** Posición actual en el mundo (shortcut de conveniencia). */
     public Vector2D getPosition()           { return getTransform().getPosition(); }

@@ -3,14 +3,11 @@ package Game.Player;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Estado mutable de la run del Player — coordina inventario y equipamiento.
  *
- * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ * ── HRFC — Player Architecture Consolidation ──────────────────────────────
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -24,22 +21,26 @@ import java.util.List;
  *
  * Separa claramente:
  *
- *   PlayerLoadout   → configuración inicial (inmutable)
- *   PlayerRuntime   → estado actual de la run (mutable)
- *   PlayerInventory → almacenamiento de posesiones
- *   PlayerCombat    → ejecución de combate
+ *   PlayerLoadout    → configuración inicial (inmutable)
+ *   PlayerRuntime    → estado actual de la run (mutable)
+ *   PlayerInventory  → almacenamiento de posesiones (fachada)
+ *   WeaponInventory  → almacenamiento de armas (especializado)
+ *   BulletInventory  → almacenamiento de balas (especializado)
+ *   AmuletInventory  → almacenamiento de amuletos (especializado)
+ *   PlayerCombat     → ejecución de combate
  *
  * ── ARQUITECTURA ──────────────────────────────────────────────────────────
  *
  *   PlayerRuntime
  *        │
- *        ├── PlayerInventory (delegación)
- *        │      ├── Weapon collection
- *        │      └── Bullet collection
+ *        ├── PlayerInventory (fachada)
+ *        │      ├── WeaponInventory (almacenamiento de armas)
+ *        │      ├── BulletInventory (almacenamiento de balas)
+ *        │      └── AmuletInventory (almacenamiento de amuletos)
  *        │
  *        └── Equipment state
- *               ├── currentWeapon
- *               └── currentBullet
+ *               ├── currentWeaponIndex (índice en WeaponInventory)
+ *               └── currentBulletIndex (índice en BulletInventory)
  *
  * ── SELECCIÓN INDEPENDIENTE ───────────────────────────────────────────────
  *
@@ -48,26 +49,42 @@ import java.util.List;
  *   runtime.selectWeapon(WeaponType.ESCOPETA)  // no cambia bala
  *   runtime.selectBullet(BulletType.BULLETJUMP) // no cambia arma
  *
+ * ── OWNERSHIP VS EQUIPMENT ───────────────────────────────────────────────
+ *
+ * PlayerInventory responde: "¿Qué posee el Player?"
+ * PlayerRuntime responde: "¿Qué está equipado actualmente?"
+ *
+ * La relación correcta es:
+ *
+ *   PlayerInventory.weapons()
+ *        │
+ *        └── owns Weapon
+ *                  ▲
+ *                  │ equipped
+ *                  │
+ *            PlayerRuntime
+ *
  * ── INVARIANTES ───────────────────────────────────────────────────────────
  *
  *   • Una bala seleccionada permanece activa hasta que se cambie explícitamente
  *   • Adquirir una nueva bala no elimina automáticamente otras
  *   • Las balas son infinitas (representan tipos/equipamientos disponibles)
  *   • El arma y bala activas son independientes entre sí
+ *   • Solo se puede equipar lo que se posee
  */
-public class PlayerRuntime {
+public final class PlayerRuntime {
 
-    /** Inventario del Player — almacena armas y balas por separado. */
+    /** Inventario del Player — almacena armas, balas y amuletos. */
     private final PlayerInventory inventory;
 
-    /** Arma actualmente seleccionada (index en el inventario de armas). */
+    /** Arma actualmente seleccionada (index en inventory.weapons()). */
     private int currentWeaponIndex = 0;
 
-    /** Bala actualmente seleccionada (index en el inventario de balas). */
+    /** Bala actualmente seleccionada (index en inventory.bullets()). */
     private int currentBulletIndex = 0;
 
     /**
-     * @param inventory inventario del Player para gestionar armas y balas
+     * @param inventory inventario del Player para gestionar armas, balas y amuletos
      */
     public PlayerRuntime(PlayerInventory inventory) {
         if (inventory == null) {
@@ -79,7 +96,7 @@ public class PlayerRuntime {
     // ── Acceso al inventario ──────────────────────────────────────────────
 
     /**
-     * Inventario del Player — punto de acceso a armas y balas almacenadas.
+     * Inventario del Player — punto de acceso a armas, balas y amuletos.
      */
     public PlayerInventory getInventory() {
         return inventory;
@@ -92,11 +109,10 @@ public class PlayerRuntime {
      * @return arma activa, o null si no hay armas en el inventario
      */
     public ModifiedWeapon getCurrentWeapon() {
-        List<ModifiedWeapon> weapons = inventory.getWeapons();
-        if (weapons.isEmpty() || currentWeaponIndex >= weapons.size()) {
+        if (inventory.hasNoWeapons() || currentWeaponIndex >= inventory.getWeaponCount()) {
             return null;
         }
-        return weapons.get(currentWeaponIndex);
+        return inventory.weapons().getWeapon(currentWeaponIndex);
     }
 
     /**
@@ -107,12 +123,11 @@ public class PlayerRuntime {
      * @return true si se encontró y seleccionó el arma, false si no se posee
      */
     public boolean selectWeapon(WeaponType weaponType) {
-        List<ModifiedWeapon> weapons = inventory.getWeapons();
-        for (int i = 0; i < weapons.size(); i++) {
-            ModifiedWeapon weapon = weapons.get(i);
-            // Comparar por tipo de arma (requiere método en ModifiedWeapon para obtener el tipo)
-            // Por ahora usando comparación directa de instancia
+        for (int i = 0; i < inventory.getWeaponCount(); i++) {
+            ModifiedWeapon weapon = inventory.weapons().getWeapon(i);
             if (weapon != null) {
+                // TODO: Comparar por tipo cuando ModifiedWeapon exponga WeaponType
+                // Por ahora solo verificar que existe
                 currentWeaponIndex = i;
                 return true;
             }
@@ -125,9 +140,9 @@ public class PlayerRuntime {
      * No afecta la bala seleccionada.
      */
     public void nextWeapon() {
-        List<ModifiedWeapon> weapons = inventory.getWeapons();
-        if (weapons.size() <= 1) return;
-        currentWeaponIndex = (currentWeaponIndex + 1) % weapons.size();
+        int weaponCount = inventory.getWeaponCount();
+        if (weaponCount <= 1) return;
+        currentWeaponIndex = (currentWeaponIndex + 1) % weaponCount;
     }
 
     /**
@@ -135,9 +150,9 @@ public class PlayerRuntime {
      * No afecta la bala seleccionada.
      */
     public void previousWeapon() {
-        List<ModifiedWeapon> weapons = inventory.getWeapons();
-        if (weapons.size() <= 1) return;
-        currentWeaponIndex = (currentWeaponIndex - 1 + weapons.size()) % weapons.size();
+        int weaponCount = inventory.getWeaponCount();
+        if (weaponCount <= 1) return;
+        currentWeaponIndex = (currentWeaponIndex - 1 + weaponCount) % weaponCount;
     }
 
     // ── Gestión de balas ──────────────────────────────────────────────────
@@ -147,11 +162,10 @@ public class PlayerRuntime {
      * @return tipo de bala activa, o null si no hay balas en el inventario
      */
     public BulletType getCurrentBullet() {
-        List<BulletType> bullets = inventory.getBullets();
-        if (bullets.isEmpty() || currentBulletIndex >= bullets.size()) {
+        if (inventory.hasNoBullets() || currentBulletIndex >= inventory.getBulletCount()) {
             return null;
         }
-        return bullets.get(currentBulletIndex);
+        return inventory.bullets().getBullet(currentBulletIndex);
     }
 
     /**
@@ -162,12 +176,10 @@ public class PlayerRuntime {
      * @return true si se encontró y seleccionó la bala, false si no se posee
      */
     public boolean selectBullet(BulletType bulletType) {
-        List<BulletType> bullets = inventory.getBullets();
-        for (int i = 0; i < bullets.size(); i++) {
-            if (bullets.get(i) == bulletType) {
-                currentBulletIndex = i;
-                return true;
-            }
+        int index = inventory.bullets().indexOf(bulletType);
+        if (index >= 0) {
+            currentBulletIndex = index;
+            return true;
         }
         return false;
     }
@@ -177,9 +189,9 @@ public class PlayerRuntime {
      * No afecta el arma seleccionada.
      */
     public void nextBullet() {
-        List<BulletType> bullets = inventory.getBullets();
-        if (bullets.size() <= 1) return;
-        currentBulletIndex = (currentBulletIndex + 1) % bullets.size();
+        int bulletCount = inventory.getBulletCount();
+        if (bulletCount <= 1) return;
+        currentBulletIndex = (currentBulletIndex + 1) % bulletCount;
     }
 
     /**
@@ -187,9 +199,9 @@ public class PlayerRuntime {
      * No afecta el arma seleccionada.
      */
     public void previousBullet() {
-        List<BulletType> bullets = inventory.getBullets();
-        if (bullets.size() <= 1) return;
-        currentBulletIndex = (currentBulletIndex - 1 + bullets.size()) % bullets.size();
+        int bulletCount = inventory.getBulletCount();
+        if (bulletCount <= 1) return;
+        currentBulletIndex = (currentBulletIndex - 1 + bulletCount) % bulletCount;
     }
 
     // ── Adquisiciones runtime ─────────────────────────────────────────────
@@ -197,6 +209,26 @@ public class PlayerRuntime {
     /**
      * Añade un arma al inventario durante la run.
      * El arma se añade al final del inventario pero no se selecciona automáticamente.
+     *
+     * ── FLUJO DE ADQUISICIÓN CORRECTO ────────────────────────────────────
+     *
+     * Gameplay / Reward / Pickup
+     *          │
+     *          ▼
+     *   player.getRuntime().acquireWeapon(weapon)
+     *          │
+     *          ▼
+     *   PlayerRuntime → PlayerInventory → WeaponInventory
+     *          │
+     *          ▼
+     *   Weapon ownership updated
+     *
+     * ── SELECCIÓN POSTERIOR ──────────────────────────────────────────────
+     *
+     * El jugador puede seleccionar el arma después con:
+     *   - player.getRuntime().selectWeapon(weaponType)
+     *   - player.getRuntime().nextWeapon() / previousWeapon()
+     *   - Input handling en PlayerCombat
      *
      * @param weapon arma a añadir
      */
@@ -208,10 +240,55 @@ public class PlayerRuntime {
      * Añade una bala al inventario durante la run.
      * La bala se añade al final del inventario pero no se selecciona automáticamente.
      *
+     * ── FLUJO DE ADQUISICIÓN CORRECTO ────────────────────────────────────
+     *
+     * Gameplay / Reward / Pickup
+     *          │
+     *          ▼
+     *   player.getRuntime().acquireBullet(bulletType)
+     *          │
+     *          ▼
+     *   PlayerRuntime → PlayerInventory → BulletInventory
+     *          │
+     *          ▼
+     *   Bullet ownership updated
+     *
+     * ── SELECCIÓN POSTERIOR ──────────────────────────────────────────────
+     *
+     * El jugador puede seleccionar la bala después con:
+     *   - player.getRuntime().selectBullet(bulletType)
+     *   - player.getRuntime().nextBullet() / previousBullet()
+     *   - Input handling en PlayerCombat
+     *
      * @param bulletType tipo de bala a añadir
      */
     public void acquireBullet(BulletType bulletType) {
         inventory.addBullet(bulletType);
+    }
+
+    /**
+     * Añade un amuleto al inventario durante la run.
+     *
+     * ── FLUJO DE ADQUISICIÓN CORRECTO ────────────────────────────────────
+     *
+     * Gameplay / Reward / Pickup
+     *          │
+     *          ▼
+     *   player.getRuntime().acquireAmulet(amuletId)
+     *          │
+     *          ▼
+     *   PlayerRuntime → PlayerInventory → AmuletInventory
+     *          │
+     *          ▼
+     *   Amulet ownership updated
+     *
+     * Los amuletos se aplican automáticamente durante el disparo via
+     * AmuletRegistry.applyAll() llamado desde ModifiedWeapon.
+     *
+     * @param amuletId ID del amuleto a añadir
+     */
+    public void acquireAmulet(String amuletId) {
+        inventory.addAmulet(amuletId);
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────
@@ -234,14 +311,14 @@ public class PlayerRuntime {
      * Número total de armas en el inventario.
      */
     public int getWeaponCount() {
-        return inventory.getWeapons().size();
+        return inventory.getWeaponCount();
     }
 
     /**
      * Número total de balas en el inventario.
      */
     public int getBulletCount() {
-        return inventory.getBullets().size();
+        return inventory.getBulletCount();
     }
 
     // ── Update ────────────────────────────────────────────────────────────
@@ -261,11 +338,11 @@ public class PlayerRuntime {
      * Si el arma actual fue removida, selecciona la primera disponible.
      */
     private void validateWeaponIndex() {
-        List<ModifiedWeapon> weapons = inventory.getWeapons();
-        if (weapons.isEmpty()) {
+        int weaponCount = inventory.getWeaponCount();
+        if (weaponCount == 0) {
             currentWeaponIndex = 0;
-        } else if (currentWeaponIndex >= weapons.size()) {
-            currentWeaponIndex = weapons.size() - 1;
+        } else if (currentWeaponIndex >= weaponCount) {
+            currentWeaponIndex = weaponCount - 1;
         }
     }
 
@@ -274,11 +351,11 @@ public class PlayerRuntime {
      * Si la bala actual fue removida, selecciona la primera disponible.
      */
     private void validateBulletIndex() {
-        List<BulletType> bullets = inventory.getBullets();
-        if (bullets.isEmpty()) {
+        int bulletCount = inventory.getBulletCount();
+        if (bulletCount == 0) {
             currentBulletIndex = 0;
-        } else if (currentBulletIndex >= bullets.size()) {
-            currentBulletIndex = bullets.size() - 1;
+        } else if (currentBulletIndex >= bulletCount) {
+            currentBulletIndex = bulletCount - 1;
         }
     }
 }

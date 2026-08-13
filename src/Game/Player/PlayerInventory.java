@@ -1,169 +1,221 @@
 package Game.Player;
 
+import Game.Items.Types.Ammulets.AmuletInventory;
+import Game.Items.Types.Bullets.BulletInventory;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
+import Game.Items.Types.Weapons.WeaponInventory;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
- * Inventario específico del Player — almacena armas y balas independientemente.
+ * Fachada del inventario del Player — coordina inventarios especializados de dominio.
  *
- * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ * ── HRFC — Player Inventory & Domain Ownership Consolidation ──────────────
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
- * PlayerInventory separa el almacenamiento de posesiones de la ejecución
- * de combate. Permite selección independiente de armas y balas:
+ * PlayerInventory es la fachada/intermediario del inventario del Player.
+ * NO es una God Class — delega las operaciones específicas a los inventarios
+ * especializados correspondientes que viven en sus dominios.
  *
- *   PlayerInventory                PlayerCombat
- *        │                             │
- *        ├── Weapon collection         │
- *        │      ├── Weapon A           │
- *        │      ├── Weapon B           │
- *        │      └── Weapon C           │
- *        │                             │
- *        └── Bullet collection         │
- *               ├── BulletType A       │
- *               ├── BulletType B       │ consulta
- *               └── BulletType C ◄─────┘
+ * Su responsabilidad es:
+ *   • Exponer el acceso coherente al inventario
+ *   • Delegar operaciones a inventarios especializados de dominio
+ *   • Servir como punto de entrada para sistemas externos que necesiten
+ *     interactuar con el inventario
+ *
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
+ *
+ *   PlayerInventory (fachada)
+ *        │
+ *        ├── Items.Types.Weapons.WeaponInventory  (autoridad de armas)
+ *        ├── Items.Types.Bullets.BulletInventory  (autoridad de balas)
+ *        └── Items.Types.Ammulets.AmuletInventory (autoridad de amuletos)
+ *
+ * PlayerInventory coordina/accede; los inventarios especializados implementan.
+ * Cada inventario vive en su dominio correspondiente, respetando el ownership.
  *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- *   PlayerInventory → almacenamiento (qué posee el Player)
- *   PlayerRuntime   → selección activa (qué está equipado actualmente)
- *   PlayerCombat    → ejecución (cómo se utiliza lo equipado)
+ *   PlayerInventory  → fachada/coordinador (este archivo)
+ *   WeaponInventory  → almacenamiento de armas (Items.Types.Weapons)
+ *   BulletInventory  → almacenamiento de balas (Items.Types.Bullets)
+ *   AmuletInventory  → almacenamiento de amuletos (Items.Types.Ammulets)
+ *   PlayerRuntime    → estado de equipamiento
+ *   PlayerCombat     → ejecución de combate
  *
- * ── SELECCIÓN INDEPENDIENTE ───────────────────────────────────────────────
+ * ── LO QUE NO CONTIENE ────────────────────────────────────────────────────
  *
- * Ejemplo de uso correcto:
+ * PlayerInventory NO debe contener:
+ *   ✗ Lógica específica de armas
+ *   ✗ Lógica específica de balas
+ *   ✗ Lógica específica de amuletos
+ *   ✗ Lógica de combate
+ *   ✗ Lógica de equipamiento
+ *   ✗ Lógica de selección
+ *   ✗ Operaciones shoot(), reload(), attack()
  *
- *   Weapons: [Pistola, Escopeta]
- *   Bullets: [NormalBullet, BulletJump]
+ * ── SINGLE SOURCE OF TRUTH ────────────────────────────────────────────────
  *
- *   Current: Escopeta + BulletJump
+ * Los inventarios pertenecen al dominio que administran, no al Player:
  *
- *   runtime.selectWeapon(Pistola)  → Pistola + BulletJump
- *   runtime.selectBullet(Normal)   → Pistola + NormalBullet
+ *   WeaponInventory  → Items.Types.Weapons   (NO Player.Inventory)
+ *   BulletInventory  → Items.Types.Bullets   (NO Player.Inventory)
+ *   AmuletInventory  → Items.Types.Ammulets  (NO Player.Inventory)
  *
- * Cambiar de arma NO cambia automáticamente la bala.
- * Adquirir una nueva bala NO elimina las anteriores.
- *
- * ── DIFERENCIA CON WeaponInventory ────────────────────────────────────────
- *
- * WeaponInventory (existente):
- *   - Gestiona solo armas
- *   - Vive dentro de PlayerCombat
- *   - Mezcla almacenamiento con ejecución
- *
- * PlayerInventory (nuevo):
- *   - Gestiona armas Y balas por separado
- *   - Vive independiente de PlayerCombat
- *   - Solo almacenamiento, sin lógica de combate
+ * PlayerInventory compone y expone, pero no duplica ni implementa.
  */
-public class PlayerInventory {
+public final class PlayerInventory {
 
-    /** Armas poseídas por el Player. */
-    private final List<ModifiedWeapon> weapons = new ArrayList<>();
+    private final WeaponInventory weapons;
+    private final BulletInventory bullets;
+    private final AmuletInventory amulets;
 
-    /** Tipos de bala poseídos por el Player. */
-    private final List<BulletType> bullets = new ArrayList<>();
+    /**
+     * Construye el inventario del Player con inventarios especializados vacíos.
+     * Los inventarios se instancian desde sus dominios correspondientes.
+     */
+    public PlayerInventory() {
+        this.weapons = new WeaponInventory();    // Items.Types.Weapons
+        this.bullets = new BulletInventory();    // Items.Types.Bullets  
+        this.amulets = new AmuletInventory();    // Items.Types.Ammulets
+    }
 
-    // ── Gestión de armas ──────────────────────────────────────────────────
+    // ── Acceso a inventarios especializados ───────────────────────────────
+
+    /**
+     * Inventario especializado de armas.
+     * @return WeaponInventory — nunca null
+     */
+    public WeaponInventory weapons() {
+        return weapons;
+    }
+
+    /**
+     * Inventario especializado de balas.
+     * @return BulletInventory — nunca null
+     */
+    public BulletInventory bullets() {
+        return bullets;
+    }
+
+    /**
+     * Inventario especializado de amuletos.
+     * @return AmuletInventory — nunca null
+     */
+    public AmuletInventory amulets() {
+        return amulets;
+    }
+
+    // ── APIs de conveniencia para armas ───────────────────────────────────
 
     /**
      * Añade un arma al inventario.
-     * Si ya se posee un arma del mismo tipo, no se duplica.
+     * Delega a WeaponInventory.
      *
      * @param weapon arma a añadir
      */
     public void addWeapon(ModifiedWeapon weapon) {
-        if (weapon == null) {
-            throw new IllegalArgumentException("weapon no puede ser null");
-        }
-        
-        // TODO: Implementar comparación por tipo cuando ModifiedWeapon exponga WeaponType
-        // Por ahora añadir directamente sin verificar duplicados
-        weapons.add(weapon);
+        weapons.addWeapon(weapon);
     }
 
     /**
      * Elimina un arma del inventario.
+     * Delega a WeaponInventory.
      *
      * @param weapon arma a eliminar
      * @return true si se eliminó, false si no se encontró
      */
     public boolean removeWeapon(ModifiedWeapon weapon) {
-        return weapons.remove(weapon);
+        return weapons.removeWeapon(weapon);
     }
 
     /**
      * True si el Player posee un arma del tipo indicado.
+     * Delega a WeaponInventory.
      *
      * @param weaponType tipo de arma a verificar
      * @return true si se posee
      */
     public boolean hasWeapon(WeaponType weaponType) {
-        // TODO: Implementar cuando ModifiedWeapon exponga WeaponType
-        // Por ahora retornar false ya que no podemos comparar
-        return !weapons.isEmpty(); // Placeholder
+        return weapons.hasWeapon(weaponType);
     }
 
     /**
      * Lista inmutable de armas poseídas.
+     * Delega a WeaponInventory.
      *
      * @return lista de armas. Nunca null.
      */
     public List<ModifiedWeapon> getWeapons() {
-        return Collections.unmodifiableList(weapons);
+        return weapons.getAll();
     }
 
-    // ── Gestión de balas ──────────────────────────────────────────────────
+    // ── APIs de conveniencia para balas ───────────────────────────────────
 
     /**
      * Añade un tipo de bala al inventario.
-     * Si ya se posee, no se duplica.
+     * Delega a BulletInventory.
      *
      * @param bulletType tipo de bala a añadir
      */
     public void addBullet(BulletType bulletType) {
-        if (bulletType == null) {
-            throw new IllegalArgumentException("bulletType no puede ser null");
-        }
-        
-        if (!bullets.contains(bulletType)) {
-            bullets.add(bulletType);
-        }
+        bullets.addBullet(bulletType);
     }
 
     /**
      * Elimina un tipo de bala del inventario.
+     * Delega a BulletInventory.
      *
      * @param bulletType tipo de bala a eliminar
      * @return true si se eliminó, false si no se encontró
      */
     public boolean removeBullet(BulletType bulletType) {
-        return bullets.remove(bulletType);
+        return bullets.removeBullet(bulletType);
     }
 
     /**
      * True si el Player posee el tipo de bala indicado.
+     * Delega a BulletInventory.
      *
      * @param bulletType tipo de bala a verificar
      * @return true si se posee
      */
     public boolean hasBullet(BulletType bulletType) {
-        return bullets.contains(bulletType);
+        return bullets.hasBullet(bulletType);
     }
 
     /**
      * Lista inmutable de tipos de bala poseídos.
+     * Delega a BulletInventory.
      *
      * @return lista de tipos de bala. Nunca null.
      */
     public List<BulletType> getBullets() {
-        return Collections.unmodifiableList(bullets);
+        return bullets.getAll();
+    }
+
+    // ── APIs de conveniencia para amuletos ────────────────────────────────
+
+    /**
+     * Añade un amuleto al inventario.
+     * Delega a AmuletInventory.
+     *
+     * @param amuletId ID del amuleto a añadir
+     */
+    public void addAmulet(String amuletId) {
+        amulets.add(amuletId);
+    }
+
+    /**
+     * Lista de IDs de amuletos (con repeticiones).
+     * Delega a AmuletInventory.
+     *
+     * @return lista de IDs de amuletos
+     */
+    public List<String> getAmuletIds() {
+        return amulets.getIds();
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────
@@ -196,32 +248,21 @@ public class PlayerInventory {
         return bullets.size();
     }
 
-    // ── Inicialización desde loadout ──────────────────────────────────────
+    /**
+     * Número total de amuletos poseídos (incluyendo copias).
+     */
+    public int getAmuletCount() {
+        return amulets.totalCount();
+    }
+
+    // ── Limpieza ──────────────────────────────────────────────────────────
 
     /**
-     * Limpia el inventario — útil para testing o reinicios.
+     * Limpia todos los inventarios — útil para testing o reinicios de run.
      */
     public void clear() {
         weapons.clear();
         bullets.clear();
-    }
-
-    /**
-     * Inicializa el inventario con el contenido de un loadout.
-     * Usado por PlayerAssembler para materializar la configuración inicial.
-     *
-     * @param loadoutWeapons armas del loadout
-     * @param loadoutBullet bala inicial del loadout
-     */
-    public void initializeFromLoadout(List<ModifiedWeapon> loadoutWeapons, BulletType loadoutBullet) {
-        clear();
-        
-        for (ModifiedWeapon weapon : loadoutWeapons) {
-            addWeapon(weapon);
-        }
-        
-        if (loadoutBullet != null) {
-            addBullet(loadoutBullet);
-        }
+        amulets.clear();
     }
 }
