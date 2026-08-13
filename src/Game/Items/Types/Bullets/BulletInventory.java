@@ -59,16 +59,19 @@ public final class BulletInventory {
      * Si ya se posee, no se duplica (idempotente).
      *
      * @param bulletType tipo de bala a añadir. No puede ser null.
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si bulletType es null
      */
-    public void addBullet(BulletType bulletType) {
+    public boolean addBullet(BulletType bulletType) {
         if (bulletType == null) {
             throw new IllegalArgumentException("bulletType no puede ser null");
         }
         
         if (!bullets.contains(bulletType)) {
             bullets.add(bulletType);
+            return true;
         }
+        return false;
     }
 
     /**

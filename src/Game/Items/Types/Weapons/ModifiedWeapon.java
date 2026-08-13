@@ -4,13 +4,14 @@ import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Ammulets.AmuletInventory;
-import Game.Items.Types.Ammulets.AmuletRegistry;
-import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.Definition.ProjectilePool;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
+import Game.Items.Types.Projectiles.ProjectileResolver;
+import Game.Items.Types.Weapons.WeaponType.FireMode.FireModeResolution;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import Sprites.Source.Sounds;
@@ -186,60 +187,151 @@ public class ModifiedWeapon {
             return List.of();
         }
 
-        // 1. Copia mutable de stats — el original del comport no se toca
-        WeaponStats effectiveStats = copyStats(comport.getStats());
+        // ── Resolución unificada del proyectil ────────────────────────────
+        // Usar la misma fuente de resolución que el preview para garantizar consistencia
+        ProjectileResolver.ResolvedProjectile resolved = ProjectileResolver.resolveComplete(
+                comport.getStats(),      // WeaponStats base (inmutable)
+                bulletType,              // BulletType seleccionado
+                amulets.getAll(),        // Lista de amuletos del jugador
+                damageMult,              // Multiplicador de daño (FireMode)
+                speedMult                // Multiplicador de velocidad (FireMode)
+        );
 
-        // 2. Behavior base del tipo de bala pasado como parámetro
-        BulletBehavior behavior = bulletType.create();
+        // ── Construir proyectiles usando el blueprint resuelto ───────────
+        List<Bullet> bullets = new ArrayList<>(resolved.stats().getBulletsPerShot());
 
-        // 3. Aplicar amuletos del jugador
-        behavior = AmuletRegistry.applyAll(amulets.getIds(), effectiveStats, behavior);
-
-        // 4. Construir proyectiles con el pipeline Blueprint → Pool/Factory
-        List<Bullet> bullets = new ArrayList<>(effectiveStats.getBulletsPerShot());
-
-        for (int i = 0; i < effectiveStats.getBulletsPerShot(); i++) {
+        for (int i = 0; i < resolved.stats().getBulletsPerShot(); i++) {
 
             Vector2D spreadDir = direction
-                    .applySpread(direction, effectiveStats.getSpread())
+                    .applySpread(direction, resolved.stats().getSpread())
                     .normalize();
-
-            double finalSpeed  = effectiveStats.getBulletSpeedBase() * speedMult
-                                 * behavior.getDefaultData().speedFactor();
-            double finalDamage = effectiveStats.getDamageBonusByWeapon() * damageMult
-                                 + behavior.getDefaultData().damage();
-
-            ProjectileBlueprint blueprint = ProjectileBlueprint.from(
-                    behavior, finalSpeed, finalDamage);
 
             // ── Adquisición unificada ─────────────────────────────────────
             Bullet bullet;
             if (pool != null) {
-                bullet = pool.acquire(blueprint, new Vector2D(x, y), spreadDir, owner);
+                bullet = pool.acquire(resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
             } else {
-                bullet = BulletFactory.build(eventBus, blueprint, new Vector2D(x, y), spreadDir, owner);
+                bullet = BulletFactory.build(eventBus, resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
             }
             bullets.add(bullet);
         }
 
-        // 5. Avanzar estado del arma
+        // ── Avanzar estado del arma ───────────────────────────────────────
         comport.triggerCooldown();
         comport.incrementBurst();
         comport.consumeAmmo();
 
-        // 6. Sonido de disparo
+        // ── Sonido de disparo ─────────────────────────────────────────────
         String sound = comport.getShootSound();
         if (sound != null) {
             Sounds.playSound(sound);
         }
 
-        // 7. Evento de disparo
+        // ── Evento de disparo ─────────────────────────────────────────────
         if (eventBus != null && eventBus.hasListeners(WeaponEvents.OnWeaponFired.class)) {
             eventBus.post(new WeaponEvents.OnWeaponFired(this, bullets.size()));
         }
 
         return bullets;
     }
+
+    // ── Projectile Preview API ───────────────────────────────────────────
+
+    /**
+     * Preview de proyectil para UI — encapsula la resolución completa del disparo.
+     *
+     * ── HRFC — Mini-HRFC: Desacoplar PlayerCombat de la resolución interna del arma ──────────────
+     *
+     * Este método encapsula todo el conocimiento interno del arma que PlayerCombat
+     * no debería tener:
+     * - Acceso a WeaponComport y FireMode
+     * - Diferencia entre queryResolution() vs handleInput()  
+     * - Uso de ProjectileResolver.resolveWithFireModeQuery()
+     * - Derivación de BulletStats via BulletFactory.statsFrom()
+     *
+     * PlayerCombat simplemente llama este método y recibe el preview listo para usar.
+     * La resolución interna usa exactamente el mismo pipeline que el disparo real,
+     * garantizando consistencia entre preview y gameplay.
+     *
+     * ── SEPARACIÓN QUERY/EXECUTION ────────────────────────────────────────
+     *
+     * Este método usa fireMode.queryResolution() que es idempotente:
+     * - No procesa input ni avanza timers
+     * - No muta el estado del FireMode
+     * - Solo consulta los multiplicadores actuales
+     * 
+     * Mientras que handleInput() usa fireMode.handleInput() que muta estado:
+     * - Procesa input y puede avanzar timers (ChargeMode)
+     * - Puede cambiar estado interno del FireMode
+     * - Retorna decisión de disparo además de multiplicadores
+     *
+     * ── MISMA RESOLUCIÓN, DIFERENTE PROPÓSITO ─────────────────────────────
+     *
+     *          misma resolución
+     *               │
+     *       ┌───────┴────────┐
+     *       ▼                ▼
+     *   handleInput()    getProjectilePreview()
+     *   materializa      representa
+     *   gameplay         trayectoria
+     *
+     * @param bulletType tipo de bala a usar para la resolución
+     * @param held true si el botón está siendo mantenido (para ChargeMode, etc.)
+     * @param spawnPosition posición donde aparecería el proyectil
+     * @return ProjectilePreview con stats calculados para UI
+     */
+    public ProjectilePreview getProjectilePreview(BulletType bulletType, boolean held, Vector2D spawnPosition) {
+        if (bulletType == null) {
+            return null;
+        }
+
+        // ── Consulta idempotente de resolución ────────────────────────────
+        // queryResolution() no procesa input ni muta estado del FireMode
+        FireModeResolution resolution = comport.getFireMode().queryResolution(held, comport);
+        
+        // ── Resolución sin side-effects ───────────────────────────────────
+        // Usar exactamente la misma fuente de resolución que el disparo real
+        ProjectileBlueprint blueprint = ProjectileResolver.resolveWithFireModeQuery(
+                comport.getStats(),     // WeaponStats base
+                bulletType,             // BulletType seleccionado  
+                amulets.getAll(),       // Amuletos del jugador
+                resolution              // FireMode query (sin side-effects)
+        );
+
+        // ── Derivar BulletStats para UI ───────────────────────────────────
+        BulletStats stats = BulletFactory.statsFrom(blueprint);
+
+        return new ProjectilePreview(
+            stats.getSpeed(),
+            stats.getDamage(), 
+            stats.getLifeTime(),
+            stats.hasGravity(),
+            spawnPosition
+        );
+    }
+
+    /**
+     * Preview de proyectil para UI — encapsula stats calculados.
+     *
+     * ── HRFC — Mini-HRFC: Desacoplar PlayerCombat de la resolución interna del arma ──────────────
+     *
+     * Reemplaza el uso directo de ProjectileResolver y BulletFactory desde PlayerCombat.
+     * PlayerCombat consulta este record inmutable en lugar de reconstruir manualmente 
+     * el pipeline de disparo accediendo a weapon internals.
+     *
+     * @param speed        velocidad del proyectil (unidades/frame)
+     * @param damage       daño del proyectil
+     * @param lifeTime     frames de vida máximos
+     * @param hasGravity   true si el proyectil tiene gravedad
+     * @param spawnPosition posición de spawn del proyectil (mundo)
+     */
+    public record ProjectilePreview(
+        double speed,
+        double damage,
+        int lifeTime,
+        boolean hasGravity,
+        Vector2D spawnPosition
+    ) {}
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
@@ -293,14 +385,4 @@ public class ModifiedWeapon {
      *   playerRuntime.getCurrentBullet()        // desde PlayerRuntime
      */
 
-    // ── Helper ────────────────────────────────────────────────────────────
-
-    private static WeaponStats copyStats(WeaponStats src) {
-        return new WeaponStats(
-                src.getCooldown(),
-                src.getBulletsPerShot(),
-                src.getSpread(),
-                src.getDamageBonusByWeapon(),
-                src.getBulletSpeedBase());
-    }
 }

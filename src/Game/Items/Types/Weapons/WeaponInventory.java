@@ -36,9 +36,12 @@ import java.util.List;
  *
  * ── UNICIDAD ──────────────────────────────────────────────────────────────
  *
- * Las armas se obtienen una sola vez por partida. WeaponInventory NO
- * implementa deduplicación defensiva — la garantía de que una recompensa
- * válida no produzca duplicados pertenece al sistema de adquisición.
+ * Las armas se obtienen una sola vez por partida. WeaponInventory implementa
+ * unicidad mediante verificación en addWeapon() para prevenir duplicados mientras
+ * preserva el orden de adquisición en una única List.
+ *
+ * Una adquisición repetida de la misma arma resulta en no-op (idempotente).
+ * El sistema de adquisición no necesita verificar previamente si ya se posee.
  *
  * ── CYCLING ───────────────────────────────────────────────────────────────
  *
@@ -48,7 +51,9 @@ import java.util.List;
  */
 public class WeaponInventory {
 
+    /** Armas poseídas por el portador — unicidad garantizada por verificación en addWeapon(). */
     private final List<ModifiedWeapon> weapons = new ArrayList<>();
+    
     private int currentIndex = 0;
 
     /** Bus de eventos para emitir OnWeaponSwitch. Puede ser null. */
@@ -77,13 +82,20 @@ public class WeaponInventory {
     /**
      * Añade un arma al inventario.
      * Si es la primera arma añadida, pasa a ser el arma activa automáticamente.
+     * Si ya se posee (misma referencia), la operación es idempotente (no-op).
      *
      * @param weapon arma a añadir. No puede ser null.
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si weapon es null
      */
-    public void addWeapon(ModifiedWeapon weapon) {
+    public boolean addWeapon(ModifiedWeapon weapon) {
         if (weapon == null) throw new IllegalArgumentException("weapon no puede ser null");
-        weapons.add(weapon);
+        
+        if (!weapons.contains(weapon)) {
+            weapons.add(weapon);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -95,7 +107,9 @@ public class WeaponInventory {
      */
     public boolean removeWeapon(ModifiedWeapon weapon) {
         boolean removed = weapons.remove(weapon);
-        if (removed) clampIndex();
+        if (removed) {
+            clampIndex();
+        }
         return removed;
     }
 
@@ -122,6 +136,16 @@ public class WeaponInventory {
         // TODO: Implementar cuando ModifiedWeapon exponga WeaponType
         // Por ahora retornar false como placeholder para mantener compatibilidad
         return false;
+    }
+    
+    /**
+     * True si el portador posee la arma específica (misma referencia).
+     *
+     * @param weapon arma a verificar
+     * @return true si se posee
+     */
+    public boolean hasWeapon(ModifiedWeapon weapon) {
+        return weapons.contains(weapon);
     }
 
     // ── Cycling — selección activa ─────────────────────────────────────────

@@ -231,9 +231,10 @@ public final class PlayerRuntime {
      *   - Input handling en PlayerCombat
      *
      * @param weapon arma a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      */
-    public void acquireWeapon(ModifiedWeapon weapon) {
-        inventory.addWeapon(weapon);
+    public boolean acquireWeapon(ModifiedWeapon weapon) {
+        return inventory.addWeapon(weapon);
     }
 
     /**
@@ -261,9 +262,10 @@ public final class PlayerRuntime {
      *   - Input handling en PlayerCombat
      *
      * @param bulletType tipo de bala a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      */
-    public void acquireBullet(BulletType bulletType) {
-        inventory.addBullet(bulletType);
+    public boolean acquireBullet(BulletType bulletType) {
+        return inventory.addBullet(bulletType);
     }
 
     /**
@@ -286,9 +288,10 @@ public final class PlayerRuntime {
      * AmuletRegistry.applyAll() llamado desde ModifiedWeapon.
      *
      * @param amuletId ID del amuleto a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      */
-    public void acquireAmulet(String amuletId) {
-        inventory.addAmulet(amuletId);
+    public boolean acquireAmulet(String amuletId) {
+        return inventory.addAmulet(amuletId);
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────

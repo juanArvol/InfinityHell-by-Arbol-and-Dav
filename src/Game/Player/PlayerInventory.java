@@ -1,6 +1,7 @@
 package Game.Player;
 
 import Game.Items.Types.Ammulets.AmuletInventory;
+import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Bullets.BulletInventory;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
@@ -115,9 +116,10 @@ public final class PlayerInventory {
      * Delega a WeaponInventory.
      *
      * @param weapon arma a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      */
-    public void addWeapon(ModifiedWeapon weapon) {
-        weapons.addWeapon(weapon);
+    public boolean addWeapon(ModifiedWeapon weapon) {
+        return weapons.addWeapon(weapon);
     }
 
     /**
@@ -159,9 +161,10 @@ public final class PlayerInventory {
      * Delega a BulletInventory.
      *
      * @param bulletType tipo de bala a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
      */
-    public void addBullet(BulletType bulletType) {
-        bullets.addBullet(bulletType);
+    public boolean addBullet(BulletType bulletType) {
+        return bullets.addBullet(bulletType);
     }
 
     /**
@@ -200,22 +203,15 @@ public final class PlayerInventory {
 
     /**
      * Añade un amuleto al inventario.
-     * Delega a AmuletInventory.
+     * Resuelve el ID a AmuletDefinition antes de delegar a AmuletInventory.
      *
      * @param amuletId ID del amuleto a añadir
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
+     * @throws IllegalArgumentException si amuletId es null o no existe
      */
-    public void addAmulet(String amuletId) {
-        amulets.add(amuletId);
-    }
-
-    /**
-     * Lista de IDs de amuletos (con repeticiones).
-     * Delega a AmuletInventory.
-     *
-     * @return lista de IDs de amuletos
-     */
-    public List<String> getAmuletIds() {
-        return amulets.getIds();
+    public boolean addAmulet(String amuletId) {
+        var definition = AmuletRegistry.get(amuletId);
+        return amulets.add(definition);
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────
@@ -249,10 +245,10 @@ public final class PlayerInventory {
     }
 
     /**
-     * Número total de amuletos poseídos (incluyendo copias).
+     * Número total de amuletos únicos poseídos.
      */
     public int getAmuletCount() {
-        return amulets.totalCount();
+        return amulets.size();
     }
 
     // ── Limpieza ──────────────────────────────────────────────────────────

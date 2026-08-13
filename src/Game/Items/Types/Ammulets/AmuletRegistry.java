@@ -318,6 +318,36 @@ public final class AmuletRegistry {
      * @param behavior     behavior base a envolver
      * @return behavior con todos los efectos de amuleto aplicados
      */
+    /**
+     * Aplica todos los amuletos poseídos sobre las estadísticas y comportamiento.
+     * Versión directa que recibe definiciones sin conversión de IDs.
+     *
+     * @param ownedAmulets definiciones de amuletos que posee el jugador
+     * @param stats        estadísticas mutables a modificar
+     * @param behavior     comportamiento base a envolver
+     * @return behavior con todos los efectos de amuleto aplicados
+     */
+    public static BulletBehavior applyAllFromDefinitions(
+            List<AmuletDefinition> ownedAmulets,
+            WeaponStats stats,
+            BulletBehavior behavior) {
+
+        for (AmuletDefinition def : ownedAmulets) {
+            def.effect.applyToStats(stats);
+            behavior = def.effect.wrapBehavior(behavior);
+        }
+        return behavior;
+    }
+
+    /**
+     * Aplica todos los amuletos poseídos sobre las estadísticas y comportamiento.
+     * Versión legacy que recibe IDs y los resuelve internamente.
+     *
+     * @param ownedAmulets IDs de amuletos que posee el jugador
+     * @param stats        estadísticas mutables a modificar
+     * @param behavior     comportamiento base a envolver
+     * @return behavior con todos los efectos de amuleto aplicados
+     */
     public static BulletBehavior applyAll(
             List<String> ownedAmulets,
             WeaponStats stats,

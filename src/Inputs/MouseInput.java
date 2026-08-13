@@ -56,9 +56,42 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
     public static final MouseButton[] BUTTONS = {
         new MouseButton(MouseEvent.BUTTON1, "leftPressed",  "leftClick",   "leftRelease"),
         new MouseButton(MouseEvent.BUTTON3, "rightPressed", "rightClick",  "rightRelease"),
-        // Ejemplo para agregar botón central:
-        // new MouseButton(MouseEvent.BUTTON2, null, "middleClick", null),
+        new MouseButton(MouseEvent.BUTTON2, null, "middleClick", null),
     };
+
+    // ─── Traducción de acciones String → MouseAction (Mini-HRFC) ──────────────
+
+    /**
+     * Mapa de traducción desde string actions (configuración interna de MouseButton)
+     * hacia MouseAction enum (API tipada para consumidores).
+     *
+     * ── MINI-HRFC — TYPED MOUSE ACTIONS ────────────────────────────────────────
+     *
+     * Los strings de acciones permanecen como configuración en MouseButton para
+     * flexibilidad interna. La traducción a enums ocurre en esta frontera,
+     * manteniendo MouseInput agnóstico del gameplay mientras provee una API tipada.
+     *
+     * Solo las acciones definidas en MouseButton.BUTTONS tienen traducción.
+     * Acciones no mapeadas son ignoradas silenciosamente (compatibilidad futura).
+     */
+    private static final Map<String, MouseAction> ACTION_TRANSLATION = Map.of(
+        "leftClick",    MouseAction.LEFT_CLICK,
+        "leftRelease",  MouseAction.LEFT_RELEASE,
+        "rightClick",   MouseAction.RIGHT_CLICK,
+        "rightRelease", MouseAction.RIGHT_RELEASE,
+        "middleClick",  MouseAction.MIDDLE_CLICK
+    );
+
+    /**
+     * Traduce una acción string a MouseAction enum.
+     * Retorna null si la acción no tiene traducción definida.
+     *
+     * @param stringAction acción string desde MouseButton configuration
+     * @return MouseAction tipado correspondiente, o null si no mapeado
+     */
+    private static MouseAction translateAction(String stringAction) {
+        return ACTION_TRANSLATION.get(stringAction);
+    }
 
     // ─── Estado continuo de coordenadas en píxeles REALES del canvas (raw AWT) ─
 
@@ -230,11 +263,14 @@ public class MouseInput implements MouseListener, MouseMotionListener, MouseWhee
                             buttonStateMap.put(mb.stateKey, isPress);
                         }
 
-                        // Disparar acción semántica
-                        String action = isPress ? mb.pressAction : mb.releaseAction;
-                        if (action != null) {
-                            for (MouseActionListener l : listeners) {
-                                l.onMouseAction(action, vx, vy);
+                        // Disparar acción semántica tipada
+                        String stringAction = isPress ? mb.pressAction : mb.releaseAction;
+                        if (stringAction != null) {
+                            MouseAction typedAction = translateAction(stringAction);
+                            if (typedAction != null) {
+                                for (MouseActionListener l : listeners) {
+                                    l.onMouseAction(typedAction, vx, vy);
+                                }
                             }
                         }
                     }

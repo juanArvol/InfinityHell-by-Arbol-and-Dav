@@ -3,8 +3,8 @@ package Game.Gameplay.UI.Types;
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.UI.UIElement;
+import Game.Items.Types.Weapons.ModifiedWeapon.ProjectilePreview;
 import Game.Player.Player;
-import Game.Player.PlayerCombat;
 import Inputs.MouseInput;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -92,7 +92,7 @@ public class CrossHairHUD implements UIElement {
         // ── HRFC — Player Inventory & Domain Ownership Consolidation ─────
         // Usar ProjectilePreview desde PlayerCombat en lugar de reconstruir
         // manualmente el pipeline de disparo desde CrossHairHUD.
-        PlayerCombat.ProjectilePreview preview = player.getCombat().getProjectilePreview();
+        ProjectilePreview preview = player.getCombat().getProjectilePreview();
         
         if (preview == null) return; // Sin arma o bala activa
 

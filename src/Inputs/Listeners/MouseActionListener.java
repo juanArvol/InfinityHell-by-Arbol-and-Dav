@@ -1,19 +1,28 @@
 package Inputs.Listeners;
 
+import Inputs.MouseAction;
+
 /**
  * Listener de acciones de ratón del juego.
  *
  * ─── DISEÑO ───────────────────────────────────────────────────────────────────
  *
- *  · onMouseAction(String action, float vx, float vy) cubre press y release de
- *    cualquier botón. El action string es el declarado en MouseButton.pressAction
- *    o MouseButton.releaseAction. Añadir un botón nuevo no toca esta interfaz.
+ *  · onMouseAction(MouseAction action, float vx, float vy) cubre press y release de
+ *    cualquier botón. El MouseAction enum es tipado y cerrado. Añadir un botón 
+ *    nuevo requiere actualizar tanto MouseButton como MouseAction enum.
  *
  *  · onScroll y onMouseMoved mantienen firmas propias porque su semántica es
  *    estructuralmente distinta (delta numérico, coordenadas sin acción asociada).
  *
  *  · Las coordenadas se entregan ya en espacio virtual (via ViewportInfo),
  *    para que los suscriptores no necesiten conocer la resolución del monitor.
+ *
+ * ─── MINI-HRFC — TYPED MOUSE ACTIONS ──────────────────────────────────────────
+ *
+ *  Los String de acciones quedan encapsulados en MouseInput como configuración
+ *  interna. Los consumidores reciben MouseAction tipado:
+ *  
+ *  MouseInput ("middleClick") → MouseAction.MIDDLE_CLICK → PlayerCombat
  *
  * ─── CUÁNDO USAR LISTENER vs CONSULTA DIRECTA ────────────────────────────────
  *
@@ -25,12 +34,11 @@ public interface MouseActionListener {
     /**
      * Se invoca en el press o release de un botón que tiene action declarada.
      *
-     * @param action   identificador semántico, p.ej. "leftClick", "leftRelease",
-     *                 "rightClick". Definido en MouseButton.pressAction / releaseAction.
+     * @param action   acción tipada (LEFT_CLICK, MIDDLE_CLICK, RIGHT_CLICK, etc.).
      * @param virtualX coordenada X en espacio virtual del juego.
      * @param virtualY coordenada Y en espacio virtual del juego.
      */
-    default void onMouseAction(String action, float virtualX, float virtualY) {}
+    default void onMouseAction(MouseAction action, float virtualX, float virtualY) {}
 
     /**
      * Rueda del ratón girada.

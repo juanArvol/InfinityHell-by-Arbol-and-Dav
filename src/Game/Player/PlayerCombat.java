@@ -3,15 +3,11 @@ package Game.Player;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
-import Game.Items.Types.Ammulets.AmuletRegistry;
-import Game.Items.Types.Bullets.BulletComport.BulletStats;
-import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
-import Game.Items.Types.Bullets.ProjectileBlueprint;
 import Game.Items.Types.Weapons.ModifiedWeapon;
-import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import Inputs.Listeners.MouseActionListener;
+import Inputs.MouseAction;
 import Inputs.MouseInput;
 import java.util.List;
 import java.util.function.Consumer;
@@ -67,8 +63,19 @@ import java.util.function.Supplier;
  *
  * CrossHairHUD necesita stats del proyectil sin disparar realmente.
  * PlayerCombat provee getProjectilePreview() que calcula el ProjectileBlueprint
- * usando el mismo pipeline que el disparo real, luego deriva BulletStats
- * via BulletFactory.statsFrom().
+ * usando exactamente el mismo pipeline que el disparo real, incluyendo los
+ * multiplicadores de FireMode, luego deriva BulletStats via BulletFactory.statsFrom().
+ *
+ * ── HRFC — Phantom Bullet / Unified Projectile Resolution ─────────────────
+ *
+ * GARANTÍA DE CONSISTENCIA:
+ * El preview de trayectoria usa exactamente la misma resolución que el disparo real:
+ * - Mismo FireMode.handleInput() con estado actual de input
+ * - Mismo ProjectileResolver.resolveWithFireMode() 
+ * - Mismos multiplicadores de daño y velocidad
+ * - Misma aplicación de amuletos y efectos
+ * 
+ * La única diferencia: disparo real materializa proyectiles, preview solo calcula stats.
  *
  * ── DEPENDENCY INJECTION ─────────────────────────────────────────────────
  *
@@ -78,6 +85,20 @@ import java.util.function.Supplier;
  *   eventBus         → bus de eventos para emitir eventos de combate
  */
 public class PlayerCombat implements MouseActionListener {
+
+    // ── Equipment Cycling Mode ────────────────────────────────────────────
+    
+    /**
+     * Modo de cycling del equipamiento.
+     * Determina qué categoría de equipamiento se modifica al hacer scroll.
+     */
+    private enum EquipmentCycleMode {
+        WEAPON,
+        BULLET
+    }
+    
+    /** Modo actual de cycling — por defecto WEAPON según HRFC. */
+    private EquipmentCycleMode cycleMode = EquipmentCycleMode.WEAPON;
 
     private final PlayerState        state;
     private final PlayerRuntime      playerRuntime;
@@ -136,9 +157,65 @@ public class PlayerCombat implements MouseActionListener {
     // ── MouseActionListener ────────────────────────────────────────────────
 
     @Override
-    public void onMouseAction(String action, float virtualX, float virtualY) {
-        if ("leftClick".equals(action)) {
+    public void onMouseAction(MouseAction action, float virtualX, float virtualY) {
+        if (action == MouseAction.LEFT_CLICK) {
             clickFired = true;
+            return;
+        }
+
+        if (action == MouseAction.MIDDLE_CLICK) {
+            toggleEquipmentCycleMode();
+        }
+    }
+
+    // ── Equipment Cycling Control ─────────────────────────────────────────
+
+    /**
+     * Alterna el modo de cycling entre WEAPON y BULLET.
+     * Invocado por click del botón central del mouse (BUTTON2).
+     */
+    private void toggleEquipmentCycleMode() {
+        cycleMode = (cycleMode == EquipmentCycleMode.WEAPON)
+                ? EquipmentCycleMode.BULLET
+                : EquipmentCycleMode.WEAPON;
+    }
+
+    @Override
+    public void onScroll(int delta) {
+        if (delta == 0) {
+            return;
+        }
+
+        if (cycleMode == EquipmentCycleMode.WEAPON) {
+            cycleWeapon(delta);
+        } else {
+            cycleBullet(delta);
+        }
+    }
+
+    /**
+     * Cambia el arma según el delta del scroll.
+     * delta < 0 → rueda hacia arriba → arma anterior
+     * delta > 0 → rueda hacia abajo → arma siguiente
+     */
+    private void cycleWeapon(int delta) {
+        if (delta < 0) {
+            playerRuntime.previousWeapon();
+        } else {
+            playerRuntime.nextWeapon();
+        }
+    }
+
+    /**
+     * Cambia la bala según el delta del scroll.
+     * delta < 0 → rueda hacia arriba → bala anterior
+     * delta > 0 → rueda hacia abajo → bala siguiente
+     */
+    private void cycleBullet(int delta) {
+        if (delta < 0) {
+            playerRuntime.previousBullet();
+        } else {
+            playerRuntime.nextBullet();
         }
     }
 
@@ -149,10 +226,6 @@ public class PlayerCombat implements MouseActionListener {
 
         ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
         if (currentWeapon == null) return;
-
-        // ── Input de cambio de arma/bala ──────────────────────────────────
-        handleWeaponSwitching();
-        handleBulletSwitching();
 
         // ── Recarga manual ────────────────────────────────────────────────
         boolean reloadKeyPressed = Inputs.KeyBoard.getState("reload");
@@ -166,7 +239,7 @@ public class PlayerCombat implements MouseActionListener {
             // Evento de inicio de recarga (suscriptores opcionales: UI, audio)
             if (eventBus.hasListeners(WeaponEvents.OnReloadStart.class)) {
                 eventBus.post(new WeaponEvents.OnReloadStart(
-                        currentWeapon, currentWeapon.getComport().getStats().getCooldown()));
+                        currentWeapon, currentWeapon.getCooldown()));
             }
         }
 
@@ -230,42 +303,6 @@ public class PlayerCombat implements MouseActionListener {
                                  pos.getX(), pos.getY(), facingRight, aim);
     }
 
-    // ── Input de cambio de equipamiento ───────────────────────────────────
-
-    /**
-     * Maneja el input de cambio de arma.
-     */
-    private void handleWeaponSwitching() {
-        // Rueda del mouse o teclas para cambiar arma
-        if (Inputs.KeyBoard.getState("nextWeapon")) {
-            ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
-            playerRuntime.nextWeapon();
-            ModifiedWeapon current = playerRuntime.getCurrentWeapon();
-            emitWeaponSwitch(previous, current);
-        }
-        
-        if (Inputs.KeyBoard.getState("prevWeapon")) {
-            ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
-            playerRuntime.previousWeapon();
-            ModifiedWeapon current = playerRuntime.getCurrentWeapon();
-            emitWeaponSwitch(previous, current);
-        }
-    }
-
-    /**
-     * Maneja el input de cambio de bala.
-     */
-    private void handleBulletSwitching() {
-        // Teclas para cambiar tipo de bala
-        if (Inputs.KeyBoard.getState("nextBullet")) {
-            playerRuntime.nextBullet();
-        }
-        
-        if (Inputs.KeyBoard.getState("prevBullet")) {
-            playerRuntime.previousBullet();
-        }
-    }
-
     // ── Cambio de arma (delegación a PlayerRuntime) ──────────────────────
 
     /**
@@ -273,10 +310,7 @@ public class PlayerCombat implements MouseActionListener {
      * Delega en PlayerRuntime — PlayerCombat no gestiona la selección.
      */
     public void nextWeapon() { 
-        ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
         playerRuntime.nextWeapon(); 
-        ModifiedWeapon current = playerRuntime.getCurrentWeapon();
-        emitWeaponSwitch(previous, current);
     }
     
     /**
@@ -284,38 +318,37 @@ public class PlayerCombat implements MouseActionListener {
      * Delega en PlayerRuntime — PlayerCombat no gestiona la selección.
      */
     public void previousWeapon() { 
-        ModifiedWeapon previous = playerRuntime.getCurrentWeapon();
         playerRuntime.previousWeapon(); 
-        ModifiedWeapon current = playerRuntime.getCurrentWeapon();
-        emitWeaponSwitch(previous, current);
-    }
-
-    // ── Eventos ───────────────────────────────────────────────────────────
-
-    /**
-     * Emite evento de cambio de arma si hay suscriptores.
-     */
-    private void emitWeaponSwitch(ModifiedWeapon previous, ModifiedWeapon current) {
-        if (previous != current && eventBus.hasListeners(WeaponEvents.OnWeaponSwitch.class)) {
-            eventBus.post(new WeaponEvents.OnWeaponSwitch(previous, current));
-        }
     }
 
     // ── ProjectilePreview — para UI (CrossHairHUD) ────────────────────────
 
     /**
-     * Calcula las estadísticas del proyectil que se dispararía actualmente.
-     * Usa el mismo pipeline que el disparo real, pero sin crear Bullet.
+     * Calcula el preview del próximo disparo para mostrar en UI.
      *
-     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
+     * ── HRFC — Mini-HRFC: Desacoplar PlayerCombat de la resolución interna del arma ──────────────
      *
-     * Esta API reemplaza el uso directo de weapon.getBulletType().create()
-     * y BulletFactory desde CrossHairHUD. El HUD no debe conocer los detalles
-     * internos del pipeline de disparo.
+     * ANTES: PlayerCombat accedía directamente a los internals del arma:
+     *   - currentWeapon.getComport().getFireMode().queryResolution()
+     *   - ProjectileResolver.resolveWithFireModeQuery() 
+     *   - BulletFactory.statsFrom()
      *
-     * @return ProjectilePreview con stats calculados, o null si no hay arma/bala
+     * AHORA: PlayerCombat delega al dominio del arma:
+     *   - currentWeapon.getProjectilePreview()
+     *
+     * PlayerCombat se limita a su responsabilidad de orquestación:
+     *   1. Obtener arma y bala actuales del PlayerRuntime
+     *   2. Obtener estado de input actual
+     *   3. Calcular posición de spawn
+     *   4. Delegar resolución al dominio del arma
+     *
+     * La resolución interna del disparo permanece encapsulada en el dominio
+     * responsable (ModifiedWeapon), que conoce sobre FireMode, ProjectileResolver,
+     * multiplicadores, etc.
+     *
+     * @return ProjectilePreview con stats calculados incluyendo FireMode, o null si no hay arma/bala
      */
-    public ProjectilePreview getProjectilePreview() {
+    public ModifiedWeapon.ProjectilePreview getProjectilePreview() {
         ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
         BulletType currentBullet = playerRuntime.getCurrentBullet();
 
@@ -323,76 +356,17 @@ public class PlayerCombat implements MouseActionListener {
             return null;
         }
 
-        // Replicar el pipeline de ModifiedWeapon.tryShoot() sin disparar
-        WeaponStats effectiveStats = copyStats(currentWeapon.getStats());
-        var behavior = currentBullet.create();
+        // ── Obtener estado actual de input ────────────────────────────────
+        boolean holding = MouseInput.getButtonState("leftPressed");
         
-        // Aplicar amuletos del jugador (igual que en disparo real)
-        behavior = AmuletRegistry.applyAll(
-            playerRuntime.getInventory().amulets().getIds(), 
-            effectiveStats, 
-            behavior
-        );
-
-        double finalSpeed = effectiveStats.getBulletSpeedBase() 
-                           * behavior.getDefaultData().speedFactor();
-        double finalDamage = effectiveStats.getDamageBonusByWeapon() 
-                            + behavior.getDefaultData().damage();
-
-        // Crear ProjectileBlueprint (igual que en disparo real)
-        ProjectileBlueprint blueprint = ProjectileBlueprint.from(
-            behavior, finalSpeed, finalDamage
-        );
-
-        // Derivar BulletStats via BulletFactory.statsFrom()
-        BulletStats stats = BulletFactory.statsFrom(blueprint);
-
+        // ── Calcular posición de spawn ────────────────────────────────────
         Vector2D spawnPosition = (positionSupplier != null) 
             ? positionSupplier.get().add(new Vector2D(20, 20))  // Offset del spawn
             : new Vector2D(20, 20);
 
-        return new ProjectilePreview(
-            stats.getSpeed(),
-            stats.getDamage(), 
-            stats.getLifeTime(),
-            stats.hasGravity(),
-            spawnPosition
-        );
+        // ── Delegar al dominio del arma ───────────────────────────────────
+        // El arma encapsula toda la resolución interna: FireMode, ProjectileResolver, BulletFactory
+        return currentWeapon.getProjectilePreview(currentBullet, holding, spawnPosition);
     }
 
-    /**
-     * Copia mutable de WeaponStats — helper compartido con ModifiedWeapon.
-     */
-    private static WeaponStats copyStats(WeaponStats src) {
-        return new WeaponStats(
-            src.getCooldown(),
-            src.getBulletsPerShot(),
-            src.getSpread(),
-            src.getDamageBonusByWeapon(),
-            src.getBulletSpeedBase()
-        );
-    }
-
-    /**
-     * Preview de proyectil para UI — encapsula stats calculados.
-     *
-     * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
-     *
-     * Reemplaza el uso directo de weapon.getBulletType() + ProjectileBlueprint
-     * + BulletFactory desde CrossHairHUD. El HUD consulta este record inmutable
-     * en lugar de reconstruir manualmente el pipeline de disparo.
-     *
-     * @param speed        velocidad del proyectil (unidades/frame)
-     * @param damage       daño del proyectil
-     * @param lifeTime     frames de vida máximos
-     * @param hasGravity   true si el proyectil tiene gravedad
-     * @param spawnPosition posición de spawn del proyectil (mundo)
-     */
-    public record ProjectilePreview(
-        double speed,
-        double damage,
-        int lifeTime,
-        boolean hasGravity,
-        Vector2D spawnPosition
-    ) {}
 }

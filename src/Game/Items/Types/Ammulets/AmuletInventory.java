@@ -2,9 +2,7 @@ package Game.Items.Types.Ammulets;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Inventario de amuletos — autoridad del dominio Ammulets.
@@ -22,7 +20,7 @@ import java.util.Map;
  *
  *   AmuletInventory
  *         │
- *         └── posee IDs de amuletos (con repetición permitida)
+ *         └── posee AmuletDefinitions únicas (sin repetición)
  *                       │
  *                       ▼
  *               AmuletRegistry
@@ -30,109 +28,113 @@ import java.util.Map;
  *                       ▼
  *             definición / comportamiento
  *
+ * ── CAMBIO DE MODELO ──────────────────────────────────────────────────────
+ *
+ * ANTES (acumulativo):
+ *   List<String> ids + Map<String, Integer> counts
+ *   bone_tip x3, swift_quill x2
+ *
+ * AHORA (único por tipo):
+ *   List<AmuletDefinition> amulets
+ *   bone_tip (una vez), swift_quill (una vez)
+ *
  * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
- *   • Almacenar IDs de amuletos poseídos (con repetición)
- *   • Gestionar adquisición de amuletos
- *   • Mantener conteo por ID para la UI
- *   • Exponer la lista de IDs para que AmuletRegistry.applyAll() la itere
- *
- * ── MODELO ────────────────────────────────────────────────────────────────
- *
- * Los amuletos se almacenan como una lista de IDs (con repetición permitida).
- * Si el jugador tiene 3x "Punta Ósea", la lista contiene tres veces "bone_tip".
- *
- * Esto permite que AmuletRegistry.applyAll() los itere y aplique N veces,
- * logrando el efecto acumulativo sin necesidad de lógica especial.
- *
- * Los amuletos son infinitamente acumulables por diseño.
+ *   • Almacenar definiciones de amuletos poseídos (sin duplicación)
+ *   • Gestionar adquisición única por tipo mediante verificación en add()
+ *   • Prevenir duplicados por verificación de ID
+ *   • Exponer la lista de AmuletDefinitions para que AmuletRegistry.applyAll() la itere
  *
  * ── SEPARACIÓN AmuletInventory ≠ AmuletRegistry ──────────────────────────
  *
- *   AmuletInventory → qué amuletos posee el portador
+ *   AmuletInventory → qué amuletos posee el portador (únicos)
  *   AmuletRegistry  → cómo se resuelven definiciones y comportamientos
  *
- * AmuletInventory NO aplica efectos. Solo almacena posesión.
+ * AmuletInventory NO aplica efectos. Solo almacena posesión única.
  *
  * ── INTEGRACIÓN ──────────────────────────────────────────────────────────
  *
- * ModifiedWeapon llama AmuletRegistry.applyAll(amulets.getIds(), stats, behavior)
- * para aplicar efectos acumulativos durante el disparo.
+ * ModifiedWeapon llama AmuletRegistry.applyAll(amulets.getAll(), stats, behavior)
+ * Los efectos se aplican una vez por tipo de amuleto, no acumulativamente.
  */
 public final class AmuletInventory {
 
-    /** Lista de IDs con repetición (un ID por copia del amuleto). */
-    private final List<String> ids = new ArrayList<>();
-
-    /** Conteo rápido por ID para la UI (evita recalcular en cada frame). */
-    private final Map<String, Integer> counts = new HashMap<>();
+    /** Definiciones de amuletos poseídos — unicidad garantizada por verificación en add(). */
+    private final List<AmuletDefinition> amulets = new ArrayList<>();
 
     // ── Gestión de amuletos ───────────────────────────────────────────────
 
     /**
-     * Añade una copia de un amuleto al inventario.
-     * Los amuletos son infinitamente acumulables por diseño.
+     * Añade un amuleto al inventario.
+     * Si ya se posee (misma referencia o mismo ID), la operación es idempotente (no-op).
      *
-     * @param amuletId ID del amuleto a añadir. No puede ser null.
-     * @throws IllegalArgumentException si amuletId es null
+     * @param amulet definición del amuleto a añadir. No puede ser null.
+     * @return true si se añadió (nueva adquisición), false si ya se poseía
+     * @throws IllegalArgumentException si amulet es null
      */
-    public void add(String amuletId) {
-        if (amuletId == null) throw new IllegalArgumentException("amuletId no puede ser null");
-        ids.add(amuletId);
-        counts.merge(amuletId, 1, Integer::sum);
+    public boolean add(AmuletDefinition amulet) {
+        if (amulet == null) throw new IllegalArgumentException("amulet no puede ser null");
+        
+        // Verificar duplicidad por ID (ya que AmuletDefinition no implementa equals)
+        for (AmuletDefinition existing : amulets) {
+            if (existing.id.equals(amulet.id)) {
+                return false; // Ya se posee
+            }
+        }
+        
+        amulets.add(amulet);
+        return true;
+    }
+
+
+
+    /**
+     * Elimina un amuleto del inventario.
+     *
+     * @param amulet definición del amuleto a eliminar
+     * @return true si se eliminó, false si no se encontró
+     */
+    public boolean remove(AmuletDefinition amulet) {
+        return amulets.remove(amulet);
     }
 
     // ── Consultas ─────────────────────────────────────────────────────────
 
     /**
-     * Lista de IDs para que AmuletRegistry.applyAll() la itere.
-     * Incluye repeticiones — un ID por copia del amuleto.
+     * Lista inmutable de definiciones de amuletos poseídos.
      *
-     * @return lista inmutable de IDs. Nunca null.
+     * @return lista de definiciones. Nunca null, puede estar vacía.
      */
-    public List<String> getIds() {
-        return Collections.unmodifiableList(ids);
+    public List<AmuletDefinition> getAll() {
+        return Collections.unmodifiableList(amulets);
     }
 
     /**
-     * Cuántas copias tiene el portador de un amuleto específico.
-     * Útil para la UI de inventario.
+     * True si el portador posee el amuleto indicado.
      *
-     * @param amuletId ID del amuleto
-     * @return cantidad de copias (0 si no se posee)
-     */
-    public int countOf(String amuletId) {
-        return counts.getOrDefault(amuletId, 0);
-    }
-
-    /**
-     * True si el portador posee al menos una copia del amuleto indicado.
-     *
-     * @param amuletId ID del amuleto
+     * @param amulet definición del amuleto
      * @return true si se posee
      */
-    public boolean has(String amuletId) {
-        return counts.containsKey(amuletId);
+    public boolean has(AmuletDefinition amulet) {
+        if (amulet == null) return false;
+        
+        // Verificar por ID ya que AmuletDefinition no implementa equals
+        for (AmuletDefinition existing : amulets) {
+            if (existing.id.equals(amulet.id)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    /** Total de amuletos (incluyendo copias). */
-    public int totalCount() {
-        return ids.size();
+    /** Total de amuletos únicos poseídos. */
+    public int size() {
+        return amulets.size();
     }
 
     /** True si no se poseen amuletos. */
     public boolean isEmpty() {
-        return ids.isEmpty();
-    }
-
-    /**
-     * Snapshot de cuántas copias hay de cada amuleto.
-     * Útil para la UI de inventario.
-     *
-     * @return mapa inmutable de ID → cantidad
-     */
-    public Map<String, Integer> getCounts() {
-        return Collections.unmodifiableMap(counts);
+        return amulets.isEmpty();
     }
 
     // ── Limpieza ──────────────────────────────────────────────────────────
@@ -141,7 +143,6 @@ public final class AmuletInventory {
      * Limpia todos los amuletos — útil al terminar una run o en testing.
      */
     public void clear() {
-        ids.clear();
-        counts.clear();
+        amulets.clear();
     }
 }
