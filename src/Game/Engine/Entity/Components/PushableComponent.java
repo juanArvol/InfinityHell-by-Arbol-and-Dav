@@ -129,6 +129,30 @@ public final class PushableComponent extends Component {
     /**
      * Aplica un impulso de empuje a la entidad propietaria.
      *
+     * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
+     *
+     * ── SEMÁNTICA ─────────────────────────────────────────────────────────
+     * applyPush() recibe un IMPULSO INSTANTÁNEO (no fuerza continua).
+     *
+     * El contrato es:
+     *   pushable.applyPush(fx, fy) → Physics2D.addForce(fx × receptivity, fy × receptivity)
+     *                               → velocity += (F / mass)
+     *
+     * El cambio de velocidad es INMEDIATO. La entidad reacciona en este mismo frame.
+     *
+     * ── USO TÍPICO ────────────────────────────────────────────────────────
+     *   - Knockback de explosiones (MetheorBullet)
+     *   - Empuje radial de área
+     *   - Impactos de proyectiles pesados
+     *   - Interacciones físicas puntuales
+     *
+     * ── DIFERENCIA CON FUERZAS CONTINUAS ──────────────────────────────────
+     * Para fuerzas continuas (viento, corrientes), los sistemas externos
+     * usan Physics2D.accumulate() directamente, no PushableComponent.
+     *
+     * PushableComponent es exclusivamente para IMPULSOS DISCRETOS.
+     *
+     * ── IMPLEMENTACIÓN ────────────────────────────────────────────────────
      * Si la entidad tiene {@link Physics2DComponent}, el impulso se
      * transmite a la simulación física vía {@code addForce()}.
      * Si no tiene física, el empuje no produce efecto físico —
@@ -138,8 +162,8 @@ public final class PushableComponent extends Component {
      *   fx_efectivo = fx × pushReceptivity
      *   fy_efectivo = fy × pushReceptivity
      *
-     * @param fx componente X del impulso de empuje (en unidades de fuerza)
-     * @param fy componente Y del impulso de empuje (en unidades de fuerza)
+     * @param fx componente X del impulso de empuje (en unidades de fuerza).
+     * @param fy componente Y del impulso de empuje (en unidades de fuerza).
      */
     public void applyPush(double fx, double fy) {
         if (!enabled || gameObject == null) return;

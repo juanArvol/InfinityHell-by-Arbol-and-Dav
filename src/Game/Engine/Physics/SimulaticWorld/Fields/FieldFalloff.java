@@ -1,4 +1,4 @@
-package Game.Engine.Physics.World.Fields;
+package Game.Engine.Physics.SimulaticWorld.Fields;
 
 /**
  * Función de atenuación de la intensidad de un campo con la distancia.

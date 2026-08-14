@@ -1,7 +1,7 @@
 package Game.Player;
 
 import Game.Engine.Entity.Components.ThermalComponent;
-import Game.Engine.Physics.World.WorldSimulation;
+import Game.Engine.Physics.SimulaticWorld.WorldSimulation;
 
 /**
  * Integración del Player con la simulación física genérica del Engine.

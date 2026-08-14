@@ -1,12 +1,13 @@
 package Game.Engine.Physics.Core;
 
-import Game.Engine.Physics.World.Graph.DependencyGraph;
-import Game.Engine.Physics.World.Graph.GraphEdge;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+
+import Game.Engine.Physics.SimulaticWorld.Graph.DependencyGraph;
+import Game.Engine.Physics.SimulaticWorld.Graph.GraphEdge;
 
 /**
  * Grafo de dependencias físicas del universo.

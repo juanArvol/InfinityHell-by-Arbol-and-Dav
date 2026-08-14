@@ -1,4 +1,4 @@
-package Game.Engine.Physics.World.Presets;
+package Game.Engine.Physics.SimulaticWorld.Presets;
 
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.GameObjects;
@@ -8,10 +8,10 @@ import Game.Engine.Physics.Core.SimulationContextComponent;
 import Game.Engine.Physics.Electrical.ElectricalProperties;
 import Game.Engine.Physics.Fluid.FluidProperties;
 import Game.Engine.Physics.Mechanical.MechanicalProperties;
+import Game.Engine.Physics.SimulaticWorld.Fields.FieldFalloff;
+import Game.Engine.Physics.SimulaticWorld.Fields.ScalarField;
+import Game.Engine.Physics.SimulaticWorld.Fields.VectorField;
 import Game.Engine.Physics.Thermal.ThermalProperties;
-import Game.Engine.Physics.World.Fields.FieldFalloff;
-import Game.Engine.Physics.World.Fields.ScalarField;
-import Game.Engine.Physics.World.Fields.VectorField;
 
 /**
  * Factories para WorldField concretos del universo de Infinity Hell.

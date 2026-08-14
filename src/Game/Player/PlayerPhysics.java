@@ -10,9 +10,24 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * Vive en Game.Player porque es una regla del juego (parámetros de
  * movimiento del jugador), no infraestructura reutilizable.
  *
+ * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
+ *
  * MIGRADO DESDE: Game.Engine.GameMath.Physics.Implementation.PlayerPhysics
  * RAZÓN: PlayerPhysics contiene valores de gameplay específicos del jugador
  * (RUN_BOOST, speedMaxPiso, slide). No es infraestructura genérica del Engine.
+ *
+ * ── Propiedades Aerodinámicas ────────────────────────────────────────────
+ *
+ * El Player tiene propiedades aerodinámicas configuradas para producir
+ * una velocidad terminal de caída razonable (~20-25 px/frame).
+ *
+ * Con gravity=0.4, mass=1.0, effectiveArea=1.2, dragCoefficient=0.8:
+ *   - Velocidad terminal ≈ 22 px/frame
+ *   - Comportamiento de caída natural y controlado
+ *   - Sin límites artificiales
+ *
+ * Estas propiedades pueden ajustarse durante el gameplay (power-ups,
+ * estados alterados) sin modificar el core de física.
  *
  * ── Capas de modificador ─────────────────────────────────────────────────
  *
@@ -53,11 +68,25 @@ public class PlayerPhysics extends Physics2D {
     /** Aceleración base en el aire (menor → menos control aéreo brusco). */
     private static final double ACCEL_AIR         = 1.07;
 
+    // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────────
+    // Configuradas para producir velocidad terminal ≈ 22 px/frame con gravity=0.4
+
+    /** Área efectiva del jugador expuesta al flujo de aire. */
+    private static final double PLAYER_EFFECTIVE_AREA = 1.2;
+
+    /** Coeficiente de drag del jugador (forma humana en caída). */
+    private static final double PLAYER_DRAG_COEFFICIENT = 0.8;
+
     public PlayerPhysics(double gravity) {
         super(gravity);
-        mass    = 1.0;
-        aGround = ACCEL_GROUND;
-        aAir    = ACCEL_AIR;
+        mass            = 1.0;
+        aGround         = ACCEL_GROUND;
+        aAir            = ACCEL_AIR;
+
+        // Configurar propiedades aerodinámicas del jugador
+        effectiveArea   = PLAYER_EFFECTIVE_AREA;
+        dragCoefficient = PLAYER_DRAG_COEFFICIENT;
+        // mediumDensity ya tiene el default correcto (1.225)
     }
 
     /**

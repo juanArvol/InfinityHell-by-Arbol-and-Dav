@@ -8,6 +8,12 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * Almacena y expone la velocidad del proyectil. La integración de posición
  * la hace CollisionsSystem en FASE 1B con Swept AABB, no Bullet.update().
  *
+ * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
+ *
+ * BulletPhysics ahora configura propiedades aerodinámicas por defecto
+ * para proyectiles con GravityMovement. Los proyectiles son típicamente
+ * pequeños y aerodinámicos, resultando en velocidades terminales altas.
+ *
  * ── HRFC — Weapon & Projectile System ────────────────────────────────────
  *
  * La gravedad ya no se gestiona en BulletPhysics. Antes el constructor
@@ -67,6 +73,14 @@ public class BulletPhysics extends Physics2D {
         setMass(1);
         velocity.setX(xSpeed);
         velocity.setY(ySpeed);
+
+        // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────
+        // Los proyectiles son típicamente pequeños y aerodinámicos.
+        // Estos valores producen velocidades terminales altas (~40-50 px/frame).
+        // Behaviors específicos (MetheorBullet) pueden ajustarlos.
+        effectiveArea = 0.3;      // área pequeña
+        dragCoefficient = 0.15;   // forma aerodinámica
+        // mediumDensity usa default (1.225)
     }
 
     /** CollisionsSystem NO aplica gravedad externa a este objeto. */

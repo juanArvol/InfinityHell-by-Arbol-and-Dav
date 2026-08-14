@@ -1,4 +1,4 @@
-package Game.Engine.Physics.World;
+package Game.Engine.Physics.SimulaticWorld;
 
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Core.PhysicalRelation;
@@ -11,9 +11,10 @@ import Game.Engine.Physics.Fluid.FluidModule;
 import Game.Engine.Physics.Gravity.GravityModule;
 import Game.Engine.Physics.Kinematic.KinematicModule;
 import Game.Engine.Physics.Mechanical.MechanicalModule;
+import Game.Engine.Physics.SimulaticWorld.Fields.WorldFieldSystem;
+import Game.Engine.Physics.SimulaticWorld.Influences.InfluenceSystem;
 import Game.Engine.Physics.Thermal.ThermalModule;
-import Game.Engine.Physics.World.Fields.WorldFieldSystem;
-import Game.Engine.Physics.World.Influences.InfluenceSystem;
+
 import java.util.List;
 
 /**

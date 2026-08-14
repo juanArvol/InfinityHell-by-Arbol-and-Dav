@@ -1,4 +1,4 @@
-package Game.Engine.Physics.World.Influences;
+package Game.Engine.Physics.SimulaticWorld.Influences;
 
 import Game.Engine.GameObjects;
 

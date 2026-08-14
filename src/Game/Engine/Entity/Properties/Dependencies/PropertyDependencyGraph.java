@@ -1,8 +1,9 @@
 package Game.Engine.Entity.Properties.Dependencies;
 
 import Game.Engine.Entity.Properties.PropertyKey;
-import Game.Engine.Physics.World.Graph.DependencyGraph;
-import Game.Engine.Physics.World.Graph.GraphEdge;
+import Game.Engine.Physics.SimulaticWorld.Graph.DependencyGraph;
+import Game.Engine.Physics.SimulaticWorld.Graph.GraphEdge;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

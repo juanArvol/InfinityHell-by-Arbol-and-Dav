@@ -76,6 +76,13 @@ public class MetheorBullet extends BulletBehavior {
     private static final int    DEFAULT_LIFETIME     = 300;  // 5 segundos a 60fps
     private static final double PUSH_FORCE_SCALE     = 0.1;  // escalado de fuerza de empuje
 
+    // ── Propiedades físicas del meteoro (HRFC — Consolidación) ───────────
+    // El meteoro es masivo y poco aerodinámico, resultando en velocidad
+    // terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
+    private static final double METEOR_MASS              = 3.0;   // 3x más masivo que proyectil normal
+    private static final double METEOR_EFFECTIVE_AREA    = 1.5;   // área grande
+    private static final double METEOR_DRAG_COEFFICIENT  = 1.2;   // forma poco aerodinámica (roca irregular)
+
     @Override
     public ProjectileData getDefaultData() {
         return new ProjectileData(
@@ -93,6 +100,23 @@ public class MetheorBullet extends BulletBehavior {
     public ProjectileMovement getDefaultMovement() {
         // GravityMovement se compondrá con el movimiento lineal base del proyectil
         return new GravityMovement(GRAVITY_STRENGTH);
+    }
+
+    /**
+     * Configurar propiedades físicas del meteoro al ser adquirido del pool
+     * o recién creado.
+     *
+     * El meteoro es masivo y poco aerodinámico, produciendo velocidad
+     * terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
+     */
+    @Override
+    public void onAttached(Bullet bullet) {
+        super.onAttached(bullet);
+
+        var physics = bullet.getPhysics();
+        physics.setMass(METEOR_MASS);
+        physics.setEffectiveArea(METEOR_EFFECTIVE_AREA);
+        physics.setDragCoefficient(METEOR_DRAG_COEFFICIENT);
     }
 
     @Override

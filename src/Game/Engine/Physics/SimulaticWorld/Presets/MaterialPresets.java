@@ -1,4 +1,4 @@
-package Game.Engine.Physics.World.Presets;
+package Game.Engine.Physics.SimulaticWorld.Presets;
 
 import Game.Engine.Entity.Components.Collisions.MaterialComponent;
 

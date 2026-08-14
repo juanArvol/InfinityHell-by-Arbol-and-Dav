@@ -9,7 +9,7 @@ public class WeaponEscopeta extends WeaponComport {
     public WeaponEscopeta() {
         super(new WeaponStats(
             30, // cooldown
-            8, // balas por disparo
+            124, // balas por disparo
             35, // spread
             17, // daño
             20 // velocidad

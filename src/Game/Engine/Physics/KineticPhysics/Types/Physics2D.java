@@ -9,6 +9,8 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 /**
  * Clase base de física.
  *
+ * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
+ *
  * ── Diseño de velocidad en capas ─────────────────────────────────────────
  *
  *   vFinal = baseAccel
@@ -27,11 +29,22 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
  * todos sus modificadores multiplicativamente, de modo que varios efectos
  * de estado coexisten sin pisarse:
  *
- * ── drag vs friction ────────────────────────────────────────────────────
+ * ── Surface drag vs Aerodynamic drag ─────────────────────────────────────
+ *
+ *   Surface drag (SurfaceMaterial.getDrag()):
+ *     Amortiguación PASIVA de vx cuando NO hay input (frenado horizontal).
+ *     Se multiplica por el slide base de la subclase.
+ *     Representa fricción superficial del contacto.
+ *
+ *   Aerodynamic drag (applyAerodynamicDrag()):
+ *     Resistencia del medio (aire) que actúa en dirección opuesta a la
+ *     velocidad relativa. Produce naturalmente velocidad terminal de caída.
+ *     F_drag = 0.5 × ρ × Cd × A × v²
+ *     La velocidad terminal emerge cuando F_gravity ≈ F_drag.
+ *
+ * ── friction ─────────────────────────────────────────────────────────────
  *
  *   friction — escala la aceleración ACTIVA (cuando hay input).
- *   drag     — amortiguación PASIVA de vx (cuando NO hay input).
- *              Se multiplica por el slide base de la subclase.
  *
  * ── Acumulación de fuerzas (HRFC-014 — GAP-5) ───────────────────────────
  *
@@ -54,6 +67,19 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
  *     }
  *     // Antes de CollisionsSystem o en CollisionsSystem.FASE 0.5:
  *     physics.flushAccumulatedForces();
+ *
+ * ── Velocidad terminal ───────────────────────────────────────────────────
+ *
+ *   La velocidad terminal NO se almacena como constante.
+ *   Emerge naturalmente del balance entre gravedad y drag aerodinámico:
+ *
+ *     F_gravity = m × g
+ *     F_drag    = 0.5 × ρ × Cd × A × v²
+ *
+ *   Cuando F_net ≈ 0 → a ≈ 0 → velocidad terminal alcanzada.
+ *
+ *   Objetos con diferente masa/área/coeficiente presentan velocidades
+ *   terminales diferentes, como corresponde físicamente.
  */
 public class Physics2D {
 
@@ -78,7 +104,35 @@ public class Physics2D {
     protected boolean salto;
     protected boolean running;
 
-    protected double maxFallSpeed = 20.0;
+    // ── Propiedades aerodinámicas (HRFC — Consolidación Kinetic Physics) ─
+    // Propiedades que determinan la resistencia aerodinámica del objeto.
+    // La velocidad terminal emerge naturalmente del balance F_gravity ≈ F_drag.
+
+    /**
+     * Área efectiva del objeto expuesta al flujo de aire (en unidades²).
+     * Mayor área → mayor resistencia → menor velocidad terminal.
+     * Default: 1.0 (objeto de tamaño unitario).
+     */
+    protected double effectiveArea = 1.0;
+
+    /**
+     * Coeficiente de drag aerodinámico [típicamente 0.1 - 2.0].
+     * Representa la forma aerodinámica del objeto:
+     *   ~0.05: aerodinámica extrema (bala)
+     *   ~0.5:  objeto razonablemente aerodinámico
+     *   ~1.0:  objeto no optimizado (caja, persona)
+     *   ~2.0:  objeto muy poco aerodinámico
+     * Default: 0.47 (aproximadamente esférico).
+     */
+    protected double dragCoefficient = 0.47;
+
+    /**
+     * Densidad del medio (aire) en kg/m³.
+     * Aire a nivel del mar ≈ 1.225 kg/m³.
+     * Este valor puede modificarse para simular diferentes atmósferas o alturas.
+     * Default: 1.225 (aire estándar).
+     */
+    protected double mediumDensity = 1.225;
 
     protected SurfaceMaterial currentSurface = SurfaceMaterial.DEFAULT;
 
@@ -220,13 +274,61 @@ public class Physics2D {
         speedMax = onGround ? speedMaxPiso : speedMaxAir;
     }
 
-    // ── Gravedad ──────────────────────────────────────────────────────────
+    // ── Gravedad y Drag Aerodinámico ─────────────────────────────────────
 
+    /**
+     * Aplica gravedad y resistencia aerodinámica del medio.
+     *
+     * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
+     *
+     * La velocidad terminal NO se impone artificialmente.
+     * Emerge naturalmente del balance entre fuerzas:
+     *
+     *   F_gravity = m × g (hacia abajo)
+     *   F_drag = 0.5 × ρ × Cd × A × v² (opuesta a la velocidad)
+     *
+     * Cuando F_net ≈ 0 → velocidad terminal alcanzada.
+     *
+     * Este método:
+     *   1. Aplica gravedad: a_gravity = g (NO escalada por masa — corrección física)
+     *   2. Calcula drag aerodinámico: F_drag = 0.5 × ρ × Cd × A × vy²
+     *   3. Aplica drag como deceleración: a_drag = F_drag / m
+     *   4. Integra aceleración neta: vy += (a_gravity - a_drag)
+     *
+     * Nota física importante:
+     *   - La gravedad produce aceleración constante g independiente de la masa.
+     *   - El drag produce fuerza proporcional a v², que se divide por masa.
+     *   - Objetos más masivos alcanzan mayor velocidad terminal (menor a_drag relativa).
+     *   - Objetos con mayor área alcanzan menor velocidad terminal (mayor F_drag).
+     *
+     * @param onGround si true, no aplica gravedad (objeto en contacto con suelo).
+     */
     public void applyGravity(boolean onGround) {
-        if (!onGround) {
-            double newVy = velocity.getY() + (gravity * mass);
-            velocity.setY(Math.min(newVy, maxFallSpeed));
-        }
+        if (onGround) return;
+
+        // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──
+        double a_gravity = gravity;
+
+        // ── 2. Resistencia aerodinámica ──────────────────────────────────
+        // F_drag = 0.5 × ρ × Cd × A × v²
+        // Actúa en dirección opuesta a la velocidad.
+        double vy = velocity.getY();
+        double speed = Math.abs(vy);
+        double dragForce = 0.5 * mediumDensity * dragCoefficient * effectiveArea * speed * speed;
+
+        // Dirección del drag: opuesta a la velocidad
+        // Si vy > 0 (cayendo) → drag hacia arriba (negativo)
+        // Si vy < 0 (subiendo) → drag hacia abajo (positivo)
+        double dragDirection = (vy >= 0) ? -1.0 : 1.0;
+
+        // ── 3. Aceleración por drag (F / m) ──────────────────────────────
+        double a_drag = (dragForce / mass) * dragDirection;
+
+        // ── 4. Integración de aceleración neta ───────────────────────────
+        double a_net = a_gravity + a_drag;
+        double newVy = vy + a_net;
+
+        velocity.setY(newVy);
     }
 
     // ── Salto ─────────────────────────────────────────────────────────────
@@ -258,7 +360,50 @@ public class Physics2D {
     public double getMass()                  { return mass; }
     public void setJumping(boolean jumping)  { this.salto = jumping; }
     public Vector2D getVelocity()            { return velocity; }
-    public void setMaxFallSpeed(double s)    { this.maxFallSpeed = s; }
+
+    // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────────
+
+    /**
+     * Establece el área efectiva expuesta al flujo de aire.
+     * Mayor área → mayor resistencia → menor velocidad terminal.
+     *
+     * @param area área en unidades². Debe ser > 0.
+     */
+    public void setEffectiveArea(double area) {
+        if (area <= 0) throw new IllegalArgumentException("area debe ser > 0");
+        this.effectiveArea = area;
+    }
+
+    public double getEffectiveArea() { return effectiveArea; }
+
+    /**
+     * Establece el coeficiente de drag aerodinámico.
+     * Representa la forma aerodinámica del objeto.
+     *
+     * @param cd coeficiente de drag [típicamente 0.1 - 2.0]. Debe ser >= 0.
+     */
+    public void setDragCoefficient(double cd) {
+        if (cd < 0) throw new IllegalArgumentException("dragCoefficient debe ser >= 0");
+        this.dragCoefficient = cd;
+    }
+
+    public double getDragCoefficient() { return dragCoefficient; }
+
+    /**
+     * Establece la densidad del medio (aire).
+     * Permite simular diferentes atmósferas o altitudes.
+     *
+     * @param density densidad en kg/m³. Debe ser >= 0.
+     */
+    public void setMediumDensity(double density) {
+        if (density < 0) throw new IllegalArgumentException("mediumDensity debe ser >= 0");
+        this.mediumDensity = density;
+    }
+
+    public double getMediumDensity() { return mediumDensity; }
+
+    // ─────────────────────────────────────────────────────────────────────
+
     public double getGravity()               { return gravity; }
     public void setGravity(double g)         { this.gravity = g; }
     public double getOposite(double x)       { return -x; }
@@ -271,6 +416,35 @@ public class Physics2D {
     public boolean getOnCeiling()            { return onCeiling; }
     public void setOnCeiling(boolean v)      { this.onCeiling = v; }
 
+    // ── Fuerzas e Impulsos (HRFC — Consolidación Semántica) ──────────────
+
+    /**
+     * Aplica un impulso instantáneo sobre la velocidad.
+     *
+     * ── SEMÁNTICA ─────────────────────────────────────────────────────────
+     * addForce() representa una aplicación INMEDIATA de un impulso discreto:
+     *
+     *   Δv = J / m
+     *
+     * donde J es el impulso aplicado durante este step.
+     *
+     * ── USO TÍPICO ────────────────────────────────────────────────────────
+     *   - Knockback de explosiones (MetheorBullet)
+     *   - Empuje radial (PushableComponent)
+     *   - Impactos puntuales
+     *   - Saltos
+     *   - Rebotes
+     *
+     * ── DIFERENCIA CON accumulate() ───────────────────────────────────────
+     *   addForce()   → impulso instantáneo aplicado inmediatamente
+     *   accumulate() → fuerza continua acumulada hasta flushAccumulatedForces()
+     *
+     * Para fuerzas continuas (viento, campos vectoriales, gravedad de zona),
+     * usar {@link #accumulate(double, double)} en su lugar.
+     *
+     * @param fx componente X del impulso (en unidades de fuerza).
+     * @param fy componente Y del impulso (en unidades de fuerza).
+     */
     public void addForce(double fx, double fy) {
         velocity.setX(velocity.getX() + (fx / mass));
         velocity.setY(velocity.getY() + (fy / mass));
@@ -278,12 +452,39 @@ public class Physics2D {
 
     /**
      * Acumula una fuerza continua para ser integrada en el siguiente
-     * {@link #flushAccumulatedForces()}. Puede llamarse múltiples veces
-     * en el mismo frame desde distintos sistemas (viento, gravedad de zona,
-     * campo magnético) — todas se suman.
+     * {@link #flushAccumulatedForces()}.
      *
-     * @param fx fuerza en X (en unidades de fuerza, no velocidad)
-     * @param fy fuerza en Y (en unidades de fuerza, no velocidad)
+     * ── SEMÁNTICA ─────────────────────────────────────────────────────────
+     * accumulate() representa fuerzas CONTINUAS que actúan durante el frame:
+     *
+     *   F_net = ΣF    (suma de todas las fuerzas acumuladas)
+     *   Δv = (F_net / m) × Δt
+     *
+     * Múltiples sistemas pueden llamar accumulate() en el mismo frame.
+     * Todas las fuerzas se suman vectorialmente.
+     *
+     * ── USO TÍPICO ────────────────────────────────────────────────────────
+     *   - Campos de viento (VectorFieldSystem)
+     *   - Zonas de gravedad modificada
+     *   - Campos magnéticos
+     *   - Corrientes de agua
+     *   - Fuerzas ambientales persistentes
+     *
+     * ── DIFERENCIA CON addForce() ─────────────────────────────────────────
+     *   addForce()   → impulso instantáneo aplicado inmediatamente
+     *   accumulate() → fuerza continua acumulada hasta flush
+     *
+     * ── CICLO DE VIDA ─────────────────────────────────────────────────────
+     * 1. Sistemas externos llaman accumulate() durante su update
+     * 2. CollisionsSystem FASE 0.5 llama flushAccumulatedForces()
+     * 3. Fuerzas se integran como impulso: velocity += (ΣF / mass)
+     * 4. Acumulador se resetea automáticamente para el siguiente frame
+     *
+     * Para impulsos instantáneos (knockback, explosiones), usar
+     * {@link #addForce(double, double)} en su lugar.
+     *
+     * @param fx fuerza en X (en unidades de fuerza, no velocidad).
+     * @param fy fuerza en Y (en unidades de fuerza, no velocidad).
      */
     public void accumulate(double fx, double fy) {
         accumulatedFx += fx;

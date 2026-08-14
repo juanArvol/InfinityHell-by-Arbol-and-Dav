@@ -1,7 +1,7 @@
 package Game.World.WorldObjects;
 
 import Game.Engine.GameObjects;
-import Game.Engine.Physics.World.WorldSimulation;
+import Game.Engine.Physics.SimulaticWorld.WorldSimulation;
 import Game.Engine.Systems.CollisionsSystem;
 import Game.Engine.Systems.StatusEffectSystem;
 import java.util.ArrayList;
