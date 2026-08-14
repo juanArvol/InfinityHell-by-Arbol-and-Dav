@@ -1,12 +1,16 @@
 package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
-import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.AbstractEntity;
+import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.PushableComponent;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
-import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
+import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Game.Items.Types.Bullets.ProjectileMovement;
+import java.util.List;
 
 /**
  * Behavior del MetheorBullet — proyectil de alta masa con explosión al impacto.
@@ -33,25 +37,26 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *
  * Sistema actual:
  *   - onCollision(bullet, hitEntity) — polimorfismo via BulletBehavior
- *   - ProjectileContext.applyAreaEffect() — explosión en área sin conocer entities
- *   - Engine de física maneja empuje via fuerzas, no mutación directa
+ *   - ProjectileContext.findEntitiesInRadius() — explosión en área sin conocer entities
+ *   - Engine de física maneja empuje via Physics2D.addForce(), no mutación directa
  *
  * ── ESCALADO DE EXPLOSIÓN ─────────────────────────────────────────────────
  *
  * La potencia de explosión escala con la velocidad de caída:
  *
- *   explosionPower = |velocityY| * 2.3
- *   maxRadius = 250 + (explosionPower * 1.5)
- *   damage = baseDamage + (explosionPower * (1 - distance/maxRadius))
+ *   explosionPower = |velocityY| × 2.3
+ *   maxRadius = 250 + (explosionPower × 1.5)
+ *   damage = baseDamage + (explosionPower × (1 - distance/maxRadius))
  *
  * Mientras más cae, más destrucción causa. Fidelidad conceptual al diseño original.
  *
  * ── DIFERENCIAS CON IMPLEMENTACIÓN LEGACY ─────────────────────────────────
  *
  * 1. ProjectileContext abstrae el acceso al mundo (no conoce Player directamente)
- * 2. Explosión implementada via applyAreaEffect (delegación al Engine)
- * 3. No hay dependencia de EnimyNormal ni Ambiente (usa CollisionProfile)
+ * 2. Explosión implementada via findEntitiesInRadius + damage() + addForce()
+ * 3. No hay dependencia de EnimyNormal ni Ambiente (usa AbstractEntity)
  * 4. Movement composition (GravityMovement) en lugar de hasGravity() flag
+ * 5. Empuje radial via Physics2D.addForce() o PushableComponent.applyPush()
  *
  * ── REGISTRO EN BulletType ────────────────────────────────────────────────
  *
@@ -60,349 +65,41 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *   VOIDMETEOR (MetheorBullet::new, ItemRarity.RARE,
  *               "Meteoro del Vacío",
  *               "Proyectil de alta masa que genera explosiones devastadoras."),
- *
- * ── CÓDIGO LEGACY ORIGINAL (COMENTADO PARA REFERENCIA) ────────────────────
- *
- * /* package Game.Bullets.BulletCharger.BulletClass;
-
-import Game.Ambiente;
-import Game.Bullets.Bullet;
-import Game.Bullets.BulletCharger.BulletClass.BulletClassUpdater.BulletOnUpdate;
-import Game.Bullets.BulletCharger.BulletComport;
-import Game.Colisions.SystemColisions.Collidable;
-import Game.EnimyNormal;
-import Game.GameObjects;
-import Game.Player;
-
-public class MetheorBullet extends BulletComport {
-    private EnimyNormal enemy;
-    private Player player;
-    private Ambiente ambiente;
-    @Override
-    public double getBspeed() { return 100; }
-
-    @Override
-    public boolean hasGravity() { return true; }
-
-    @Override
-    public int getDamage() { return 10; }
-
-    @Override
-    public void onUpdate(Bullet bullet, GameObjects algo) {
-        switch (algo) {
-            case Player p -> onUpdateWith(bullet, p);
-            case EnimyNormal e -> onUpdateWith(bullet,e);
-            case Bullet b -> onUpdateWith(bullet,b);
-            case Ambiente a -> onUpdateWith(bullet,a);
-            default -> onUpdateWith((Bullet)bullet, (Bullet) bullet);
-        }
-    }
-    public void onUpdateWith(Bullet bullet, GameObjects algo){
-        BulletOnUpdate.bulletOnUpdate(bullet, algo);
-    }
-    //Recibe el tipo de colision
-    @Override
-    public void onCollision(Bullet bullet, GameObjects algo) {
-        acceptCollision(algo);                      //colision unitaria
-        bulletAcceptCollisionWith(bullet, algo);    //colision doble
-    }
-    
-    //aceptacion de la colision
-    @Override
-    public void acceptCollision(Collidable other) {
-        super.acceptCollision(other);               //envia y define la colision con el other
-    }
-    @Override
-    public void bulletAcceptCollisionWith(Bullet b, Collidable other) {
-        super.bulletAcceptCollisionWith(b, other);  //envia y define la colision doble entre bala y other (que pasa con ambos)
-    }
-
-    //COLISION UNITARIA
-    @Override
-    public void onCollisionWith(Player player) {
-        //System.out.println("bala colisiono con jugador");
-    }
-    @Override
-    public void onCollisionWith(EnimyNormal enemy) {
-    }
-
-    @Override
-    public void onCollisionWith(Bullet bullet) {
-    }
-    @Override
-    public void onCollisionWith(Ambiente ambiente) {
-        //System.out.println("aAaaaAAaaaa");
-    }
-    
-    //COLISION DOBLE
-    @Override
-    public void bulletOnCollisionWith(Bullet b, Player player) {
-        //System.out.println("david e puto");
-    }
-    @Override
-    public void bulletOnCollisionWith(Bullet b, EnimyNormal enemy) {
-        explode(b);
-        //System.out.println("posicion del enemy: "+ enemy.getEnemyPosition());
-    }
-    @Override
-    public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
-        explode(b);
-    }
-    @Override
-    public void setGameObject(GameObjects algo){
-        if(algo instanceof EnimyNormal e){
-            this.enemy=e;
-        }
-        if(algo instanceof Player p){
-            this.player=p;
-        }
-        if(algo instanceof Ambiente a){
-            this.ambiente=a;
-        }
-    }
-    private void explode(Bullet b){
-        double baseDamage = 35; // daño base
-        double explosionPower = Math.abs(b.getBphysics().getVelocity().getY())*2.3 ; // mientras más caiga, más rompe
-        double maxRadius = 250 + (explosionPower*1.5); // el rango depende de la velocidad
-        double centerX = b.getPosition().getX();
-        double centerY = b.getPosition().getY();
-        double force=1;
-
-        for (EnimyNormal e : player.getEnemies()) {
-            double dx = e.getPosition().getX() - centerX;
-            double dy = e.getPosition().getY() - centerY;
-            double distance = Math.sqrt(dx*dx + dy*dy);
-        
-        // Evitamos operar entre 0 por si el enemigo está exactamente en el centro
-        if (distance == 0) distance = 1;
-
-        if (distance <= maxRadius) {
-            force = (maxRadius - distance) * 0.1; // más cerca = más empuje
-        }
-
-        // Calculamos fuerza SOLO en los ejes necesarios
-            double pushX = 0;
-            double pushY = 0;
-        
-            // Si hay distancia real en X, empujamos en X
-            if (Math.abs(dx) > 1) {
-                pushX = (dx / distance) * force;
-            }
-
-            // Si hay distancia real en Y, empujamos en Y
-            if (Math.abs(dy) > 1) {
-                pushY = (dy / distance) * force;
-            }
-
-            e.getEnemyPosition().setX(e.getEnemyPosition().getX() + pushX);
-            e.getEnemyPosition().setY(e.getEnemyPosition().getY() + pushY);
-
-            player.getPosition().setX(player.getPosition().getX() + pushX);
-            player.getPosition().setY(player.getPosition().getY() + pushY);
-
-            double damage = baseDamage + (explosionPower * (1 - distance / maxRadius));
-            System.out.println("Enemy recibió " + (int)damage + " daño por explosión");
-            System.out.println("Enemy empujado con fuerza: " + force);
-        }
-    }
-}
- */
-
-import Game.Ambiente;
-import Game.Bullets.Bullet;
-import Game.Bullets.BulletCharger.BulletClass.BulletClassUpdater.BulletOnUpdate;
-import Game.Bullets.BulletCharger.BulletComport;
-import Game.Colisions.SystemColisions.Collidable;
-import Game.EnimyNormal;
-import Game.GameObjects;
-import Game.Player;
-
-public class MetheorBullet extends BulletComport {
-    private EnimyNormal enemy;
-    private Player player;
-    private Ambiente ambiente;
-    @Override
-    public double getBspeed() { return 100; }
-
-    @Override
-    public boolean hasGravity() { return true; }
-
-    @Override
-    public int getDamage() { return 10; }
-
-    @Override
-    public void onUpdate(Bullet bullet, GameObjects algo) {
-        switch (algo) {
-            case Player p -> onUpdateWith(bullet, p);
-            case EnimyNormal e -> onUpdateWith(bullet,e);
-            case Bullet b -> onUpdateWith(bullet,b);
-            case Ambiente a -> onUpdateWith(bullet,a);
-            default -> onUpdateWith((Bullet)bullet, (Bullet) bullet);
-        }
-    }
-    public void onUpdateWith(Bullet bullet, GameObjects algo){
-        BulletOnUpdate.bulletOnUpdate(bullet, algo);
-    }
-    //Recibe el tipo de colision
-    @Override
-    public void onCollision(Bullet bullet, GameObjects algo) {
-        acceptCollision(algo);                      //colision unitaria
-        bulletAcceptCollisionWith(bullet, algo);    //colision doble
-    }
-    
-    //aceptacion de la colision
-    @Override
-    public void acceptCollision(Collidable other) {
-        super.acceptCollision(other);               //envia y define la colision con el other
-    }
-    @Override
-    public void bulletAcceptCollisionWith(Bullet b, Collidable other) {
-        super.bulletAcceptCollisionWith(b, other);  //envia y define la colision doble entre bala y other (que pasa con ambos)
-    }
-
-    //COLISION UNITARIA
-    @Override
-    public void onCollisionWith(Player player) {
-        //System.out.println("bala colisiono con jugador");
-    }
-    @Override
-    public void onCollisionWith(EnimyNormal enemy) {
-    }
-
-    @Override
-    public void onCollisionWith(Bullet bullet) {
-    }
-    @Override
-    public void onCollisionWith(Ambiente ambiente) {
-        //System.out.println("aAaaaAAaaaa");
-    }
-    
-    //COLISION DOBLE
-    @Override
-    public void bulletOnCollisionWith(Bullet b, Player player) {
-        //System.out.println("david e puto");
-    }
-    @Override
-    public void bulletOnCollisionWith(Bullet b, EnimyNormal enemy) {
-        explode(b);
-        //System.out.println("posicion del enemy: "+ enemy.getEnemyPosition());
-    }
-    @Override
-    public void bulletOnCollisionWith(Bullet b, Ambiente ambiente) {
-        explode(b);
-    }
-    @Override
-    public void setGameObject(GameObjects algo){
-        if(algo instanceof EnimyNormal e){
-            this.enemy=e;
-        }
-        if(algo instanceof Player p){
-            this.player=p;
-        }
-        if(algo instanceof Ambiente a){
-            this.ambiente=a;
-        }
-    }
-    private void explode(Bullet b){
-        double baseDamage = 35; // daño base
-        double explosionPower = Math.abs(b.getBphysics().getVelocity().getY())*2.3 ; // mientras más caiga, más rompe
-        double maxRadius = 250 + (explosionPower*1.5); // el rango depende de la velocidad
-        double centerX = b.getPosition().getX();
-        double centerY = b.getPosition().getY();
-        double force=1;
-
-        for (EnimyNormal e : player.getEnemies()) {
-            double dx = e.getPosition().getX() - centerX;
-            double dy = e.getPosition().getY() - centerY;
-            double distance = Math.sqrt(dx*dx + dy*dy);
-        
-        // Evitamos operar entre 0 por si el enemigo está exactamente en el centro
-        if (distance == 0) distance = 1;
-
-        if (distance <= maxRadius) {
-            force = (maxRadius - distance) * 0.1; // más cerca = más empuje
-        }
-
-        // Calculamos fuerza SOLO en los ejes necesarios
-            double pushX = 0;
-            double pushY = 0;
-        
-            // Si hay distancia real en X, empujamos en X
-            if (Math.abs(dx) > 1) {
-                pushX = (dx / distance) * force;
-            }
-
-            // Si hay distancia real en Y, empujamos en Y
-            if (Math.abs(dy) > 1) {
-                pushY = (dy / distance) * force;
-            }
-
-            e.getEnemyPosition().setX(e.getEnemyPosition().getX() + pushX);
-            e.getEnemyPosition().setY(e.getEnemyPosition().getY() + pushY);
-
-            player.getPosition().setX(player.getPosition().getX() + pushX);
-            player.getPosition().setY(player.getPosition().getY() + pushY);
-
-            double damage = baseDamage + (explosionPower * (1 - distance / maxRadius));
-            System.out.println("Enemy recibió " + (int)damage + " daño por explosión");
-            System.out.println("Enemy empujado con fuerza: " + force);
-        }
-    }
-}
- */
- 
-/**
- * ── IMPLEMENTACIÓN ACTUAL (MIGRADA) ───────────────────────────────────────
  */
 public class MetheorBullet extends BulletBehavior {
 
-    private static final double BASE_DAMAGE         = 35.0;
-    private static final double BASE_SPEED          = 100.0;
-    private static final double GRAVITY_STRENGTH    = 0.5;  // intensidad de gravedad
+    private static final double BASE_DAMAGE          = 35.0;
+    private static final double GRAVITY_STRENGTH     = 0.5;
     private static final double EXPLOSION_POWER_MULT = 2.3;
-    private static final double RADIUS_BASE         = 250.0;
-    private static final double RADIUS_SCALE        = 1.5;
-    private static final int    DEFAULT_LIFETIME    = 300;  // 5 segundos a 60fps
-
-    @Override
-    public String getName() {
-        return "Meteor";
-    }
+    private static final double RADIUS_BASE          = 250.0;
+    private static final double RADIUS_SCALE         = 1.5;
+    private static final int    DEFAULT_LIFETIME     = 300;  // 5 segundos a 60fps
+    private static final double PUSH_FORCE_SCALE     = 0.1;  // escalado de fuerza de empuje
 
     @Override
     public ProjectileData getDefaultData() {
         return new ProjectileData(
-                1.0,        // speedFactor (base speed viene de WeaponStats o BulletType)
-                10.0,       // damage directo (explosión usa BASE_DAMAGE)
+                (int) BASE_DAMAGE, // damage base del proyectil
+                1.0,               // speedFactor (base speed viene de WeaponStats o BulletType)
                 DEFAULT_LIFETIME,
-                "void_meteor" // assetKey
+                0.0,               // gravityValue (manejado por GravityMovement)
+                8,                 // width
+                8,                 // height
+                "void_meteor"      // assetKey
         );
     }
 
     @Override
-    public ProjectileMovement getMovement() {
+    public ProjectileMovement getDefaultMovement() {
         // GravityMovement se compondrá con el movimiento lineal base del proyectil
         return new GravityMovement(GRAVITY_STRENGTH);
     }
 
     @Override
-    public void onCollision(Bullet bullet, Object hitEntity) {
-        // Detectar colisión con enemigos o terreno
-        CollisionProfile profile = bullet.getCollisionProfile();
-        
-        // MetheorBullet explota al impactar enemigos o ambiente (terreno)
-        boolean shouldExplode = false;
-        
-        if (hitEntity != null) {
-            // Verificar si impactó algo sólido (enemigo o terreno)
-            // El CollisionProfile ENEMY_BULLET colisiona con: Player, Terrain, Shields
-            // Asumimos que cualquier colisión de un proyectil enemigo es válida para explosión
-            shouldExplode = true;
-        }
-        
-        if (shouldExplode) {
-            explode(bullet);
-        }
+    public void onCollision(Bullet bullet, Game.Engine.GameObjects hitEntity) {
+        // MetheorBullet explota al impactar cualquier objetivo válido
+        // El CollisionProfile ya garantiza que solo recibimos colisiones válidas
+        explode(bullet);
         
         // Matar el proyectil tras la explosión
         bullet.getBulletLife().kill();
@@ -410,48 +107,113 @@ public class MetheorBullet extends BulletBehavior {
 
     /**
      * Genera la explosión en área con daño escalado por velocidad de caída.
+     *
+     * Preserva las fórmulas originales del legacy:
+     *   - explosionPower = |velocityY| × 2.3
+     *   - maxRadius = 250 + (explosionPower × 1.5)
+     *   - damage = baseDamage + (explosionPower × (1 - distance/maxRadius))
+     *   - force = (maxRadius - distance) × 0.1
      */
     private void explode(Bullet bullet) {
-        // Obtener contexto del mundo
-        ProjectileContext context = bullet.getContext();
-        if (context == null) {
-            // Sin contexto, no se puede generar explosión en área
-            // (esto solo ocurre en tests sin ProjectileContext inyectado)
-            return;
-        }
-
         // Calcular potencia de explosión basada en velocidad de caída
-        double velocityY = bullet.getBphysics().getVelocity().getY();
+        double velocityY = bullet.getPhysics().getYspeed();
         double explosionPower = Math.abs(velocityY) * EXPLOSION_POWER_MULT;
         
         // Radio de explosión escala con la potencia
         double maxRadius = RADIUS_BASE + (explosionPower * RADIUS_SCALE);
         
         // Posición del impacto (epicentro)
-        double centerX = bullet.getPosition().getX();
-        double centerY = bullet.getPosition().getY();
+        Vector2D center = bullet.getTransform().getPosition();
+        double centerX = center.getX();
+        double centerY = center.getY();
         
-        // Aplicar daño en área via ProjectileContext
-        // El Engine se encarga de iterar entities cercanas y aplicar daño/empuje
-        context.applyAreaEffect(
-                centerX, centerY, maxRadius,
-                (entity, distance) -> {
-                    // Calcular daño escalado con distancia
-                    double damageFactor = 1.0 - (distance / maxRadius);
-                    double finalDamage = BASE_DAMAGE + (explosionPower * damageFactor);
-                    
-                    // Aplicar daño a la entity
-                    // El Engine maneja este damage() internamente
-                    return finalDamage;
-                }
-        );
+        // Buscar todas las entidades en el radio de explosión
+        var entitiesInRange = findNearbyEntities(bullet, center, maxRadius);
         
-        // Nota: El empuje radial se maneja automáticamente por el Engine
-        // basado en la distancia y el damageFactor retornado por el callback
+        // Aplicar daño y empuje radial a cada entidad afectada
+        for (AbstractEntity entity : entitiesInRange) {
+            Vector2D entityPos = entity.getTransform().getPosition();
+            double dx = entityPos.getX() - centerX;
+            double dy = entityPos.getY() - centerY;
+            double distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Evitar división por cero si la entidad está exactamente en el centro
+            if (distance < 1.0) {
+                distance = 1.0;
+            }
+            
+            // Calcular daño escalado con distancia (preserva fórmula legacy)
+            double damageFactor = 1.0 - (distance / maxRadius);
+            double finalDamage = BASE_DAMAGE + (explosionPower * damageFactor);
+            
+            // Aplicar daño via AbstractEntity.damage()
+            entity.damage((int) finalDamage);
+            
+            // Calcular fuerza de empuje radial (preserva fórmula legacy)
+            double force = (maxRadius - distance) * PUSH_FORCE_SCALE;
+            
+            // Dirección normalizada desde el epicentro hacia la entidad
+            double dirX = dx / distance;
+            double dirY = dy / distance;
+            
+            // Componentes de fuerza radial
+            double pushX = dirX * force;
+            double pushY = dirY * force;
+            
+            // Aplicar empuje via sistema de física existente
+            applyRadialPush(entity, pushX, pushY);
+        }
+    }
+
+    /**
+     * Encuentra entidades cercanas para la explosión en área.
+     *
+     * Usa ProjectileContext.findEntitiesInRadius() que ahora es accesible
+     * via Bullet.getProjectileContext().
+     *
+     * @param bullet bullet que explota
+     * @param center posición central del área de explosión
+     * @param radius radio de búsqueda en unidades del mundo
+     * @return lista de entidades encontradas, o lista vacía si no hay contexto
+     */
+    private List<? extends AbstractEntity> findNearbyEntities(Bullet bullet, Vector2D center, double radius) {
+        ProjectileContext context = bullet.getProjectileContext();
+        if (context == null || context == ProjectileContext.NULL) {
+            return List.of();
+        }
+        return context.findEntitiesInRadius(center, radius);
+    }
+
+    /**
+     * Aplica empuje radial a una entidad usando el sistema de física existente.
+     *
+     * Intenta usar PushableComponent si existe (para objetos del mundo),
+     * o Physics2DComponent.addForce() directamente (para entidades con física).
+     *
+     * @param entity entidad a empujar
+     * @param fx     componente X de la fuerza
+     * @param fy     componente Y de la fuerza
+     */
+    private void applyRadialPush(AbstractEntity entity, double fx, double fy) {
+        // Intentar usar PushableComponent primero (wrapper sobre addForce)
+        PushableComponent pushable = entity.getComponent(PushableComponent.class);
+        if (pushable != null) {
+            pushable.applyPush(fx, fy);
+            return;
+        }
+        
+        // Si no hay PushableComponent, aplicar fuerza directamente via Physics2D
+        Physics2DComponent physicsComp = entity.getComponent(Physics2DComponent.class);
+        if (physicsComp != null) {
+            physicsComp.getPhysics().addForce(fx, fy);
+        }
+        
+        // Si la entidad no tiene física, el empuje no tiene efecto
+        // (esto es correcto — solo objetos con física reaccionan al knockback)
     }
 
     @Override
-    public void onExpire(Bullet bullet) {
+    public void onExpire(Bullet bullet, ProjectileContext ctx) {
         // MetheorBullet no explota al expirar (solo al impactar)
         // Simplemente desaparece si no impacta nada
     }

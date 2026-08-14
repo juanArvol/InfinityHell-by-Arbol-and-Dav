@@ -1,5 +1,6 @@
 package Game.Player;
 
+import Game.Items.Types.Ammulets.AmuletDefinition;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.List;
  * Configuración declarativa del equipamiento inicial del jugador.
  *
  * ── HRFC — Player Reengineering v2 ────────────────────────────────────────
+ * ── MINI-HRFC — API Única de Construcción ─────────────────────────────────
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -20,6 +22,7 @@ import java.util.List;
  * NO responde:
  *
  *   > "¿Qué posee actualmente el Player?" ← PlayerRuntime/PlayerInventory
+ *   > "¿Por qué comienza con esto?"        ← Contexto de uso externo
  *
  * ── SEPARACIÓN LOADOUT vs RUNTIME ────────────────────────────────────────
  *
@@ -29,7 +32,11 @@ import java.util.List;
  *
  * ── FLUJO ARQUITECTÓNICO ─────────────────────────────────────────────────
  *
- *   PlayerLoadout
+ *   Contexto externo (GameWorldBootstrap, SaveSystem, ChallengeSystem, etc.)
+ *        │
+ *        │ construye
+ *        ▼
+ *   PlayerLoadout (configuración declarativa)
  *        │
  *        │ describe
  *        ▼
@@ -44,34 +51,55 @@ import java.util.List;
  *
  * Una vez completado el ensamblado, PlayerLoadout deja de tener relevancia.
  *
- * ── ARMAS Y BALAS INDEPENDIENTES ─────────────────────────────────────────
+ * ── API DECLARATIVA ÚNICA ─────────────────────────────────────────────────
  *
- * El loadout puede declarar múltiples armas y múltiples tipos de bala:
+ * El loadout se construye mediante una única API declarativa:
  *
- *   PlayerLoadout.builder()
- *       .weapon(WeaponType.PISTOLA)
- *       .weapon(WeaponType.ESCOPETA)
- *       .bullet(BulletType.NORMALBULLET)
- *       .bullet(BulletType.BULLETJUMP)
+ *   PlayerLoadout
+ *       .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
+ *       .initialBullets(BulletType.NORMALBULLET, BulletType.BULLETJUMP)
+ *       .initialAmulets("bone_tip", "swift_quill")
  *       .build()
  *
- * El Player comenzará con todas las armas y todas las balas disponibles
- * para selección independiente.
+ * Cada método de configuración es opcional y puede omitirse:
  *
- * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
+ *   PlayerLoadout
+ *       .initialWeapons(WeaponType.PISTOLA)
+ *       .initialBullets(BulletType.NORMALBULLET)
+ *       .initialAmulets()  // Sin amuletos
+ *       .build()
  *
- * Diferentes perfiles de inicio pueden definirse sin tocar PlayerCombat:
+ * El Player comenzará con todo el contenido disponible para uso independiente.
  *
- *   PlayerLoadout.defaultLoadout()      // principiante
- *   PlayerLoadout.shotgunStart()        // challenge
- *   PlayerLoadout.fromSaveFile(data)    // continuación
+ * ── MINI-HRFC — CONFIGURACIÓN VACÍA ───────────────────────────────────────
+ *
+ * El loadout soporta nativamente configuración vacía:
+ *
+ *   PlayerLoadout
+ *       .initialWeapons()
+ *       .initialBullets()
+ *       .initialAmulets()
+ *       .build()
+ *
+ * Esto representa un estado válido donde el Player comienza sin armas,
+ * balas ni amuletos. El sistema permanece estable en este estado.
+ *
+ * ── NO ES UN CATÁLOGO DE PRESETS ─────────────────────────────────────────
+ *
+ * PlayerLoadout NO contiene métodos estáticos para configuraciones concretas.
+ * Los contextos externos son responsables de construir el loadout apropiado:
+ *
+ *   • Nueva partida       → construye loadout inicial
+ *   • Continuar partida   → construye desde save
+ *   • Challenge           → construye según desafío
+ *   • Testing/Development → construye según necesidad
  *
  * ── INVARIANTES ───────────────────────────────────────────────────────────
  *
- *   • Al menos un arma es requerida (validado en build())
- *   • Al menos una bala es requerida (validado en build())
- *   • La primera arma en la lista es la activa al inicio
- *   • La primera bala en la lista es la activa al inicio
+ *   • Todas las categorías pueden estar vacías (estado válido)
+ *   • La primera arma en la lista es la activa al inicio (si hay armas)
+ *   • La primera bala en la lista es la activa al inicio (si hay balas)
+ *   • Los amuletos se aplican automáticamente (si hay amuletos)
  */
 public final class PlayerLoadout {
 
@@ -81,73 +109,137 @@ public final class PlayerLoadout {
     /** Tipos de bala que el jugador comienza equipados, en orden. */
     private final List<BulletType> bullets;
 
-    private PlayerLoadout(List<WeaponType> weapons, List<BulletType> bullets) {
+    /** Definiciones de amuletos que el jugador comienza equipados. */
+    private final List<AmuletDefinition> amulets;
+
+    private PlayerLoadout(List<WeaponType> weapons, 
+                          List<BulletType> bullets,
+                          List<AmuletDefinition> amulets) {
         this.weapons = Collections.unmodifiableList(new ArrayList<>(weapons));
         this.bullets = Collections.unmodifiableList(new ArrayList<>(bullets));
-    }
-
-    // ── Factory — loadouts predefinidos ───────────────────────────────────
-
-    /**
-     * Loadout por defecto: pistola + bala normal.
-     * Es el equipamiento estándar al inicio de una run nueva.
-     *
-     * @return loadout por defecto.
-     */
-    public static PlayerLoadout defaultLoadout() {
-        return builder()
-            .weapon(WeaponType.PISTOLA)
-            .bullet(BulletType.NORMALBULLET)
-            .build();
-    }
-
-    /**
-     * Loadout avanzado: pistola + escopeta + múltiples balas.
-     * Ejemplo de configuración con más opciones.
-     *
-     * @return loadout avanzado.
-     */
-    public static PlayerLoadout advancedLoadout() {
-        return builder()
-            .weapon(WeaponType.PISTOLA)
-            .weapon(WeaponType.ESCOPETA)
-            .bullet(BulletType.NORMALBULLET)
-            .bullet(BulletType.SPRINGBULLET)
-            .build();
+        this.amulets = Collections.unmodifiableList(new ArrayList<>(amulets));
     }
 
     // ── Acceso ────────────────────────────────────────────────────────────
 
     /**
      * Lista inmutable de tipos de arma del loadout, en orden.
-     * El primer elemento es el arma activa al inicio.
+     * El primer elemento es el arma activa al inicio (si hay armas).
      *
-     * @return lista no vacía de WeaponType. Nunca null.
+     * @return lista de WeaponType (puede estar vacía). Nunca null.
      */
     public List<WeaponType> getWeapons() { return weapons; }
 
     /**
      * Lista inmutable de tipos de bala del loadout, en orden.
-     * El primer elemento es la bala activa al inicio.
+     * El primer elemento es la bala activa al inicio (si hay balas).
      *
-     * @return lista no vacía de BulletType. Nunca null.
+     * @return lista de BulletType (puede estar vacía). Nunca null.
      */
     public List<BulletType> getBullets() { return bullets; }
+
+    /**
+     * Lista inmutable de definiciones de amuletos del loadout.
+     *
+     * @return lista de AmuletDefinition (puede estar vacía). Nunca null.
+     */
+    public List<AmuletDefinition> getAmulets() { return amulets; }
 
     // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
     // getBulletType() fue eliminado. PlayerLoadout ahora maneja listas completas.
     // Migración: usar getBullets().get(0) para la primera bala o getBullets() para todas.
+    
+    // ── MINI-HRFC — API ÚNICA DE CONSTRUCCIÓN ────────────────────────────
+    // El método builder() fue eliminado como API pública.
+    // El Builder existe únicamente como mecanismo interno de implementación.
+    // La única API pública de construcción es la declarativa:
+    //   PlayerLoadout.initialWeapons(...).initialBullets(...).initialAmulets(...).build()
 
-    // ── Builder ───────────────────────────────────────────────────────────
+    // ── MINI-HRFC — API Declarativa ──────────────────────────────────────
 
-    /** Punto de entrada del builder. */
-    public static Builder builder() { return new Builder(); }
+    /**
+     * Crea un builder y configura las armas iniciales de forma declarativa.
+     * 
+     * ── API DECLARATIVA ───────────────────────────────────────────────────
+     * 
+     * Permite la sintaxis ergonómica buscada por el Mini-HRFC:
+     * 
+     *   initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA);
+     *   initialBullets(BulletType.NORMALBULLET, BulletType.EXPLOSIVE);
+     *   initialAmulets();
+     *   return build();
+     *
+     * Esta capacidad pertenece directamente a PlayerLoadout, no a capas auxiliares.
+     *
+     * @param weapons tipos de arma iniciales (varargs, puede ser vacío)
+     * @return builder configurado con las armas especificadas
+     */
+    public static Builder initialWeapons(WeaponType... weapons) {
+        Builder builder = new Builder();
+        for (WeaponType weapon : weapons) {
+            builder.weapon(weapon);
+        }
+        return builder;
+    }
 
-    /** Builder de PlayerLoadout. */
+    /**
+     * Crea un builder y configura las balas iniciales de forma declarativa.
+     * 
+     * @param bullets tipos de bala iniciales (varargs, puede ser vacío)
+     * @return builder configurado con las balas especificadas
+     */
+    public static Builder initialBullets(BulletType... bullets) {
+        Builder builder = new Builder();
+        for (BulletType bullet : bullets) {
+            builder.bullet(bullet);
+        }
+        return builder;
+    }
+
+    /**
+     * Crea un builder y configura los amuletos iniciales de forma declarativa.
+     * 
+     * ── RESOLUCIÓN DE DEFINICIONES ────────────────────────────────────────
+     * 
+     * Los IDs se resuelven a AmuletDefinition mediante AmuletRegistry.get().
+     * Si un ID no existe, se lanza IllegalArgumentException con mensaje claro.
+     *
+     * @param amuletIds IDs de amuletos iniciales (varargs, puede ser vacío)
+     * @return builder configurado con los amuletos especificados
+     * @throws IllegalArgumentException si algún ID no está registrado
+     */
+    public static Builder initialAmulets(String... amuletIds) {
+        Builder builder = new Builder();
+        for (String amuletId : amuletIds) {
+            // Resolver ID a AmuletDefinition
+            // AmuletRegistry.get() lanza IllegalArgumentException si el ID no existe
+            AmuletDefinition definition = Game.Items.Types.Ammulets.AmuletRegistry.get(amuletId);
+            builder.amulet(definition);
+        }
+        return builder;
+    }
+
+    /**
+     * Builder de PlayerLoadout.
+     * 
+     * ── MINI-HRFC — API ÚNICA ─────────────────────────────────────────────
+     * 
+     * Este Builder NO tiene constructor público ni método builder() público.
+     * Solo es accesible a través de los métodos declarativos:
+     * 
+     *   PlayerLoadout.initialWeapons(...)
+     *   PlayerLoadout.initialBullets(...)
+     *   PlayerLoadout.initialAmulets(...)
+     * 
+     * Aunque la clase es pública (requerido para acceso cross-package), 
+     * NO puede ser instanciada directamente desde código externo.
+     * Este diseño garantiza que existe un único camino de construcción.
+     */
     public static final class Builder {
 
         private final List<WeaponType> weapons = new ArrayList<>();
         private final List<BulletType> bullets = new ArrayList<>();
+        private final List<AmuletDefinition> amulets = new ArrayList<>();
 
         private Builder() {}
 
@@ -155,10 +247,14 @@ public final class PlayerLoadout {
          * Añade un tipo de arma al loadout.
          * El primer arma añadida será la activa al inicio.
          *
+         * ── API INTERNA ───────────────────────────────────────────────────
+         * Este método es interno y solo se usa desde los métodos estáticos
+         * de configuración declarativa.
+         *
          * @param weaponType tipo de arma a equipar. No puede ser null.
          * @return this.
          */
-        public Builder weapon(WeaponType weaponType) {
+        private Builder weapon(WeaponType weaponType) {
             if (weaponType == null)
                 throw new IllegalArgumentException("weaponType no puede ser null");
             weapons.add(weaponType);
@@ -169,13 +265,90 @@ public final class PlayerLoadout {
          * Añade un tipo de bala al loadout.
          * La primera bala añadida será la activa al inicio.
          *
+         * ── API INTERNA ───────────────────────────────────────────────────
+         * Este método es interno y solo se usa desde los métodos estáticos
+         * de configuración declarativa.
+         *
          * @param bulletType tipo de bala a equipar. No puede ser null.
          * @return this.
          */
-        public Builder bullet(BulletType bulletType) {
+        private Builder bullet(BulletType bulletType) {
             if (bulletType == null)
                 throw new IllegalArgumentException("bulletType no puede ser null");
             bullets.add(bulletType);
+            return this;
+        }
+
+        /**
+         * Configura las balas iniciales del loadout.
+         * 
+         * ── API DECLARATIVA FLUIDA ────────────────────────────────────────
+         * 
+         * Permite configurar balas en el contexto de un builder ya existente:
+         * 
+         *   builder()
+         *       .weapon(WeaponType.PISTOLA)
+         *       .initialBullets(BulletType.NORMALBULLET, BulletType.EXPLOSIVE)
+         *       .build();
+         *
+         * @param bulletTypes tipos de bala iniciales (varargs, puede ser vacío)
+         * @return this.
+         */
+        public Builder initialBullets(BulletType... bulletTypes) {
+            for (BulletType bulletType : bulletTypes) {
+                bullet(bulletType);
+            }
+            return this;
+        }
+
+        /**
+         * Añade un amuleto al loadout.
+         *
+         * ── MINI-HRFC — BOOTSTRAP DECLARATIVO ────────────────────────────
+         *
+         * Los amuletos utilizan las abstracciones reales del sistema:
+         * AmuletDefinition desde AmuletRegistry, no IDs String directamente.
+         *
+         * ── API INTERNA ───────────────────────────────────────────────────
+         * Este método es interno y solo se usa desde los métodos estáticos
+         * de configuración declarativa.
+         *
+         * Uso:
+         *   builder.amulet(AmuletRegistry.get("bone_tip"))
+         *
+         * @param amulet definición del amuleto a equipar. No puede ser null.
+         * @return this.
+         */
+        private Builder amulet(AmuletDefinition amulet) {
+            if (amulet == null)
+                throw new IllegalArgumentException("amulet no puede ser null");
+            amulets.add(amulet);
+            return this;
+        }
+
+        /**
+         * Configura los amuletos iniciales del loadout.
+         * 
+         * ── API DECLARATIVA FLUIDA ────────────────────────────────────────
+         * 
+         * Permite configurar amuletos en el contexto de un builder ya existente:
+         * 
+         *   builder()
+         *       .weapon(WeaponType.PISTOLA)
+         *       .initialBullets(BulletType.NORMALBULLET)
+         *       .initialAmulets("bone_tip", "swift_quill")
+         *       .build();
+         *
+         * @param amuletIds IDs de amuletos iniciales (varargs, puede ser vacío)
+         * @return this.
+         * @throws IllegalArgumentException si algún ID no está registrado
+         */
+        public Builder initialAmulets(String... amuletIds) {
+            for (String amuletId : amuletIds) {
+                // Resolver ID a AmuletDefinition
+                AmuletDefinition definition = Game.Items.Types.Ammulets.AmuletRegistry.get(amuletId);
+                amulet(definition);
+            }
             return this;
         }
 
@@ -185,16 +358,23 @@ public final class PlayerLoadout {
         /**
          * Construye el PlayerLoadout.
          *
-         * @throws IllegalStateException si no se añadió ningún arma o ninguna bala.
+         * ── MINI-HRFC — CONFIGURACIÓN VACÍA ───────────────────────────────
+         *
+         * NO valida que haya al menos un arma o una bala. La configuración
+         * vacía es válida y representa que el Player comienza sin contenido.
+         *
+         * El sistema está diseñado para soportar inventarios vacíos de forma
+         * segura en todos los niveles (runtime, combat, UI).
+         *
+         * ── API INTERNA ───────────────────────────────────────────────────
+         *
+         * Este método build() es interno. Los contextos externos no acceden
+         * directamente al Builder, sino a través de la API declarativa:
+         *
+         *   PlayerLoadout.initialWeapons(...).initialBullets(...).build()
          */
         public PlayerLoadout build() {
-            if (weapons.isEmpty())
-                throw new IllegalStateException(
-                    "PlayerLoadout: debe declararse al menos un arma");
-            if (bullets.isEmpty())
-                throw new IllegalStateException(
-                    "PlayerLoadout: debe declararse al menos una bala");
-            return new PlayerLoadout(weapons, bullets);
+            return new PlayerLoadout(weapons, bullets, amulets);
         }
     }
 }

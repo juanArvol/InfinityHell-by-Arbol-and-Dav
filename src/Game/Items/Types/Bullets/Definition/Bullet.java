@@ -317,6 +317,22 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     public GameEventBus getEventBus() { return eventBus; }
 
     /**
+     * Contexto de interacción con el mundo.
+     * Inyectado por el pool o ProjectileContext.NULL por defecto.
+     *
+     * ── HRFC — MetheorBullet Migration ───────────────────────────────────
+     *
+     * Añadido para permitir que behaviors con explosiones en onCollision()
+     * puedan acceder a ProjectileContext.findEntitiesInRadius().
+     *
+     * Anteriormente, ProjectileContext solo estaba disponible en onExpire(),
+     * lo que impedía implementar correctamente explosiones al impactar.
+     */
+    public ProjectileContext getProjectileContext() {
+        return projectileContext;
+    }
+
+    /**
      * Inyecta el bus de eventos en este proyectil.
      * Llamado por BulletFactory.emitSpawn() y ProjectilePool.acquire().
      * package-accessible: visible en el paquete Definition y desde BulletFactory

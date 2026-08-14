@@ -42,7 +42,10 @@ public enum BulletType {
     SPRINGBULLET   (BulletJump::new,   ItemRarity.UNCOMMON,
                   "Bala saltarina",
                   "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."),
-
+    
+    METHEORBULLET   (MetheorBullet::new, ItemRarity.RARE,
+                  "Meteoro del Vacío",
+                  "Proyectil de alta masa que ignora la física normal."),
     // ── Efectos elementales (pendientes de implementar sus behaviors) ─────
     // Descomenta cada uno cuando crees la clase de behavior correspondiente.
 

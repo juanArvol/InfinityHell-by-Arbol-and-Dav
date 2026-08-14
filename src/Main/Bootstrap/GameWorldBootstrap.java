@@ -4,9 +4,13 @@ import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
+import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.ProjectileRegistry;
+import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import Game.Player.Player;
+import Game.Player.PlayerAssembler;
+import Game.Player.PlayerLoadout;
 import Game.World.Core.WorldManager;
 
 /**
@@ -53,6 +57,8 @@ import Game.World.Core.WorldManager;
  */
 public final class GameWorldBootstrap {
 
+
+
     private final Player player;
     private final ProjectileRegistry projectileRegistry;
 
@@ -80,9 +86,28 @@ public final class GameWorldBootstrap {
         // ── Player ───────────────────────────────────────────────────────
         // PlayerAssembler.assemble() construye y conecta todos los módulos.
         // El bus se inyecta en PlayerAssembler → PlayerCombat → WeaponInventory → ModifiedWeapon
-        player = Player.create(spawnPos,
+        //
+        // ── MINI-HRFC — Corrección de Arquitectura del Loadout Inicial ───
+        // 
+        // El loadout se construye directamente usando la API declarativa de PlayerLoadout.
+        // Esta sintaxis demuestra que la capacidad de construcción pertenece
+        // al contexto (GameWorldBootstrap), no a PlayerLoadout.
+        //
+        // Loadout estándar para inicio de partida:
+        PlayerLoadout loadout = PlayerLoadout
+            .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
+            .initialBullets(BulletType.NORMALBULLET, BulletType.SPRINGBULLET, BulletType.METHEORBULLET)
+            .initialAmulets()
+            .build();
+        
+        // ── EJEMPLO DE CONFIGURACIÓN DECLARATIVA ─────────────────────────
+        // Para testing/desarrollo, descomente la línea siguiente:
+        // loadout = createDevelopmentLoadout();
+        
+        player = PlayerAssembler.assemble(spawnPos,
             obj -> worldManager.addDynamic(obj),
-            eventBus
+            eventBus,
+            loadout
         );
 
         worldManager.addDynamic(player);
@@ -123,7 +148,7 @@ public final class GameWorldBootstrap {
         projectileRegistry.getPool().setEventBus(eventBus);
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
-        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 2, eventBus);
+        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 20, eventBus);
     }
 
     /** El Player creado durante el bootstrap. */
@@ -154,4 +179,48 @@ public final class GameWorldBootstrap {
         ProjectileRegistry.shutdown();
         Game.Items.Types.Ammulets.AmuletRegistry.setEntityProvider(null);
     }
+
+    // ── MINI-HRFC — Ejemplo de API Declarativa ───────────────────────────
+
+    /**
+     * Ejemplo de configuración de loadout usando la nueva API declarativa.
+     * 
+     * ── DEMOSTRACIÓN DE SINTAXIS ──────────────────────────────────────────
+     * 
+     * Este método muestra la sintaxis ergonómica conseguida por el Mini-HRFC:
+     * 
+     *   PlayerLoadout.initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
+     *       .initialBullets(BulletType.NORMALBULLET, BulletType.SPRINGBULLET)
+     *       .initialAmulets()
+     *       .build();
+     * 
+     * La capacidad de construcción pertenece al contexto (este bootstrap),
+     * no a PlayerLoadout como catálogo de presets.
+     * 
+     * ── USO ───────────────────────────────────────────────────────────────
+     * 
+     * Para activar esta configuración durante desarrollo/testing:
+     * 1. Descomentar la llamada en el constructor: createDevelopmentLoadout()
+     * 2. Modificar este método según las necesidades de testing
+     * 3. Para producción, revertir al loadout estándar en el constructor
+     * 
+     * @return loadout configurado para desarrollo/testing
+     */
+    /* private static PlayerLoadout createDevelopmentLoadout() {
+        return PlayerLoadout
+            .initialWeapons(
+                WeaponType.PISTOLA,
+                WeaponType.ESCOPETA
+            )
+            .initialBullets(
+                BulletType.NORMALBULLET,
+                BulletType.SPRINGBULLET
+            )
+            .initialAmulets(
+                // Descomentar cuando se necesite testing de amuletos:
+                // "bone_tip",
+                // "swift_quill"
+            )
+            .build();
+    } */
 }

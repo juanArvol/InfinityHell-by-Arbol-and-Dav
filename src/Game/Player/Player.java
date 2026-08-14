@@ -52,12 +52,16 @@ import java.util.function.Consumer;
  *   No usar el constructor directamente.
  *   Usar PlayerAssembler.assemble() que es el único punto de entrada.
  *
- *   // Loadout por defecto:
+ *   // Loadout estándar:
  *   Player player = PlayerAssembler.assemble(spawn, world::add, eventBus);
  *
- *   // Loadout custom:
- *   Player player = PlayerAssembler.assemble(spawn, world::add, eventBus,
- *       PlayerLoadout.builder().weapon(WeaponType.PISTOLA).build());
+ *   // Loadout custom usando API declarativa:
+ *   PlayerLoadout loadout = PlayerLoadout
+ *       .initialWeapons(WeaponType.PISTOLA)
+ *       .initialBullets(BulletType.NORMALBULLET)
+ *       .initialAmulets()
+ *       .build();
+ *   Player player = PlayerAssembler.assemble(spawn, world::add, eventBus, loadout);
  *
  * ── JERARQUÍA ─────────────────────────────────────────────────────────────
  *

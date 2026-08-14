@@ -61,19 +61,18 @@ import java.util.function.Consumer;
  *
  * ── USO ───────────────────────────────────────────────────────────────────
  *
- *   // Loadout por defecto:
+ *   // Loadout estándar:
  *   Player player = PlayerAssembler.assemble(
  *       spawn, world::add, eventBus);
  *
- *   // Loadout custom:
+ *   // Loadout custom usando API declarativa:
+ *   PlayerLoadout loadout = PlayerLoadout
+ *       .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
+ *       .initialBullets(BulletType.NORMALBULLET, BulletType.BULLETJUMP)
+ *       .initialAmulets()
+ *       .build();
  *   Player player = PlayerAssembler.assemble(
- *       spawn, world::add, eventBus,
- *       PlayerLoadout.builder()
- *           .weapon(WeaponType.PISTOLA)
- *           .weapon(WeaponType.ESCOPETA)
- *           .bullet(BulletType.NORMALBULLET)
- *           .bullet(BulletType.BULLETJUMP)
- *           .build());
+ *       spawn, world::add, eventBus, loadout);
  */
 public final class PlayerAssembler {
 
@@ -96,6 +95,12 @@ public final class PlayerAssembler {
     /**
      * Ensambla un Player completo con el loadout por defecto.
      *
+     * ── MINI-HRFC — Corrección de Arquitectura del Loadout ────────────────
+     * 
+     * Este método de conveniencia construye el loadout estándar explícitamente.
+     * La configuración no viene de un preset en PlayerLoadout, sino que se
+     * declara aquí como decisión del contexto de ensamblado.
+     *
      * @param spawn         posición inicial en el mundo
      * @param bulletSpawner callback para añadir balas al mundo
      * @param eventBus      bus de eventos del juego
@@ -104,7 +109,13 @@ public final class PlayerAssembler {
     public static Player assemble(Vector2D spawn,
                                   Consumer<Bullet> bulletSpawner,
                                   GameEventBus eventBus) {
-        return assemble(spawn, bulletSpawner, eventBus, PlayerLoadout.defaultLoadout());
+        PlayerLoadout loadout = PlayerLoadout
+            .initialWeapons(WeaponType.PISTOLA)
+            .initialBullets(BulletType.NORMALBULLET)
+            .initialAmulets()
+            .build();
+        
+        return assemble(spawn, bulletSpawner, eventBus, loadout);
     }
 
     /**
@@ -223,6 +234,14 @@ public final class PlayerAssembler {
         // Añadir todas las balas del loadout al inventario
         for (BulletType bulletType : loadout.getBullets()) {
             playerInventory.addBullet(bulletType);
+        }
+
+        // ── MINI-HRFC — BOOTSTRAP DECLARATIVO ─────────────────────────────
+        // Añadir todos los amuletos del loadout al inventario.
+        // Los amuletos del loadout ya son AmuletDefinition (no IDs).
+        // Se añaden directamente al AmuletInventory sin resolución adicional.
+        for (Game.Items.Types.Ammulets.AmuletDefinition amulet : loadout.getAmulets()) {
+            amulets.add(amulet);
         }
 
         // ── 9. Collision y Rendering ──────────────────────────────────────
