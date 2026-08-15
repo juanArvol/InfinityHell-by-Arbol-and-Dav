@@ -1,5 +1,15 @@
 package Game.Items.Types.Weapons.WeaponType;
 
+/**
+ * Estadísticas base de un arma.
+ *
+ * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
+ *
+ * AÑADIDO: recoilForce
+ *   - Magnitud del impulso de retroceso aplicado al shooter cuando dispara
+ *   - Clasificado como IMPULSE (no Motion Intent) porque es reacción física directa
+ *   - Se aplica en dirección opuesta al disparo
+ */
 public class WeaponStats {
 
     private int cooldown;
@@ -8,11 +18,41 @@ public class WeaponStats {
     private double bulletSpeedBase;
     private double weaponDamageBulletBonus;
 
+    /**
+     * Fuerza de retroceso (recoil) aplicada al shooter al disparar.
+     * 
+     * Magnitud del impulso en unidades de fuerza. Se aplica en dirección
+     * opuesta a la dirección del disparo.
+     * 
+     * Valores típicos:
+     *   0.0   = sin retroceso (armas de energía, láser)
+     *   5.0   = retroceso ligero (pistola pequeña)
+     *   15.0  = retroceso moderado (rifle)
+     *   30.0  = retroceso fuerte (shotgun)
+     *   50.0+ = retroceso extremo (cañón, arma pesada)
+     */
+    private double recoilForce;
+
     public WeaponStats(int cooldown,
                        int bulletsPerShot,
                        double spread,
                        double weaponDamageBulletBonus,
                        double bulletSpeedBase
+                    ) {
+        this(cooldown, bulletsPerShot, spread, weaponDamageBulletBonus, bulletSpeedBase, 0.0);
+    }
+
+    /**
+     * Constructor con recoilForce explícito.
+     * 
+     * @param recoilForce magnitud del impulso de retroceso (0 = sin retroceso)
+     */
+    public WeaponStats(int cooldown,
+                       int bulletsPerShot,
+                       double spread,
+                       double weaponDamageBulletBonus,
+                       double bulletSpeedBase,
+                       double recoilForce
                     ) {
 
         this.cooldown = cooldown;
@@ -20,6 +60,7 @@ public class WeaponStats {
         this.spread = spread;
         this.weaponDamageBulletBonus = weaponDamageBulletBonus;
         this.bulletSpeedBase = bulletSpeedBase;
+        this.recoilForce = recoilForce;
     }
     // getters
     public int getCooldown() { return cooldown; }
@@ -27,10 +68,30 @@ public class WeaponStats {
     public double getSpread() { return spread; }
     public double getDamageBonusByWeapon() { return weaponDamageBulletBonus; }
     public double getBulletSpeedBase() { return bulletSpeedBase; }
+
+    /**
+     * Magnitud del impulso de retroceso aplicado al shooter cuando dispara.
+     * 
+     * @return fuerza de retroceso (0 = sin retroceso)
+     */
+    public double getRecoilForce() { return recoilForce; }
+
     // setters (para mejoras)
     public void setCooldown(int cooldown) { this.cooldown = cooldown; }
     public void setBulletsPerShot(int bulletsPerShot) { this.bulletsPerShot = bulletsPerShot; }
     public void setSpread(double spread) { this.spread = spread; }
     public void setDamageBonusByWeapon(double damage) { this.weaponDamageBulletBonus = damage; }
     public void setBulletSpeedBase(double bulletSpeed) { this.bulletSpeedBase = bulletSpeed; }
+
+    /**
+     * Establece la fuerza de retroceso.
+     * 
+     * @param recoilForce magnitud del impulso (debe ser >= 0)
+     */
+    public void setRecoilForce(double recoilForce) {
+        if (recoilForce < 0) {
+            throw new IllegalArgumentException("recoilForce debe ser >= 0");
+        }
+        this.recoilForce = recoilForce;
+    }
 }

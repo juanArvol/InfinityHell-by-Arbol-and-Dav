@@ -54,18 +54,27 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *   BulletJump no contiene correcciones de posición ni penetración.
  *   Solo consume la normal de contacto y aplica su política de rebote.
  *
+ * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
+ *
+ * MIGRADO A IMPULSOS:
+ *   BulletJump ahora usa addForce() en lugar de setXspeed()/setYspeed().
+ *   
+ *   Proceso de conversión:
+ *     1. Calcular velocidad objetivo (target velocity) según la normal
+ *     2. Calcular cambio de velocidad: Δv = v_target - v_current
+ *     3. Calcular impulso: J = m × Δv
+ *     4. Aplicar via physics.addForce(Jx, Jy)
+ *
+ *   Esto hace que los rebotes sean consistentes con el sistema de fuerzas/impulsos
+ *   y permite que la masa participe correctamente en el proceso físico.
+ *
  * REFLEXIONES IDIOMÁTICAS:
  *   Las reflexiones usan Math.abs() donde corresponde para garantizar el
  *   signo correcto independientemente del estado de velocidad al llegar:
  *
- *   ny == -1 (suelo):   vy ← JUMP_BOOST (siempre negativo — hacia arriba)
- *   ny == +1 (techo):   vy ← -Math.abs(vy) ya fue reflejado, pero si llega
- *                        con vy > 0 (bajando hacia techo) también es correcto.
- *                        La fórmula -Math.abs(vy) garantiza vy <= 0 siempre.
- *   nx != 0  (pared):   vx ← -Math.abs(vx) * signo(nx_inverso) no aplica aquí.
- *                        La reflexión estándar es invertir vx. Si el guard del
- *                        sistema lo neutraliza cuando V·N < 0, el behavior ya
- *                        habrá producido el valor correcto.
+ *   ny == -1 (suelo):   vy_target ← JUMP_BOOST (siempre negativo — hacia arriba)
+ *   ny == +1 (techo):   vy_target ← Math.abs(vy) (positivo — hacia abajo)
+ *   nx != 0  (pared):   vx_target ← Math.abs(vx) * nx / FRICTION (refleja según normal)
  *
  * FALLBACK:
  *   El fallback heurístico por velocidad permanece como último recurso para
@@ -129,25 +138,44 @@ public class BulletJump extends BulletBehavior {
         int nx = physics.getLastContactNormalX();
         int ny = physics.getLastContactNormalY();
 
+        bullet.getBulletLife().extend(1);
         if (ny == -1) {
             // Cara TOP del obstáculo → suelo → rebote hacia arriba.
-            // JUMP_BOOST es siempre negativo: garantiza vy < 0 (alejándose del suelo)
-            // independientemente de la velocidad actual. No necesita Math.abs().
-            physics.setYspeed(JUMP_BOOST);
-            physics.setXspeed(physics.getXspeed() / FRICTION);
-            bullet.getBulletLife().extend(1);
+            // HRFC — Motion Intent: Convertir a impulso.
+            // Queremos velocidad final = JUMP_BOOST (negativo, hacia arriba).
+            // Δv = vf - vi
+            // Impulso = masa × Δv
+            double currentVy = physics.getYspeed();
+            double currentVx = physics.getXspeed();
+            double targetVy = JUMP_BOOST;
+            double targetVx = currentVx / FRICTION;
+            
+            double deltaVy = targetVy - currentVy;
+            double deltaVx = targetVx - currentVx;
+            double impulseY = physics.getMass() * deltaVy;
+            double impulseX = physics.getMass() * deltaVx;
+            
+            physics.addForce(impulseX, impulseY);
 
         } else if (ny == 1) {
             // Cara BOTTOM del obstáculo → techo → refleja hacia abajo.
-            // Usar -Math.abs(vy) para garantizar que vy > 0 (alejándose del techo)
-            // sin importar el signo de vy al llegar — idempotente.
-            // El guard de CollisionsSystem (V·N > 0) habrá hecho vy <= 0 si ya
-            // estaba apuntando mal, pero esta fórmula es correcta en cualquier caso.
-            physics.setYspeed(Math.abs(physics.getYspeed()));
-            physics.setXspeed(physics.getXspeed() / FRICTION);
+            // HRFC — Motion Intent: Convertir a impulso.
+            // Queremos velocidad final = Math.abs(vy) (positivo, hacia abajo).
+            double currentVy = physics.getYspeed();
+            double currentVx = physics.getXspeed();
+            double targetVy = Math.abs(currentVy);
+            double targetVx = currentVx / FRICTION;
+            
+            double deltaVy = targetVy - currentVy;
+            double deltaVx = targetVx - currentVx;
+            double impulseY = physics.getMass() * deltaVy;
+            double impulseX = physics.getMass() * deltaVx;
+            
+            physics.addForce(impulseX, impulseY);
 
         } else if (nx != 0) {
             // Cara lateral del obstáculo → pared → refleja componente horizontal.
+            // HRFC — Motion Intent: Convertir a impulso.
             //
             // Convención de normales (SweptAABB / BulletPhysics):
             //   nx = -1 → bullet venía desde la IZQUIERDA → golpea cara izquierda
@@ -155,12 +183,16 @@ public class BulletJump extends BulletBehavior {
             //   nx = +1 → bullet venía desde la DERECHA → golpea cara derecha
             //             → para alejarse: vx debe ser POSITIVO (vuelve a la derecha)
             //
-            // La fórmula correcta es: vx = |vx| * nx
-            //   nx=-1 → vx = -|vx| → negativo ✓
-            //   nx=+1 → vx = +|vx| → positivo ✓
-            //
-            // Dividir por FRICTION para la pérdida de velocidad por rebote.
-            physics.setXspeed(Math.abs(physics.getXspeed()) * nx / FRICTION);
+            // La fórmula correcta es: vx_target = |vx| * nx / FRICTION
+            //   nx=-1 → vx = -|vx| / FRICTION → negativo ✓
+            //   nx=+1 → vx = +|vx| / FRICTION → positivo ✓
+            double currentVx = physics.getXspeed();
+            double targetVx = Math.abs(currentVx) * nx / FRICTION;
+            
+            double deltaVx = targetVx - currentVx;
+            double impulseX = physics.getMass() * deltaVx;
+            
+            physics.addForce(impulseX, 0);
 
         } else {
             // ── Fallback: sin normal disponible ──────────────────────────────
@@ -184,26 +216,42 @@ public class BulletJump extends BulletBehavior {
             //   Si la bullet llegó aquí sin velocidad y sin normal, aplicar un
             //   impulso arbitrario para sacarla del estado stuck. Usar JUMP_BOOST
             //   en Y como último recurso documentado.
+            //
+            // HRFC — Motion Intent: Convertir fallback a impulsos.
             double vy = physics.getYspeed();
             double vx = physics.getXspeed();
+            
             if (vy > 0) {
                 // Venía bajando → tratar como suelo
-                physics.setYspeed(JUMP_BOOST);
-                physics.setXspeed(vx / FRICTION);
+                double targetVy = JUMP_BOOST;
+                double targetVx = vx / FRICTION;
+                double deltaVy = targetVy - vy;
+                double deltaVx = targetVx - vx;
+                physics.addForce(physics.getMass() * deltaVx, physics.getMass() * deltaVy);
                 bullet.getBulletLife().extend(1);
+                
             } else if (vy < 0) {
                 // Venía subiendo → tratar como techo
-                physics.setYspeed(Math.abs(vy));
-                physics.setXspeed(vx / FRICTION);
+                double targetVy = Math.abs(vy);
+                double targetVx = vx / FRICTION;
+                double deltaVy = targetVy - vy;
+                double deltaVx = targetVx - vx;
+                physics.addForce(physics.getMass() * deltaVx, physics.getMass() * deltaVy);
+                
             } else if (vx != 0) {
                 // Solo movimiento horizontal → tratar como pared
-                physics.setXspeed(-vx / FRICTION);
+                double targetVx = -vx / FRICTION;
+                double deltaVx = targetVx - vx;
+                physics.addForce(physics.getMass() * deltaVx, 0);
+                
             } else {
                 // Velocidad completamente nula y sin normal — estado fully stuck.
                 // Aplicar JUMP_BOOST para sacar la bullet del estado inválido.
                 // Documentado como last resort: no debe ocurrir en condiciones normales
                 // si CollisionDetector y CollisionsSystem funcionan correctamente.
-                physics.setYspeed(JUMP_BOOST);
+                double targetVy = JUMP_BOOST;
+                double deltaVy = targetVy - vy;
+                physics.addForce(0, physics.getMass() * deltaVy);
             }
         }
     }

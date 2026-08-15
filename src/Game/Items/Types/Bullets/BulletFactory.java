@@ -152,6 +152,8 @@ public final class BulletFactory {
      * Resuelve el Flyweight, calcula la velocidad vectorial y construye
      * la instancia Bullet. No emite eventos — eso es responsabilidad del
      * caller según si usa la ruta pública o la ruta del pool.
+     *
+     * Mini-HRFC — pasa el PhysicalState del blueprint a Bullet.
      */
     private static Bullet construct(ProjectileBlueprint blueprint,
                                     Vector2D position,
@@ -169,7 +171,8 @@ public final class BulletFactory {
                 xSpeed,
                 ySpeed,
                 blueprint.lifeTime(),
-                blueprint.damage()
+                blueprint.damage(),
+                blueprint.physicalState()  // Mini-HRFC — null si no declarado
         );
     }
 

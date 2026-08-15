@@ -104,6 +104,35 @@ public abstract class BulletBehavior {
     }
 
     /**
+     * Estado físico declarado por este tipo de proyectil.
+     *
+     * ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+     *
+     * Cada tipo de proyectil declara explícitamente su PhysicalState.
+     * Si retorna null, el proyectil NO recibe PhysicsComponent y no participa
+     * en dominios físicos (thermal, electrical, fluid, mechanical).
+     *
+     * Default: null (sin física).
+     *
+     * Sobreescribir para proyectiles con propiedades físicas:
+     *
+     * <pre>{@code
+     * @Override
+     * public PhysicalState getPhysicalState() {
+     *     return PhysicalState.builder()
+     *         .register(ThermalProperties.TEMPERATURE, 300.0)  // FireBullet
+     *         .registerMaterial(METAL_MATERIAL::registerInto)
+     *         .build();
+     * }
+     * }</pre>
+     *
+     * @return PhysicalState declarado o null si no tiene física
+     */
+    public Game.Engine.Physics.Core.PhysicalState getPhysicalState() {
+        return null;  // Default: sin física
+    }
+
+    /**
      * Radio de interacción espacial de este tipo de proyectil.
      *
      * ── POR QUÉ ESTÁ AQUÍ ────────────────────────────────────────────────

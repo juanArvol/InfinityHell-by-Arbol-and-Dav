@@ -188,6 +188,7 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
             // movement (con reset si ResettableMovement), flyweight y flags.
             // PRE: onRelease() ya fue invocado por emitDestroy() antes de
             // que isPendingDestruction() llamara release().
+            // Mini-HRFC: pasa el PhysicalState del blueprint.
             bullet.resetState(
                     position.getX(), position.getY(),
                     xSpeed, ySpeed,
@@ -195,7 +196,8 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
                     blueprint.damage(),
                     blueprint.behavior(),
                     blueprint.movement(),
-                    newFlyweight
+                    newFlyweight,
+                    blueprint.physicalState()  // Mini-HRFC
             );
 
         } else {

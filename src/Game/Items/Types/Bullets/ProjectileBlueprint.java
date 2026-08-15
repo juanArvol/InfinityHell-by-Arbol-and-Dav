@@ -1,6 +1,7 @@
 package Game.Items.Types.Bullets;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.Physics.Core.PhysicalState;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
@@ -34,6 +35,13 @@ import Game.Items.Types.Bullets.Movement.LinearMovement;
  * incluyendo la composición de gravedad si el behavior la declara en su
  * ProjectileData — esa lógica pertenece aquí, no en BulletFactory.
  *
+ * ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────────
+ *
+ * ProjectileBlueprint puede llevar un PhysicalState declarado explícitamente.
+ * Si physicalState es null, el proyectil NO recibe PhysicsComponent y no
+ * participa en dominios físicos. La declaración es responsabilidad del tipo
+ * concreto (BulletBehavior.getPhysicalState() o explicit wither).
+ *
  * ── PIPELINE DE MODIFIERS ─────────────────────────────────────────────────
  *
  *   ProjectileBlueprint bp = ProjectileBlueprint.from(behavior, speed, damage);
@@ -51,6 +59,7 @@ import Game.Items.Types.Bullets.Movement.LinearMovement;
  *   width / height   — dimensiones del collider.
  *   assetKey         — clave del sprite (null = default "bullet.bala").
  *   collisionProfile — perfil de colisión (null = default PLAYER_BULLET en Bullet).
+ *   physicalState    — estado físico declarado (null = sin física).
  */
 public final class ProjectileBlueprint {
 
@@ -64,6 +73,7 @@ public final class ProjectileBlueprint {
     private final int                height;
     private final String             assetKey;
     private final CollisionProfile   collisionProfile;
+    private final PhysicalState      physicalState;  // Mini-HRFC — null = sin física
 
     // ── Constructor privado ───────────────────────────────────────────────
 
@@ -76,7 +86,8 @@ public final class ProjectileBlueprint {
             int              width,
             int              height,
             String           assetKey,
-            CollisionProfile collisionProfile
+            CollisionProfile collisionProfile,
+            PhysicalState    physicalState
     ) {
         // Defensivo — los withers no deben producir nulls en comportamiento obligatorio
         this.behavior         = (behavior != null) ? behavior : new DefaultBehavior();
@@ -88,6 +99,7 @@ public final class ProjectileBlueprint {
         this.height           = (height > 0) ? height : 8;
         this.assetKey         = assetKey;         // null = default, permitido
         this.collisionProfile = collisionProfile; // null = default PLAYER_BULLET en Bullet
+        this.physicalState    = physicalState;    // null = sin física, permitido
     }
 
     // ── Factory estático principal ────────────────────────────────────────
@@ -98,6 +110,10 @@ public final class ProjectileBlueprint {
      * Este método encapsula la resolución de movimiento, incluyendo la composición
      * de gravedad si el behavior la declara en su ProjectileData. Esta lógica
      * pertenece aquí — no en BulletFactory.
+     *
+     * ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+     * El PhysicalState se obtiene de behavior.getPhysicalState(). Si el behavior
+     * retorna null, el proyectil NO recibe PhysicsComponent.
      *
      * Regla de gravedad:
      *   Si ProjectileData.gravityValue() != 0.0 Y el movement declarado por el
@@ -116,6 +132,7 @@ public final class ProjectileBlueprint {
                                            double damage) {
         ProjectileData     data     = behavior.getDefaultData();
         ProjectileMovement movement = behavior.getDefaultMovement();
+        PhysicalState      physics  = behavior.getPhysicalState();  // Mini-HRFC
 
         // Resolución de gravedad: una sola fuente de verdad.
         // Si el behavior declara gravityValue en ProjectileData Y el movement
@@ -134,7 +151,8 @@ public final class ProjectileBlueprint {
                 data.width(),
                 data.height(),
                 data.assetKey(),
-                null  // collisionProfile: default PLAYER_BULLET — Bullet lo aplica
+                null,    // collisionProfile: default PLAYER_BULLET — Bullet lo aplica
+                physics  // Mini-HRFC — null si el behavior no declara física
         );
     }
 
@@ -159,49 +177,58 @@ public final class ProjectileBlueprint {
     /** Retorna una copia con un behavior diferente. */
     public ProjectileBlueprint withBehavior(BulletBehavior newBehavior) {
         return new ProjectileBlueprint(newBehavior, movement, speed, damage,
-                lifeTime, width, height, assetKey, collisionProfile);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con un movement diferente. */
     public ProjectileBlueprint withMovement(ProjectileMovement newMovement) {
         return new ProjectileBlueprint(behavior, newMovement, speed, damage,
-                lifeTime, width, height, assetKey, collisionProfile);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con una speed diferente. */
     public ProjectileBlueprint withSpeed(double newSpeed) {
         return new ProjectileBlueprint(behavior, movement, newSpeed, damage,
-                lifeTime, width, height, assetKey, collisionProfile);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con un damage diferente. */
     public ProjectileBlueprint withDamage(double newDamage) {
         return new ProjectileBlueprint(behavior, movement, speed, newDamage,
-                lifeTime, width, height, assetKey, collisionProfile);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con un lifeTime diferente. */
     public ProjectileBlueprint withLifeTime(int newLifeTime) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                newLifeTime, width, height, assetKey, collisionProfile);
+                newLifeTime, width, height, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con dimensiones de collider diferentes. */
     public ProjectileBlueprint withSize(int newWidth, int newHeight) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, newWidth, newHeight, assetKey, collisionProfile);
+                lifeTime, newWidth, newHeight, assetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con un assetKey diferente. */
     public ProjectileBlueprint withAssetKey(String newAssetKey) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, width, height, newAssetKey, collisionProfile);
+                lifeTime, width, height, newAssetKey, collisionProfile, physicalState);
     }
 
     /** Retorna una copia con un CollisionProfile diferente. */
     public ProjectileBlueprint withCollisionProfile(CollisionProfile newProfile) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, width, height, assetKey, newProfile);
+                lifeTime, width, height, assetKey, newProfile, physicalState);
+    }
+
+    /**
+     * Retorna una copia con un PhysicalState diferente.
+     * Mini-HRFC — permite sobreescribir el estado físico del behavior.
+     */
+    public ProjectileBlueprint withPhysicalState(PhysicalState newPhysicalState) {
+        return new ProjectileBlueprint(behavior, movement, speed, damage,
+                lifeTime, width, height, assetKey, collisionProfile, newPhysicalState);
     }
 
     /** Retorna una copia con movement compuesto (this.movement.andThen(extra)). */
@@ -220,6 +247,7 @@ public final class ProjectileBlueprint {
     public int                height()            { return height;            }
     public String             assetKey()          { return assetKey;          }
     public CollisionProfile   collisionProfile()  { return collisionProfile;  }
+    public PhysicalState      physicalState()     { return physicalState;     } // Mini-HRFC
 
 
 

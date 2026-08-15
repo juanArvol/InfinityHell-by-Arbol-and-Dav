@@ -7,6 +7,7 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  * Movimiento con gravedad — aplica aceleración gravitacional cada frame.
  *
  * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
+ * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────────
  *
  * El proyectil cae progresivamente a medida que avanza. Ideal para:
  *   - Flechas
@@ -21,11 +22,16 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *
  * La velocidad terminal emerge del balance:
  *   F_gravity = m × g
- *   F_drag = 0.5 × ρ × Cd × A × v²
+ *   F_drag = Cd × A × v²  (Cd escalado para px/frame)
+ *
+ * Corrección HRFC FASE 2:
+ *   - Removido factor mediumDensity del cálculo (era incompatible con px/frame).
+ *   - dragCoefficient ya está escalado (0.0001-0.001) en BulletPhysics.
+ *   - Fórmula ahora coherente con Physics2D.applyGravity().
  *
  * Los proyectiles pueden configurar sus propiedades aerodinámicas:
- *   bullet.getPhysics().setEffectiveArea(0.3);      // proyectil pequeño
- *   bullet.getPhysics().setDragCoefficient(0.15);   // muy aerodinámico
+ *   bullet.getPhysics().setEffectiveArea(0.3);        // proyectil pequeño
+ *   bullet.getPhysics().setDragCoefficient(0.0001);   // muy aerodinámico
  *
  * ── Diferencia con Physics2D.applyGravity() ──────────────────────────────
  *
@@ -61,16 +67,17 @@ public final class GravityMovement implements ProjectileMovement {
         // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──
         double a_gravity = gravity;
 
-        // ── 2. Resistencia aerodinámica ──────────────────────────────────
-        // F_drag = 0.5 × ρ × Cd × A × v²
+        // ── 2. Resistencia aerodinámica (escalada para px/frame) ─────────
+        // F_drag = Cd × A × v²
+        // Cd ya está escalado (0.0001-0.001) en BulletPhysics.
+        // NO se usa mediumDensity — era factor de SI units incompatible.
         double vy = physics.getYspeed();
         double speed = Math.abs(vy);
         double mass = physics.getMass();
-        double rho = physics.getMediumDensity();
         double cd = physics.getDragCoefficient();
         double area = physics.getEffectiveArea();
 
-        double dragForce = 0.5 * rho * cd * area * speed * speed;
+        double dragForce = cd * area * speed * speed;
 
         // Dirección del drag: opuesta a la velocidad
         double dragDirection = (vy >= 0) ? -1.0 : 1.0;

@@ -86,7 +86,7 @@ public class Physics2D {
     protected Vector2D velocity = new Vector2D(0, 0);
     protected double gravity;
 
-    protected double mass        = 1.0;
+    protected double mass;
     protected double aAir;
     protected double speedMaxAir;
     protected double speedMaxPiso;
@@ -116,23 +116,30 @@ public class Physics2D {
     protected double effectiveArea = 1.0;
 
     /**
-     * Coeficiente de drag aerodinámico [típicamente 0.1 - 2.0].
+     * Coeficiente de drag aerodinámico escalado para unidades del juego (px/frame).
      * Representa la forma aerodinámica del objeto:
-     *   ~0.05: aerodinámica extrema (bala)
-     *   ~0.5:  objeto razonablemente aerodinámico
-     *   ~1.0:  objeto no optimizado (caja, persona)
-     *   ~2.0:  objeto muy poco aerodinámico
-     * Default: 0.47 (aproximadamente esférico).
+     *   ~0.0001: aerodinámica extrema (bala, proyectil)
+     *   ~0.0003: objeto razonablemente aerodinámico
+     *   ~0.0005: objeto no optimizado (caja, persona)
+     *   ~0.0008: objeto muy poco aerodinámico
+     * Default: 0.0003 (objeto genérico, escalado para px/frame).
      */
-    protected double dragCoefficient = 0.47;
+    protected double dragCoefficient = 0.0003;
 
     /**
-     * Densidad del medio (aire) en kg/m³.
-     * Aire a nivel del mar ≈ 1.225 kg/m³.
-     * Este valor puede modificarse para simular diferentes atmósferas o alturas.
-     * Default: 1.225 (aire estándar).
+     * Densidad del medio (obsoleto - mantenido por compatibilidad).
+     * 
+     * NOTA: Este parámetro ya no se usa en el cálculo de drag después de
+     * la corrección de unidades en HRFC FASE 2. Los coeficientes de drag
+     * ahora están escalados directamente para unidades del juego (px/frame).
+     * 
+     * Mantener este campo evita romper código que pueda leer/escribir
+     * mediumDensity, pero no afecta la física.
+     * 
+     * @deprecated Ya no afecta el cálculo de drag. Usar dragCoefficient.
      */
-    protected double mediumDensity = 1.225;
+    @Deprecated
+    protected double mediumDensity = 1.0;
 
     protected SurfaceMaterial currentSurface = SurfaceMaterial.DEFAULT;
 
@@ -280,20 +287,27 @@ public class Physics2D {
      * Aplica gravedad y resistencia aerodinámica del medio.
      *
      * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
+     * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────
      *
      * La velocidad terminal NO se impone artificialmente.
      * Emerge naturalmente del balance entre fuerzas:
      *
      *   F_gravity = m × g (hacia abajo)
-     *   F_drag = 0.5 × ρ × Cd × A × v² (opuesta a la velocidad)
+     *   F_drag = Cd × A × v² (opuesta a la velocidad)
      *
      * Cuando F_net ≈ 0 → velocidad terminal alcanzada.
      *
      * Este método:
      *   1. Aplica gravedad: a_gravity = g (NO escalada por masa — corrección física)
-     *   2. Calcula drag aerodinámico: F_drag = 0.5 × ρ × Cd × A × vy²
+     *   2. Calcula drag aerodinámico: F_drag = Cd × A × vy²
+     *      (Cd y A ya están escalados para px/frame, no se usa mediumDensity)
      *   3. Aplica drag como deceleración: a_drag = F_drag / m
      *   4. Integra aceleración neta: vy += (a_gravity - a_drag)
+     *
+     * Corrección HRFC FASE 2:
+     *   - Removido factor mediumDensity (0.5 × ρ) del cálculo.
+     *   - dragCoefficient ahora está escalado para unidades del juego (0.0001-0.001).
+     *   - Esto corrige el problema de drag excesivo que causaba caída lenta/hover.
      *
      * Nota física importante:
      *   - La gravedad produce aceleración constante g independiente de la masa.
@@ -309,12 +323,13 @@ public class Physics2D {
         // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──
         double a_gravity = gravity;
 
-        // ── 2. Resistencia aerodinámica ──────────────────────────────────
-        // F_drag = 0.5 × ρ × Cd × A × v²
-        // Actúa en dirección opuesta a la velocidad.
+        // ── 2. Resistencia aerodinámica (escalada para px/frame) ─────────
+        // F_drag = Cd × A × v²
+        // Cd ya está escalado (0.0001-0.001) para unidades del juego.
+        // NO se usa mediumDensity — era factor de SI units incompatible.
         double vy = velocity.getY();
         double speed = Math.abs(vy);
-        double dragForce = 0.5 * mediumDensity * dragCoefficient * effectiveArea * speed * speed;
+        double dragForce = dragCoefficient * effectiveArea * speed * speed;
 
         // Dirección del drag: opuesta a la velocidad
         // Si vy > 0 (cayendo) → drag hacia arriba (negativo)
@@ -333,8 +348,38 @@ public class Physics2D {
 
     // ── Salto ─────────────────────────────────────────────────────────────
 
+    /**
+     * Aplica un impulso de salto vertical.
+     *
+     * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────
+     *
+     * Este método ahora utiliza addForce() en lugar de asignación directa
+     * de velocidad, integrándose correctamente con el sistema de fuerzas/impulsos.
+     *
+     * DEPRECADO: Se recomienda usar {@link Game.Engine.Physics.KineticPhysics.Intent.JumpIntent}
+     * en su lugar, que expresa la intención de salto como altura objetivo en
+     * lugar de fuerza arbitraria.
+     *
+     * Migración recomendada:
+     *
+     *   Antes:
+     *     physics.jump(10);
+     *
+     *   Después:
+     *     JumpIntent intent = new JumpIntent(capabilities);
+     *     intent.resolve(physics);
+     *
+     * @param force impulso de salto (positivo, será aplicado hacia arriba como -force)
+     *
+     * @deprecated Usar JumpIntent para expresar saltos como altura objetivo
+     */
+    @Deprecated
     public void jump(double force) {
-        velocity.setY(-force / mass);
+        // HRFC: Migrado de velocity.setY(-force/mass) a addForce(0, -force)
+        // Esto hace que jump() sea consistente con el resto del sistema de fuerzas.
+        // addForce() internamente hace: velocity.y += (-force / mass) = -force/mass
+        // El resultado es idéntico, pero ahora pasa por la API consolidada.
+        addForce(0, -force);
         salto = true;
     }
 
@@ -380,7 +425,10 @@ public class Physics2D {
      * Establece el coeficiente de drag aerodinámico.
      * Representa la forma aerodinámica del objeto.
      *
-     * @param cd coeficiente de drag [típicamente 0.1 - 2.0]. Debe ser >= 0.
+     * HRFC FASE 2: El coeficiente ahora está escalado para px/frame.
+     * Rango típico: 0.0001 - 0.001 (no confundir con Cd físico 0.1-2.0).
+     *
+     * @param cd coeficiente de drag escalado [típicamente 0.0001 - 0.001]. Debe ser >= 0.
      */
     public void setDragCoefficient(double cd) {
         if (cd < 0) throw new IllegalArgumentException("dragCoefficient debe ser >= 0");
@@ -390,13 +438,16 @@ public class Physics2D {
     public double getDragCoefficient() { return dragCoefficient; }
 
     /**
-     * Establece la densidad del medio (aire).
-     * Permite simular diferentes atmósferas o altitudes.
-     *
-     * @param density densidad en kg/m³. Debe ser >= 0.
+     * Establece la densidad del medio (obsoleto - no afecta física).
+     * 
+     * @deprecated Después de HRFC FASE 2, mediumDensity ya no se usa en
+     *             el cálculo de drag. Los coeficientes están escalados
+     *             directamente para px/frame. Este método se mantiene
+     *             por compatibilidad pero no tiene efecto.
      */
+    @Deprecated
     public void setMediumDensity(double density) {
-        if (density < 0) throw new IllegalArgumentException("mediumDensity debe ser >= 0");
+        // No-op: dragCoefficient ya está escalado para px/frame
         this.mediumDensity = density;
     }
 

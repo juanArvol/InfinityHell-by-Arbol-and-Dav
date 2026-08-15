@@ -1,8 +1,8 @@
 package Game.Engine.Physics.SimulaticWorld.Presets;
 
 import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.GameObjects;
-import Game.Engine.Physics.Core.PhysicsComponent;
 import Game.Engine.Physics.Core.PropertyDescriptor;
 import Game.Engine.Physics.Core.SimulationContextComponent;
 import Game.Engine.Physics.Electrical.ElectricalProperties;

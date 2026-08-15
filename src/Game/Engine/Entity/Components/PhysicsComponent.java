@@ -1,6 +1,7 @@
-package Game.Engine.Physics.Core;
+package Game.Engine.Entity.Components;
 
 import Game.Engine.Component;
+import Game.Engine.Physics.Core.PhysicalState;
 
 /**
  * Componente de participación en la simulación física.

@@ -6,6 +6,7 @@ import Game.Engine.GameObjects;
  * Influencia sobre una propiedad del mundo — abstracción raíz.
  *
  * ── HRFC-015 — World Simulation Core ──────────────────────────────────────
+ * ── HRFC FASE 1 — Consolidación Universal del Estado Físico ───────────────
  *
  * ── QUÉ ES UNA INFLUENCE ─────────────────────────────────────────────────
  * Una Influence es cualquier agente que modifica el estado físico del mundo
@@ -23,8 +24,8 @@ import Game.Engine.GameObjects;
  *                  concreto, o un aura que amplifica la conductividad eléctrica
  *                  de todos los aliados independientemente de su posición.
  *
- * Ambos terminan modificando componentes de estado (ThermalComponent,
- * ElectricalComponent, etc.). El pipeline continúa igual aguas abajo:
+ * Ambos terminan modificando el estado físico (PhysicalState via PhysicsComponent).
+ * El pipeline continúa igual aguas abajo:
  *
  *   Influence modifica PhysicalState
  *       ↓
@@ -69,9 +70,14 @@ public interface Influence {
     /**
      * Aplica el efecto de esta influencia sobre el objeto destino.
      *
-     * La implementación modifica directamente los componentes de estado del
-     * objeto (ThermalComponent, ElectricalComponent, FluidComponent,
-     * PressureComponent) sin evaluar consecuencias de gameplay.
+     * La implementación modifica directamente el estado físico del objeto
+     * (PhysicalState via PhysicsComponent) sin evaluar consecuencias de gameplay.
+     *
+     * Ejemplo:
+     *   PhysicsComponent pc = target.getComponent(PhysicsComponent.class);
+     *   if (pc != null) {
+     *       pc.getState().add(ThermalProperties.TEMPERATURE, -5.0);  // enfriar
+     *   }
      *
      * Invariante: apply() NO debe crear StatusEffects, disparar eventos de
      * gameplay ni invocar lógica de combate. Solo modifica propiedades físicas.

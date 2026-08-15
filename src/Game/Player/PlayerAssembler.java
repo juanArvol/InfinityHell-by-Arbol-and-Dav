@@ -4,7 +4,9 @@ import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Collisions.MaterialComponent;
 import Game.Engine.Entity.Components.HealthComponent;
+import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.Entity.Components.StatusEffectComponent;
 import Game.Engine.Entity.Components.Visuals.AnimationControllerComponent;
 import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
@@ -13,6 +15,11 @@ import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.Entity.Stats.RuntimeStats;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Physics.Core.PhysicalState;
+import Game.Engine.Physics.Electrical.ElectricalProperties;
+import Game.Engine.Physics.Fluid.FluidProperties;
+import Game.Engine.Physics.Mechanical.MechanicalProperties;
+import Game.Engine.Physics.Thermal.ThermalProperties;
 import Game.Items.Savement.EquippedItems;
 import Game.Items.Savement.Inventory;
 import Game.Items.Types.Ammulets.AmuletInventory;
@@ -78,7 +85,7 @@ public final class PlayerAssembler {
 
     // ── Configuración base ────────────────────────────────────────────────
 
-    private static final int    BASE_HP      = 100;
+    private static final int    BASE_HP      = 1;
     private static final int    BASE_HP_MAX  = 200;
     private static final double BASE_GRAVITY = 0.78;
     private static final int    INVENTORY_SLOTS = 20;
@@ -89,6 +96,29 @@ public final class PlayerAssembler {
     private static final int COLLIDER_H  = 24;
     private static final int COLLIDER_OX = 4;
     private static final int COLLIDER_OY = 0;
+
+    // ── Propiedades físicas del jugador ───────────────────────────────────
+    // HRFC FASE 1 — Universal Physical Properties Integration
+
+    /** Material biológico del jugador (propiedades físicas intrínsecas). */
+    private static final MaterialComponent PLAYER_MATERIAL = 
+        MaterialComponent.builder()
+            .thermalConductivity(0.6)      // cuerpo humano - conductor moderado
+            .heatCapacity(3500.0)          // alta capacidad calorífica (agua + proteínas)
+            .thermalDiffusivity(0.15)      // disipación moderada
+            .electricalConductivity(0.4)   // conductor moderado (fluidos corporales)
+            .humidityAbsorption(0.3)       // piel absorbe humedad moderadamente
+            .density(1050.0)               // similar al agua
+            .compressibility(0.05)         // tejidos bastante incompresibles
+            .elasticity(0.4)               // tejidos algo elásticos
+            .hardness(0.2)                 // cuerpo humano es blando
+            .build();
+
+    /** Temperatura corporal normal del jugador (°C en unidades del juego). */
+    private static final double BODY_TEMPERATURE = 36.5;
+
+    /** Hidratación normal del jugador (0.0 = deshidratado, 1.0 = saturado). */
+    private static final double NORMAL_HYDRATION = 0.6;
 
     // ── API ───────────────────────────────────────────────────────────────
 
@@ -110,8 +140,8 @@ public final class PlayerAssembler {
                                   Consumer<Bullet> bulletSpawner,
                                   GameEventBus eventBus) {
         PlayerLoadout loadout = PlayerLoadout
-            .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.NORMALBULLET)
+            .initialWeapons()
+            .initialBullets()
             .initialAmulets()
             .build();
         
@@ -202,6 +232,25 @@ public final class PlayerAssembler {
         combat.setPositionSupplier(() -> player.getTransform().getPosition());
 
         // ── 7. Components — añadir componentes al Player ──────────────────
+        
+        // ── HRFC FASE 1 — Universal Physical Properties Integration ───────
+        // PhysicsComponent: Fuente única de verdad del estado físico.
+        // El Player participa automáticamente en todos los dominios físicos
+        // (thermal, electrical, fluid, mechanical) declarativamente.
+        PhysicalState physicalState = PhysicalState.builder()
+            // Estado físico inicial
+            .register(ThermalProperties.TEMPERATURE, BODY_TEMPERATURE)  // 36.5°C
+            .register(ElectricalProperties.CHARGE, 0.0)                 // neutro
+            .register(FluidProperties.HUMIDITY, NORMAL_HYDRATION)       // 60% hidratación
+            .register(MechanicalProperties.PRESSURE, 0.0)               // presión ambiente
+            
+            // Propiedades del material biológico
+            .registerMaterial(PLAYER_MATERIAL::registerInto)
+            
+            .build();
+        
+        player.addComponent(new PhysicsComponent(physicalState));
+        
         HealthComponent healthComponent = new HealthComponent(entityStats) {
             @Override
             protected void onDeath() {

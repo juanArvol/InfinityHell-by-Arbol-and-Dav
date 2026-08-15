@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.Definition;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
+import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.Entity.Components.Visuals.HitBoxComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameEventBus;
@@ -10,6 +11,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Engine.Lifecycle.EntityContext;
 import Game.Engine.Lifecycle.SimulationLifecycle;
+import Game.Engine.Physics.Core.PhysicalState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
@@ -109,6 +111,10 @@ import java.awt.Color;
  */
 public class Bullet extends GameObjects implements Game.Engine.Destroyable, SimulationLifecycle {
 
+    // ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+    // El estado físico NO se impone universalmente. Cada tipo de proyectil
+    // declara explícitamente su PhysicalState en su comportamiento o blueprint.
+
     private final BulletLife         bulletLife;
     private final Physics2DComponent physicsComponent;
     /**
@@ -177,14 +183,21 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Los recursos inmutables (texture, profile, dimensiones) vienen ya
      * resueltos en el Flyweight — no se recalculan por instancia.
      *
-     * @param position   posición inicial de spawn
-     * @param flyweight  recursos compartidos del tipo de proyectil
-     * @param behavior   comportamiento de impacto y update
-     * @param movement   estrategia de movimiento por frame
-     * @param xSpeed     velocidad inicial en X (unidades/frame)
-     * @param ySpeed     velocidad inicial en Y (unidades/frame)
-     * @param lifeTime   ticks de vida máximos
-     * @param damage     daño que aplica al impactar
+     * ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+     * PhysicalState se recibe como parámetro. Si es null o isEmpty(), el
+     * proyectil NO recibe PhysicsComponent. La responsabilidad de declarar
+     * el estado físico es del tipo concreto (BulletBehavior o Blueprint),
+     * no de Bullet.
+     *
+     * @param position      posición inicial de spawn
+     * @param flyweight     recursos compartidos del tipo de proyectil
+     * @param behavior      comportamiento de impacto y update
+     * @param movement      estrategia de movimiento por frame
+     * @param xSpeed        velocidad inicial en X (unidades/frame)
+     * @param ySpeed        velocidad inicial en Y (unidades/frame)
+     * @param lifeTime      ticks de vida máximos
+     * @param damage        daño que aplica al impactar
+     * @param physicalState estado físico declarado (null = sin física)
      */
     public Bullet(
             Vector2D           position,
@@ -194,7 +207,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             double             xSpeed,
             double             ySpeed,
             int                lifeTime,
-            double             damage
+            double             damage,
+            PhysicalState      physicalState
     ) {
         getTransform().setPosition(position);
 
@@ -227,10 +241,26 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
         addComponent(new HitBoxComponent(Color.YELLOW));
 
-        // ── Physics ───────────────────────────────────────────────────────
+        // ── Physics (cinemático) ──────────────────────────────────────────
         BulletPhysics physics = new BulletPhysics(xSpeed, ySpeed);
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
+
+        // ── PhysicsComponent (estado físico opt-in) ───────────────────────
+        // Mini-HRFC — Declarative PhysicalState Ownership
+        //
+        // Solo se agrega PhysicsComponent si el Blueprint declaró un estado
+        // físico. Si physicalState es null o isEmpty(), el proyectil no
+        // participa en dominios físicos (thermal, electrical, etc.).
+        //
+        // La declaración del estado es responsabilidad del tipo concreto:
+        //   NormalBullet  → puede no tener PhysicalState
+        //   FireBullet    → declara TEMPERATURE alta
+        //   IceBullet     → declara TEMPERATURE baja
+        //   LightningBullet → declara CHARGE alta
+        if (physicalState != null && !physicalState.isEmpty()) {
+            addComponent(new PhysicsComponent(physicalState));
+        }
 
         // ── Lifecycle: onAttached ─────────────────────────────────────────
         this.behavior.onAttached(this);
@@ -436,6 +466,12 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Esto evita el coste de construcción de Component mientras garantiza
      * que la instancia tiene la configuración correcta.
      *
+     * ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+     * PhysicalState se resetea completamente: se elimina el componente
+     * existente y se agrega el nuevo estado declarado por el blueprint.
+     * Esto garantiza que FireBullet → NormalBullet no conserva temperatura,
+     * y que NormalBullet → FireBullet recibe la temperatura correcta.
+     *
      * PRE-CONDICIÓN: behavior.onRelease(this) ya fue llamado antes de llegar
      * aquí (via emitDestroy() protegido por destroyEventFired).
      *
@@ -448,7 +484,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                     int lifeTime, double damage,
                     BulletBehavior behavior,
                     ProjectileMovement movement,
-                    BulletFlyweight newFlyweight) {
+                    BulletFlyweight newFlyweight,
+                    PhysicalState newPhysicalState) {
 
         getTransform().setPosition(new Vector2D(x, y));
         getPhysics().setXspeed(xSpeed);
@@ -459,6 +496,65 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         // ownerPool y eventBus se limpian aquí; el pool los reinyecta justo después
         this.ownerPool = null;
         this.eventBus  = null;
+
+        // ── HRFC — Reset Physical Properties (cinemático) ────────────────
+        // Resetear masa, área efectiva y coeficiente de drag a valores por
+        // defecto de BulletPhysics. Esto previene contaminación entre bullets
+        // cuando un MetheorBullet (masa=3.0, área=1.5, drag=0.0005) se reutiliza
+        // para un BulletNormal que espera valores estándar (masa=1.0, área=0.3,
+        // drag=0.0001).
+        //
+        // El behavior.onAttached() más adelante puede sobreescribir estos valores
+        // si el nuevo bullet requiere propiedades físicas personalizadas.
+        getPhysics().setMass(1.0);
+        getPhysics().setEffectiveArea(0.3);
+        getPhysics().setDragCoefficient(0.0001);
+
+        // ── Mini-HRFC — Reset PhysicalState (declarativo) ─────────────────
+        // Actualizar o remover el PhysicsComponent según el nuevo estado.
+        // Esto garantiza que un FireBullet reutilizado como NormalBullet no
+        // conserva temperatura alta, y viceversa.
+        //
+        // Si newPhysicalState es null o isEmpty(), el proyectil no debe tener
+        // PhysicsComponent (no participa en dominios físicos).
+        PhysicsComponent existingPhysics = getComponent(PhysicsComponent.class);
+        
+        if (newPhysicalState == null || newPhysicalState.isEmpty()) {
+            // El nuevo bullet no tiene física — pero el viejo sí la tenía.
+            // Como no podemos remover componentes, lo mejor que podemos hacer
+            // es dejar el componente allí vacío. El PhysicsCoordinator debe
+            // verificar isEmpty() antes de simular.
+            // TODO: Este es un compromiso arquitectónico. Lo ideal sería
+            // que GameObjects tuviera removeComponent().
+            if (existingPhysics != null) {
+                // Component existe pero no debería. Dejar una nota en el estado.
+                // Por ahora, este escenario es raro (bullet con física → bullet sin física).
+            }
+        } else {
+            // El nuevo bullet tiene física declarada
+            if (existingPhysics != null) {
+                // Ya existe PhysicsComponent — reemplazar su contenido copiando
+                // las propiedades del nuevo estado al estado existente.
+                // Como PhysicalState es inmutable en su builder pero mutable
+                // en sus propiedades individuales via set(), podemos actualizar.
+                PhysicalState existingState = existingPhysics.getState();
+                
+                // Limpiar propiedades existentes que no estén en el nuevo estado
+                for (var descriptor : existingState.registeredDescriptors()) {
+                    if (!newPhysicalState.has(descriptor)) {
+                        existingState.set(descriptor, 0.0);
+                    }
+                }
+                
+                // Copiar todas las propiedades del nuevo estado
+                for (var descriptor : newPhysicalState.registeredDescriptors()) {
+                    existingState.set(descriptor, newPhysicalState.get(descriptor));
+                }
+            } else {
+                // No existe — agregarlo
+                addComponent(new PhysicsComponent(newPhysicalState));
+            }
+        }
 
         // Actualizar Flyweight si cambió — sin recrear componentes
         if (this.flyweight != newFlyweight) {

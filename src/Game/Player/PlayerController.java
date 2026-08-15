@@ -1,5 +1,6 @@
 package Game.Player;
 
+import Game.Engine.Physics.KineticPhysics.Intent.JumpIntent;
 import Inputs.KeyBoard;
 
 /**
@@ -25,6 +26,14 @@ import Inputs.KeyBoard;
  *   SIN CAMBIOS:
  *     - No conoce Player directamente.
  *     - Recibe PlayerPhysics y PlayerState — solo lo que necesita.
+ *
+ * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
+ *
+ * MIGRADO A MOTION INTENT:
+ *     - Salto usa JumpIntent en lugar de physics.jump(10)
+ *     - La altura de salto se expresa como objetivo físico (15 px)
+ *     - Los modificadores de capacidad (buffs/training) se aplican automáticamente
+ *     - El salto es consistente bajo diferentes valores de masa/gravedad
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -176,7 +185,19 @@ public class PlayerController {
 
     private void handleJumpInput() {
         if (KeyBoard.getState("up") && state.isEnElSuelo()) {
-            physics.jump(10);
+            // HRFC — Motion Intent: usar JumpIntent en lugar de physics.jump(10)
+            // JumpIntent calcula el impulso necesario para alcanzar la altura
+            // efectiva definida en PlayerPhysics.capabilities (BASE_JUMP_HEIGHT
+            // × modificadores de strength/buff/amulet).
+            //
+            // Esto garantiza que:
+            //   - El salto es consistente bajo diferentes valores de masa/gravedad
+            //   - Los buffs/debuffs modifican la altura automáticamente
+            //   - El salto se expresa como objetivo físico (altura) no como velocidad
+            JumpIntent jumpIntent = new JumpIntent(physics.getCapabilities());
+            jumpIntent.resolve(physics);
+
+            // Actualizar estado de contacto con suelo
             physics.setOnGround(false);
             physics.clearSurface();
             state.setEnElSuelo(false);

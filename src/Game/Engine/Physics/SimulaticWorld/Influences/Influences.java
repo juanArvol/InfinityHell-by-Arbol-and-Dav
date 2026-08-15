@@ -9,6 +9,7 @@ import java.util.function.Consumer;
  * Factories y combinadores de Influence — utilidades de composición.
  *
  * ── HRFC-015 — World Simulation Core (iteración final) ────────────────────
+ * ── HRFC FASE 1 — Consolidación Universal del Estado Físico ───────────────
  *
  * ── PROPÓSITO ─────────────────────────────────────────────────────────────
  * Influences provee los patrones de construcción y composición más frecuentes
@@ -33,8 +34,10 @@ import java.util.function.Consumer;
  *
  *   // Influencia permanente que reduce temperatura:
  *   Influence cold = Influences.of(obj -> {
- *       ThermalComponent tc = obj.getComponent(ThermalComponent.class);
- *       if (tc != null) tc.addHeat(-5.0);
+ *       PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
+ *       if (pc != null) {
+ *           pc.getState().add(ThermalProperties.TEMPERATURE, -5.0);
+ *       }
  *   });
  *
  *   // Influencia que dura 60 frames:
@@ -45,7 +48,10 @@ import java.util.function.Consumer;
  *
  *   // Influencia que solo aplica si la temperatura ya es positiva:
  *   Influence conditional = Influences.conditional(
- *       target -> { ThermalComponent tc = target.getComponent(...); return tc != null && tc.isHot(); },
+ *       target -> {
+ *           PhysicsComponent pc = target.getComponent(PhysicsComponent.class);
+ *           return pc != null && pc.getState().get(ThermalProperties.TEMPERATURE) > 0;
+ *       },
  *       heatAmplifier
  *   );
  *
@@ -210,7 +216,8 @@ public final class Influences {
      * tick() y onExpire() siempre se propagan a la influencia base.
      *
      * Útil para influencias que solo afectan a objetos con ciertas propiedades
-     * (p.ej. solo si ya están húmedos, solo si tienen ThermalComponent, etc.).
+     * (p.ej. solo si ya están húmedos, solo si tienen PhysicsComponent con
+     * cierta temperatura, etc.).
      *
      * @param condition predicado evaluado antes de apply(). Debe ser puro (sin efectos secundarios).
      * @param base      influencia base a aplicar cuando la condición es true.

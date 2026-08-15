@@ -1,5 +1,6 @@
 package Game.Engine.Physics.Core;
 
+import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.GameObjects;
 import java.util.ArrayList;
 import java.util.Comparator;

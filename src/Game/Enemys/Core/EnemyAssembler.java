@@ -5,13 +5,15 @@ import Game.Enemys.Core.Controllers.EnemyAttackController;
 import Game.Enemys.Core.Controllers.EnemyComponentRegistry;
 import Game.Enemys.Core.Controllers.EnemyMovementController;
 import Game.Enemys.Core.Controllers.EnemyPhaseController;
-import Game.Engine.GameEventBus;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
+import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Physics.Core.PhysicalState;
 
 /**
  * Contrato base del ensamblador de Enemy.
@@ -45,6 +47,10 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
  *   14. Retorna el Enemy completamente configurado.
  */
 public abstract class EnemyAssembler {
+
+    // ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
+    // PhysicsComponent es opt-in. No se crean valores físicos universales.
+    // El assembler concreto declara explícitamente su participación en física.
 
     /**
      * Construye y retorna un Enemy completamente configurado en la posición dada.
@@ -114,6 +120,24 @@ public abstract class EnemyAssembler {
         ColliderComponent col = enemy.getComponent(ColliderComponent.class);
         if (col != null) {
             col.setSize(def.colliderW, def.colliderH);
+        }
+
+        // ── 6b. PhysicsComponent — opt-in y declarativo ───────────────────
+        // Mini-HRFC — Declarative PhysicalState Ownership
+        //
+        // El assembler concreto declara explícitamente su PhysicalState
+        // mediante configurePhysics(). Si no declara nada, el Enemy no
+        // participa en física universal.
+        //
+        // Esto elimina la imposición de valores físicos universales como
+        // temperatura ambiente o humedad default a todos los enemigos.
+        PhysicalState.Builder physicsBuilder = PhysicalState.builder();
+        configurePhysics(physicsBuilder);
+        PhysicalState physicalState = physicsBuilder.build();
+
+        // Solo agregar PhysicsComponent si el assembler declaró propiedades
+        if (!physicalState.isEmpty()) {
+            enemy.addComponent(new PhysicsComponent(physicalState));
         }
 
         // ── 7. Configurar comportamiento (requiere enemy ya construido) ────
@@ -188,6 +212,34 @@ public abstract class EnemyAssembler {
      * Llamado después de construir el Enemy.
      */
     protected void configureVisual(Enemy enemy) {}
+
+    /**
+     * Configura el estado físico del Enemy.
+     * 
+     * Mini-HRFC — Declarative PhysicalState Ownership
+     * 
+     * Hook opt-in para que el assembler concreto declare explícitamente
+     * las propiedades físicas que este tipo de enemigo posee.
+     * 
+     * Si no se sobreescribe, el Enemy NO recibe PhysicsComponent y por
+     * tanto no participa en los dominios físicos (thermal, electrical,
+     * fluid, mechanical).
+     * 
+     * Ejemplo de uso en un assembler concreto:
+     * 
+     * <pre>{@code
+     * @Override
+     * protected void configurePhysics(PhysicalState.Builder physics) {
+     *     physics
+     *         .register(ThermalProperties.TEMPERATURE, 20.0)
+     *         .register(FluidProperties.HUMIDITY, 0.5)
+     *         .registerMaterial(materialComponent::registerInto);
+     * }
+     * }</pre>
+     * 
+     * @param physics Builder vacío para registrar propiedades físicas.
+     */
+    protected void configurePhysics(PhysicalState.Builder physics) {}
 
     /**
      * Registra las fases del Enemy y llama phaseController.start(enemy).

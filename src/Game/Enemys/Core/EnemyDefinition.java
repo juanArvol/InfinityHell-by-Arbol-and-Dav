@@ -3,6 +3,7 @@ package Game.Enemys.Core;
 import Game.Enemys.EnemyPhysics;
 import Game.Enemys.EnemyPhysicsConfig;
 import Game.Engine.Entity.Attributes.EntityAttributes;
+import Game.Engine.Entity.Components.Collisions.MaterialComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
 import Sprites.Core.SpriteHandle;
@@ -21,8 +22,22 @@ import java.util.List;
  *   FlagsConfigurator      → configura EntityFlags  (era EnemyFlags)
  *   AttributesConfigurator → configura EntityAttributes (era EnemyAttributes)
  *
+ * ── HRFC FASE 1.5 — Universal Physical Properties Integration ─────────────
+ * EnemyDefinition ahora incluye un MaterialComponent opcional.
+ * Si no se declara en el Builder, EnemyAssembler usa BIOLOGICAL_DEFAULT.
+ *
+ * Esto permite declarar materiales distintos por tipo de enemigo:
+ *
+ *   Zombie    → material biológico por defecto
+ *   Esqueleto → material óseo (dureza alta, densidad baja)
+ *   Golem     → material rocoso (conductividad baja, densidad alta)
+ *   Elemental → material específico del elemento (fuego, hielo, rayo)
+ *
+ * sin modificar el EnemyAssembler base.
+ *
  * ── Qué describe un EnemyDefinition ──────────────────────────────────────
  *   Núcleo     : sprite, maxHealth, physics, colliderW/H
+ *   Físico     : material (opcional — default biológico si null)
  *   Visual     : renderLayer, animationIds, hasShadow, shadowW/H
  *   Audio      : soundIds (claves semánticas de audio)
  *   Loot       : lootTableId
@@ -34,12 +49,42 @@ import java.util.List;
  */
 public final class EnemyDefinition {
 
+    // ── Material biológico por defecto ────────────────────────────────────
+    // Usado por EnemyAssembler cuando la definición no declara material.
+    // Representa un ser vivo genérico (criatura orgánica, no-muerto básico).
+    //
+    // Propiedades basadas en tejido biológico húmedo:
+    //   thermalConductivity  0.5  — conductor moderado (agua + tejido)
+    //   heatCapacity        2000  — capacidad media (tejido muscular)
+    //   thermalDiffusivity  0.12  — disipación moderada
+    //   electricalConductivity 0.35 — conductor moderado (fluidos corporales)
+    //   humidityAbsorption  0.4  — absorbe humedad (piel porosa)
+    //   density             950  — ligeramente menos denso que el agua
+    //   compressibility     0.08 — tejidos blandos, algo compresibles
+    //   elasticity          0.35 — tejidos con algo de elasticidad
+    //   hardness            0.15 — cuerpo blando
+    public static final MaterialComponent BIOLOGICAL_DEFAULT = MaterialComponent.builder()
+        .thermalConductivity(0.5)
+        .heatCapacity(2000.0)
+        .thermalDiffusivity(0.12)
+        .electricalConductivity(0.35)
+        .humidityAbsorption(0.4)
+        .density(950.0)
+        .compressibility(0.08)
+        .elasticity(0.35)
+        .hardness(0.15)
+        .build();
+
     // ── Núcleo ────────────────────────────────────────────────────────────
-    public final SpriteHandle sprite;
-    public final int          maxHealth;
-    public final EnemyPhysics physics;
-    public final int          colliderW;
-    public final int          colliderH;
+    public final SpriteHandle      sprite;
+    public final int               maxHealth;
+    public final EnemyPhysics      physics;
+    public final int               colliderW;
+    public final int               colliderH;
+
+    // ── Material físico ───────────────────────────────────────────────────
+    // Null = usar BIOLOGICAL_DEFAULT en EnemyAssembler.
+    public final MaterialComponent material;
 
     // ── Visual ────────────────────────────────────────────────────────────
     public final int          renderLayer;
@@ -93,6 +138,9 @@ public final class EnemyDefinition {
         this.colliderW = b.colliderW > 0 ? b.colliderW : 24;
         this.colliderH = b.colliderH > 0 ? b.colliderH : 30;
 
+        // null = EnemyAssembler usa BIOLOGICAL_DEFAULT
+        this.material  = b.material;
+
         this.renderLayer  = b.renderLayer;
         this.animationIds = Collections.unmodifiableList(new ArrayList<>(b.animationIds));
         this.hasShadow    = b.hasShadow;
@@ -120,6 +168,9 @@ public final class EnemyDefinition {
         private int          colliderW;
         private int          colliderH;
 
+        // Material físico (null = usar BIOLOGICAL_DEFAULT)
+        private MaterialComponent material = null;
+
         // Visual
         private int          renderLayer  = 1;
         private List<String> animationIds = new ArrayList<>();
@@ -144,6 +195,7 @@ public final class EnemyDefinition {
         public Builder health(int maxHealth)                { this.health = maxHealth; return this; }
         public Builder physics(EnemyPhysicsConfig config)   { this.physics = new EnemyPhysics(config); return this; }
         public Builder physics(EnemyPhysics physics)        { this.physics = physics; return this; }
+        public Builder material(MaterialComponent mat)      { this.material = mat; return this; }
         public Builder collider(int width, int height)      { this.colliderW = width; this.colliderH = height; return this; }
         public Builder renderLayer(int layer)               { this.renderLayer = layer; return this; }
         public Builder animation(String animationId)        { this.animationIds.add(animationId); return this; }

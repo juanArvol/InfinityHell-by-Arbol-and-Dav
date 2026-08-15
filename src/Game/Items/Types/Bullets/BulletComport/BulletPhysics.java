@@ -75,12 +75,13 @@ public class BulletPhysics extends Physics2D {
         velocity.setY(ySpeed);
 
         // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────
+        // HRFC FASE 2: Coeficientes escalados para px/frame.
         // Los proyectiles son típicamente pequeños y aerodinámicos.
         // Estos valores producen velocidades terminales altas (~40-50 px/frame).
         // Behaviors específicos (MetheorBullet) pueden ajustarlos.
-        effectiveArea = 0.3;      // área pequeña
-        dragCoefficient = 0.15;   // forma aerodinámica
-        // mediumDensity usa default (1.225)
+        effectiveArea = 0.3;        // área pequeña
+        dragCoefficient = 0.0001;   // forma muy aerodinámica (escalado para px/frame)
+        // mediumDensity obsoleto — no se usa después de corrección de unidades
     }
 
     /** CollisionsSystem NO aplica gravedad externa a este objeto. */

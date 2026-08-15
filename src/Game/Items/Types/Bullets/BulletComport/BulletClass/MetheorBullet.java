@@ -77,11 +77,12 @@ public class MetheorBullet extends BulletBehavior {
     private static final double PUSH_FORCE_SCALE     = 0.1;  // escalado de fuerza de empuje
 
     // ── Propiedades físicas del meteoro (HRFC — Consolidación) ───────────
+    // HRFC FASE 2: Coeficientes escalados para px/frame.
     // El meteoro es masivo y poco aerodinámico, resultando en velocidad
     // terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
-    private static final double METEOR_MASS              = 3.0;   // 3x más masivo que proyectil normal
-    private static final double METEOR_EFFECTIVE_AREA    = 1.5;   // área grande
-    private static final double METEOR_DRAG_COEFFICIENT  = 1.2;   // forma poco aerodinámica (roca irregular)
+    private static final double METEOR_MASS              = 3.0;     // 3x más masivo que proyectil normal
+    private static final double METEOR_EFFECTIVE_AREA    = 1.5;     // área grande
+    private static final double METEOR_DRAG_COEFFICIENT  = 0.0005;  // poco aerodinámico (escalado para px/frame)
 
     @Override
     public ProjectileData getDefaultData() {
@@ -106,8 +107,9 @@ public class MetheorBullet extends BulletBehavior {
      * Configurar propiedades físicas del meteoro al ser adquirido del pool
      * o recién creado.
      *
-     * El meteoro es masivo y poco aerodinámico, produciendo velocidad
-     * terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
+     * HRFC FASE 2: El meteoro es masivo y poco aerodinámico, produciendo
+     * velocidad terminal moderada (~25-30 px/frame) que escala la potencia
+     * de explosión. Coeficientes escalados para px/frame.
      */
     @Override
     public void onAttached(Bullet bullet) {

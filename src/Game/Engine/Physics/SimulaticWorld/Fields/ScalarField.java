@@ -3,25 +3,26 @@ package Game.Engine.Physics.SimulaticWorld.Fields;
 import Game.Engine.GameObjects;
 
 /**
- * Campo escalar — modifica un valor double en un componente del objeto destino.
+ * Campo escalar — modifica un valor double en el estado físico del objeto destino.
  *
  * ── HRFC-015 — World Simulation Core ──────────────────────────────────────
+ * ── HRFC FASE 1 — Consolidación Universal del Estado Físico ───────────────
  *
  * ── QUÉ ES ScalarField ───────────────────────────────────────────────────
  * Un ScalarField representa cualquier campo físico cuya influencia sobre
  * un objeto se expresa como un delta numérico aplicado a una propiedad escalar:
  *
- *   Campo térmico      → Δtemperatura al ThermalComponent del destino
- *   Campo de humedad   → Δhumedad al FluidComponent del destino
- *   Campo de presión   → Δpresión al PressureComponent del destino
- *   Campo de carga     → Δcarga al ElectricalComponent del destino
+ *   Campo térmico      → Δtemperatura en PhysicalState (ThermalProperties.TEMPERATURE)
+ *   Campo de humedad   → Δhumedad en PhysicalState (FluidProperties.HUMIDITY)
+ *   Campo de presión   → Δpresión en PhysicalState (MechanicalProperties.PRESSURE)
+ *   Campo de carga     → Δcarga en PhysicalState (ElectricalProperties.CHARGE)
  *
- * ScalarField no sabe a qué componente aplica. Eso lo define el ScalarApplicator
+ * ScalarField no sabe a qué propiedad aplica. Eso lo define el ScalarApplicator
  * inyectado en construcción — una función que recibe el objeto y el delta, y
- * realiza la modificación sobre el componente correcto.
+ * realiza la modificación sobre el estado físico correcto.
  *
  * ── POR QUÉ ScalarApplicator EN VEZ DE SUBCLASES ─────────────────────────
- * Si ScalarField conociera ThermalComponent o ElectricalComponent directamente,
+ * Si ScalarField conociera PropertyDescriptor o PhysicsComponent directamente,
  * necesitaría importarlos — creando dependencias cruzadas dentro del Engine.
  * Peor aún: habría que crear ThermalScalarField, ElectricalScalarField,
  * FluidScalarField, PressureScalarField... duplicando toda la lógica de campo.
@@ -29,25 +30,30 @@ import Game.Engine.GameObjects;
  * Con ScalarApplicator, ScalarField es completamente genérico. El código que
  * crea el campo inyecta la lógica de aplicación:
  *
- *   // Campo térmico (WorldFieldPresets o código de gameplay):
- *   new ScalarField.Builder()
+ *   // Campo térmico (WorldFieldPresets):
+ *   ScalarField.builder()
  *       .position(x, y)
  *       .radius(120)
  *       .intensity(15.0)
  *       .falloff(FieldFalloff.LINEAR)
  *       .applicator((obj, delta) -> {
- *           ThermalComponent tc = obj.getComponent(ThermalComponent.class);
- *           if (tc != null) tc.addHeat(delta);
+ *           PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
+ *           if (pc != null) {
+ *               pc.getState().add(ThermalProperties.TEMPERATURE, delta);
+ *           }
  *       })
  *       .build();
  *
- *   // Campo de presión:
- *   new ScalarField.Builder()
- *       .intensity(-50.0)     // subpresión (vacío)
+ *   // Campo de presión (vacío):
+ *   ScalarField.builder()
+ *       .intensity(-50.0)     // subpresión
  *       .applicator((obj, delta) -> {
- *           PressureComponent pc = obj.getComponent(PressureComponent.class);
- *           if (pc != null) pc.addPressure(delta);
+ *           PhysicsComponent pc = obj.getComponent(PhysicsComponent.class);
+ *           if (pc != null) {
+ *               pc.getState().add(MechanicalProperties.PRESSURE, delta);
+ *           }
  *       })
+ *       .build();
  *       .build();
  *
  * ScalarField permanece libre de importaciones de componentes concretos.

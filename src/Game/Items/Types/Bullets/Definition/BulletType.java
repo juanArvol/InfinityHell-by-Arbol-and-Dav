@@ -44,7 +44,7 @@ public enum BulletType {
                   "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."),
     
     METHEORBULLET   (MetheorBullet::new, ItemRarity.RARE,
-                  "Meteoro del Vacío",
+                  "Bala nuke",
                   "Proyectil de alta masa que ignora la física normal."),
     // ── Efectos elementales (pendientes de implementar sus behaviors) ─────
     // Descomenta cada uno cuando crees la clase de behavior correspondiente.
