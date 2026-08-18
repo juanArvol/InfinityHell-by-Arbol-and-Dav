@@ -268,15 +268,25 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     // ── Update ────────────────────────────────────────────────────────────
 
+    /**
+     * Update del proyectil.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y lo propaga a BulletLife.advance()
+     * y ProjectileMovement.tick() para integración temporal correcta.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
     @Override
-    public void update() {
-        if (!bulletLife.advance()) {
+    public void update(double deltaTime) {
+        if (!bulletLife.advance(deltaTime)) {
             emitExpireAndDestroy();
             return;
         }
 
-        movement.tick(this);       // actualiza velocity (ej: GravityMovement, Homing)
-        behavior.onUpdate(this);   // lógica de frame del behavior
+        movement.tick(this, deltaTime);  // actualiza velocity (ej: GravityMovement, Homing)
+        behavior.onUpdate(this);         // lógica de frame del behavior
 
         // moveByPhysics() ya NO se llama aquí.
         // CollisionsSystem FASE 1B integra la posición del proyectil con
@@ -284,7 +294,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         // colisiones y normal del impacto disponible en onCollision().
         // Llamarlo aquí además de en CollisionsSystem produciría doble movimiento.
 
-        super.update();            // actualiza Components registrados
+        super.update(deltaTime);  // actualiza Components registrados
     }
 
     // ── Colisión ──────────────────────────────────────────────────────────
@@ -304,9 +314,23 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     // ── Movimiento ────────────────────────────────────────────────────────
 
-    public void moveByPhysics() {
+    /**
+     * Mueve el proyectil según su velocidad actual.
+     *
+     * ── Mini-HRFC 1.5: Temporal integration correction ────────────────────
+     *
+     * NOTA: Este método ya NO se llama desde Bullet.update().
+     * CollisionsSystem FASE 1B integra la posición del trigger con SweptAABB 2D.
+     *
+     * Mantenido por compatibilidad API y para uso excepcional fuera del
+     * pipeline estándar.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void moveByPhysics(double deltaTime) {
         var vel = getPhysics().getVelocity();
-        PhysicsStepper.moveWith(this, vel.getX(), vel.getY());
+        // Mini-HRFC 1.5: displacement = velocity × deltaTime
+        PhysicsStepper.moveWith(this, vel.getX() * deltaTime, vel.getY() * deltaTime);
     }
 
     // ── Destroyable ────────────────────────────────────────────────────────

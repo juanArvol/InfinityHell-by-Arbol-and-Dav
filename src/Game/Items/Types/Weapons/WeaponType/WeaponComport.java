@@ -5,6 +5,19 @@ import Game.Items.Types.Weapons.WeaponType.FireMode.iFireMode;
 /**
  * Comportamiento base de un arma.
  *
+ * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ *
+ * MIGRACIÓN TEMPORAL:
+ *   WeaponComport ahora usa tiempo real en segundos en lugar de ticks discretos
+ *   para cooldowns y recarga. Esto garantiza que las cadencias de fuego son
+ *   independientes del framerate.
+ *
+ *   ANTES (frame-based):
+ *     cooldown = 60 ticks → 1 segundo a 60 FPS, 15 segundos a 4 FPS
+ *
+ *   AHORA (time-based):
+ *     cooldown = 1.0 segundos → 1 segundo real independientemente del FPS
+ *
  * ── HRFC — Weapon & Projectile System ────────────────────────────────────
  *
  * WeaponComport representa el estado y los parámetros de configuración de
@@ -22,7 +35,7 @@ import Game.Items.Types.Weapons.WeaponType.FireMode.iFireMode;
  * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
  *   - Configuración estática: WeaponStats (cooldown, spread, damage, speed).
- *   - Estado de disparo: fireWait (cooldown restante), burstCount.
+ *   - Estado de disparo: fireWait (cooldown restante en segundos), burstCount.
  *   - Estado de ammo: currentAmmo, cargador, recarga.
  *   - Modo de fuego: iFireMode (auto, semiAuto, carga).
  *
@@ -33,9 +46,9 @@ import Game.Items.Types.Weapons.WeaponType.FireMode.iFireMode;
  *
  *   public class WeaponSniper extends WeaponComport {
  *       public WeaponSniper() {
- *           super(new WeaponStats(120, 1, 0, 80, 25),
+ *           super(new WeaponStats(2.0, 1, 0, 80, 25),  // cooldown en segundos
  *                 new SemiAutoMode(),
- *                 5, 90, "Sniper.wav");
+ *                 5, 1.5, "Sniper.wav");  // reloadTime en segundos
  *       }
  *   }
  */
@@ -44,13 +57,13 @@ public abstract class WeaponComport {
     protected final WeaponStats stats;
     protected final iFireMode   fireMode;
 
-    protected int chargerSize;
-    protected int currentAmmo;
-    protected int fireWait;
-    protected int burstCount;
+    protected int    chargerSize;
+    protected int    currentAmmo;
+    protected double fireWait;      // cooldown restante en segundos
+    protected int    burstCount;
 
-    protected int     reloadTime;
-    protected int     reloadTimer;
+    protected double  reloadTime;   // duración total de recarga en segundos
+    protected double  reloadTimer;  // tiempo restante de recarga en segundos
     protected boolean reloading;
     protected String  shootSound;
 
@@ -58,13 +71,13 @@ public abstract class WeaponComport {
      * @param stats       configuración estática del arma
      * @param fireMode    modo de fuego (auto, semiAuto, carga, ráfaga…)
      * @param chargerSize capacidad del cargador
-     * @param reloadTime  duración de la recarga en ticks
+     * @param reloadTime  duración de la recarga en segundos
      * @param shootSound  nombre del clip de sonido de disparo (puede ser null)
      */
     public WeaponComport(WeaponStats stats,
                          iFireMode fireMode,
                          int chargerSize,
-                         int reloadTime,
+                         double reloadTime,
                          String shootSound) {
         this.stats       = stats;
         this.fireMode    = fireMode;
@@ -101,15 +114,26 @@ public abstract class WeaponComport {
     /**
      * Avanza los timers internos del arma (cooldown y recarga).
      * Llamar una vez por frame desde ModifiedWeapon.update().
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime del simulation step y decrementa
+     * los timers en tiempo real, no en ticks discretos.
+     *
+     * @param deltaTime tiempo transcurrido en el simulation step (segundos)
      */
-    public void update() {
-        if (fireWait > 0) fireWait--;
+    public void update(double deltaTime) {
+        if (fireWait > 0.0) {
+            fireWait -= deltaTime;
+            if (fireWait < 0.0) fireWait = 0.0; // clampeo
+        }
 
         if (reloading) {
-            reloadTimer--;
-            if (reloadTimer <= 0) {
+            reloadTimer -= deltaTime;
+            if (reloadTimer <= 0.0) {
                 reloading    = false;
                 currentAmmo  = chargerSize;
+                reloadTimer  = 0.0; // clampeo
             }
         }
     }
@@ -127,8 +151,12 @@ public abstract class WeaponComport {
 
     // ── Consultas ─────────────────────────────────────────────────────────
 
-    public int     getFireWait()    { return fireWait; }
-    public int     getCooldown()    { return stats.getCooldown(); }
+    /** @return tiempo de cooldown restante en segundos */
+    public double getFireWait()    { return fireWait; }
+    
+    /** @return tiempo de cooldown configurado en segundos */
+    public double getCooldown()    { return stats.getCooldown(); }
+    
     public int     getCurrentAmmo() { return currentAmmo; }
     public int     getChargerSize() { return chargerSize; }
     

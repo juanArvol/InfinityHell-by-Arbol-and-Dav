@@ -92,8 +92,8 @@ public class AmmoHUD implements UIElement {
         int height = 12;
 
         // ── COOLDOWN BAR ──────────────────────────────────────────────────────
-        int cooldown = weapon.getCooldown();
-        int fireWait = weapon.getFireWait();
+        double cooldown = weapon.getCooldown();
+        double fireWait = weapon.getFireWait();
 
         g.setColor(Color.BLACK);
         g.drawRect(x, y, width, height);

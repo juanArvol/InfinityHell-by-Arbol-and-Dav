@@ -30,9 +30,14 @@ public interface EnemyComponent {
     /**
      * Actualización por frame.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime para comportamientos independientes del framerate.
+     *
      * @param enemy el Enemy propietario.
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    void update(Enemy enemy);
+    void update(Enemy enemy, double deltaTime);
 
     /**
      * Llamado cuando el componente se elimina del Enemy.

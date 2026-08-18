@@ -3,7 +3,7 @@ package Game.Engine.Physics.Kinematic;
 import Game.Engine.Physics.Contact.ContactState;
 import Game.Engine.Physics.Core.PhysicalState;
 import Game.Engine.Physics.Core.SimulationContext;
-import Game.Engine.Physics.Environment.EnvironmentState;
+import Game.Engine.Physics.Environment.Environment;
 import Game.Engine.Physics.Material.MaterialState;
 
 /**
@@ -12,6 +12,7 @@ import Game.Engine.Physics.Material.MaterialState;
  * ── HRFC-030 — Integración entre Kinematic Physics y World Physics ────────
  * ── HRFC-031 — Descomposición de PhysicalState en SimulationContext ───────
  * ── HRFC-032 — Evolución del SimulationContext hacia un registro extensible ─
+ * ── HRFC-FASE2 — Declarative Environment Ownership ───────────────────────
  *
  * ── EVOLUCIÓN ARQUITECTÓNICA ─────────────────────────────────────────────
  *
@@ -35,7 +36,7 @@ import Game.Engine.Physics.Material.MaterialState;
  *
  *     SimulationContext ctx = SimulationContext.builder(physical)
  *         .material(material)
- *         .environment(EnvironmentState.STANDARD)
+ *         .environment(StandardAtmosphere.INSTANCE)  // OBLIGATORIO (HRFC-FASE2.5)
  *         .register(BiomechanicalState.builder()
  *             .flexibility(0.9)
  *             .stiffness(0.2)
@@ -74,12 +75,14 @@ import Game.Engine.Physics.Material.MaterialState;
  *       .build();
  *
  *   // Opción 1: helper completo (todos los dominios en valores por defecto)
- *   SimulationContext ctx = KinematicStateAssembler.buildContext(physical, material);
+ *   // HRFC-FASE2.5: Debe proporcionar environment explícitamente
+ *   SimulationContext ctx = KinematicStateAssembler.buildContext(
+ *       physical, material, StandardAtmosphere.INSTANCE);
  *
- *   // Opción 2: control total con Builder (dominios especializados activos)
+ *   // Opción 2: control total con Builder (ambiente personalizado)
  *   SimulationContext ctx = SimulationContext.builder(physical)
  *       .material(material)
- *       .environment(EnvironmentState.STANDARD)
+ *       .environment(HellEnvironment.INSTANCE)  // OBLIGATORIO
  *       .register(BiomechanicalState.builder().flexibility(0.9).build())
  *       .build();
  *
@@ -94,7 +97,7 @@ import Game.Engine.Physics.Material.MaterialState;
  *   KinematicState       — inicializado en el primer frame por KinematicBridge
  *   MaterialState        — el material pasado como argumento (o DEFAULT)
  *   ContactState         — ContactState.NONE (actualizado por CollisionsSystem)
- *   EnvironmentState     — EnvironmentState.STANDARD (o el entorno dado)
+ *   EnvironmentState     — StandardAtmosphere por defecto (HRFC-FASE2)
  *   ChemicalState        — ChemicalState.INERT       (neutro por defecto)
  *   OpticalState         — OpticalState.OPAQUE        (neutro por defecto)
  *   AcousticState        — AcousticState.SILENT       (neutro por defecto)
@@ -103,7 +106,8 @@ import Game.Engine.Physics.Material.MaterialState;
  *
  * ── ENTORNOS ESPECIALES ───────────────────────────────────────────────────
  * Para entidades en entornos con gravedad, temperatura o fluido diferente
- * al estándar, usar buildContext(physical, material, environment) o el Builder.
+ * al estándar, usar buildContext(physical, material, environment) o el Builder
+ * con un Environment personalizado (VacuumEnvironment, custom, etc.).
  *
  * ── INVARIANTE ────────────────────────────────────────────────────────────
  *   ✗ No registra PropertyDescriptors cinemáticos en PhysicalState.
@@ -120,7 +124,10 @@ public final class KinematicStateAssembler {
 
     /**
      * Construye un SimulationContext con integración cinemática completa
-     * y condiciones de entorno estándar.
+     * y condiciones de entorno especificadas.
+     *
+     * HRFC-FASE2.5: El ambiente DEBE proporcionarse explícitamente.
+     * No existe fallback universal.
      *
      * Todos los dominios de HRFC-032 se registran automáticamente en sus
      * constantes neutras (INERT, OPAQUE, SILENT, STABLE, RESTED).
@@ -128,37 +135,41 @@ public final class KinematicStateAssembler {
      *
      * @param physical el estado físico del objeto. No puede ser null.
      * @param material las propiedades del material. Null usa DEFAULT.
-     * @return SimulationContext configurado con material y entorno estándar.
+     * @param environment el ambiente donde existe la entidad. No puede ser null.
+     * @return SimulationContext configurado con material y ambiente dados.
+     * @throws IllegalStateException si environment es null.
      */
     public static SimulationContext buildContext(PhysicalState physical,
-                                                 MaterialState  material) {
+                                                 MaterialState  material,
+                                                 Environment    environment) {
         return SimulationContext.builder(physical)
             .material(material != null ? material : MaterialState.DEFAULT)
             .contact(ContactState.NONE)
-            .environment(EnvironmentState.STANDARD)
+            .environment(environment)
             .build();
     }
 
     /**
      * Construye un SimulationContext con integración cinemática completa
-     * y un entorno personalizado.
+     * y un ambiente personalizado.
      *
-     * Usar cuando la entidad nace en un entorno con gravedad, temperatura
-     * o fluido diferente al estándar (bajo el agua, en el espacio, etc.).
+     * HRFC-FASE2.5: El ambiente DEBE proporcionarse explícitamente.
+     *
+     * Usar cuando la entidad nace en un ambiente con gravedad, temperatura
+     * o fluido diferente al estándar (espacio, bajo el agua, infierno, etc.).
      *
      * @param physical    el estado físico del objeto. No puede ser null.
      * @param material    las propiedades del material. Null usa DEFAULT.
-     * @param environment las condiciones del entorno. Null usa STANDARD.
-     * @return SimulationContext configurado con material y entorno dados.
+     * @param environment el ambiente donde existe la entidad. No puede ser null.
+     * @return SimulationContext configurado con material y ambiente dados.
+     * @throws IllegalStateException si environment es null.
+     * @deprecated Usar buildContext(PhysicalState, MaterialState, Environment) directamente.
      */
-    public static SimulationContext buildContext(PhysicalState    physical,
-                                                 MaterialState    material,
-                                                 EnvironmentState environment) {
-        return SimulationContext.builder(physical)
-            .material(material    != null ? material    : MaterialState.DEFAULT)
-            .contact(ContactState.NONE)
-            .environment(environment != null ? environment : EnvironmentState.STANDARD)
-            .build();
+    @Deprecated
+    public static SimulationContext buildContextWithEnvironment(PhysicalState physical,
+                                                                MaterialState material,
+                                                                Environment   environment) {
+        return buildContext(physical, material, environment);
     }
 
     /**

@@ -161,7 +161,7 @@ public final class InfluenceSystem {
             Influence   influence  = binding.getInfluence();
             GameObjects target     = binding.getTarget();
 
-            boolean active = influence.tick();
+            boolean active = influence.tick(1);
 
             if (active) {
                 influence.apply(target);

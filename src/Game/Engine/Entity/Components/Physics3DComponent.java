@@ -96,7 +96,7 @@ public class Physics3DComponent extends Component {
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
     @Override
-    public void update() {
+    public void update(double dt) {
         if (z <= 0 && velocityZ <= 0) {
             // En el suelo — sin movimiento vertical
             if (wasInAir) {

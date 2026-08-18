@@ -53,10 +53,17 @@ public final class EnemyAIController {
      * Evalúa la IA y ejecuta la acción decidida.
      * Llamado por Enemy.update() cada frame.
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime aunque los comportamientos actuales no lo usen directamente.
+     * Los comportamientos modifican velocidad (que se integra en CollisionsSystem
+     * con deltaTime), no posición directamente. El parámetro está disponible
+     * para futuros comportamientos temporales.
+     *
      * @param enemy el Enemy propietario.
      * @param ctx   contexto del objetivo; puede ser null.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void update(Enemy enemy, EnemyContext ctx) {
+    public void update(Enemy enemy, EnemyContext ctx, double deltaTime) {
         if (behavior == null || ctx == null) return;
 
         EnemyAction action = behavior.decideAction(enemy, ctx);

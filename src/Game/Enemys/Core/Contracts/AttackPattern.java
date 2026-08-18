@@ -1,7 +1,7 @@
 package Game.Enemys.Core.Contracts;
 
-import Game.Enemys.Core.Enemy;
 import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.Enemy;
 
 /**
  * Patrón de ataque de un enemigo.
@@ -35,9 +35,14 @@ public interface AttackPattern {
      * Avanza el estado interno del patrón (cooldowns, carga, etc.).
      * Llamado cada frame por EnemyAttackController.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime para cooldowns independientes del framerate.
+     *
      * @param enemy el Enemy propietario.
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    void update(Enemy enemy);
+    void update(Enemy enemy, double deltaTime);
 
     /**
      * Indica si el patrón puede ejecutarse en el frame actual.

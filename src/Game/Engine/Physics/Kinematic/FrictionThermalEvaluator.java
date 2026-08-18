@@ -46,7 +46,8 @@ import java.util.List;
  *                       y material().frictionCoefficient
  *     - masa          → context.currentKinematic().getMass()
  *     - heatCapacity  → context.material().getHeatCapacity()
- *     - gravedad      → context.environment().getGravityMagnitude()
+ *     - gravedad      → entity.gravity × environment.getGravityInfluenceMagnitude()
+ *                       (aproximado como 9.8 × gravityInfluence para este evaluador)
  *
  * Ya no requiere PropertyDescriptors cinemáticos en el PhysicalState.
  * Las entidades no necesitan registerKinematic() para participar en este fenómeno.
@@ -151,12 +152,25 @@ public final class FrictionThermalEvaluator implements RelationEvaluator {
 
             // ── Cálculo de calor generado ──────────────────────────────────
             //
-            // Q = μ × (m × g) × v × efficiency
+            // Q = μ × N × v × efficiency
+            // donde N = fuerza normal ≈ m × g_efectiva
             //
-            double mass           = kin.getMass();
-            double gravityMag     = context.environment().getGravityMagnitude();
-            // Fallback: si no hay EnvironmentState con gravedad, usar estándar
-            double effectiveGravity = gravityMag > 0.0 ? gravityMag : 9.8;
+            // IMPORTANTE - HRFC-FASE2.5:
+            // En el modelo corregido, la gravedad efectiva es:
+            //   g_efectiva = entity.gravity × environment.gravityInfluence
+            //
+            // Como este evaluador no tiene acceso directo a entity.gravity
+            // (está en Physics2D), usamos environment.gravityInfluenceMagnitude
+            // como proxy asumiendo entity.gravity ≈ 9.8 para objetos normales.
+            //
+            // Para ambientes con gravityInfluence = 1.0 (normal), esto es correcto.
+            // Para ambientes con gravityInfluence = 0.0 (vacío), g_efectiva = 0
+            // y no hay fricción térmica, lo cual es físicamente correcto.
+            //
+            double mass               = kin.getMass();
+            double gravityInfluence   = context.environment().getGravityInfluenceMagnitude();
+            double assumedEntityGravity = 9.8; // gravedad típica de entidades
+            double effectiveGravity   = assumedEntityGravity * gravityInfluence;
 
             double heatGenerated = combinedFriction
                 * mass * effectiveGravity

@@ -13,6 +13,7 @@ import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Generator.WorldGenerator;
 import Game.World.Region.SimulationRegion;
 import Game.World.Spawn.SpawnSystem;
+import Game.World.Systems.AISystem;
 import java.awt.Graphics2D;
 import java.util.List;
 
@@ -61,9 +62,10 @@ import java.util.List;
  *   el globalDynamicRegistry, que es invariante ante cambios de sector.
  *
  * ── ORDEN DE UPDATE ────────────────────────────────────────────────────────
+ * 
  *   1. globalDynamicRegistry.flush()   — aplicar pendingAdd/Remove
  *   2. SimulationRegion.rebuild()      — estáticos de chunks + todos los dinámicos
- *   3. WorldEnemyUpdater.updateAll()   — update de IA con contexto de player
+ *   3. AISystem.update()               — IA con contexto y deltaTime
  *   4. StatusEffectSystem.update()     — proyectar flags derivados
  *   5. Destroyable cleanup             — eliminar entidades muertas del registry
  *   6. CollisionsSystem.update()       — física, movimiento, colisiones
@@ -76,7 +78,6 @@ import java.util.List;
 public class WorldManager {
 
     private final double targetFps;
-    private final double cameraDeltaTime;
 
     // ── Colaboradores ─────────────────────────────────────────────────────
 
@@ -91,6 +92,7 @@ public class WorldManager {
     // ── Sistemas de simulación ─────────────────────────────────────────────
 
     private final SimulationRegion         simulationRegion;
+    private final AISystem                 aiSystem;
     private final CollisionsSystem         collisionsSystem;
     private final StatusEffectSystem       statusEffectSystem;
     private final ChunkAffiliationSystem   affiliationSystem;
@@ -148,7 +150,6 @@ public class WorldManager {
         this.logicalHeight   = height;
         this.generator       = generator;
         this.targetFps       = targetFps;
-        this.cameraDeltaTime = 1.0 / targetFps;
         this.currentCoord    = new WorldCoordinator(0, 0);
         this.eventBus        = (eventBus != null) ? eventBus : new Game.Engine.GameEventBus();
 
@@ -172,6 +173,7 @@ public class WorldManager {
 
         double simRadius = Math.max(width, height) * 1.5;
         this.simulationRegion   = new SimulationRegion(simRadius);
+        this.aiSystem           = new AISystem();
         this.collisionsSystem   = new CollisionsSystem();
         this.statusEffectSystem = new StatusEffectSystem();
         this.affiliationSystem  = new ChunkAffiliationSystem(width, height);
@@ -214,20 +216,44 @@ public class WorldManager {
                 World generated = generateLegacyWorld(logicalWidth, logicalHeight, currentCoord);
                 // Inyectar el registry global para que addDynamic() en este World
                 // también registre entidades en el globalDynamicRegistry.
-                generated.setExternalDynamicRegistry(globalDynamicRegistry);
+                generated.setGlobalDynamicRegistry(globalDynamicRegistry);
                 cache.put(generated);
             }
             World w = cache.get(currentCoord);
             // Garantizar que siempre tiene el registry global inyectado
-            // (puede haberse creado antes de que externalRegistry existiera)
-            w.setExternalDynamicRegistry(globalDynamicRegistry);
+            // (puede haberse creado antes o recuperado del cache)
+            w.setGlobalDynamicRegistry(globalDynamicRegistry);
             return w;
         }
     }
 
     // ── Update ────────────────────────────────────────────────────────────
 
-    public void update() {
+    /**
+     * Tick de simulación del mundo.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * DISTRIBUCIÓN TEMPORAL:
+     *
+     * Recibe deltaTime de GameState y lo propaga a todos los sistemas físicos:
+     *   - CollisionsSystem: integración de física y colisiones
+     *   - CameraSystem: movimiento de cámara
+     *   - Otros sistemas temporales según se agreguen
+     *
+     * CONTRATO:
+     *   deltaTime representa segundos reales del simulation step.
+     *   Todos los sistemas físicos deben usar este valor para integración temporal.
+     *   Sistemas que no requieren tiempo continuo (SpawnSystem con ticks discretos,
+     *   UI, etc.) pueden actualizar sin deltaTime hasta su migración.
+     *
+     * CADENA DE AUTORIDAD:
+     *   GameLoop (calcula) → GameState (propaga) → WorldManager (distribuye)
+     *     → CollisionsSystem → Physics2D (integra)
+     *
+     * @param deltaTime tiempo del simulation step en segundos (autoridad de GameLoop)
+     */
+    public void update(double deltaTime) {
         // El World activo provee el externalRegistry para interoperabilidad legacy.
         World world = getCurrentWorld();
 
@@ -259,12 +285,9 @@ public class WorldManager {
 
         List<GameObjects> activeObjects = simulationRegion.getActiveObjects();
 
-        // ── 4. Update de IA ────────────────────────────────────────────────
-        if (trackedPlayer != null) {
-            WorldEnemyUpdater.updateAll(activeObjects, trackedPlayer);
-        } else {
-            activeObjects.forEach(GameObjects::update);
-        }
+        // ── 4. AISystem ────────────────────────────────────────────────────
+        // Ejecuta comportamientos de IA con contexto y deltaTime
+        aiSystem.update(activeObjects, trackedPlayer, deltaTime);
 
         // ── 5. StatusEffectSystem ──────────────────────────────────────────
         statusEffectSystem.update(activeObjects);
@@ -287,7 +310,8 @@ public class WorldManager {
         activeObjects = simulationRegion.getActiveObjects();
 
         // ── 7. CollisionsSystem ────────────────────────────────────────────
-        collisionsSystem.update(activeObjects);
+        // Mini-HRFC: Pasar deltaTime para integración temporal correcta
+        collisionsSystem.update(activeObjects, deltaTime);
 
         // ── 8. ChunkAffiliationSystem ──────────────────────────────────────
         affiliationSystem.update(globalDynamicRegistry.getAll(), world.getSpatialIndex());
@@ -296,7 +320,7 @@ public class WorldManager {
         spawnSystem.update();
 
         // ── 10. CameraSystem ───────────────────────────────────────────────
-        cameraSystem.update(cameraDeltaTime);
+        cameraSystem.update(deltaTime);
 
         // ── 11. WorldPrewarmService ────────────────────────────────────────
         if (trackedObject != null) {

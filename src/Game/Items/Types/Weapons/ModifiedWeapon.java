@@ -382,7 +382,20 @@ public class ModifiedWeapon {
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
 
-    public void update() { comport.update(); }
+    /**
+     * Actualiza los timers del arma (cooldown, recarga).
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * PROPAGACIÓN TEMPORAL:
+     *   ModifiedWeapon recibe deltaTime de PlayerCombat y lo propaga a:
+     *     - WeaponComport.update(deltaTime) → para cooldowns y recargas temporales
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void update(double deltaTime) { 
+        comport.update(deltaTime); 
+    }
 
     public void reload() { comport.startReload(); }
 
@@ -407,8 +420,8 @@ public class ModifiedWeapon {
     public boolean isReloading()        { return comport.isReloading();      }
     
     public boolean isFullyLoaded()      { return comport.isFullyLoaded();    }
-    public int     getFireWait()        { return comport.getFireWait();      }
-    public int     getCooldown()        { return comport.getCooldown();      }
+    public double     getFireWait()        { return comport.getFireWait();      }
+    public double     getCooldown()        { return comport.getCooldown();      }
     public double  getBulletSpeedBase() { return comport.getStats().getBulletSpeedBase(); }
 
     // ── Acceso a subcomponentes ────────────────────────────────────────────

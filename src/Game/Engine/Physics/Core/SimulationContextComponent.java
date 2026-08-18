@@ -6,6 +6,7 @@ import Game.Engine.Component;
  * Componente de participación en la simulación física con contexto compuesto.
  *
  * ── HRFC-031 — Descomposición de PhysicalState en SimulationContext ───────
+ * ── HRFC-FASE2 — Declarative Environment Ownership ───────────────────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * SimulationContextComponent es el puente entre el ECS y el SimulationContext.
@@ -59,7 +60,7 @@ import Game.Engine.Component;
  *
  *   SimulationContext context = SimulationContext.builder(physical)
  *       .material(material)
- *       .environment(EnvironmentState.STANDARD)
+ *       .environment(StandardAtmosphere.INSTANCE)  // HRFC-FASE2
  *       .build();
  *
  *   addComponent(new SimulationContextComponent(context));
@@ -131,5 +132,5 @@ public final class SimulationContextComponent extends Component {
      *   - WorldFieldSystem puede actualizar environmentState.
      */
     @Override
-    public void update() {}
+    public void update(double dt) {}
 }

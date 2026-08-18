@@ -56,12 +56,17 @@ public final class EnemyMovementController {
      * Ejecuta el movimiento del frame actual.
      * Llamado por Enemy.update().
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para propagarlo a MovementStrategy.
+     * Las estrategias pueden usar deltaTime para movimientos temporales correctos.
+     *
      * @param enemy el Enemy a mover.
      * @param ctx   contexto del objetivo; puede ser null.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void update(Enemy enemy, EnemyContext ctx) {
+    public void update(Enemy enemy, EnemyContext ctx, double deltaTime) {
         if (strategy != null) {
-            strategy.move(enemy, ctx);
+            strategy.move(enemy, ctx, deltaTime);
         }
     }
 

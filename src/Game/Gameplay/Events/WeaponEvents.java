@@ -55,7 +55,7 @@ public final class WeaponEvents {
      * @param weapon          el arma que recarga
      * @param reloadTimeTicks duración total de la recarga en ticks
      */
-    public record OnReloadStart(ModifiedWeapon weapon, int reloadTimeTicks) {}
+    public record OnReloadStart(ModifiedWeapon weapon, double reloadTimeTicks) {}
 
     /**
      * Emitido cuando la recarga se completa y el cargador está lleno.

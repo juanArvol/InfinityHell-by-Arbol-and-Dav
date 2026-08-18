@@ -19,6 +19,10 @@ import Game.Gameplay.Events.SpawnProjectileEvent;
  * OnWeaponFireEvent está diseñado para el sistema de armas del jugador.
  * SpawnProjectileEvent es el canal genérico para cualquier entidad del mundo.
  *
+ * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
+ *
+ * MIGRACIÓN: cooldownTimer ahora es double (segundos) en lugar de int (frames).
+ *
  * ── HRFC — Instancias explícitas ─────────────────────────────────────────
  * El bus se inyecta en el constructor — no se accede a ninguna instancia global.
  *
@@ -30,7 +34,7 @@ import Game.Gameplay.Events.SpawnProjectileEvent;
 public final class BoneBarragePattern implements AttackPattern {
 
     private final GameEventBus eventBus;
-    private int cooldownTimer = 0;
+    private double cooldownTimer = 0.0;
 
     /**
      * @param eventBus bus de eventos donde publicar SpawnProjectileEvent.
@@ -44,9 +48,17 @@ public final class BoneBarragePattern implements AttackPattern {
     @Override
     public String id() { return "sans.bone_barrage"; }
 
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y decrementa el cooldown en segundos.
+     */
     @Override
-    public void update(Enemy enemy) {
-        if (cooldownTimer > 0) cooldownTimer--;
+    public void update(Enemy enemy, double deltaTime) {
+        if (cooldownTimer > 0) {
+            cooldownTimer -= deltaTime;
+            if (cooldownTimer < 0) cooldownTimer = 0;
+        }
     }
 
     @Override
@@ -56,10 +68,18 @@ public final class BoneBarragePattern implements AttackPattern {
         return !enemy.getFlags().isInvincible();
     }
 
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: AttackCooldownInt() asume frames. Necesita convertirse a segundos @ 60 FPS.
+     * TODO: Migrar EnemyStats.getAttackCooldownInt() → getAttackCooldown() que retorne double.
+     */
     @Override
     public void execute(Enemy enemy, EnemyContext ctx) {
         // Aplicar el cooldown configurado en EnemyStats para esta fase
-        cooldownTimer = enemy.getStats().getAttackCooldownInt();
+        // MIGRACIÓN: convertir frames → segundos
+        int cooldownFrames = enemy.getStats().getAttackCooldownInt();
+        cooldownTimer = cooldownFrames / 60.0; // TODO: migrar EnemyStats a segundos
 
         // Emitir SpawnProjectileEvent — el sistema de proyectiles lo procesa.
         // "sans.bone" identifica el tipo de proyectil a instanciar.

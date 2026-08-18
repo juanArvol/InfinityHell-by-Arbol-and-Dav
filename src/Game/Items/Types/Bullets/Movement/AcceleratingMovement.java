@@ -37,7 +37,7 @@ public final class AcceleratingMovement implements ProjectileMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         double vx = bullet.getPhysics().getXspeed() * accelFactor;
         double vy = bullet.getPhysics().getYspeed() * accelFactor;
 

@@ -56,6 +56,7 @@ public class GameState {
     private final GameWorldBootstrap   worldBootstrap;
 
     private int fpsPorSegundo = 0;
+    private int upsPorSegundo = 0;  // Updates Per Second (simulation rate)
     private int virtualWidth;
     private int virtualHeight;
 
@@ -111,9 +112,27 @@ public class GameState {
 
     // ── Update ────────────────────────────────────────────────────────────────
 
-    public void update() {
+    /**
+     * Actualiza la lógica del juego.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * DISTRIBUCIÓN TEMPORAL:
+     *
+     * Recibe deltaTime de GameLoop (autoridad única) y lo propaga a:
+     *   - WorldManager: sistemas de física, colisiones, simulación
+     *   - Otros sistemas temporales según se agreguen
+     *
+     * CONTRATO:
+     *   deltaTime representa segundos reales transcurridos en el simulation step.
+     *   Este valor NO debe ser modificado ni recalculado aquí.
+     *   Sistemas que no requieren tiempo (uiManager) no reciben deltaTime.
+     *
+     * @param deltaTime tiempo del simulation step en segundos (propagado inmutablemente)
+     */
+    public void update(double deltaTime) {
         Mechanics.updateMechanics(player);
-        worldManager.update();
+        worldManager.update(deltaTime);
         uiManager.update();
     }
 
@@ -150,6 +169,15 @@ public class GameState {
 
     public void setFps(int fps) {
         this.fpsPorSegundo = fps;
+    }
+
+    /**
+     * Establece los Updates Per Second (UPS) para diagnóstico.
+     * UPS representa la frecuencia de simulation updates, que puede
+     * diferir de FPS (render rate) especialmente durante lag spikes.
+     */
+    public void setUps(int ups) {
+        this.upsPorSegundo = ups;
     }
 
     /** Libera recursos al cerrar la aplicación o destruir este GameState.

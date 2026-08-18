@@ -10,7 +10,6 @@ import Inputs.MouseInput;
 import Main.Debug.DebugGameSettings;
 import Main.States.GameState;
 import Sprites.Assets;
-
 import java.awt.Color;
 
 /**
@@ -73,7 +72,7 @@ public class GameOrquester {
             .monitorIndex(0)
             .scalingMode(ScalingMode.FIT)
             .useInterpolation(false)
-            .targetFps(30)
+            .targetFps(31)
             .fillColor(Color.BLACK)
             .background(SolidColorBackground.WHITE)
             .build();

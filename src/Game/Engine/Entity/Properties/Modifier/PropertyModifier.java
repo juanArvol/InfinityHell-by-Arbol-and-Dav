@@ -60,79 +60,118 @@ public final class PropertyModifier {
     private final PropertyKey<?> key;
     private final Phase          phase;
     private final double         value;
-    private final String         sourceId;
+    
+    // ── HRFC-FASE3: String sourceId → PropertyModifierSource source ───────
+    private final PropertyModifierSource source;
+    private final String                 debugDescription;
 
     // ── Campos de causalidad (opcionales) ─────────────────────────────────
 
-    private final ModifierSource    source;
+    private final ModifierSource    causalSource;
     private final ModifierScope     scope;
     private final ModifierPredicate predicate;
     private final ModifierInfluence influence;
     private final ModifierChain     chain;
+    
+    /**
+     * Sentinel para modificadores sin origen rastreable.
+     * 
+     * <p>Usar para modificadores permanentes que nunca se revocarán por fuente
+     * (añadidos directamente sin un contributor específico). Es una implementación
+     * anónima de PropertyModifierSource que existe únicamente como sentinel de
+     * identidad para removeBySource().
+     */
+    public static final PropertyModifierSource NO_SOURCE = new PropertyModifierSource() {
+        @Override
+        public String debugName() { return "NO_SOURCE"; }
+    };
 
     // ── Constructor privado ───────────────────────────────────────────────
 
     private PropertyModifier(
-            PropertyKey<?> key, Phase phase, double value, String sourceId,
-            ModifierSource source, ModifierScope scope,
+            PropertyKey<?> key, Phase phase, double value,
+            PropertyModifierSource source, String debugDescription,
+            ModifierSource causalSource, ModifierScope scope,
             ModifierPredicate predicate, ModifierInfluence influence, ModifierChain chain) {
 
         if (key == null)
             throw new IllegalArgumentException("key no puede ser null.");
-        if (sourceId == null || sourceId.isBlank())
-            throw new IllegalArgumentException("sourceId no puede ser null o vacío.");
 
-        this.key       = key;
-        this.phase     = phase;
-        this.value     = value;
-        this.sourceId  = sourceId;
-        this.source    = source;
-        this.scope     = scope;
-        this.predicate = predicate;
-        this.influence = influence;
-        this.chain     = chain;
+        this.key              = key;
+        this.phase            = phase;
+        this.value            = value;
+        this.source           = (source != null) ? source : NO_SOURCE;
+        this.debugDescription = (debugDescription != null) ? debugDescription : "";
+        this.causalSource     = causalSource;
+        this.scope            = scope;
+        this.predicate        = predicate;
+        this.influence        = influence;
+        this.chain            = chain;
     }
 
     // ── Factory methods (sin causalidad) ─────────────────────────────────
 
     /** Crea un modificador aditivo: suma el valor al base. */
-    public static PropertyModifier additive(PropertyKey<?> key, double amount, String sourceId) {
-        return new PropertyModifier(key, Phase.ADDITIVE, amount, sourceId,
+    public static PropertyModifier additive(PropertyKey<?> key, double amount, PropertyModifierSource source) {
+        return new PropertyModifier(key, Phase.ADDITIVE, amount, source, "",
             null, null, null, null, null);
     }
 
     /** Crea un modificador multiplicativo: multiplica el resultado aditivo. */
-    public static PropertyModifier multiplicative(PropertyKey<?> key, double factor, String sourceId) {
-        return new PropertyModifier(key, Phase.MULTIPLICATIVE, factor, sourceId,
+    public static PropertyModifier multiplicative(PropertyKey<?> key, double factor, PropertyModifierSource source) {
+        return new PropertyModifier(key, Phase.MULTIPLICATIVE, factor, source, "",
             null, null, null, null, null);
     }
 
     /** Crea un modificador de sobreescritura: sustituye el valor calculado. */
-    public static PropertyModifier override(PropertyKey<?> key, double fixedValue, String sourceId) {
-        return new PropertyModifier(key, Phase.OVERRIDE, fixedValue, sourceId,
+    public static PropertyModifier override(PropertyKey<?> key, double fixedValue, PropertyModifierSource source) {
+        return new PropertyModifier(key, Phase.OVERRIDE, fixedValue, source, "",
+            null, null, null, null, null);
+    }
+    
+    // ── Factory methods con debug description ─────────────────────────────
+    
+    /** Crea un modificador aditivo con descripción de debug. */
+    public static PropertyModifier additive(PropertyKey<?> key, double amount, 
+                                           PropertyModifierSource source, String debugDescription) {
+        return new PropertyModifier(key, Phase.ADDITIVE, amount, source, debugDescription,
+            null, null, null, null, null);
+    }
+    
+    /** Crea un modificador multiplicativo con descripción de debug. */
+    public static PropertyModifier multiplicative(PropertyKey<?> key, double factor,
+                                                 PropertyModifierSource source, String debugDescription) {
+        return new PropertyModifier(key, Phase.MULTIPLICATIVE, factor, source, debugDescription,
+            null, null, null, null, null);
+    }
+    
+    /** Crea un modificador de sobreescritura con descripción de debug. */
+    public static PropertyModifier override(PropertyKey<?> key, double fixedValue,
+                                           PropertyModifierSource source, String debugDescription) {
+        return new PropertyModifier(key, Phase.OVERRIDE, fixedValue, source, debugDescription,
             null, null, null, null, null);
     }
 
     // ── with*() — añadir causalidad ───────────────────────────────────────
 
-    public PropertyModifier withSource(ModifierSource src) {
-        return new PropertyModifier(key, phase, value, sourceId, src, scope, predicate, influence, chain);
+    public PropertyModifier withCausalSource(ModifierSource src) {
+        return new PropertyModifier(key, phase, value, source, debugDescription, src, scope, predicate, influence, chain);
     }
 
     public PropertyModifier withScope(ModifierScope scp) {
-        return new PropertyModifier(key, phase, value, sourceId, source, scp, predicate, influence, chain);
+        return new PropertyModifier(key, phase, value, source, debugDescription, causalSource, scp, predicate, influence, chain);
     }
 
     public PropertyModifier withPredicate(ModifierPredicate pred) {
-        return new PropertyModifier(key, phase, value, sourceId, source, scope, pred, influence, chain);
+        return new PropertyModifier(key, phase, value, source, debugDescription, causalSource, scope, pred, influence, chain);
     }
 
     public PropertyModifier withInfluence(ModifierInfluence inf) {
-        return new PropertyModifier(key, phase, value, sourceId, source, scope, predicate, inf, chain);
+        return new PropertyModifier(key, phase, value, source, debugDescription, causalSource, scope, predicate, inf, chain);
     }
 
     public PropertyModifier withChain(ModifierChain c) {
-        return new PropertyModifier(key, phase, value, sourceId, source, scope, predicate, influence, c);
+        return new PropertyModifier(key, phase, value, source, debugDescription, causalSource, scope, predicate, influence, c);
     }
 
     /**
@@ -142,37 +181,50 @@ public final class PropertyModifier {
      */
     public PropertyModifier withCausalityFrom(PropertyModifier origin) {
         if (origin == null) return this;
-        return new PropertyModifier(key, phase, value, sourceId,
-            origin.source, origin.scope, origin.predicate, origin.influence, origin.chain);
+        return new PropertyModifier(key, phase, value, source, debugDescription,
+            origin.causalSource, origin.scope, origin.predicate, origin.influence, origin.chain);
     }
 
     // ── Acceso ────────────────────────────────────────────────────────────
 
-    public PropertyKey<?> getKey()          { return key; }
-    public Phase getPhase()                 { return phase; }
-    public double getValue()                { return value; }
-    public String getSourceId()             { return sourceId; }
-    public ModifierSource getSource()       { return source; }
-    public ModifierScope getScope()         { return scope; }
-    public ModifierPredicate getPredicate() { return predicate; }
-    public ModifierInfluence getInfluence() { return influence; }
-    public ModifierChain getChain()         { return chain; }
+    public PropertyKey<?> getKey()                      { return key; }
+    public Phase getPhase()                             { return phase; }
+    public double getValue()                            { return value; }
+    public PropertyModifierSource getSource()           { return source; }
+    public String getDebugDescription()                 { return debugDescription; }
+    public ModifierSource getCausalSource()             { return causalSource; }
+    public ModifierScope getScope()                     { return scope; }
+    public ModifierPredicate getPredicate()             { return predicate; }
+    public ModifierInfluence getInfluence()             { return influence; }
+    public ModifierChain getChain()                     { return chain; }
 
     public boolean hasPredicate() { return predicate != null; }
     public boolean hasInfluence() { return influence != null; }
     public boolean hasChain()     { return chain != null; }
+    
+    // ── Deprecated (migration compatibility) ───────────────────────────────
+    
+    /**
+     * @deprecated HRFC-FASE3: Usar {@link #getSource()} que ahora retorna PropertyModifierSource.
+     *             Este método existe solo para compatibilidad temporal durante migración.
+     */
+    @Deprecated
+    public String getSourceId() {
+        return source != null ? source.debugName() : "NO_SOURCE";
+    }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("PropertyModifier[")
           .append(key.displayName()).append(" ").append(phase).append(" ").append(value)
-          .append(" from:").append(sourceId);
-        if (source    != null) sb.append(" src:").append(source.displayName());
-        if (scope     != null) sb.append(" scope:").append(scope.displayName());
-        if (predicate != null) sb.append(" pred:yes");
-        if (influence != null) sb.append(" inf:yes");
-        if (chain     != null) sb.append(" chain:").append(chain.getChainId());
+          .append(" from:").append(source != null ? source.debugName() : "null");
+        if (!debugDescription.isEmpty()) sb.append(" desc:\"").append(debugDescription).append("\"");
+        if (causalSource != null) sb.append(" causal:").append(causalSource.displayName());
+        if (scope        != null) sb.append(" scope:").append(scope.displayName());
+        if (predicate    != null) sb.append(" pred:yes");
+        if (influence    != null) sb.append(" inf:yes");
+        if (chain        != null) sb.append(" chain:").append(chain.getChainId());
         sb.append("]");
         return sb.toString();
     }

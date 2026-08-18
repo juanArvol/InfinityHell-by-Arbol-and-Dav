@@ -21,7 +21,7 @@ public class BackGround extends GameObjects {
     }
 
     @Override
-    public void update() {
-        super.update();
+    public void update(double deltaTime) {
+        super.update(deltaTime);
     }
 }

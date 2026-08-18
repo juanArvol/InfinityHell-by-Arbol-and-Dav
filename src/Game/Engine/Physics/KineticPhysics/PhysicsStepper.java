@@ -5,6 +5,19 @@ import Game.Engine.GameObjects;
 /**
  * Utilidad para mover objetos paso a paso.
  *
+ * ── Mini-HRFC 1.5 — Canonical Physics Units ──────────────────────────────
+ *
+ * CONTRATO DIMENSIONAL:
+ *   Los parámetros moveX y moveY representan DESPLAZAMIENTO (displacement)
+ *   en unidades espaciales, NO velocidad.
+ *
+ *   CORRECTO: PhysicsStepper.moveWith(obj, velocity × deltaTime, ...)
+ *   INCORRECTO: PhysicsStepper.moveWith(obj, velocity, ...)
+ *
+ *   Este contrato es aplicado por CollisionsSystem y MovingObjects:
+ *     - CollisionsSystem: displacement = velocity × deltaTime × collisionFraction
+ *     - MovingObjects.moveByPhysics(): displacement = velocity × deltaTime
+ *
  * Separa la lógica de "mover la posición" de la lógica de física,
  * permitiendo que CollisionsSystem aplique sub-steps o swept AABB
  * sin acoplarse a Physics directamente.

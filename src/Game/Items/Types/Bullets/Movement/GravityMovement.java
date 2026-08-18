@@ -61,7 +61,7 @@ public final class GravityMovement implements ProjectileMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         var physics = bullet.getPhysics();
 
         // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──

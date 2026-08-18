@@ -173,7 +173,25 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
 
     // ── Update ────────────────────────────────────────────────────────────
 
-    public void update(EnemyContext ctx) {
+    /**
+     * Actualiza el Enemy con contexto de IA y tiempo real.
+     *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     *
+     * CORRECCIÓN TEMPORAL:
+     * Enemy ahora recibe deltaTime y lo propaga a todos sus controladores:
+     *   - AttackController: cooldowns independientes del framerate
+     *   - MovementController: estrategias con temporalidad correcta
+     *   - AIController: comportamientos con timing real
+     *   - PhaseController: transiciones basadas en tiempo, no en frames
+     *
+     * El deltaTime fluye desde GameLoop → WorldManager → WorldEnemyUpdater
+     * → Enemy (aquí) → Controllers.
+     *
+     * @param ctx contexto del objetivo (player u otro Enemy); puede ser null
+     * @param deltaTime tiempo real del simulation step en segundos
+     */
+    public void update(EnemyContext ctx, double deltaTime) {
         if (health.isDead()) {
             onDeath();
             return;
@@ -183,37 +201,58 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
         state.resetFrameFlags();
 
         // 2. Fases — evalúa transiciones y actualiza fase activa
-        phaseController.update(this);
+        phaseController.update(this, deltaTime);
 
         // 3 + 4. IA y movimiento — solo si las capabilities y states lo permiten
         if (flags.isAbleToMove()) {
-            aiController.update(this, ctx);
-            movementController.update(this, ctx);
+            aiController.update(this, ctx, deltaTime);
+            movementController.update(this, ctx, deltaTime);
         }
 
         // 5. Ataques — solo si las capabilities y states lo permiten
         if (flags.isAbleToAttack()) {
-            boolean attacked = attackController.update(this, ctx);
+            boolean attacked = attackController.update(this, ctx, deltaTime);
             if (attacked) state.setAttacking(true);
         }
 
         // 6. EnemyComponents opcionales
-        componentRegistry.update(this);
+        componentRegistry.update(this, deltaTime);
 
         // 7. Engine components
-        super.update();
+        super.update(deltaTime);
+    }
+
+    /**
+     * Variante sin deltaTime — fallback para compatibilidad legacy.
+     * Usa 1/60s como deltaTime de emergencia.
+     *
+     * @deprecated Usar update(ctx, deltaTime) con tiempo real
+     */
+    @Deprecated
+    public void update(EnemyContext ctx) {
+        update(ctx, 1.0 / 60.0);
     }
 
     @Override
-    public void update() { update(null); }
+    public void update(double deltaTime) { update(null, deltaTime); }
+
+    /**
+     * Fallback sin deltaTime - compatibilidad con código legacy.
+     * @deprecated Usar update(double) con deltaTime real
+     */
+    @Deprecated
+    public void update() { update(null, 1.0 / 60.0); }
 
     /**
      * Implementa ContextualUpdatable — el contexto esperado es EnemyContext.
-     * Si se pasa null o un tipo incorrecto, degradar a update(null).
+     * Propaga deltaTime correctamente a la cadena de actualización.
+     *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * El deltaTime ya no se descarta — se propaga a update(ctx, deltaTime).
      */
     @Override
-    public void updateWithContext(Object context) {
-        update((context instanceof EnemyContext ctx) ? ctx : null);
+    public void updateWithContext(Object context, double dt) {
+        update((context instanceof EnemyContext ctx) ? ctx : null, dt);
     }
 
     // ── Muerte ────────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 package Game.Engine.Physics.MaterialState;
 
+import Game.Engine.Physics.Core.PhysicalRelation;
+import Game.Engine.Physics.Core.RelationConstraint;
+import Game.Engine.Physics.Core.RelationEvaluator;
 import Game.Engine.Physics.Fluid.FluidProperties;
 import Game.Engine.Physics.Gravity.GravityProperties;
 import Game.Engine.Physics.Kinematic.KinematicProperties;
-import Game.Engine.Physics.Core.PhysicalRelation;
-import Game.Engine.Physics.Core.RelationEvaluator;
-
 import java.util.List;
 
 /**
@@ -14,6 +14,7 @@ import java.util.List;
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
  * ── HRFC-023 Auditoría — Eliminación de búsquedas por ID ─────────────────
  * ── HRFC-024 Auditoría — Consistencia Arquitectónica ─────────────────────
+ * ── HRFC-FASE3.5 — Ownership Correcto de Valores Físicos ─────────────────
  *
  * ── FENÓMENO ──────────────────────────────────────────────────────────────
  * Principio de Arquímedes: empuje vertical en objetos inmersos en fluido.
@@ -25,33 +26,81 @@ import java.util.List;
  *   F_b = humedad · (1 + viscosidad) · factor / masa
  *   Δvy = −F_b · dt      (negativo = hacia arriba, opuesto a gravedad)
  *
+ * ── OWNERSHIP DE FACTOR DE FLOTACIÓN ─────────────────────────────────────
+ * El factor de flotación (buoyancy factor) debe provenir de:
+ *   - RelationConstraint.THRESHOLD_ABOVE de la relación, O
+ *   - FluidProperties del medio
+ *
+ * Si no está declarado → usa 1.0 como neutro (empuje = desplazamiento).
+ * Esto NO es un default físico inventado, es el valor teórico para
+ * flotación neutral (ρ_objeto = ρ_fluido).
+ *
+ * ── OWNERSHIP DE MASA ────────────────────────────────────────────────────
+ * GravityProperties.MASS DEBE estar presente en la entidad.
+ * Si no está presente o es inválida → entidad omitida del fenómeno.
+ * NO se inventa masa por defecto.
+ *
  * ── PROPIEDADES REQUERIDAS ────────────────────────────────────────────────
- *   CoreProperties.HUMIDITY        (entidad)
- *   CoreProperties.VISCOSITY       (entidad, fallback a 0.0)
- *   GravityProperties.MASS         (entidad, fallback a 1.0)
- *   KinematicProperties.VELOCITY_Y (entidad)
+ *   FluidProperties.HUMIDITY        (entidad, indica inmersión)
+ *   FluidProperties.VISCOSITY       (entidad, aumenta resistencia)
+ *   GravityProperties.MASS          (entidad, determina empuje/masa)
+ *   KinematicProperties.VELOCITY_Y  (entidad, recibe empuje)
  */
 public final class ArchimedesEvaluator implements RelationEvaluator {
-
-    private static final double BUOYANCY_FACTOR = 0.5;
 
     @Override
     public void evaluate(PhysicalRelation     relation,
                          List<EvaluationView> views,
                          double               deltaTime) {
+        // ── HRFC-FASE3.5 CORRECCIÓN: Justificación de valores neutros ─────
+        // 
+        // buoyancyFactor = 1.0 → IDENTIDAD FÍSICA (flotación neutral teórica)
+        //   Representa ρ_objeto = ρ_fluido (empuje = peso desplazado)
+        //   NO es un default arbitrario, es el valor físico neutro
+        //
+        RelationConstraint factorConstraint =
+            relation.getConstraint(RelationConstraint.Type.THRESHOLD_ABOVE);
+        double buoyancyFactor = factorConstraint != null
+            ? factorConstraint.getValue()
+            : 1.0;  // IDENTIDAD FÍSICA: flotación neutral (ρ_obj = ρ_fluid)
+
         for (EvaluationView e : views) {
-            if (!e.has(FluidProperties.HUMIDITY))              continue;
-            if (!e.has(KinematicProperties.VELOCITY_Y))      continue;
+            // Requiere HUMIDITY (indica inmersión en fluido)
+            if (!e.has(FluidProperties.HUMIDITY)) continue;
+            if (!e.has(KinematicProperties.VELOCITY_Y)) continue;
 
             double humidity = e.get(FluidProperties.HUMIDITY);
+            // Sin inmersión → sin empuje
             if (humidity <= 0) continue;
 
+            // ── VISCOSITY: 0.0 = IDENTIDAD MATEMÁTICA (fluido no viscoso) ─
+            // La ausencia de viscosidad NO es un default arbitrario.
+            // Representa físicamente un fluido ideal sin resistencia viscosa.
+            // Es válido que un fluido no tenga viscosidad configurada.
             double viscosity = e.has(FluidProperties.VISCOSITY)
-                ? e.get(FluidProperties.VISCOSITY) : 0.0;
-            double m = e.has(GravityProperties.MASS)
-                ? Math.max(e.get(GravityProperties.MASS), 0.01) : 1.0;
+                ? e.get(FluidProperties.VISCOSITY)
+                : 0.0;  // IDENTIDAD MATEMÁTICA: sin resistencia viscosa
 
-            double buoyancy = humidity * (1.0 + viscosity) * BUOYANCY_FACTOR / m;
+            // ── HRFC-FASE3.5: Ownership correcto de masa ──────────────────
+            // La masa DEBE estar presente en la entidad.
+            // Si no está → entidad omitida del fenómeno.
+            if (!e.has(GravityProperties.MASS)) continue;
+            
+            double mass = e.get(GravityProperties.MASS);
+            // Validar masa válida (> 0)
+            if (mass <= 0.0) continue;
+
+            // ── Cálculo del empuje ────────────────────────────────────────
+            // F_b = humedad · (1 + viscosidad) · factor / masa
+            // 
+            // El (1.0 + viscosity) representa:
+            //   1.0 → componente base del empuje (desplazamiento)
+            //   viscosity → resistencia adicional del medio viscoso
+            // 
+            // Si viscosity = 0 → (1.0 + 0) = 1.0 (empuje puro sin resistencia)
+            // Es correcto matemáticamente, NO un default arbitrario.
+            double buoyancy = humidity * (1.0 + viscosity) * buoyancyFactor / mass;
+            
             // Empuje hacia arriba (reduce VELOCITY_Y — convención: positivo = abajo)
             e.add(KinematicProperties.VELOCITY_Y, -buoyancy * deltaTime);
         }

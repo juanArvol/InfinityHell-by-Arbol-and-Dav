@@ -74,13 +74,17 @@ public final class EnemyPhaseController {
      * Evalúa la transición activa y avanza si la condición se cumple.
      * Llama update() en la fase activa.
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para propagarlo a la fase activa.
+     *
      * @param enemy el Enemy propietario.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void update(Enemy enemy) {
+    public void update(Enemy enemy, double deltaTime) {
         if (!started || currentIndex < 0) return;
 
         PhaseEntry current = phases.get(currentIndex);
-        current.phase().update(enemy);
+        current.phase().update(enemy, deltaTime);
 
         // Evaluar condición de salida
         if (current.transition() != null

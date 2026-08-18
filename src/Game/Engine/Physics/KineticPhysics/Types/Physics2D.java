@@ -10,6 +10,28 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
  * Clase base de física.
  *
  * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
+ * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────────
+ * ── Mini-HRFC 1.5 — Canonical Physics Units ──────────────────────────────
+ *
+ * UNIDADES CANÓNICAS:
+ *
+ *   POSICIÓN:      unidades espaciales del juego (units)
+ *   VELOCIDAD:     unidades / segundo (u/s)
+ *   ACELERACIÓN:   unidades / segundo² (u/s²)
+ *   FUERZA:        masa × unidades / segundo² (mass × u/s²)
+ *   IMPULSO:       masa × unidades / segundo (mass × u/s)
+ *   deltaTime:     segundos (s)
+ *
+ * CONTRATOS MATEMÁTICOS:
+ *
+ *   Aceleración:          Δv = a × dt
+ *   Fuerza continua:      Δv = (F / m) × dt
+ *   Impulso instantáneo:  Δv = J / m          (SIN deltaTime)
+ *   Posición:             Δx = v × dt
+ *
+ * INVARIANTE:
+ *   El framerate NO forma parte de ninguna magnitud física.
+ *   Prohibido: factores como /60, *60, /FPS, *FPS, 0.016, 1/60.
  *
  * ── Diseño de velocidad en capas ─────────────────────────────────────────
  *
@@ -84,6 +106,56 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 public class Physics2D {
 
     protected Vector2D velocity = new Vector2D(0, 0);
+    
+    /**
+     * Gravedad propia de la entidad en u/s².
+     * 
+     * IMPORTANTE - HRFC-FASE2.5: CORRECCIÓN SEMÁNTICA DE OWNERSHIP
+     * 
+     * Este campo representa la PROPIEDAD GRAVITACIONAL PROPIA de la entidad.
+     * La entidad ES PROPIETARIA de su gravedad, no el ambiente.
+     * 
+     * OWNERSHIP CORRECTO:
+     * 
+     *   ENTIDAD (Physics2D):
+     *     gravity → propiedad gravitacional PROPIA (ej: 9.8 m/s² para objetos normales)
+     *     mass    → masa inercial (GravityProperties.MASS)
+     * 
+     *   AMBIENTE (EnvironmentState):
+     *     gravityInfluenceY → FACTOR de modificación ambiental (1.0 = normal, 0.0 = anulada)
+     * 
+     * COMPOSICIÓN CORRECTA:
+     *   a_efectiva = entity.gravity × environment.gravityInfluenceY
+     * 
+     * EJEMPLOS:
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 1.0
+     *     → 9.8 × 1.0 = 9.8 (Tierra normal)
+     * 
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 0.0
+     *     → 9.8 × 0.0 = 0.0 (microgravedad/espacio)
+     * 
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 2.0
+     *     → 9.8 × 2.0 = 19.6 (zona de alta gravedad)
+     * 
+     * VALORES TÍPICOS:
+     *   9.8  = objetos normales (gravedad terrestre estándar)
+     *   0.4  = objetos muy ligeros / con sustentación
+     *   0.0  = objetos sin gravedad propia (flotantes)
+     * 
+     * PRINCIPIO FUNDAMENTAL:
+     * El ambiente NO dice: "La gravedad aquí ES 19.6."
+     * El ambiente dice: "La gravedad de la entidad se ve modificada por ×2."
+     * 
+     * La entidad posee su gravedad.
+     * El ambiente la modifica mediante un factor de influencia.
+     * Las Relations combinan ambos para producir la aceleración efectiva.
+     * 
+     * ESTADO ACTUAL:
+     *   Este campo se usa directamente como aceleración en applyGravity().
+     *   Funcionalmente correcto para casos donde gravityInfluence = 1.0,
+     *   pero debe actualizarse para considerar el factor ambiental cuando
+     *   el ambiente modifique la gravedad (ej: microgravedad, alta gravedad).
+     */
     protected double gravity;
 
     protected double mass;
@@ -178,8 +250,11 @@ public class Physics2D {
 
     /**
      * Pila de modificadores de estado (herido, stun, buff de velocidad…).
-     * Añadir efectos: {@code statusStack().add("poison", ctx -> 0.6);}
-     * Removerlos:     {@code statusStack().remove("poison");}
+     * 
+     * HRFC-FASE3 — Ahora requiere MovementModifierSource en lugar de String:
+     * 
+     *   Añadir efectos: {@code statusStack().add(poisonEffect, ctx -> 0.6);}
+     *   Removerlos:     {@code statusStack().remove(poisonEffect);}
      *
      * Todos los modificadores registrados se combinan multiplicativamente
      * en cada frame: factor = mod1 × mod2 × … × modN.
@@ -284,46 +359,34 @@ public class Physics2D {
     // ── Gravedad y Drag Aerodinámico ─────────────────────────────────────
 
     /**
-     * Aplica gravedad y resistencia aerodinámica del medio.
+     * Aplica resistencia aerodinámica del medio (drag).
      *
-     * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
-     * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────
+     * ── HRFC FASE 3.5 — Separación de Responsabilidades ──────────────────
+     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
      *
-     * La velocidad terminal NO se impone artificialmente.
-     * Emerge naturalmente del balance entre fuerzas:
+     * Este método implementa ÚNICAMENTE el drag aerodinámico, que es correcto
+     * que permanezca en Physics2D (no es un fenómeno formalizado por evaluator).
      *
-     *   F_gravity = m × g (hacia abajo)
-     *   F_drag = Cd × A × v² (opuesta a la velocidad)
+     * El drag aerodinámico es una propiedad del movimiento en el medio, no un
+     * fenómeno físico discreto entre entidades. Por tanto, pertenece a la
+     * integración de movimiento, no a PhysicsSolver.
      *
-     * Cuando F_net ≈ 0 → velocidad terminal alcanzada.
+     * ── FUNCIONAMIENTO ───────────────────────────────────────────────────
      *
-     * Este método:
-     *   1. Aplica gravedad: a_gravity = g (NO escalada por masa — corrección física)
-     *   2. Calcula drag aerodinámico: F_drag = Cd × A × vy²
-     *      (Cd y A ya están escalados para px/frame, no se usa mediumDensity)
-     *   3. Aplica drag como deceleración: a_drag = F_drag / m
-     *   4. Integra aceleración neta: vy += (a_gravity - a_drag)
+     * F_drag = Cd × A × v²  (opuesta a la velocidad)
+     * a_drag = F_drag / m
+     * Δv = a_drag × deltaTime
      *
-     * Corrección HRFC FASE 2:
-     *   - Removido factor mediumDensity (0.5 × ρ) del cálculo.
-     *   - dragCoefficient ahora está escalado para unidades del juego (0.0001-0.001).
-     *   - Esto corrige el problema de drag excesivo que causaba caída lenta/hover.
+     * La resistencia del aire produce naturalmente velocidad terminal cuando
+     * se balancea con otras fuerzas (gravedad aplicada vía evaluators).
      *
-     * Nota física importante:
-     *   - La gravedad produce aceleración constante g independiente de la masa.
-     *   - El drag produce fuerza proporcional a v², que se divide por masa.
-     *   - Objetos más masivos alcanzan mayor velocidad terminal (menor a_drag relativa).
-     *   - Objetos con mayor área alcanzan menor velocidad terminal (mayor F_drag).
-     *
-     * @param onGround si true, no aplica gravedad (objeto en contacto con suelo).
+     * @param onGround si true, no aplica drag en caída (objeto en contacto con suelo)
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void applyGravity(boolean onGround) {
+    public void applyAerodynamicDrag(boolean onGround, double deltaTime) {
         if (onGround) return;
 
-        // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──
-        double a_gravity = gravity;
-
-        // ── 2. Resistencia aerodinámica (escalada para px/frame) ─────────
+        // ── Resistencia aerodinámica (escalada para px/frame) ─────────────
         // F_drag = Cd × A × v²
         // Cd ya está escalado (0.0001-0.001) para unidades del juego.
         // NO se usa mediumDensity — era factor de SI units incompatible.
@@ -336,14 +399,87 @@ public class Physics2D {
         // Si vy < 0 (subiendo) → drag hacia abajo (positivo)
         double dragDirection = (vy >= 0) ? -1.0 : 1.0;
 
-        // ── 3. Aceleración por drag (F / m) ──────────────────────────────
+        // ── Aceleración por drag (F / m) ──────────────────────────────────
         double a_drag = (dragForce / mass) * dragDirection;
 
-        // ── 4. Integración de aceleración neta ───────────────────────────
-        double a_net = a_gravity + a_drag;
-        double newVy = vy + a_net;
-
+        // ── Mini-HRFC: Integración temporal correcta ─────────────────────
+        // Δv = a_drag × deltaTime
+        // NO: newVy = vy + a_drag (depende del framerate)
+        double newVy = vy + (a_drag * deltaTime);
         velocity.setY(newVy);
+    }
+
+    /**
+     * Aplica gravedad y resistencia aerodinámica del medio.
+     *
+     * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
+     * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────
+     * ── HRFC FASE 3.5 CORRECCIÓN — Eliminación de Duplicación ────────────
+     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     *
+     * ARQUITECTURA CORREGIDA:
+     *
+     * Este método ahora DELEGA la aplicación de gravedad al sistema de
+     * acumulación de fuerzas, eliminando la duplicación con NewtonEvaluator.
+     *
+     * ANTES (duplicación):
+     *   Physics2D.applyGravity() → calcula gravedad directamente
+     *   NewtonEvaluator → calcula gravedad
+     *
+     * AHORA (delegación):
+     *   Physics2D.applyGravity() → registra gravedad vía accumulate()
+     *   flushAccumulatedForces(deltaTime) → aplica fuerzas acumuladas
+     *   (alternativamente: PhysicsSolver → NewtonEvaluator)
+     *
+     * ── FUNCIONAMIENTO ───────────────────────────────────────────────────
+     *
+     * 1. Registra gravedad como fuerza continua vía accumulate()
+     * 2. Aplica drag aerodinámico directamente (correcto en Physics2D)
+     *
+     * La gravedad registrada será integrada cuando se llame
+     * flushAccumulatedForces(deltaTime), permitiendo que sistemas externos
+     * (PhysicsSolver, zones, etc.) modifiquen la gravedad antes de aplicarla.
+     *
+     * MIGRACIÓN A SISTEMA DECLARATIVO:
+     *
+     * Para migrar completamente al sistema declarativo (PhysicsSolver):
+     *
+     *   1. Configurar PhysicalRelation NEWTON con:
+     *      - THRESHOLD_ABOVE = entity.gravity × environment.gravityInfluenceY
+     *      - Participating: VELOCITY_Y
+     *
+     *   2. Llamar physicsSolver.solve(entities, environment, deltaTime)
+     *      antes de applyGravity()
+     *
+     *   3. applyGravity() omitirá registro de gravedad si
+     *      isGravityManagedExternally() = true
+     *
+     * @param onGround si true, no aplica gravedad (objeto en contacto con suelo).
+     * @param deltaTime tiempo del simulation step en segundos.
+     */
+    public void applyGravity(boolean onGround, double deltaTime) {
+        if (onGround) return;
+
+        // ── HRFC FASE 3.5 + Mini-HRFC: Delegación sin duplicación ─────────
+        // En lugar de calcular gravedad directamente (duplicando NewtonEvaluator),
+        // registramos la gravedad como fuerza continua.
+        //
+        // Esto permite que:
+        // 1. Sistemas externos modifiquen la gravedad antes de aplicarla
+        // 2. Se integre correctamente con otras fuerzas acumuladas
+        // 3. Se elimine la duplicación con NewtonEvaluator
+        //
+        // La gravedad será aplicada cuando se llame flushAccumulatedForces(deltaTime).
+        
+        if (!isGravityManagedExternally()) {
+            // Registrar gravedad como fuerza continua
+            // F_gravity = m × g
+            double gravityForce = mass * gravity;
+            accumulate(0, gravityForce);
+        }
+
+        // ── Drag aerodinámico (correcto en Physics2D) ────────────────────
+        applyAerodynamicDrag(false, deltaTime);  // Ya verificamos onGround arriba
     }
 
     // ── Salto ─────────────────────────────────────────────────────────────
@@ -385,9 +521,28 @@ public class Physics2D {
 
     // ── Movimiento ────────────────────────────────────────────────────────
 
-    public void updateMoves(Vector2D position) {
-        position.setX(position.getX() + velocity.getX());
-        position.setY(position.getY() + velocity.getY());
+    /**
+     * Integra la velocidad en la posición.
+     *
+     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     *
+     * CORRECCIÓN TEMPORAL:
+     *
+     * La posición debe integrarse usando velocity × deltaTime:
+     *   Δx = v × deltaTime
+     *
+     * NO:
+     *   Δx = v  (asume 1 unidad de tiempo = 1 frame, dependiente del framerate)
+     *
+     * Si la velocidad está expresada en unidades/segundo (u/s), el desplazamiento
+     * por frame debe ser: posición += velocidad × deltaTime_en_segundos.
+     *
+     * @param position posición a modificar
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void updateMoves(Vector2D position, double deltaTime) {
+        position.setX(position.getX() + velocity.getX() * deltaTime);
+        position.setY(position.getY() + velocity.getY() * deltaTime);
     }
 
     // ── Stop ──────────────────────────────────────────────────────────────
@@ -543,19 +698,38 @@ public class Physics2D {
     }
 
     /**
-     * Aplica todas las fuerzas acumuladas como un único impulso (F/mass)
-     * y limpia el acumulador para el siguiente frame.
+     * Aplica todas las fuerzas acumuladas como un único impulso y
+     * limpia el acumulador para el siguiente frame.
+     *
+     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     *
+     * CORRECCIÓN TEMPORAL:
+     *
+     * Las fuerzas continuas deben integrarse usando deltaTime:
+     *   Δv = (ΣF / m) × deltaTime
+     *
+     * NO:
+     *   Δv = ΣF / m  (dependiente del framerate)
+     *
+     * ANTES: accumulate() registraba fuerzas y flush las aplicaba sin tiempo.
+     * AHORA: flush recibe deltaTime explícito del simulation step.
      *
      * Llamar desde CollisionsSystem FASE 0.5, después de applyGravity()
      * y antes del SweptAABB, para que las fuerzas de zona se integren
      * correctamente en el mismo step que la gravedad.
      *
      * No hace nada si no hay fuerzas acumuladas.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void flushAccumulatedForces() {
+    public void flushAccumulatedForces(double deltaTime) {
         if (accumulatedFx == 0.0 && accumulatedFy == 0.0) return;
-        velocity.setX(velocity.getX() + (accumulatedFx / mass));
-        velocity.setY(velocity.getY() + (accumulatedFy / mass));
+        
+        // Mini-HRFC: Integración temporal correcta
+        // Δv = (F / m) × deltaTime
+        velocity.setX(velocity.getX() + (accumulatedFx / mass) * deltaTime);
+        velocity.setY(velocity.getY() + (accumulatedFy / mass) * deltaTime);
+        
         accumulatedFx = 0.0;
         accumulatedFy = 0.0;
     }

@@ -49,9 +49,9 @@ public final class CompositeMovement implements ResettableMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         for (ProjectileMovement m : movements) {
-            m.tick(bullet);
+            m.tick(bullet, dt);
         }
     }
 

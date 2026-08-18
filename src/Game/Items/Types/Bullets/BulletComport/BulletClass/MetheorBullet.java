@@ -93,7 +93,7 @@ public class MetheorBullet extends BulletBehavior {
                 0.0,               // gravityValue (manejado por GravityMovement)
                 8,                 // width
                 8,                 // height
-                "void_meteor"      // assetKey
+                "bullet.comet"      // assetKey
         );
     }
 

@@ -4,6 +4,7 @@ import Game.Engine.Physics.Acoustic.AcousticState;
 import Game.Engine.Physics.Biomechanical.BiomechanicalState;
 import Game.Engine.Physics.Chemical.ChemicalState;
 import Game.Engine.Physics.Contact.ContactState;
+import Game.Engine.Physics.Environment.Environment;
 import Game.Engine.Physics.Environment.EnvironmentState;
 import Game.Engine.Physics.Kinematic.KinematicState;
 import Game.Engine.Physics.Material.MaterialState;
@@ -15,6 +16,7 @@ import Game.Engine.Physics.Optical.OpticalState;
  *
  * ── HRFC-031 — Descomposición de PhysicalState en SimulationContext ───────
  * ── HRFC-032 — Evolución del SimulationContext hacia un registro extensible ─
+ * ── HRFC-FASE2 — Declarative Environment Ownership ───────────────────────
  *
  * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  * SimulationContext es el punto de acceso único al conjunto de estados de
@@ -128,6 +130,23 @@ public final class SimulationContext {
      */
     private StateSnapshot<KinematicState> kinematicSnapshot;
 
+    // ── Ambiente — campo dedicado (HRFC-FASE2) ────────────────────────────
+
+    /**
+     * Ambiente donde existe esta entidad.
+     * 
+     * HRFC-FASE2: El ambiente es propietario de sus condiciones ambientales.
+     * SimulationContext delega en environment.current() para obtener el
+     * EnvironmentState actual en lugar de almacenar una instancia estática.
+     * 
+     * Esto permite que las condiciones ambientales sean dinámicas (pueden
+     * cambiar con el tiempo, posición, o eventos del mundo) sin romper la
+     * inmutabilidad de EnvironmentState.
+     *
+     * Nunca null. Si no se especifica, se usa StandardAtmosphere.INSTANCE.
+     */
+    private final Environment environment;
+
     // ── Registro genérico de dominios ─────────────────────────────────────
 
     /**
@@ -146,6 +165,21 @@ public final class SimulationContext {
     private SimulationContext(Builder b) {
         this.physical          = b.physical;
         this.kinematicSnapshot = b.kinematicSnapshot;
+        
+        // ── HRFC-FASE2.5: NO universal fallback ───────────────────────────
+        // El ambiente debe ser declarado explícitamente por quien construye
+        // el contexto. La infraestructura NO impone un ambiente universal.
+        // Si no se proporciona, el contexto es inválido.
+        if (b.environment == null) {
+            throw new IllegalStateException(
+                "Environment must be explicitly provided. " +
+                "The infrastructure does not impose a universal default environment. " +
+                "Use StandardAtmosphere.INSTANCE, VacuumEnvironment.INSTANCE, " +
+                "or a custom Environment implementation."
+            );
+        }
+        this.environment = b.environment;
+        
         this.registry          = b.registry;
 
         // ── Dominios base — siempre presentes ────────────────────────────
@@ -153,8 +187,9 @@ public final class SimulationContext {
             this.registry.register(MaterialState.DEFAULT);
         if (!this.registry.has(ContactState.class))
             this.registry.register(ContactState.NONE);
-        if (!this.registry.has(EnvironmentState.class))
-            this.registry.register(EnvironmentState.STANDARD);
+
+        // HRFC-FASE2: EnvironmentState ya NO se registra aquí.
+        // El ambiente es un campo dedicado consultado dinámicamente.
 
         // ── Dominios extendidos (HRFC-032) — neutrales si no se declaran ─
         // Los nuevos dominios se registran con sus constantes neutras para que
@@ -194,17 +229,19 @@ public final class SimulationContext {
 
     /**
      * Retorna el estado del dominio identificado por el tipo dado.
-     *
+     * 
      * Es el mecanismo de acceso canónico de HRFC-032. Permite a los
      * evaluadores consumir cualquier dominio sin que SimulationContext
      * necesite getters específicos:
      *
-     *   KinematicState  kin  = context.state(KinematicState.class);
-     *   MaterialState   mat  = context.state(MaterialState.class);
-     *   ContactState    con  = context.state(ContactState.class);
-     *   ChemicalState   chem = context.state(ChemicalState.class);
+     *   KinematicState     kin  = context.state(KinematicState.class);
+     *   MaterialState      mat  = context.state(MaterialState.class);
+     *   ContactState       con  = context.state(ContactState.class);
+     *   EnvironmentState   env  = context.state(EnvironmentState.class);
+     *   ChemicalState      chem = context.state(ChemicalState.class);
      *
      * Para KinematicState retorna el estado del frame actual (currentKinematic()).
+     * Para EnvironmentState retorna environment.current() (HRFC-FASE2).
      * Para todos los demás dominios delega en el DomainStateRegistry.
      *
      * Retorna null si el dominio no está registrado. Los evaluadores deben
@@ -228,6 +265,11 @@ public final class SimulationContext {
             return (T) physical;
         }
 
+        // EnvironmentState: consultado dinámicamente desde el Environment (HRFC-FASE2)
+        if (type == EnvironmentState.class) {
+            return (T) environment.current();
+        }
+
         // Todos los demás dominios: registro genérico
         return registry.get(type);
     }
@@ -237,6 +279,7 @@ public final class SimulationContext {
      *
      * Para KinematicState equivale a hasKinematic().
      * Para PhysicalState siempre retorna true.
+     * Para EnvironmentState siempre retorna true (HRFC-FASE2).
      *
      * @param type tipo del estado a verificar.
      * @return true si el dominio está disponible.
@@ -245,6 +288,7 @@ public final class SimulationContext {
         if (type == null) return false;
         if (type == KinematicState.class) return hasKinematic();
         if (type == PhysicalState.class)  return true;
+        if (type == EnvironmentState.class) return true; // HRFC-FASE2: siempre disponible
         return registry.has(type);
     }
 
@@ -353,13 +397,16 @@ public final class SimulationContext {
 
     /**
      * Condiciones del entorno donde existe el objeto.
-     * Temperatura ambiente, gravedad local, viento, campos externos…
+     * 
+     * HRFC-FASE2: Consulta dinámicamente al Environment propietario
+     * en lugar de retornar un EnvironmentState cacheado en el registro.
+     * Esto permite ambientes dinámicos (temperatura variable, viento
+     * cambiante) sin romper la inmutabilidad de EnvironmentState.
      *
-     * @return EnvironmentState. Nunca null (fallback a STANDARD).
+     * @return EnvironmentState actual del ambiente. Nunca null.
      */
     public EnvironmentState environment() {
-        EnvironmentState e = registry.get(EnvironmentState.class);
-        return e != null ? e : EnvironmentState.STANDARD;
+        return environment.current();
     }
 
     // ── Actualización de dominios — sistemas autorizados ─────────────────
@@ -400,14 +447,11 @@ public final class SimulationContext {
         registry.register(newContact != null ? newContact : ContactState.NONE);
     }
 
-    /**
-     * Reemplaza el estado del entorno.
-     *
-     * @param newEnvironment el nuevo EnvironmentState. Si null, usa STANDARD.
-     */
-    public void updateEnvironment(EnvironmentState newEnvironment) {
-        registry.register(newEnvironment != null ? newEnvironment : EnvironmentState.STANDARD);
-    }
+    // NOTA HRFC-FASE2: updateEnvironment() eliminado.
+    // El Environment es inmutable y se establece en construcción.
+    // Para cambiar el ambiente, crear un nuevo SimulationContext con
+    // un Environment diferente, o implementar un Environment dinámico
+    // que produzca diferentes estados en current().
 
     // ── Object ────────────────────────────────────────────────────────────
 
@@ -433,31 +477,39 @@ public final class SimulationContext {
      * contact(), environment() o register() añade el estado al registro
      * interno que se transferirá al SimulationContext al construirlo.
      *
+     * ── HRFC-FASE2.5: Environment es OBLIGATORIO ──────────────────────────
+     * 
      * Dominios con valores por defecto si no se declaran:
      *   material     = MaterialState.DEFAULT
      *   contact      = ContactState.NONE
-     *   environment  = EnvironmentState.STANDARD
+     * 
+     * Dominios OBLIGATORIOS (sin fallback universal):
+     *   environment  = DEBE declararse explícitamente
+     * 
+     * La infraestructura NO impone un ambiente universal. Cada contexto
+     * debe declarar explícitamente su ambiente. Esto garantiza ownership
+     * correcto: las condiciones ambientales pertenecen al dominio del juego,
+     * no a la infraestructura genérica.
      *
      * ── Patrón de construcción típico ─────────────────────────────────────
      *
      *   SimulationContext ctx = SimulationContext.builder(physical)
      *       .material(material)
-     *       .contact(ContactState.NONE)
-     *       .environment(EnvironmentState.STANDARD)
+     *       .environment(StandardAtmosphere.INSTANCE)  // OBLIGATORIO
      *       .register(ChemicalState.INERT)
      *       .build();
      *
      * ── Patrón con acceso genérico ────────────────────────────────────────
      *
-     *   // Cualquier evaluador puede acceder al dominio químico:
-     *   ChemicalState chem = context.state(ChemicalState.class);
-     *   if (chem == null) continue; // dominio no disponible en esta entidad
+     *   // Cualquier evaluador puede acceder al dominio ambiental:
+     *   EnvironmentState env = context.environment();
      */
     public static final class Builder {
 
-        private final PhysicalState           physical;
+        private final PhysicalState                 physical;
         private       StateSnapshot<KinematicState> kinematicSnapshot = null;
-        private final DomainStateRegistry     registry              = new DomainStateRegistry();
+        private       Environment                   environment       = null;  // HRFC-FASE2.5: OBLIGATORIO
+        private final DomainStateRegistry           registry          = new DomainStateRegistry();
 
         private Builder(PhysicalState physical) {
             if (physical == null)
@@ -502,14 +554,59 @@ public final class SimulationContext {
         }
 
         /**
-         * Establece el EnvironmentState.
-         * Si no se llama, se usa EnvironmentState.STANDARD.
+         * Establece el Environment donde existe la entidad.
+         * 
+         * HRFC-FASE2.5: OBLIGATORIO. No existe fallback universal.
+         * 
+         * El ambiente debe ser declarado explícitamente. La infraestructura
+         * NO impone un ambiente por defecto. Esto garantiza que el ownership
+         * de las condiciones ambientales permanece en el dominio del juego,
+         * no en la infraestructura genérica.
+         * 
+         * Ambientes disponibles:
+         *   - StandardAtmosphere.INSTANCE  → atmósfera terrestre estándar
+         *   - VacuumEnvironment.INSTANCE   → vacío espacial, microgravedad
+         *   - HellEnvironment.INSTANCE     → ambiente infernal compuesto
+         *   - ComposedEnvironment.builder() → ambiente personalizado
+         * 
+         * Si no se llama a este método, build() lanzará IllegalStateException.
          *
-         * @param environment el entorno del objeto. Puede ser null.
+         * @param environment el ambiente. No puede ser null.
          * @return this.
+         * @throws IllegalStateException en build() si no se proporciona.
          */
-        public Builder environment(EnvironmentState environment) {
-            registry.register(environment != null ? environment : EnvironmentState.STANDARD);
+        public Builder environment(Environment environment) {
+            this.environment = environment;
+            return this;
+        }
+
+        /**
+         * DEPRECATED: Usar {@link #environment(Environment)} en su lugar.
+         * 
+         * Para migración temporal: convierte un EnvironmentState en un
+         * Environment anónimo que retorna ese estado estático.
+         *
+         * @param environmentState estado ambiental. Puede ser null.
+         * @return this.
+         * @deprecated HRFC-FASE2: Usar environment(Environment) en su lugar.
+         */
+        @Deprecated
+        public Builder environment(EnvironmentState environmentState) {
+            if (environmentState == null) {
+                this.environment = null;
+            } else {
+                // Crear Environment anónimo que retorna este estado
+                this.environment = new Environment() {
+                    @Override
+                    public EnvironmentState current() {
+                        return environmentState;
+                    }
+                    @Override
+                    public String getName() {
+                        return "LegacyStaticEnvironment";
+                    }
+                };
+            }
             return this;
         }
 

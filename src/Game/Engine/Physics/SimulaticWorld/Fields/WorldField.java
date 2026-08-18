@@ -1,7 +1,7 @@
 package Game.Engine.Physics.SimulaticWorld.Fields;
 
-import Game.Engine.GameObjects;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 
 /**
  * Campo físico del mundo — abstracción raíz de todos los campos.
@@ -93,8 +93,14 @@ public abstract class WorldField<T> {
      */
     private final double stepCutoff;
 
-    /** Frames de vida restantes. −1 = permanente. */
-    private int remaining;
+    /**
+     * Tiempo de vida restante en segundos. −1 = permanente.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * MIGRACIÓN: Cambiado de int (frames) a double (segundos).
+     */
+    private double remaining;
 
     /**
      * Objeto que generó este campo. Puede ser null (campo ambiental sin autor).
@@ -131,16 +137,23 @@ public abstract class WorldField<T> {
      * Si el campo tiene source y debe seguirlo, actualiza la posición.
      * Decrementa el contador de vida restante.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y decrementa remaining en segundos.
+     * El campo remaining debe ser double (segundos) en lugar de int (frames).
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      * @return true si el campo sigue activo; false si ha expirado.
      */
-    public boolean tick() {
+    public boolean tick(double deltaTime) {
         if (source != null) {
             Vector2D srcPos = source.getTransform().getPosition();
             position.setX(srcPos.getX());
             position.setY(srcPos.getY());
         }
         if (remaining == PERMANENT) return true;
-        return --remaining > 0;
+        remaining -= deltaTime;
+        return remaining > 0;
     }
 
     /** True si el campo está activo (no ha expirado). */
@@ -234,7 +247,7 @@ public abstract class WorldField<T> {
     public GameObjects getSource()    { return source; }
 
     /** Frames de vida restantes. −1 = permanente. */
-    public int getRemaining()         { return remaining; }
+    public double getRemaining()         { return remaining; }
 
     /** True si el campo no se aplica sobre su propio source. */
     public boolean isApplyToSource()  { return applyToSource; }

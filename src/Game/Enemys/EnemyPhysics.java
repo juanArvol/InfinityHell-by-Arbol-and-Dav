@@ -22,7 +22,7 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * Para un enemigo con comportamiento especial (inmune al hielo, ralentizado
  * por veneno), registrar modificadores externos sin subclasear:
  *
- *   physics.statusStack().add("poison", ctx -> 0.5);
+ *   physics.statusStack().add(poisonEffect, ctx -> 0.5);
  */
 public class EnemyPhysics extends Physics2D {
 

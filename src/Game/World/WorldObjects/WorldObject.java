@@ -317,7 +317,7 @@ public class WorldObject extends GameObjects {
     // ── Update ────────────────────────────────────────────────────────────
 
     @Override
-    public void update() {
-        super.update(); // propaga update() a todos los Component registrados
+    public void update(double deltaTime) {
+        super.update(deltaTime); // propaga update(deltaTime) a todos los Component registrados
     }
 }

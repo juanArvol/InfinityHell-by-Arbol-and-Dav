@@ -156,16 +156,31 @@ public class PlayerStats implements HealthView {
 
     // ── Invulnerabilidad post-daño (política específica del Player) ────────
 
-    private static final int INV_FRAMES_ON_HIT = 20;
-    private int invulnerabilityFrames = 0;
+    /**
+     * Duración de invulnerabilidad post-golpe en segundos.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * MIGRACIÓN: Cambio de frames (20) a segundos (0.333s a 60 FPS).
+     * 20 frames ÷ 60 FPS = 0.333 segundos
+     */
+    private static final double INV_DURATION_SECONDS = 0.333;
+    private double invulnerabilityTimer = 0.0;
 
     /**
      * Actualiza el contador de invulnerabilidad.
      * Llamar una vez por frame desde Player.update(), después de super.update().
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y decrementa en segundos.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void update() {
-        if (invulnerabilityFrames > 0) {
-            invulnerabilityFrames--;
+    public void update(double deltaTime) {
+        if (invulnerabilityTimer > 0) {
+            invulnerabilityTimer -= deltaTime;
+            if (invulnerabilityTimer < 0) invulnerabilityTimer = 0;
         }
     }
 
@@ -174,14 +189,14 @@ public class PlayerStats implements HealthView {
      * Llamar desde player.receiveDamage() después de aplicar el daño.
      */
     public void triggerInvulnerability() {
-        invulnerabilityFrames = INV_FRAMES_ON_HIT;
+        invulnerabilityTimer = INV_DURATION_SECONDS;
     }
 
     /**
-     * True si el Player está en frames de invulnerabilidad post-golpe.
+     * True si el Player está en periodo de invulnerabilidad post-golpe.
      */
     public boolean isInvulnerable() {
-        return invulnerabilityFrames > 0;
+        return invulnerabilityTimer > 0;
     }
 
     // ── Acceso de conveniencia a sistemas genéricos ───────────────────────

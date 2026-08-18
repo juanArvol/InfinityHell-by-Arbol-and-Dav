@@ -15,7 +15,7 @@ package Game.World.Spawn;
  *   SpawnDescriptor zombieSpawn = SpawnDescriptor.builder()
  *       .id("wave_zombie")
  *       .strategy(pos -> EnemyFactory.create(EnemyId.ZOMBIE, pos))
- *       .point(SpawnPoint.worldBounds(world.getWidth(), world.getHeight(), 60))
+ *       .point(SpawnPoint.aroundTarget(player, 200.0, 400.0))  // entre 200-400 unidades del player
  *       .maxInstances(5)
  *       .build();
  *

@@ -3,6 +3,15 @@ package Game.Items.Types.Weapons.WeaponType;
 /**
  * Estadísticas base de un arma.
  *
+ * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ *
+ * MIGRACIÓN TEMPORAL:
+ *   cooldown ahora se expresa en segundos en lugar de ticks para independencia
+ *   del framerate.
+ *
+ *   ANTES: cooldown = 60 (ticks) → 1 segundo a 60 FPS
+ *   AHORA: cooldown = 1.0 (segundos) → 1 segundo independiente del FPS
+ *
  * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
  *
  * AÑADIDO: recoilForce
@@ -12,7 +21,7 @@ package Game.Items.Types.Weapons.WeaponType;
  */
 public class WeaponStats {
 
-    private int cooldown;
+    private double cooldown;  // cooldown entre disparos en segundos
     private int bulletsPerShot;
     private double spread;
     private double bulletSpeedBase;
@@ -33,7 +42,7 @@ public class WeaponStats {
      */
     private double recoilForce;
 
-    public WeaponStats(int cooldown,
+    public WeaponStats(double cooldown,
                        int bulletsPerShot,
                        double spread,
                        double weaponDamageBulletBonus,
@@ -45,9 +54,12 @@ public class WeaponStats {
     /**
      * Constructor con recoilForce explícito.
      * 
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * 
+     * @param cooldown tiempo entre disparos en segundos (ej: 1.0 = 1 disparo/segundo)
      * @param recoilForce magnitud del impulso de retroceso (0 = sin retroceso)
      */
-    public WeaponStats(int cooldown,
+    public WeaponStats(double cooldown,
                        int bulletsPerShot,
                        double spread,
                        double weaponDamageBulletBonus,
@@ -63,7 +75,8 @@ public class WeaponStats {
         this.recoilForce = recoilForce;
     }
     // getters
-    public int getCooldown() { return cooldown; }
+    /** @return cooldown entre disparos en segundos */
+    public double getCooldown() { return cooldown; }
     public int getBulletsPerShot() { return bulletsPerShot; }
     public double getSpread() { return spread; }
     public double getDamageBonusByWeapon() { return weaponDamageBulletBonus; }
@@ -77,7 +90,8 @@ public class WeaponStats {
     public double getRecoilForce() { return recoilForce; }
 
     // setters (para mejoras)
-    public void setCooldown(int cooldown) { this.cooldown = cooldown; }
+    /** @param cooldown tiempo entre disparos en segundos */
+    public void setCooldown(double cooldown) { this.cooldown = cooldown; }
     public void setBulletsPerShot(int bulletsPerShot) { this.bulletsPerShot = bulletsPerShot; }
     public void setSpread(double spread) { this.spread = spread; }
     public void setDamageBonusByWeapon(double damage) { this.weaponDamageBulletBonus = damage; }

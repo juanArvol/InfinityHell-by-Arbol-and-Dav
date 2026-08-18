@@ -3,8 +3,8 @@ package Game.World.WorldObjects;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
-import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameEventBus;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Items.Savement.ItemStack;
 import Game.Player.Player;
@@ -80,8 +80,8 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
     }
 
     @Override
-    public void update() {
-        super.update();
+    public void update(double deltaTime) {
+        super.update(deltaTime);
         // La remoción real la hace el World en su ciclo de limpieza
     }
 
@@ -108,7 +108,7 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
      */
     public void setEventBus(GameEventBus bus)   { this.eventBus = bus; }
 
-    /** Implementa Destroyable — WorldObjectsContainer elimina el ítem cuando se recoge. */
+    /** Implementa Destroyable — entidad se elimina cuando se recoge. */
     @Override
     public boolean isPendingDestruction()       { return pendingRemoval; }
 }

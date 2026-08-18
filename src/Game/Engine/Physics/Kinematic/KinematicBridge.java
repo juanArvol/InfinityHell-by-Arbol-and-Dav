@@ -75,9 +75,16 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * nada. La integración cinemática requiere el contexto compuesto.
  *
  * ── DELTATIME ─────────────────────────────────────────────────────────────
- * KinematicBridge usa el deltaTime fijo del motor (1/60 s por defecto).
- * Si el proyecto usa un deltaTime variable, inyectarlo vía
- * {@link #setDeltaTime(double)} antes de cada frame.
+ * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ *
+ * KinematicBridge ahora usa el deltaTime recibido como parámetro en update(dt),
+ * que proviene de GameLoop (tiempo real transcurrido).
+ *
+ * ELIMINADO: El campo interno `deltaTime` con valor hardcoded de 1/60.
+ * ELIMINADO: Los métodos setDeltaTime() y getDeltaTime().
+ *
+ * El componente opera exclusivamente con el tiempo real del simulation step
+ * propagado desde GameLoop → GameState → WorldManager → GameObjects → Component.
  *
  * ── CÓMO USAR ────────────────────────────────────────────────────────────
  * Añadir a cualquier entidad que tenga Physics2D y SimulationContextComponent:
@@ -86,7 +93,8 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  *   addComponent(new SimulationContextComponent(context));
  *   addComponent(new KinematicBridge());
  *
- * No se requiere ninguna configuración adicional.
+ * El componente recibirá automáticamente el deltaTime real en cada update()
+ * a través de GameObjects.update(deltaTime).
  *
  * ── INVARIANTE ────────────────────────────────────────────────────────────
  *   ✗ No mueve la entidad.
@@ -100,12 +108,6 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * No thread-safe. Usar exclusivamente desde el game loop thread.
  */
 public final class KinematicBridge extends Component {
-
-    /**
-     * Duración del frame en segundos.
-     * Default: 1/60 s (60 fps fijo). Inyectable via setDeltaTime().
-     */
-    private double deltaTime = 1.0 / 60.0;
 
     // ── Ciclo de vida — Component ─────────────────────────────────────────
 
@@ -125,9 +127,20 @@ public final class KinematicBridge extends Component {
      *
      * Lee Physics2D → construye KinematicState instantáneo →
      * delega a SimulationContext.updateKinematic() para avanzar el snapshot.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * CORRECCIÓN CRÍTICA: Este componente ahora usa el deltaTime RECIBIDO
+     * del GameLoop (tiempo real transcurrido) en lugar de un valor hardcoded.
+     *
+     * El parámetro dt representa los segundos REALES del simulation step,
+     * calculado en GameLoop como (now - lastTime) / 1e9.
+     *
+     * Este valor se pasa a KinematicState para que WorldSimulation opere
+     * con el tiempo correcto al evaluar relaciones físicas.
      */
     @Override
-    public void update() {
+    public void update(double dt) {
         if (gameObject == null) return;
 
         // ── Obtener Physics2D ─────────────────────────────────────────────
@@ -142,42 +155,20 @@ public final class KinematicBridge extends Component {
 
         // ── Construir KinematicState instantáneo ──────────────────────────
         // Solo el estado del frame actual. El snapshot gestiona el historial.
+        // USAR dt RECIBIDO, no un campo interno con 1/60 hardcoded.
         KinematicState kinematicState = KinematicState.from(
             physics.getVelocity().getX(),
             physics.getVelocity().getY(),
             physics.getMass(),
             physics.getOnGround(),
             physics.getCurrentSurface(),
-            deltaTime
+            dt  // ← CORRECCIÓN: usar parámetro dt (tiempo real)
         );
 
         // ── Actualizar el SimulationContext ───────────────────────────────
         // updateKinematic() inicializa el snapshot en el primer frame
         // y lo avanza (current → previous, new → current) en los siguientes.
         context.updateKinematic(kinematicState);
-    }
-
-    // ── Configuración ─────────────────────────────────────────────────────
-
-    /**
-     * Establece el deltaTime que usará el bridge al construir KinematicState.
-     *
-     * Llamar desde el sistema de tiempo del engine si se usa timestep variable:
-     *   bridge.setDeltaTime(actualDeltaTime);
-     *
-     * @param deltaTime duración del frame en segundos. Debe ser > 0.
-     */
-    public void setDeltaTime(double deltaTime) {
-        if (deltaTime > 0) this.deltaTime = deltaTime;
-    }
-
-    /**
-     * Retorna el deltaTime actualmente configurado, en segundos.
-     *
-     * @return deltaTime en segundos.
-     */
-    public double getDeltaTime() {
-        return deltaTime;
     }
 
     // ── Resolución del SimulationContext ──────────────────────────────────

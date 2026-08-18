@@ -1,7 +1,7 @@
 package Game.Enemys.Core.Contracts;
 
-import Game.Enemys.Core.Enemy;
 import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.Enemy;
 
 /**
  * Estrategia de movimiento de un enemigo.
@@ -32,11 +32,18 @@ public interface MovementStrategy {
     /**
      * Aplica el movimiento al enemigo para el frame actual.
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para movimientos temporales correctos.
+     * La mayoría de estrategias modifican velocidad (que se integra en
+     * CollisionsSystem con deltaTime), pero estrategias especiales como
+     * teletransporte o dash pueden necesitar timing explícito.
+     *
      * @param enemy el Enemy a mover.
      * @param ctx   contexto del objetivo actual (posición del player, etc.).
      *              Puede ser null si el Enemy no tiene objetivo activo.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    void move(Enemy enemy, EnemyContext ctx);
+    void move(Enemy enemy, EnemyContext ctx, double deltaTime);
 
     /**
      * Inicialización de la estrategia al ser asignada.

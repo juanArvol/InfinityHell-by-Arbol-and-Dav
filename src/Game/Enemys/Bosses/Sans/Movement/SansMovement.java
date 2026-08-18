@@ -60,7 +60,7 @@ public final class SansMovement implements MovementStrategy {
     // ── Movimiento por frame ──────────────────────────────────────────────
 
     @Override
-    public void move(Enemy enemy, EnemyContext ctx) {
+    public void move(Enemy enemy, EnemyContext ctx, double deltaTime) {
         if (ctx == null) return;
 
         double sansX   = enemy.getTransform().getPosition().getX();

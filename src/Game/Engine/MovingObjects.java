@@ -183,12 +183,20 @@ public abstract class MovingObjects extends AbstractEntity {
 
     /**
      * Mueve el objeto según su velocidad actual.
+     *
+     * ── Mini-HRFC 1.5: Temporal integration correction ────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime explícito para integración temporal correcta.
+     *
      * Llamar solo desde objetos TRIGGER (Bullet).
      * Objetos SOLID son movidos por CollisionsSystem (SweptAABB).
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void moveByPhysics() {
+    public void moveByPhysics(double deltaTime) {
         Vector2D vel = getVelocity();
-        PhysicsStepper.moveWith(this, vel.getX(), vel.getY());
+        // Mini-HRFC 1.5: displacement = velocity × deltaTime
+        PhysicsStepper.moveWith(this, vel.getX() * deltaTime, vel.getY() * deltaTime);
     }
 
     public Vector2D getCenter() {

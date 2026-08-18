@@ -1,10 +1,10 @@
 
 package Game.Enemys.Core.Movement;
 
-import Game.Enemys.Core.Contracts.MovementStrategy;
-import Game.Engine.Entity.Components.Physics2DComponent;
-import Game.Enemys.Core.Enemy;
 import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.Contracts.MovementStrategy;
+import Game.Enemys.Core.Enemy;
+import Game.Engine.Entity.Components.Physics2DComponent;
 
 /**
  * Estrategia de movimiento terrestre.
@@ -26,7 +26,7 @@ import Game.Enemys.AI.EnemyContext;
 public final class GroundMovement implements MovementStrategy {
 
     @Override
-    public void move(Enemy enemy, EnemyContext ctx) {
+    public void move(Enemy enemy, EnemyContext ctx, double deltaTime) {
         Physics2DComponent pc = enemy.getPhysicsComponent();
         if (pc == null) return;
 

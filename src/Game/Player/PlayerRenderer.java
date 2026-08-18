@@ -61,7 +61,7 @@ public class PlayerRenderer extends Component {
     }
 
     @Override
-    public void update() {
+    public void update(double dt) {
         if (animController == null || physicsComponent == null) return;
 
         double velocityX = physicsComponent

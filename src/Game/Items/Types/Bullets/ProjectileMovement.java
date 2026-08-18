@@ -61,15 +61,21 @@ public interface ProjectileMovement {
     /**
      * Actualiza la velocidad del proyectil para este frame.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime para permitir movimientos independientes
+     * del framerate (aceleraciones, rotaciones, oscilaciones basadas en tiempo).
+     *
      * Implementaciones típicas:
      *   - Movimiento lineal: no hace nada (velocidad ya está fija).
      *   - Homing: calcula la dirección al objetivo y ajusta vx/vy.
-     *   - Sinusoidal: añade un componente perpendicular oscilante.
-     *   - Aceleración: incrementa la magnitud del vector de velocidad.
+     *   - Sinusoidal: añade un componente perpendicular oscilante basado en tiempo.
+     *   - Aceleración: incrementa la magnitud del vector de velocidad por deltaTime.
      *
      * @param bullet el proyectil cuya velocidad se va a actualizar
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    void tick(Bullet bullet);
+    void tick(Bullet bullet, double deltaTime);
 
     // ── Composición ───────────────────────────────────────────────────────
 
@@ -110,9 +116,9 @@ public interface ProjectileMovement {
      * generada por andThen no puede garantizarlo.
      */
     default ProjectileMovement andThen(ProjectileMovement after) {
-        return bullet -> {
-            this.tick(bullet);
-            after.tick(bullet);
+        return (bullet, deltaTime) -> {
+            this.tick(bullet, deltaTime);
+            after.tick(bullet, deltaTime);
         };
     }
 }

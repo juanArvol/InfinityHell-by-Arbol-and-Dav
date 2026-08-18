@@ -77,24 +77,29 @@ public final class Influences {
     }
 
     /**
-     * Crea una influencia con duración finita en frames.
+     * Crea una influencia con duración finita en segundos.
      * Se auto-expira cuando el contador llega a cero.
      *
-     * @param frames  duración en frames (> 0).
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe segundos en lugar de frames.
+     *
+     * @param seconds duración en segundos (> 0).
      * @param effect  función de modificación sobre el objeto destino.
      * @return influencia temporal.
      */
-    public static Influence timed(int frames, Consumer<GameObjects> effect) {
-        if (frames <= 0) throw new IllegalArgumentException("frames debe ser > 0");
+    public static Influence timed(double seconds, Consumer<GameObjects> effect) {
+        if (seconds <= 0) throw new IllegalArgumentException("seconds debe ser > 0");
         return new Influence() {
-            private int remaining = frames;
+            private double remaining = seconds;
 
             @Override
             public void apply(GameObjects target) { effect.accept(target); }
 
             @Override
-            public boolean tick() {
-                return --remaining > 0;
+            public boolean tick(double deltaTime) {
+                remaining -= deltaTime;
+                return remaining > 0;
             }
         };
     }
@@ -103,6 +108,10 @@ public final class Influences {
      * Crea una influencia que se aplica exactamente una vez y luego expira.
      * Útil para modificaciones instantáneas registradas en el sistema
      * (p.ej. un impacto que aplica un delta de temperatura en el frame actual).
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: tick() ahora recibe deltaTime (aunque no lo usa).
      *
      * @param effect función de modificación sobre el objeto destino.
      * @return influencia de un único frame.
@@ -118,7 +127,7 @@ public final class Influences {
             }
 
             @Override
-            public boolean tick() {
+            public boolean tick(double deltaTime) {
                 // El primer tick activa apply(); el segundo retorna false
                 return !applied;
             }
@@ -157,7 +166,7 @@ public final class Influences {
             }
 
             @Override
-            public boolean tick() { return Math.abs(intensity) > EPSILON; }
+            public boolean tick(double dt) { return Math.abs(intensity) > EPSILON; }
         };
     }
 
@@ -191,10 +200,10 @@ public final class Influences {
             }
 
             @Override
-            public boolean tick() {
+            public boolean tick(double dt) {
                 boolean anyActive = false;
                 for (Influence part : parts) {
-                    if (part.tick()) anyActive = true;
+                    if (part.tick(1)) anyActive = true;
                 }
                 return anyActive;
             }
@@ -238,7 +247,7 @@ public final class Influences {
             }
 
             @Override
-            public boolean tick()                      { return base.tick(); }
+            public boolean tick(double dt)                      { return base.tick(1); }
 
             @Override
             public void onExpire(GameObjects target)   { base.onExpire(target); }

@@ -103,7 +103,7 @@ public final class HomingMovement implements ProjectileMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         // Sin objetivo → movimiento recto
         if (target == null) return;
 

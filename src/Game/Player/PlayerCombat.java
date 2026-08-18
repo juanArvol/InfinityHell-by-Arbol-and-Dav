@@ -221,7 +221,18 @@ public class PlayerCombat implements MouseActionListener {
 
     // ── Update ─────────────────────────────────────────────────────────────
 
-    public void update() {
+    /**
+     * Actualiza el sistema de combate del Player.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * PROPAGACIÓN TEMPORAL:
+     *   PlayerCombat recibe deltaTime de Player y lo propaga a:
+     *     - ModifiedWeapon.update(deltaTime) → para cooldowns y recargas temporales
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void update(double deltaTime) {
         if (state.isApuntando()) return;
 
         ModifiedWeapon currentWeapon = playerRuntime.getCurrentWeapon();
@@ -281,7 +292,7 @@ public class PlayerCombat implements MouseActionListener {
         }
 
         // Actualizar timers del arma (cooldown, recarga interna)
-        currentWeapon.update();
+        currentWeapon.update(deltaTime);
     }
 
     // ── Disparo con bala runtime ──────────────────────────────────────────

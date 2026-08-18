@@ -1,9 +1,8 @@
 package Game.Enemys.Core.Controllers;
 
+import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.AttackPattern;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.AI.EnemyContext;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,15 +59,20 @@ public final class EnemyAttackController {
      * Actualiza todos los patrones y ejecuta los que estén listos.
      * Llamado por Enemy.update() cada frame.
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para propagar a cada AttackPattern.
+     * Los patrones usan deltaTime para cooldowns independientes del framerate.
+     *
      * @param enemy el Enemy atacante.
      * @param ctx   contexto del objetivo; puede ser null.
+     * @param deltaTime tiempo real del simulation step en segundos
      * @return true si al menos un patrón se ejecutó este frame.
      */
-    public boolean update(Enemy enemy, EnemyContext ctx) {
+    public boolean update(Enemy enemy, EnemyContext ctx, double deltaTime) {
         boolean attacked = false;
 
         for (AttackPattern pattern : patterns) {
-            pattern.update(enemy);
+            pattern.update(enemy, deltaTime);
 
             if (ctx != null && pattern.canExecute(enemy, ctx)) {
                 pattern.execute(enemy, ctx);

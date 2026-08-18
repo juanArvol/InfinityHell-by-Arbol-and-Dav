@@ -1,8 +1,8 @@
 package Game.Enemys.Core.Movement;
 
+import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.MovementStrategy;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.AI.EnemyContext;
 
 /**
  * Estrategia de movimiento volador.
@@ -28,7 +28,7 @@ import Game.Enemys.AI.EnemyContext;
 public final class FlyingMovement implements MovementStrategy {
 
     @Override
-    public void move(Enemy enemy, EnemyContext ctx) {
+    public void move(Enemy enemy, EnemyContext ctx, double deltaTime) {
         // Sin gravedad: el steering aplicado por FlyingBehavior (via EnemyAIController)
         // maneja todo el movimiento del volador.
         // Este método es intencionalmente vacío.

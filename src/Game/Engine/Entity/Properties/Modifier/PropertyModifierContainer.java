@@ -11,6 +11,10 @@ import java.util.*;
  * activos sobre una entidad en un momento dado. PropertyResolver los consulta
  * para calcular el valor final de cada propiedad.
  *
+ * ── HRFC-FASE3.5 — Eliminación de String Identity ────────────────────────
+ * Los modificadores se identifican por PropertyModifierSource (referencia),
+ * NO por String. String solo se permite para debugName() (diagnóstico).
+ *
  * NOTA DE NAMING: la clase se llama PropertyModifierContainer para evitar
  * conflicto de nombre con Game.Engine.Entity.Stats.Modifier.ModifierContainer,
  * que es el contenedor del sistema de stats RPG (StatModifier/StatTarget).
@@ -22,11 +26,19 @@ import java.util.*;
  * la key consultada.
  *
  * ── CICLO DE VIDA DE UN MODIFICADOR ──────────────────────────────────────
- *   // Al aplicar un buff de velocidad:
- *   container.add(PropertyModifier.multiplicative(PropertyKeys.SPEED, 1.5, "speed_buff"));
+ *   // Al aplicar un buff de velocidad (usando PropertyModifierSource):
+ *   container.add(PropertyModifier.multiplicative(PropertyKeys.SPEED, 1.5, this));
  *
  *   // Cuando el buff expira:
- *   container.removeBySource("speed_buff");
+ *   container.removeBySource(this);  // this implementa PropertyModifierSource
+ *
+ * ── MIGRACIÓN DESDE String ───────────────────────────────────────────────
+ *
+ *   ANTES (String Identity - prohibido):
+ *     container.removeBySource("poison");
+ *
+ *   AHORA (Identidad tipada - correcto):
+ *     container.removeBySource(poisonEffect);  // poisonEffect es PropertyModifierSource
  *
  * ── THREAD SAFETY ────────────────────────────────────────────────────────
  * No es thread-safe. Usar desde el game loop thread.
@@ -42,9 +54,14 @@ public final class PropertyModifierContainer {
         modifiers.add(modifier);
     }
 
-    /** Elimina todos los modificadores cuyo sourceId coincida con el dado. */
-    public void removeBySource(String sourceId) {
-        modifiers.removeIf(m -> m.getSourceId().equals(sourceId));
+    /** 
+     * Elimina todos los modificadores cuyo source coincida con el dado por identidad de referencia (==).
+     * 
+     * @param source Fuente del modificador (identidad tipada, NOT String)
+     */
+    public void removeBySource(PropertyModifierSource source) {
+        if (source == null) return;
+        modifiers.removeIf(m -> m.getSource() == source);
     }
 
     public void remove(PropertyModifier modifier) {

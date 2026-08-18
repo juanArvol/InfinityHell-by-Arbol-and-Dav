@@ -42,7 +42,13 @@ public final class SpawnRequest {
     private final boolean         oneTime;
 
     // ── Estado de ejecución ───────────────────────────────────────────────
-    private int     cooldownRemaining = 0;
+
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * MIGRACIÓN: cooldownRemaining ahora es double (segundos) en lugar de int (frames).
+     */
+    private double  cooldownRemaining = 0.0;
     private int     activeInstances   = 0;
     private boolean completed         = false;
     private int     totalSpawned      = 0;
@@ -128,14 +134,22 @@ public final class SpawnRequest {
     /**
      * Notifica que un objeto fue spawnado exitosamente.
      * SpawnSystem llama este método después de añadir el objeto al mundo.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: cooldown ahora debe convertirse de ticks a segundos.
+     * SpawnDescriptor.getCooldownTicks() debería migrar a getCooldownSeconds().
+     * Por ahora, asumiendo getCooldownTicks() retorna frames → convertir a segundos @ 60 FPS.
      */
     public void onSpawned() {
         totalSpawned++;
         activeInstances++;
 
-        // Reiniciar cooldown
-        int cd = descriptor.getCooldownTicks();
-        if (cd > 0) cooldownRemaining = cd;
+        // Reiniciar cooldown (MIGRACIÓN: convertir ticks → segundos)
+        int cdTicks = descriptor.getCooldownTicks();
+        if (cdTicks > 0) {
+            cooldownRemaining = cdTicks / 60.0; // TODO: migrar SpawnDescriptor a segundos
+        }
 
         // Consumir trigger si existe
         if (trigger != null) trigger.onConsumed();
@@ -153,10 +167,19 @@ public final class SpawnRequest {
     }
 
     /**
-     * Avanza el cooldown un tick. SpawnSystem llama esto cada tick.
+     * Avanza el cooldown. SpawnSystem llama esto cada tick.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y decrementa en segundos.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void tickCooldown() {
-        if (cooldownRemaining > 0) cooldownRemaining--;
+    public void tickCooldown(double deltaTime) {
+        if (cooldownRemaining > 0) {
+            cooldownRemaining -= deltaTime;
+            if (cooldownRemaining < 0) cooldownRemaining = 0;
+        }
     }
 
     // ── Acceso ────────────────────────────────────────────────────────────
@@ -168,7 +191,13 @@ public final class SpawnRequest {
     public boolean         isCompleted()         { return completed;        }
     public int             getActiveInstances()  { return activeInstances;  }
     public int             getTotalSpawned()     { return totalSpawned;     }
-    public int             getCooldownRemaining(){ return cooldownRemaining; }
+    
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: getCooldownRemaining() ahora retorna double (segundos).
+     */
+    public double getCooldownRemaining() { return cooldownRemaining; }
 
     /** Fuerza la marcación como completada. Útil para cancelar un spawn activo. */
     public void cancel() { completed = true; }

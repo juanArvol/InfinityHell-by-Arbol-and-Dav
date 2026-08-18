@@ -94,5 +94,5 @@ public final class PhysicsComponent extends Component {
      * Todo el comportamiento físico viene del PhysicsCoordinator.
      */
     @Override
-    public void update() {}
+    public void update(double dt) {}
 }

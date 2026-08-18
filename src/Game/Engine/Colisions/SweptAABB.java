@@ -5,13 +5,27 @@ import java.awt.Rectangle;
 /**
  * Detección continua de colisiones (Swept AABB).
  *
+ * ── Mini-HRFC 1.5 — Canonical Physics Units ──────────────────────────────
+ *
+ * CONTRATO DIMENSIONAL DE PARÁMETROS:
+ *
+ *   vx, vy — DESPLAZAMIENTO del frame (displacement), NO velocidad.
+ *            Debe expresarse en unidades espaciales.
+ *            Calculado por CollisionsSystem como: velocity × deltaTime
+ *
+ *   time   — Fracción del movimiento [0..1] donde ocurre la colisión.
+ *            0 = contacto en posición actual (penetración preexistente)
+ *            1 = sin colisión; movimiento completo permitido
+ *            0.5 = colisión a la mitad del movimiento
+ *
+ *   INVARIANTE: El algoritmo NO conoce framerate ni tiempo absoluto.
+ *               Opera únicamente sobre desplazamientos espaciales.
+ *
  * ── Qué hace ────────────────────────────────────────────────────────────
- * Dado un rectángulo en movimiento (moving) con velocidad (vx, vy) y un
+ * Dado un rectángulo en movimiento (moving) con desplazamiento (vx, vy) y un
  * rectángulo estático (target), calcula:
  *
  *   time     — fracción del movimiento [0..1] en que ocurre el primer contacto.
- *              0   = ya están en contacto exacto (límite con límite).
- *              1   = sin colisión este frame.
  *   normalX/Y — normal de la cara impactada. Indica qué eje frenar.
  *
  * ── Dos modos de uso ────────────────────────────────────────────────────
@@ -91,10 +105,16 @@ public final class SweptAABB {
      * CollisionsSystem lo usa para objetos SÓLIDOS: primero en X (vy=0),
      * luego en Y (vx=0). Esto evita ambigüedad en esquinas al resolver movimiento.
      *
+     * ── Mini-HRFC 1.5: Parámetros como displacement ──────────────────────
+     *
      * @param moving   bounds actuales del objeto (antes de moverse este frame)
      * @param target   bounds del obstáculo estático
-     * @param vx       velocidad horizontal (0 si se está resolviendo solo Y)
-     * @param vy       velocidad vertical   (0 si se está resolviendo solo X)
+     * @param vx       DESPLAZAMIENTO horizontal del frame [units], NO velocidad
+     * @param vy       DESPLAZAMIENTO vertical del frame [units], NO velocidad
+     *
+     * IMPORTANTE: vx y vy deben calcularse como velocity × deltaTime antes
+     * de llamar a este método. Este algoritmo opera sobre desplazamientos
+     * espaciales, no sobre velocidades temporales.
      */
     public static Result calculate(Rectangle moving, Rectangle target,
                                    double vx, double vy) {
@@ -193,10 +213,16 @@ public final class SweptAABB {
      * el desempate se hace por el eje de mayor velocidad absoluta. Esto es
      * determinista e independiente del orden de los objetos.
      *
+     * ── Mini-HRFC 1.5: Parámetros como displacement ──────────────────────
+     *
      * @param moving   bounds actuales del objeto (antes de moverse este frame)
      * @param target   bounds del obstáculo estático
-     * @param vx       velocidad horizontal (puede ser 0 si solo hay movimiento vertical)
-     * @param vy       velocidad vertical   (puede ser 0 si solo hay movimiento horizontal)
+     * @param vx       DESPLAZAMIENTO horizontal del frame [units], NO velocidad
+     * @param vy       DESPLAZAMIENTO vertical del frame [units], NO velocidad
+     *
+     * IMPORTANTE: vx y vy deben calcularse como velocity × deltaTime antes
+     * de llamar a este método. Este algoritmo opera sobre desplazamientos
+     * espaciales, no sobre velocidades temporales.
      */
     public static Result calculate2D(Rectangle moving, Rectangle target,
                                      double vx, double vy) {
@@ -326,9 +352,11 @@ public final class SweptAABB {
      * broad phase: cualquier obstáculo que NO intersecte con este bounds
      * es imposible que sea impactado por el objeto en este frame.
      *
+     * ── Mini-HRFC 1.5: Parámetros como displacement ──────────────────────
+     *
      * @param bounds  bounds actuales del objeto en movimiento
-     * @param vx      velocidad horizontal del frame
-     * @param vy      velocidad vertical del frame
+     * @param vx      DESPLAZAMIENTO horizontal del frame [units], NO velocidad
+     * @param vy      DESPLAZAMIENTO vertical del frame [units], NO velocidad
      * @return Rectangle que envuelve el path completo del frame
      */
     public static Rectangle sweptBounds(Rectangle bounds, double vx, double vy) {

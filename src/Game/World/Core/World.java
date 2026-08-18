@@ -2,12 +2,10 @@ package Game.World.Core;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
-import Game.Player.Player;
 import Game.World.Chunk.Chunk;
 import Game.World.Chunk.ChunkStorage;
 import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Index.WorldSpatialIndex;
-import Game.World.WorldObjects.WorldObjectsContainer;
 
 /**
  * Mundo del juego — espacio global continuo.
@@ -28,18 +26,12 @@ import Game.World.WorldObjects.WorldObjectsContainer;
  * Un Bullet puede recorrer Chunk(0,0) → Chunk(1,0) → Chunk(2,0) sin congelarse.
  * La posición de cualquier entidad es siempre GLOBAL.
  *
- * ── RETROCOMPATIBILIDAD (SHIM) ────────────────────────────────────────────
- * La API vieja (add, remove, getObjectsContainer, update, getWidth, getHeight)
- * se mantiene para que WorldManager, TransitionSystem, SpawnSystem y
- * GameWorldBootstrap sigan compilando durante la migración.
+ * ── ACCESO A ENTIDADES ────────────────────────────────────────────────────
+ * Los sistemas acceden directamente a las estructuras de almacenamiento:
+ *   - globalDynamicRegistry para entidades dinámicas (Player, Enemy, Bullet)
+ *   - ChunkStorage + SpatialIndex para objetos estáticos de terreno
  *
- * El shim de WorldObjectsContainer hace que getObjectsContainer() devuelva
- * una vista combinada de estáticos + dinámicos para que SceneRenderer,
- * TransitionDetector y EntityCountCondition sigan funcionando.
- *
- * ── ELIMINACIÓN PROGRESIVA ────────────────────────────────────────────────
- * En Etapas 4–9, cada llamada a la API deprecated se irá eliminando.
- * El WorldObjectsContainer embebido se eliminará en Etapa 9.
+ * La simulación de IA ocurre en AISystem (sistema explícito en WorldManager).
  *
  * ── COORDENADAS ───────────────────────────────────────────────────────────
  * World no tiene width/height propios en el nuevo modelo (el mundo es continuo).
@@ -62,24 +54,25 @@ public class World {
     // ── Nuevas estructuras del mundo global ───────────────────────────────────
 
     private final ChunkStorage          chunkStorage;
-    private final DynamicEntityRegistry dynamicRegistry;
     private final WorldSpatialIndex     spatialIndex;
+
+    /**
+     * Registry global de entidades dinámicas del universo.
+     * 
+     * Inyectado por WorldManager. Representa la ÚNICA fuente de verdad para
+     * entidades dinámicas en todo el universo. Todas las operaciones
+     * add/remove/query van directamente a este registry.
+     * 
+     * No existen copias locales ni sincronización manual entre registries.
+     */
+    private DynamicEntityRegistry globalDynamicRegistry = null;
 
     // ── Shim de compatibilidad (eliminar en Etapa 9) ─────────────────────────
 
     /**
-     * Contenedor legacy. Recibe todas las llamadas add/remove antiguas
-     * y las delega en dynamicRegistry para mantener el comportamiento actual.
-     *
-     * IMPORTANTE: SceneRenderer, TransitionDetector y EntityCountCondition
-     * acceden a este contenedor vía getObjectsContainer(). El shim hace que
-     * getObjects() devuelva la lista del DynamicEntityRegistry, de modo que
-     * esos sistemas siguen leyendo las entidades correctas.
-     *
-     * WorldObjectsContainer.update() se mantiene activo — es la frontera de
-     * simulación hasta que Etapa 4 la reemplace por SimulationRegion.
+     * El shim de compatibilidad legacy fue eliminado. Todos los sistemas
+     * ahora acceden directamente al globalDynamicRegistry o al ChunkStorage.
      */
-    private final WorldObjectsContainer legacyContainer;
 
     /** Objeto cuya posición se expone al sistema de cámara. */
     private GameObjects trackTarget;
@@ -88,6 +81,8 @@ public class World {
 
     /**
      * Constructor completo — mundo con todas las estructuras nuevas.
+     * El globalDynamicRegistry debe ser inyectado por WorldManager después
+     * de la construcción.
      *
      * @param width      ancho del chunk (shim — eliminar en Etapa 9)
      * @param height     alto del chunk (shim — eliminar en Etapa 9)
@@ -98,66 +93,55 @@ public class World {
         this.height          = height;
         this.coordinate      = coordinate;
         this.chunkStorage    = new ChunkStorage();
-        this.dynamicRegistry = new DynamicEntityRegistry();
         this.spatialIndex    = new WorldSpatialIndex(width, height);
-        this.legacyContainer = new WorldObjectsContainer();
+        // globalDynamicRegistry se inyecta después vía setGlobalDynamicRegistry()
     }
 
-    // ── Registry externo inyectable (para el globalDynamicRegistry de WorldManager) ─
-
-    /**
-     * Registry externo inyectado por WorldManager.
-     * Cuando está configurado, addDynamic() también registra la entidad aquí,
-     * garantizando que el globalDynamicRegistry del WorldManager siempre
-     * contenga las entidades añadidas a través de cualquier World.
-     *
-     * Esto resuelve el caso en que SpawnSystem o EnemySpawner llaman
-     * world.addDynamic() pero el worldManager.globalDynamicRegistry no recibe
-     * la entidad.
-     */
-    private DynamicEntityRegistry externalRegistry = null;
+    // ── Registry global — inyectado por WorldManager ─────────────────────────
 
     /**
      * Inyecta el registry global de WorldManager.
-     * Llamar desde WorldManager inmediatamente después de crear o recuperar
-     * un World del cache.
+     * Establecido una única vez por WorldManager después de crear o recuperar
+     * un World del cache. Todas las operaciones de entidades dinámicas van
+     * directamente a este registry.
      *
-     * @param registry el globalDynamicRegistry del WorldManager
+     * @param registry el globalDynamicRegistry del WorldManager (singleton del universo)
      */
-    public void setExternalDynamicRegistry(DynamicEntityRegistry registry) {
-        this.externalRegistry = registry;
+    public void setGlobalDynamicRegistry(DynamicEntityRegistry registry) {
+        if (registry == null) {
+            throw new IllegalArgumentException("globalDynamicRegistry no puede ser null");
+        }
+        this.globalDynamicRegistry = registry;
     }
 
     // ── NUEVA API — entidades dinámicas ───────────────────────────────────────
 
     /**
      * Añade una entidad dinámica (Player, Enemy, Bullet, Drop, NPC…).
-     * Registra en el DynamicEntityRegistry local Y en el registry externo
-     * global si está configurado.
+     * Registra directamente en el globalDynamicRegistry (singleton del universo).
      *
      * @param entity la entidad dinámica a añadir
      */
     public void addDynamic(GameObjects entity) {
-        dynamicRegistry.add(entity);
-        // Notificar al globalDynamicRegistry de WorldManager si está inyectado
-        if (externalRegistry != null) {
-            externalRegistry.add(entity);
+        if (globalDynamicRegistry == null) {
+            throw new IllegalStateException(
+                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
         }
-        // El legacyContainer también la recibe para compatibilidad residual
-        legacyContainer.add(entity);
+        globalDynamicRegistry.add(entity);
     }
 
     /**
      * Elimina una entidad dinámica del mundo.
+     * Elimina directamente del globalDynamicRegistry (singleton del universo).
      *
      * @param entity la entidad a eliminar
      */
     public void removeDynamic(GameObjects entity) {
-        dynamicRegistry.remove(entity);
-        if (externalRegistry != null) {
-            externalRegistry.remove(entity);
+        if (globalDynamicRegistry == null) {
+            throw new IllegalStateException(
+                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
         }
-        legacyContainer.remove(entity);
+        globalDynamicRegistry.remove(entity);
     }
 
     // ── NUEVA API — chunks estáticos ──────────────────────────────────────────
@@ -171,10 +155,6 @@ public class World {
     public void addChunk(Chunk chunk) {
         chunkStorage.put(chunk);
         spatialIndex.indexChunk(chunk);
-        // Los objetos estáticos también van al legacyContainer para compatibilidad
-        for (GameObjects obj : chunk.getObjects()) {
-            legacyContainer.add(obj);
-        }
     }
 
     /**
@@ -188,27 +168,28 @@ public class World {
         Chunk chunk = chunkStorage.get(coord);
         if (chunk != null) {
             spatialIndex.removeChunk(coord);
-            for (GameObjects obj : chunk.getObjects()) {
-                legacyContainer.remove(obj);
-            }
+            chunkStorage.evict(coord);
         }
-        chunkStorage.evict(coord);
     }
 
     // ── NUEVA API — acceso a estructuras ─────────────────────────────────────
 
     /**
      * El registro de entidades dinámicas del mundo.
+     * Devuelve directamente el globalDynamicRegistry (singleton del universo).
+     * 
+     * Todos los consumidores (TransitionDetector, EntityCountCondition,
+     * SceneRenderer) reciben la misma vista: el registro global completo.
      *
-     * Si un registry externo global está configurado (inyectado por WorldManager),
-     * devuelve ese registry global — garantiza que TransitionDetector y otros
-     * sistemas legacy vean TODAS las entidades dinámicas del universo,
-     * independientemente del sector activo.
-     *
-     * @return el registry global si está configurado, de lo contrario el local
+     * @return el globalDynamicRegistry (singleton del universo)
+     * @throws IllegalStateException si no fue configurado vía setGlobalDynamicRegistry()
      */
     public DynamicEntityRegistry getDynamicEntityRegistry() {
-        return (externalRegistry != null) ? externalRegistry : dynamicRegistry;
+        if (globalDynamicRegistry == null) {
+            throw new IllegalStateException(
+                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
+        }
+        return globalDynamicRegistry;
     }
 
     /**
@@ -231,88 +212,45 @@ public class World {
         return spatialIndex;
     }
 
-    // ── Update (shim neutralizado — Etapa 4) ─────────────────────────────────
+    // ── ELIMINADO: Legacy update() ───────────────────────────────────────────
 
     /**
-     * Ya no ejecuta simulación.
-     *
-     * WorldManager llama directamente a SimulationRegion + CollisionsSystem.
-     * Este método se mantiene únicamente para que el compilador no rompa
-     * código que aún tenga referencias a world.update().
-     * Se eliminará en Etapa 9.
-     *
-     * @deprecated WorldManager ahora usa SimulationRegion directamente.
+     * El método update() fue eliminado. La simulación ocurre en
+     * WorldManager.update() a través de sistemas explícitos:
+     * AISystem, CollisionsSystem, StatusEffectSystem, etc.
+     * 
+     * World ya no tiene lógica de update propia.
      */
-    @Deprecated(forRemoval = true)
-    public void update() {
-        // Intencionalmente vacío — la simulación ocurre en WorldManager.update()
-        // a través de SimulationRegion.
-        dynamicRegistry.flush();
-    }
 
-    // ── API legacy de add/remove (shim — reemplazar en Etapas 4-9) ───────────
+    // ── ELIMINADO: Legacy add/remove() ───────────────────────────────────────
 
     /**
-     * Añade un objeto al mundo.
-     *
-     * DISTINCIÓN IMPORTANTE:
-     *   - Objetos ESTÁTICOS (terreno, obstáculos): usar addChunk(Chunk) o que las
-     *     layers añadan al Chunk directamente. Este método NO debe recibir estáticos.
-     *   - Objetos DINÁMICOS (Player, Enemy, Bullet): usar addDynamic() o este método.
-     *
-     * Durante la transición, este método delega en addDynamic() para entidades
-     * dinámicas que aún llegan por la API legacy (EnemySpawner, SpawnSystem).
-     * Los objetos estáticos llegan vía world.addChunk() desde WorldGenerator.
-     *
-     * @param obj el objeto a añadir
+     * Los métodos add(GameObjects) y remove(GameObjects) fueron eliminados.
+     * 
+     * Usar directamente:
+     *   - addDynamic(obj) para entidades dinámicas
+     *   - addChunk(chunk) para chunks con estáticos
      */
-    public void add(GameObjects obj) {
-        addDynamic(obj);
-    }
+
+    // ── ELIMINADO: getObjectsContainer() ─────────────────────────────────────
 
     /**
-     * Elimina un objeto del mundo.
-     *
-     * @param obj el objeto a eliminar
+     * El método getObjectsContainer() fue eliminado junto con
+     * WorldObjectsContainer. Los sistemas usan:
+     *   - getDynamicEntityRegistry() para dinámicos
+     *   - getChunkStorage() + getSpatialIndex() para estáticos
      */
-    public void remove(GameObjects obj) {
-        removeDynamic(obj);
-    }
-
-    /**
-     * Vista unificada de todos los objetos del mundo (estáticos + dinámicos).
-     *
-     * @deprecated Usar getDynamicEntityRegistry() para entidades dinámicas
-     *             o getSpatialIndex().query(region) para consultas espaciales.
-     *             Mantener para compatibilidad con SceneRenderer y sistemas legacy.
-     *
-     * @return el WorldObjectsContainer legacy
-     */
-    @Deprecated(forRemoval = true)
-    public WorldObjectsContainer getObjectsContainer() {
-        return legacyContainer;
-    }
 
     // ── Tracking de cámara ────────────────────────────────────────────────────
 
     /**
      * Registra el objeto a rastrear para el sistema de cámara del Engine.
-     *
-     * Si el objeto es un Player, configura el objectUpdater del legacyContainer
-     * para que los Enemy reciban EnemyContext correcto en cada update().
+     * Solo mantiene la referencia al trackTarget para CameraSystem.
      *
      * @param obj objeto a seguir (generalmente el player); null para liberar.
      */
     public void setTrackTarget(GameObjects obj) {
         this.trackTarget = obj;
-
-        if (obj instanceof Player player) {
-            legacyContainer.setObjectUpdater(
-                list -> WorldEnemyUpdater.updateAll(list, player)
-            );
-        } else if (obj == null) {
-            legacyContainer.setObjectUpdater(list -> list.forEach(GameObjects::update));
-        }
     }
 
     /**
@@ -335,34 +273,22 @@ public class World {
         return trackTarget;
     }
 
-    // ── Dimensiones (shim — eliminar en Etapa 9) ──────────────────────────────
+    // ── ELIMINADO: Dimension APIs ────────────────────────────────────────────
 
     /**
-     * Actualiza las dimensiones del chunk (shim para WorldManager).
-     *
-     * @deprecated En el nuevo modelo World no tiene dimensiones propias.
+     * Los métodos resize(int, int), getWidth(), getHeight() fueron eliminados.
+     * 
+     * En el modelo de mundo infinito basado en chunks, World no tiene dimensiones propias.
+     * 
+     * Para obtener dimensiones:
+     *   - Chunks individuales: chunk.getWidth() / chunk.getHeight()
+     *   - Región de simulación: SimulationRegion bounds
+     *   - Viewport: CameraSystem viewport
+     * 
+     * El campo width/height se mantiene internamente solo para compatibilidad con
+     * WorldSpatialIndex constructor. Serán eliminados cuando WorldSpatialIndex
+     * se refactorice para no requerir dimensiones fijas.
      */
-    @Deprecated(forRemoval = true)
-    public void resize(int newWidth, int newHeight) {
-        this.width  = newWidth;
-        this.height = newHeight;
-    }
-
-    /**
-     * Ancho del chunk activo (shim para compatibilidad).
-     *
-     * @deprecated En el nuevo modelo las dimensiones pertenecen a cada Chunk.
-     */
-    @Deprecated(forRemoval = true)
-    public int getWidth()  { return width;  }
-
-    /**
-     * Alto del chunk activo (shim para compatibilidad).
-     *
-     * @deprecated En el nuevo modelo las dimensiones pertenecen a cada Chunk.
-     */
-    @Deprecated(forRemoval = true)
-    public int getHeight() { return height; }
 
     /**
      * Coordenada del sector (shim para compatibilidad con WorldCache).
@@ -370,5 +296,5 @@ public class World {
      * @deprecated Eliminar en Etapa 9 con WorldCache.
      */
     @Deprecated(forRemoval = true)
-    public WorldCoordinator getCoordinate() { return coordinate; }
+    public WorldCoordinator getCoordinate() { return coordinate;  }
 }

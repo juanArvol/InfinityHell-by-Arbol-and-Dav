@@ -57,10 +57,16 @@ public class AnimationControllerComponent extends Component {
     private int frameIndex = 0;
 
     /**
-     * Tick acumulado dentro del frame actual.
-     * Se compara con Animation.ticksForFrame(frameIndex) — no con un global.
+     * Tiempo acumulado dentro del frame actual en segundos.
+     * Se compara con Animation.ticksForFrame(frameIndex) / 60.0 para determinar
+     * cuándo avanzar al siguiente frame.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * MIGRACIÓN: Cambiado de int tick (frames) a double elapsedTime (segundos).
+     * La conversión desde Animation.ticksForFrame() se hace dividiendo por 60.0.
      */
-    private int tick = 0;
+    private double elapsedTime = 0.0;
 
     /**
      * Dirección de avance para PING_PONG.
@@ -111,16 +117,25 @@ public class AnimationControllerComponent extends Component {
         }
     }
 
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y acumula tiempo en segundos.
+     * La duración del frame se convierte de ticks → segundos @ 60 FPS.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         if (currentAnimation == null || renderer == null) return;
 
-        // Duración efectiva del frame actual (individual o base)
+        // Duración efectiva del frame actual (ticks → segundos)
         int frameTicks = currentAnimation.ticksForFrame(frameIndex);
+        double frameDuration = frameTicks / 60.0; // TODO: Animation should migrate to seconds
 
-        tick++;
-        if (tick >= frameTicks) {
-            tick = 0;
+        elapsedTime += deltaTime;
+        if (elapsedTime >= frameDuration) {
+            elapsedTime = 0.0;
             advanceFrame();
         }
 
@@ -199,7 +214,7 @@ public class AnimationControllerComponent extends Component {
         currentKey       = key;
         currentAnimation = anim;
         frameIndex       = 0;
-        tick             = 0;
+        elapsedTime      = 0.0;
         pingPongForward  = true;
 
         if (renderer != null) {
@@ -213,7 +228,7 @@ public class AnimationControllerComponent extends Component {
      */
     public void restart() {
         frameIndex      = 0;
-        tick            = 0;
+        elapsedTime     = 0.0;
         pingPongForward = true;
         if (currentAnimation != null && renderer != null) {
             renderer.setCurrentFrame(currentAnimation.getFirstFrame());
@@ -227,7 +242,7 @@ public class AnimationControllerComponent extends Component {
         currentKey       = null;
         currentAnimation = null;
         frameIndex       = 0;
-        tick             = 0;
+        elapsedTime      = 0.0;
         pingPongForward  = true;
         if (renderer != null) {
             renderer.setCurrentFrame(handle.resolveDefault());

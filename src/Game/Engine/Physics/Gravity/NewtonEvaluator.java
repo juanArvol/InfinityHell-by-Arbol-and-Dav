@@ -1,11 +1,8 @@
 package Game.Engine.Physics.Gravity;
 
-import Game.Engine.Physics.Gravity.GravityProperties;
-import Game.Engine.Physics.Kinematic.KinematicProperties;
 import Game.Engine.Physics.Core.PhysicalRelation;
 import Game.Engine.Physics.Core.RelationConstraint;
 import Game.Engine.Physics.Core.RelationEvaluator;
-
 import java.util.List;
 
 /**
@@ -14,52 +11,93 @@ import java.util.List;
  * ── HRFC-022 — Eliminación del Paradigma de Ley Ejecutable ───────────────
  * ── HRFC-023 Auditoría — Eliminación de búsquedas por ID ─────────────────
  * ── HRFC-024 Auditoría — Consistencia Arquitectónica ─────────────────────
+ * ── HRFC-FASE3.5 — Ownership Correcto de Valores Físicos ─────────────────
+ * ── HRFC-FASE3.5 CORRECCIÓN — Semántica Aceleración vs Fuerza ────────────
  *
  * ── FENÓMENO ──────────────────────────────────────────────────────────────
- * Segunda ley de Newton: dinámica de partículas bajo fuerzas externas.
- * F = m · a  →  a = F / m  →  Δv = a · dt
+ * Aceleraciones uniformes sobre partículas (típicamente gravedad).
+ * 
+ * SEMÁNTICA: Este evaluador aplica una ACELERACIÓN uniforme, no una fuerza.
+ * 
+ *   Δv = a · dt
+ * 
+ * donde 'a' es la aceleración declarada (ej: gravedad g = 9.8 m/s²).
  *
- * Para el contexto de simulación por frames este evaluador aplica
- * aceleraciones uniformes (como gravedad) a entidades con velocidades.
+ * La aceleración gravitacional es INDEPENDIENTE de la masa del objeto.
+ * Por tanto, este evaluador NO divide por masa.
  *
- * La aceleración se lee de la restricción THRESHOLD_ABOVE de la relación
- * como la magnitud de la fuerza por unidad de masa. Si no se declara,
- * se aplica la gravedad estándar del juego (9.8 u/s²) a VELOCITY_Y.
+ * NOTA: Si necesita aplicar FUERZAS (F = m·a), debe existir un evaluador
+ * diferente que implemente a = F/m. NewtonEvaluator es específicamente
+ * para aceleraciones uniformes constantes.
  *
- * Las propiedades participantes de la relación identifican qué componentes
- * de velocidad se ven afectados. El evaluador itera sobre ellas.
+ * ── OWNERSHIP DE VALORES FÍSICOS ─────────────────────────────────────────
+ * La aceleración DEBE declararse explícitamente mediante la restricción
+ * THRESHOLD_ABOVE de la PhysicalRelation. Este valor debe provenir del
+ * owner correspondiente:
+ *
+ *   Entity.gravity × Environment.gravityInfluenceY
+ *
+ * Si la restricción no está presente, el evaluador NO inventa un valor.
+ * La relación simplemente no se aplica (skip silencioso).
+ *
+ * IMPORTANTE: Este evaluador NO posee la aceleración. La recibe desde
+ * la relación declarativa que fue configurada por el owner real.
  *
  * ── PROPIEDADES PARTICIPANTES ────────────────────────────────────────────
- * Las propiedades declaradas en getParticipatingProperties() que no sean
- * MASS reciben el delta de aceleración · dt.
- * GravityProperties.MASS se usa como divisor si la entidad la tiene.
+ * Las propiedades declaradas en getParticipatingProperties() reciben
+ * el delta de aceleración · dt directamente (sin división por masa).
+ *
+ * GravityProperties.MASS puede declararse como participante para indicar
+ * qué entidades deben tener masa configurada, pero NO se usa en el cálculo
+ * (la aceleración gravitacional es independiente de masa).
+ *
+ * ── CONTRATO ──────────────────────────────────────────────────────────────
+ * REQUIERE:
+ *   - RelationConstraint.THRESHOLD_ABOVE → aceleración en u/s² (desde owner)
+ *   - Propiedades participantes (velocidades) en entidades
+ *
+ * OPCIONAL:
+ *   - GravityProperties.MASS si se quiere validar presencia de masa
+ *
+ * NO INVENTA:
+ *   - Aceleraciones por defecto
+ *   - Valores mínimos arbitrarios
  */
 public final class NewtonEvaluator implements RelationEvaluator {
-
-    private static final double DEFAULT_ACCELERATION = 9.8;
 
     @Override
     public void evaluate(PhysicalRelation     relation,
                          List<EvaluationView> views,
                          double               deltaTime) {
-        // La restricción THRESHOLD_ABOVE codifica la aceleración base
+        // ── HRFC-FASE3.5: Ownership correcto de aceleración ───────────────
+        // La aceleración DEBE estar declarada explícitamente en la relación.
+        // NO se inventa un valor por defecto.
+        // Si no está presente → la relación no se aplica (skip silencioso).
         RelationConstraint accelConstraint =
             relation.getConstraint(RelationConstraint.Type.THRESHOLD_ABOVE);
-        double acceleration = accelConstraint != null
-            ? accelConstraint.getValue()
-            : DEFAULT_ACCELERATION;
+        
+        if (accelConstraint == null) {
+            // Sin aceleración declarada → fenómeno no aplicable
+            // Esto expone configuraciones incorrectas en lugar de ocultarlas
+            return;
+        }
+        
+        // THRESHOLD_ABOVE contiene la aceleración en u/s² (ej: gravedad = 9.8)
+        double acceleration = accelConstraint.getValue();
+        
+        // ── CORRECCIÓN SEMÁNTICA ──────────────────────────────────────────
+        // Este evaluador aplica ACELERACIÓN uniforme, no fuerza.
+        // La aceleración gravitacional es INDEPENDIENTE de la masa.
+        // Por tanto: Δv = a · dt  (NO se divide por masa)
+        double deltaV = acceleration * deltaTime;
 
         for (EvaluationView e : views) {
-            // Si la entidad tiene masa la usamos como divisor
-            double mass = e.has(GravityProperties.MASS)
-                ? Math.max(e.get(GravityProperties.MASS), 0.01)
-                : 1.0;
-            double accel = acceleration / mass * deltaTime;
-
             // Aplicar delta a todas las propiedades participantes excepto MASS
             for (var p : relation.getParticipatingProperties()) {
+                // MASS puede estar declarada para validar presencia,
+                // pero NO se usa en el cálculo (aceleración independiente de masa)
                 if (p == GravityProperties.MASS) continue;
-                if (e.has(p)) e.add(p, accel);
+                if (e.has(p)) e.add(p, deltaV);
             }
         }
     }

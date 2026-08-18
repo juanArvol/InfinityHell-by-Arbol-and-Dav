@@ -35,10 +35,11 @@ import java.util.function.Supplier;
  * ── EJEMPLO DE USO ────────────────────────────────────────────────────────
  *
  *   // Spawn automático de zombies cada 120 ticks hasta 5 simultáneos:
+ *   // Spawna en un radio alrededor del centro de simulación (player)
  *   SpawnDescriptor zombieWave = SpawnDescriptor.builder()
  *       .id("zombie_wave")
  *       .strategy(pos -> EnemyFactory.create(EnemyId.ZOMBIE, pos))
- *       .point(SpawnPoint.worldBounds(world.getWidth(), world.getHeight(), 60))
+ *       .point(SpawnPoint.random(playerX, playerY, 300.0))  // radio 300 unidades del player
  *       .maxInstances(5)
  *       .cooldown(120)
  *       .build();
@@ -118,7 +119,7 @@ public final class SpawnSystem {
 
         for (SpawnRequest request : snapshot) {
             // Avanzar cooldown independientemente de si spawna
-            request.tickCooldown();
+            request.tickCooldown(1);
 
             if (!request.shouldSpawnNow(activeWorld)) continue;
 

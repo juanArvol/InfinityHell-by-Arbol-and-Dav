@@ -136,17 +136,7 @@ public final class PlayerAssembler {
      * @param eventBus      bus de eventos del juego
      * @return Player completamente configurado y listo para el ciclo de juego
      */
-    public static Player assemble(Vector2D spawn,
-                                  Consumer<Bullet> bulletSpawner,
-                                  GameEventBus eventBus) {
-        PlayerLoadout loadout = PlayerLoadout
-            .initialWeapons()
-            .initialBullets()
-            .initialAmulets()
-            .build();
-        
-        return assemble(spawn, bulletSpawner, eventBus, loadout);
-    }
+    
 
     /**
      * Ensambla un Player completo con el loadout indicado.

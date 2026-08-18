@@ -1,60 +1,83 @@
 package Game.Engine.Physics.KineticPhysics;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.IdentityHashMap;
 
 /**
- * Pila de {@link MovementModifier} con identidad por clave.
+ * Pila de {@link MovementModifier} con identidad por source.
  *
- * Permite acumular múltiples buffs/debuffs de forma aditiva-multiplicativa
- * sin que uno sobreescriba al otro, y removerlos individualmente cuando expiran.
+ * ── HRFC-FASE3 — Identidad type-safe ─────────────────────────────────────
+ * ── HRFC-FASE3.5 — Eliminación de String Identity ────────────────────────
+ *
+ * CAMBIOS RESPECTO A VERSIÓN ANTERIOR:
+ *
+ *   ELIMINADO: LinkedHashMap<String, MovementModifier>
+ *   AÑADIDO:   IdentityHashMap<MovementModifierSource, MovementModifier>
+ *   ELIMINADO: Métodos deprecated add(String) y remove(String)
+ *
+ *   La identidad es por referencia de objeto (==), no por String.
+ *   Esto elimina colisiones de nombres y hace el sistema type-safe.
  *
  * ── Uso básico ────────────────────────────────────────────────────────────
  *
  *   // Registro (desde el sistema de efectos de estado)
- *   physics.statusStack().add("poison",  ctx -> 0.60);
- *   physics.statusStack().add("wounded", ctx -> ctx.onGround() ? 0.70 : 1.0);
- *   physics.statusStack().add("haste",   ctx -> 1.30);
+ *   physics.statusStack().add(poisonEffect,  ctx -> 0.60);
+ *   physics.statusStack().add(woundedEffect, ctx -> ctx.onGround() ? 0.70 : 1.0);
+ *   physics.statusStack().add(hasteEffect,   ctx -> 1.30);
  *
  *   // Factor resultante en ese frame: 0.60 × 0.70 × 1.30 = 0.546
  *
  *   // Remoción cuando el efecto termina
- *   physics.statusStack().remove("poison");
+ *   physics.statusStack().remove(poisonEffect);
  *
- *   // Stun total: sobreescribe la stack con FROZEN y la limpia al terminar
- *   physics.statusStack().add("stun", MovementModifier.FROZEN);
+ *   // Stun total: registra y remueve cuando expira
+ *   physics.statusStack().add(stunEffect, MovementModifier.FROZEN);
  *   // ... (timer expira)
- *   physics.statusStack().remove("stun");
+ *   physics.statusStack().remove(stunEffect);
  *
  * ── Invariantes ───────────────────────────────────────────────────────────
  *
  *   - Stack vacía → compute() devuelve 1.0 (neutro).
- *   - El orden de inserción se respeta (LinkedHashMap), aunque para
- *     modificadores puramente multiplicativos el orden no afecta el resultado.
+ *   - El orden NO importa (todos los modificadores son multiplicativos).
+ *   - IdentityHashMap garantiza identidad fuerte por referencia (==).
  *   - Thread-safety: ninguna. Usar desde el hilo de juego.
+ *
+ * ── Migración desde String keys ──────────────────────────────────────────
+ *
+ *   ANTES (String Identity - prohibido):
+ *     stack.add("poison", ctx -> 0.6);
+ *     stack.remove("poison");
+ *
+ *   AHORA (Identidad tipada - correcto):
+ *     MovementModifierSource poisonEffect = ...;
+ *     stack.add(poisonEffect, ctx -> 0.6);
+ *     stack.remove(poisonEffect);
  */
 public final class ModifierStack {
 
-    private final LinkedHashMap<String, MovementModifier> slots = new LinkedHashMap<>();
+    private final IdentityHashMap<MovementModifierSource, MovementModifier> slots = new IdentityHashMap<>();
 
     /**
-     * Añade o reemplaza el modificador bajo {@code key}.
-     * Si ya existe una entrada con esa clave, se actualiza en su lugar.
+     * Añade o reemplaza el modificador bajo {@code source}.
+     * Si ya existe una entrada con ese source, se actualiza en su lugar.
      *
-     * @param key Identificador único del efecto (p.ej. "poison", "wind_zone").
-     * @param mod Modificador a aplicar. Nunca null; usar {@link MovementModifier#IDENTITY} si no hay efecto.
+     * @param source Source que registra este modificador (para posterior remoción).
+     * @param mod    Modificador a aplicar. Nunca null; usar {@link MovementModifier#IDENTITY} si no hay efecto.
      */
-    public void add(String key, MovementModifier mod) {
-        if (key == null || mod == null) throw new IllegalArgumentException("key/mod no pueden ser null");
-        slots.put(key, mod);
+    public void add(MovementModifierSource source, MovementModifier mod) {
+        if (source == null || mod == null)
+            throw new IllegalArgumentException("source/mod no pueden ser null");
+        slots.put(source, mod);
     }
 
     /**
-     * Elimina el modificador asociado a {@code key}.
-     * No lanza excepción si la clave no existe.
+     * Elimina el modificador asociado a {@code source}.
+     * No lanza excepción si el source no existe.
+     *
+     * @param source Source del modificador a eliminar.
      */
-    public void remove(String key) {
-        slots.remove(key);
+    public void remove(MovementModifierSource source) {
+        if (source == null) return;
+        slots.remove(source);
     }
 
     /** Elimina todos los modificadores (reset de estado). */

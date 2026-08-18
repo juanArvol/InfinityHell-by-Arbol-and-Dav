@@ -54,7 +54,7 @@ import java.util.List;
  *
  *   // Pasar a sistemas de simulación:
  *   collisionsSystem.update(simulationRegion.getActiveObjects());
- *   WorldEnemyUpdater.updateAll(simulationRegion.getActiveObjects(), player);
+ *   aiSystem.update(simulationRegion.getActiveObjects(), player, deltaTime);
  */
 public final class SimulationRegion {
 

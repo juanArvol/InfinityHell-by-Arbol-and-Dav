@@ -90,7 +90,7 @@ public final class OrbitalMovement implements ResettableMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         // Sin centro → no actualizar velocidad
         if (center == null) return;
 

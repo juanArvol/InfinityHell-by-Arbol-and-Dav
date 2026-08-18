@@ -208,7 +208,7 @@ public final class SpriteSkeletonComponent extends Component implements Renderab
     // ── Ciclo de vida (Component) ─────────────────────────────────────────────
 
     @Override
-    public void update() {
+    public void update(double dt) {
         // Actualizar animaciones de todas las partes
         for (SpritePiece part : partsMap.values()) {
             part.updateAnimation();

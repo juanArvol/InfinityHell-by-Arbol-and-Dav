@@ -168,8 +168,21 @@ public class Player extends MovingObjects implements EntityInfoProvider {
 
     // ── Update — coordinación del ciclo de juego ──────────────────────────
 
+    /**
+     * Actualiza el Player y todos sus subsistemas.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * PROPAGACIÓN TEMPORAL:
+     *   Player recibe deltaTime de WorldManager y lo propaga a:
+     *     - PlayerCombat     → para cooldowns de armas
+     *     - PlayerStats      → para timers de invulnerabilidad
+     *     - Engine Components → via super.update(deltaTime)
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         // 1. Sincronizar onGround de física → PlayerState
         //    (necesario para Controller y Renderer)
         if (physicsComponent != null) {
@@ -187,15 +200,15 @@ public class Player extends MovingObjects implements EntityInfoProvider {
             playerRuntime.update();
         }
 
-        // 5. Combat — procesar input de disparo
-        combat.update();
+        // 5. Combat — procesar input de disparo y cooldowns
+        combat.update(deltaTime);
 
         // 6. Engine Components (HealthComponent, StatusEffectComponent, Renderer…)
-        super.update();
+        super.update(deltaTime);
 
-        // 7. PlayerStats — decrementar frames de invulnerabilidad
+        // 7. PlayerStats — actualizar timers de invulnerabilidad
         //    (después de super.update() para que el daño del frame ya se haya aplicado)
-        playerStats.update();
+        playerStats.update(deltaTime);
     }
 
     // ── API de daño con invulnerabilidad ──────────────────────────────────
@@ -297,7 +310,8 @@ public class Player extends MovingObjects implements EntityInfoProvider {
      */
     public static Player create(Vector2D spawn,
                                 Consumer<Bullet> bulletSpawner,
-                                Game.Engine.GameEventBus eventBus) {
-        return PlayerAssembler.assemble(spawn, bulletSpawner, eventBus);
+                                Game.Engine.GameEventBus eventBus,
+                                PlayerLoadout loadout) {
+        return PlayerAssembler.assemble(spawn, bulletSpawner, eventBus, loadout);
     }
 }

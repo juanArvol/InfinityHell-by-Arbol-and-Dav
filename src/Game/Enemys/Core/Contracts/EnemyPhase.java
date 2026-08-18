@@ -59,9 +59,13 @@ public interface EnemyPhase {
      * Actualización por frame mientras esta fase esté activa.
      * Usar para lógica interna de la fase (ej: timer de duración).
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para timing independiente del framerate.
+     *
      * @param enemy el Enemy en esta fase.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    default void update(Enemy enemy) {}
+    default void update(Enemy enemy, double deltaTime) {}
 
     /**
      * Llamado cuando el EnemyPhaseController desactiva esta fase.

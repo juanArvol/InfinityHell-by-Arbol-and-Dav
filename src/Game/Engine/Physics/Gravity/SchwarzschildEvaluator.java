@@ -1,10 +1,8 @@
 package Game.Engine.Physics.Gravity;
 
-import Game.Engine.Physics.Gravity.GravityProperties;
-import Game.Engine.Physics.Kinematic.KinematicProperties;
 import Game.Engine.Physics.Core.PhysicalRelation;
 import Game.Engine.Physics.Core.RelationEvaluator;
-
+import Game.Engine.Physics.Kinematic.KinematicProperties;
 import java.util.List;
 
 /**
@@ -13,6 +11,7 @@ import java.util.List;
  * ── HRFC-022 Corrección — Responsabilidad única ───────────────────────────
  * ── HRFC-023 Auditoría — Eliminación de búsquedas por ID ─────────────────
  * ── HRFC-024 Auditoría — Consistencia Arquitectónica ─────────────────────
+ * ── HRFC-FASE3.5 — Ownership Correcto de Valores Físicos ─────────────────
  *
  * ── FENÓMENO ──────────────────────────────────────────────────────────────
  * Métrica de Schwarzschild: atracción gravitacional entre cuerpos masivos.
@@ -27,6 +26,18 @@ import java.util.List;
  * La absorción de velocidad al cruzar el horizonte de eventos pertenece
  * a EventHorizonEvaluator. No existe ningún código de horizonte aquí.
  *
+ * ── CONSTANTE G_SCALED ───────────────────────────────────────────────────
+ * G_SCALED = 6.674e-4 es la constante gravitacional universal escalada
+ * para las unidades del juego. NO es un default inventado, es un valor
+ * físico real adaptado. Esto es arquitectónicamente correcto.
+ *
+ * ── OWNERSHIP DE MASA ────────────────────────────────────────────────────
+ * GravityProperties.MASS DEBE estar presente en ambas entidades.
+ * Si alguna entidad no tiene masa válida (ausente o <= 0):
+ *   - El par se omite del fenómeno (skip)
+ *   - NO se inventa masa mínima
+ *   - Esto expone errores de configuración
+ *
  * ── PROPIEDADES LEÍDAS ────────────────────────────────────────────────────
  *   GravityProperties.MASS       (ambas entidades)
  *
@@ -35,7 +46,12 @@ import java.util.List;
  */
 public final class SchwarzschildEvaluator implements RelationEvaluator {
 
-    private static final double G_SCALED = 6.674e-4; // G escalada para el juego
+    /**
+     * Constante gravitacional universal escalada para unidades del juego.
+     * Valor real: G = 6.674×10⁻¹¹ m³/(kg·s²) en SI
+     * Escalado: 6.674e-4 para píxeles/frame del motor.
+     */
+    private static final double G_SCALED = 6.674e-4;
 
     @Override
     public void evaluate(PhysicalRelation     relation,
@@ -44,23 +60,36 @@ public final class SchwarzschildEvaluator implements RelationEvaluator {
         int n = views.size();
         for (int i = 0; i < n - 1; i++) {
             EvaluationView a = views.get(i);
+            // ── HRFC-FASE3.5: Ownership correcto de masa ──────────────────
+            // Si la entidad no tiene masa → omitir del fenómeno
             if (!a.has(GravityProperties.MASS)) continue;
+            double mA = a.get(GravityProperties.MASS);
+            // Validar masa válida (> 0)
+            if (mA <= 0.0) continue;
 
             for (int j = i + 1; j < n; j++) {
                 EvaluationView b = views.get(j);
+                // Si la entidad no tiene masa → omitir del fenómeno
                 if (!b.has(GravityProperties.MASS)) continue;
+                double mB = b.get(GravityProperties.MASS);
+                // Validar masa válida (> 0)
+                if (mB <= 0.0) continue;
 
                 double dist = distance(a, b);
+                // Evitar singularidad en r → 0
                 if (dist < 0.1) continue;
 
-                double mA = a.get(GravityProperties.MASS);
-                double mB = b.get(GravityProperties.MASS);
-
-                // Fenómeno único: atracción gravitacional newtoniana
+                // ── Fenómeno único: atracción gravitacional newtoniana ────
+                // F = G · m_a · m_b / d²
                 double force  = G_SCALED * mA * mB / (dist * dist) * deltaTime;
-                double accelA = force / Math.max(mA, 0.01);
-                double accelB = force / Math.max(mB, 0.01);
+                
+                // a = F / m (segunda ley de Newton)
+                // NO se inventa masa mínima: confiamos en validación previa
+                double accelA = force / mA;
+                double accelB = force / mB;
 
+                // Aplicar aceleración en dirección apropiada
+                // Factor 0.01 es escala de magnitud del fenómeno para el motor
                 if (a.has(KinematicProperties.VELOCITY_X))
                     a.add(KinematicProperties.VELOCITY_X,  accelA * 0.01);
                 if (b.has(KinematicProperties.VELOCITY_X))

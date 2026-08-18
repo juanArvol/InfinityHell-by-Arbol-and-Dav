@@ -126,9 +126,33 @@ public class GameObjects {
         return Collections.unmodifiableList(components);
     }
 
-    public void update() {
+    /**
+     * Actualiza este GameObject y todos sus componentes.
+     *
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * CONTRATO TEMPORAL:
+     *
+     * Este método recibe deltaTime del sistema padre (WorldManager, CollisionsSystem, etc.)
+     * que a su vez lo recibió de GameLoop — la única fuente de verdad temporal.
+     *
+     * deltaTime representa los SEGUNDOS REALES transcurridos desde el último
+     * simulation step. No es un valor fijo (1/60), sino variable según el
+     * framerate real y las condiciones de ejecución.
+     *
+     * Todos los componentes reciben este mismo deltaTime para integración temporal
+     * consistente a través del objeto.
+     *
+     * PROHIBIDO:
+     *   - Llamar update() sin pasar deltaTime
+     *   - Recalcular deltaTime con System.nanoTime()
+     *   - Usar constantes hardcoded (1/60, 0.016, etc.)
+     *
+     * @param deltaTime tiempo REAL del simulation step en segundos
+     */
+    public void update(double deltaTime) {
         for (Component c : components) {
-            c.update();
+            c.update(deltaTime);
         }
     }
 

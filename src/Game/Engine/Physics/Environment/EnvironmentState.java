@@ -32,9 +32,9 @@ package Game.Engine.Physics.Environment;
  *     fluidDensity          densidad del fluido circundante (para empuje de Arquímedes)
  *     fluidViscosity        viscosidad del fluido circundante (para ley de Stokes)
  *
- *   Gravedad local:
- *     gravityX              componente X de la gravedad local (u/s²)
- *     gravityY              componente Y de la gravedad local (u/s²)
+ *   Influencia gravitacional:
+ *     gravityInfluenceX     factor multiplicador de gravedad en X (1.0 = sin modificación)
+ *     gravityInfluenceY     factor multiplicador de gravedad en Y (1.0 = sin modificación)
  *
  *   Campos externos:
  *     electricFieldX        componente X del campo eléctrico local (V/m relativos)
@@ -49,9 +49,14 @@ package Game.Engine.Physics.Environment;
  * EnvironmentState es completamente inmutable tras su construcción.
  * Un cambio en las condiciones del entorno produce un nuevo EnvironmentState.
  *
- * ── ESTADO POR DEFECTO ───────────────────────────────────────────────────
- * EnvironmentState.STANDARD representa condiciones estándar (temperatura ambiente
- * 20°C, gravedad estándar (0, 9.8), sin viento, presión atmosférica 1.0).
+ * ── FASE 2: ELIMINACIÓN DE DEFAULTS UNIVERSALES ─────────────────────────
+ * EnvironmentState ya NO tiene constantes STANDARD/VACUUM públicas.
+ * Las condiciones ambientales pertenecen a los Environment concretos:
+ *   - StandardAtmosphere.INSTANCE.current() → condiciones terrestres
+ *   - VacuumEnvironment.INSTANCE.current()  → condiciones de vacío
+ *
+ * La infraestructura NO decide cómo es el ambiente.
+ * Cada Environment declara sus propias condiciones.
  *
  * ── THREAD SAFETY ─────────────────────────────────────────────────────────
  * Inmutable → thread-safe por diseño.
@@ -98,20 +103,68 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
      */
     private final double fluidViscosity;
 
-    // ── Gravedad local ────────────────────────────────────────────────────
+    // ── Influencia gravitacional ──────────────────────────────────────────
 
     /**
-     * Componente X de la gravedad local en u/s².
-     * 0 en la mayoría de los casos (gravedad estrictamente vertical).
+     * Factor de influencia gravitacional del ambiente en el eje X.
+     * 
+     * IMPORTANTE - HRFC-FASE2.5: CORRECCIÓN SEMÁNTICA DE OWNERSHIP
+     * 
+     * Este campo representa un FACTOR MULTIPLICADOR que el ambiente
+     * aplica sobre la gravedad propia de las entidades, NO la gravedad base.
+     * 
+     * OWNERSHIP CORRECTO:
+     * 
+     *   ENTIDAD (Physics2DComponent / PhysicalState):
+     *     gravity → propiedad gravitacional PROPIA de la entidad (ej: 9.8 m/s²)
+     *     mass → masa inercial (GravityProperties.MASS)
+     * 
+     *   AMBIENTE (EnvironmentState):
+     *     gravityInfluenceX, gravityInfluenceY → FACTOR de modificación ambiental
+     *     Ejemplo: 1.0 = sin modificación, 0.5 = mitad, 2.0 = doble, 0.0 = anulada
+     * 
+     * COMPOSICIÓN CORRECTA:
+     *   a_efectiva = entity.gravity × environment.gravityInfluenceY
+     * 
+     * EJEMPLOS:
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 1.0
+     *     → 9.8 × 1.0 = 9.8 (condiciones terrestres normales)
+     * 
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 0.5
+     *     → 9.8 × 0.5 = 4.9 (zona de gravedad reducida)
+     * 
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 2.0
+     *     → 9.8 × 2.0 = 19.6 (zona de gravedad intensificada)
+     * 
+     *   Entity.gravity = 9.8, Environment.gravityInfluence = 0.0
+     *     → 9.8 × 0.0 = 0.0 (microgravedad / espacio)
+     * 
+     * PRINCIPIO FUNDAMENTAL:
+     * El ambiente NO dice: "La gravedad aquí ES 19.6."
+     * El ambiente dice: "La gravedad de la entidad se ve modificada por ×2."
+     * 
+     * La entidad es propietaria de su gravedad.
+     * El ambiente solo la modifica mediante un factor de influencia.
+     * Las Relations combinan ambos para calcular la aceleración efectiva.
      */
-    private final double gravityX;
+    private final double gravityInfluenceX;
 
     /**
-     * Componente Y de la gravedad local en u/s².
-     * Positivo = hacia abajo (convención AWT/juego).
-     * Default: 9.8 (gravedad estándar).
+     * Factor de influencia gravitacional del ambiente en el eje Y.
+     * Positivo = modifica gravedad hacia abajo (convención AWT/juego).
+     * 
+     * IMPORTANTE - HRFC-FASE2.5: Factor multiplicador, NO magnitud absoluta.
+     * 
+     * Valores típicos:
+     *   1.0  = StandardAtmosphere (sin modificación, gravedad terrestre normal)
+     *   0.0  = VacuumEnvironment (anula gravedad → microgravedad)
+     *   0.17 = MoonEnvironment (gravedad lunar, 1.62/9.8 ≈ 0.165)
+     *   2.0  = HighGravityZone (duplica la gravedad de la entidad)
+     * 
+     * La aceleración efectiva resulta de:
+     *   a_efectiva = entity.gravity × environment.gravityInfluenceY
      */
-    private final double gravityY;
+    private final double gravityInfluenceY;
 
     // ── Campos externos ───────────────────────────────────────────────────
 
@@ -152,8 +205,8 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
         this.windY               = b.windY;
         this.fluidDensity        = b.fluidDensity;
         this.fluidViscosity      = b.fluidViscosity;
-        this.gravityX            = b.gravityX;
-        this.gravityY            = b.gravityY;
+        this.gravityInfluenceX   = b.gravityInfluenceX;
+        this.gravityInfluenceY   = b.gravityInfluenceY;
         this.electricFieldX      = b.electricFieldX;
         this.electricFieldY      = b.electricFieldY;
         this.magneticFieldZ      = b.magneticFieldZ;
@@ -168,24 +221,39 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
 
     /**
      * Condiciones estándar del entorno.
-     * Temperatura ambiente 20°C, gravedad estándar (0, 9.8), sin viento,
-     * sin campos externos, presión atmosférica 1.0.
+     * 
+     * @deprecated HRFC-FASE2: Usar {@link StandardAtmosphere#INSTANCE}.current()
+     *             en lugar de esta constante estática. Las condiciones ambientales
+     *             pertenecen al Environment concreto, no a la infraestructura.
      */
-    public static final EnvironmentState STANDARD = builder().build();
+    @Deprecated
+    public static EnvironmentState standard() {
+        return StandardAtmosphere.INSTANCE.current();
+    }
 
     /**
      * Condiciones de microgravedad / espacio exterior.
-     * Sin gravedad, sin atmósfera, sin viento. Temperatura ambiente = -270°C relativo.
+     * 
+     * @deprecated HRFC-FASE2: Usar {@link VacuumEnvironment#INSTANCE}.current()
+     *             en lugar de esta constante estática. Las condiciones ambientales
+     *             pertenecen al Environment concreto, no a la infraestructura.
      */
-    public static final EnvironmentState VACUUM = builder()
-        .ambientTemperature(-270.0)
-        .atmosphericPressure(0.0)
-        .ambientHumidity(0.0)
-        .gravityX(0.0)
-        .gravityY(0.0)
-        .fluidDensity(0.0)
-        .fluidViscosity(0.0)
-        .build();
+    @Deprecated
+    public static EnvironmentState vacuum() {
+        return VacuumEnvironment.INSTANCE.current();
+    }
+
+    /**
+     * @deprecated HRFC-FASE2: Usar {@link #standard()} o StandardAtmosphere.INSTANCE.current()
+     */
+    @Deprecated
+    public static final EnvironmentState STANDARD = null; // Eliminado, usar standard()
+
+    /**
+     * @deprecated HRFC-FASE2: Usar {@link #vacuum()} o VacuumEnvironment.INSTANCE.current()
+     */
+    @Deprecated
+    public static final EnvironmentState VACUUM = null; // Eliminado, usar vacuum()
 
     // ── Accesores — condiciones térmicas ──────────────────────────────────
 
@@ -217,17 +285,52 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
     /** Viscosidad del fluido circundante. */
     public double getFluidViscosity()      { return fluidViscosity; }
 
-    // ── Accesores — gravedad ──────────────────────────────────────────────
+    // ── Accesores — influencia gravitacional ──────────────────────────────
 
-    /** Componente X de la gravedad local en u/s². */
-    public double getGravityX()            { return gravityX; }
+    /** 
+     * Factor de influencia gravitacional del ambiente en el eje X.
+     * 1.0 = sin modificación, 0.0 = anulada, 2.0 = duplicada.
+     */
+    public double getGravityInfluenceX()            { return gravityInfluenceX; }
 
-    /** Componente Y de la gravedad local en u/s². */
-    public double getGravityY()            { return gravityY; }
+    /** 
+     * Factor de influencia gravitacional del ambiente en el eje Y.
+     * 1.0 = sin modificación, 0.0 = anulada, 2.0 = duplicada.
+     */
+    public double getGravityInfluenceY()            { return gravityInfluenceY; }
 
-    /** Módulo de la gravedad local en u/s². */
+    /** 
+     * Módulo del factor de influencia gravitacional.
+     * Útil para cálculos vectoriales de gravedad modificada.
+     */
+    public double getGravityInfluenceMagnitude() {
+        return Math.sqrt(gravityInfluenceX * gravityInfluenceX + 
+                        gravityInfluenceY * gravityInfluenceY);
+    }
+    
+    // ── Accesores legacy (deprecated) ─────────────────────────────────────
+    
+    /**
+     * @deprecated HRFC-FASE2.5: Usar {@link #getGravityInfluenceX()}.
+     *             La semántica cambió de magnitud absoluta a factor multiplicador.
+     */
+    @Deprecated
+    public double getGravityX() { return gravityInfluenceX; }
+    
+    /**
+     * @deprecated HRFC-FASE2.5: Usar {@link #getGravityInfluenceY()}.
+     *             La semántica cambió de magnitud absoluta a factor multiplicador.
+     */
+    @Deprecated
+    public double getGravityY() { return gravityInfluenceY; }
+    
+    /**
+     * @deprecated HRFC-FASE2.5: Usar {@link #getGravityInfluenceMagnitude()}.
+     *             La semántica cambió de magnitud absoluta a factor multiplicador.
+     */
+    @Deprecated
     public double getGravityMagnitude() {
-        return Math.sqrt(gravityX * gravityX + gravityY * gravityY);
+        return getGravityInfluenceMagnitude();
     }
 
     // ── Accesores — campos externos ───────────────────────────────────────
@@ -254,9 +357,9 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
     @Override
     public String toString() {
         return String.format(
-            "EnvironmentState[T=%.1f P=%.2f wind=(%.1f,%.1f) g=(%.1f,%.1f)]",
+            "EnvironmentState[T=%.1f P=%.2f wind=(%.1f,%.1f) gInf=(%.2f,%.2f)]",
             ambientTemperature, atmosphericPressure,
-            windX, windY, gravityX, gravityY);
+            windX, windY, gravityInfluenceX, gravityInfluenceY);
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -266,40 +369,48 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
     /**
      * Builder de EnvironmentState.
      *
-     * Valores por defecto (condiciones estándar):
-     *   ambientTemperature  = 0.0     temperatura ambiente relativa = 0
-     *   atmosphericPressure = 1.0     presión atmosférica estándar
-     *   ambientHumidity     = 0.6     humedad relativa 60%
-     *   windX               = 0.0     sin viento
-     *   windY               = 0.0     sin viento
-     *   fluidDensity        = 1.2     densidad del aire (kg/m³ relativo)
-     *   fluidViscosity      = 0.0     sin viscosidad apreciable
-     *   gravityX            = 0.0     sin componente horizontal
-     *   gravityY            = 9.8     gravedad estándar (positivo = abajo)
-     *   electricFieldX      = 0.0     sin campo eléctrico
-     *   electricFieldY      = 0.0     sin campo eléctrico
-     *   magneticFieldZ      = 0.0     sin campo magnético
-     *   ambientRadiation    = 0.0     sin radiación ambiental
-     *   illuminance         = 1.0     iluminación estándar
+     * ── HRFC-FASE2 — Eliminación de defaults universales ──────────────────
+     *
+     * IMPORTANTE: Este Builder NO tiene valores por defecto.
+     *
+     * Los valores deben ser declarados explícitamente por el Environment
+     * que construye el estado. La infraestructura NO impone condiciones
+     * ambientales universales.
+     *
+     * ANTES (FASE 1):
+     *   Builder con defaults hardcodeados (temp=0, pressure=1.0, gravity=9.8)
+     *   → la infraestructura decidía cómo era el ambiente
+     *
+     * AHORA (FASE 2):
+     *   Builder sin defaults → cada Environment declara sus condiciones
+     *   → StandardAtmosphere declara temp=0, gravity=9.8
+     *   → VacuumEnvironment declara temp=-270, gravity=0
+     *   → CustomEnvironment declara lo que necesite
+     *
+     * Todos los valores se inicializan a 0.0 como base neutra matemática,
+     * NO como "default ambiental". Un ambiente debe establecer explícitamente
+     * cada propiedad relevante antes de construir el estado.
      */
     public static final class Builder {
 
         private double ambientTemperature  = 0.0;
-        private double atmosphericPressure = 1.0;
-        private double ambientHumidity     = 0.6;
+        private double atmosphericPressure = 0.0;
+        private double ambientHumidity     = 0.0;
         private double windX               = 0.0;
         private double windY               = 0.0;
-        private double fluidDensity        = 1.2;
+        private double fluidDensity        = 0.0;
         private double fluidViscosity      = 0.0;
-        private double gravityX            = 0.0;
-        private double gravityY            = 9.8;
+        private double gravityInfluenceX   = 0.0;
+        private double gravityInfluenceY   = 0.0;
         private double electricFieldX      = 0.0;
         private double electricFieldY      = 0.0;
         private double magneticFieldZ      = 0.0;
         private double ambientRadiation    = 0.0;
-        private double illuminance         = 1.0;
+        private double illuminance         = 0.0;
 
         private Builder() {}
+
+        // ── Setters (fluent API) ──────────────────────────────────────────
 
         public Builder ambientTemperature(double v)  { this.ambientTemperature  = v;                     return this; }
         public Builder atmosphericPressure(double v) { this.atmosphericPressure = Math.max(0.0, v);      return this; }
@@ -308,13 +419,131 @@ public final class EnvironmentState implements Game.Engine.Physics.Core.DomainSt
         public Builder windY(double v)               { this.windY               = v;                     return this; }
         public Builder fluidDensity(double v)        { this.fluidDensity        = Math.max(0.0, v);      return this; }
         public Builder fluidViscosity(double v)      { this.fluidViscosity      = Math.max(0.0, v);      return this; }
-        public Builder gravityX(double v)            { this.gravityX            = v;                     return this; }
-        public Builder gravityY(double v)            { this.gravityY            = v;                     return this; }
+        public Builder gravityInfluenceX(double v)   { this.gravityInfluenceX   = v;                     return this; }
+        public Builder gravityInfluenceY(double v)   { this.gravityInfluenceY   = v;                     return this; }
         public Builder electricFieldX(double v)      { this.electricFieldX      = v;                     return this; }
         public Builder electricFieldY(double v)      { this.electricFieldY      = v;                     return this; }
         public Builder magneticFieldZ(double v)      { this.magneticFieldZ      = v;                     return this; }
         public Builder ambientRadiation(double v)    { this.ambientRadiation    = Math.max(0.0, v);      return this; }
         public Builder illuminance(double v)         { this.illuminance         = Math.max(0.0, v);      return this; }
+        
+        // ── Legacy setters (deprecated) ───────────────────────────────────
+        
+        /**
+         * @deprecated HRFC-FASE2.5: Usar {@link #gravityInfluenceX(double)}.
+         *             La semántica cambió de magnitud absoluta a factor multiplicador.
+         */
+        @Deprecated
+        public Builder gravityX(double v) { return gravityInfluenceX(v); }
+        
+        /**
+         * @deprecated HRFC-FASE2.5: Usar {@link #gravityInfluenceY(double)}.
+         *             La semántica cambió de magnitud absoluta a factor multiplicador.
+         */
+        @Deprecated
+        public Builder gravityY(double v) { return gravityInfluenceY(v); }
+
+        // ── Getters (HRFC-FASE2.5 — compositional modification) ──────────
+
+        /**
+         * Retorna la temperatura actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getAmbientTemperature()  { return ambientTemperature; }
+
+        /**
+         * Retorna la presión atmosférica actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getAtmosphericPressure() { return atmosphericPressure; }
+
+        /**
+         * Retorna la humedad actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getAmbientHumidity()     { return ambientHumidity; }
+
+        /**
+         * Retorna el viento X actual del builder.
+         * Usado por EnvironmentalContributors para composición vectorial.
+         */
+        public double getWindX()               { return windX; }
+
+        /**
+         * Retorna el viento Y actual del builder.
+         * Usado por EnvironmentalContributors para composición vectorial.
+         */
+        public double getWindY()               { return windY; }
+
+        /**
+         * Retorna la densidad del fluido actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getFluidDensity()        { return fluidDensity; }
+
+        /**
+         * Retorna la viscosidad del fluido actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getFluidViscosity()      { return fluidViscosity; }
+
+        /**
+         * Retorna el factor de influencia gravitacional X actual del builder.
+         * Usado por EnvironmentalContributors para composición multiplicativa.
+         */
+        public double getGravityInfluenceX()   { return gravityInfluenceX; }
+
+        /**
+         * Retorna el factor de influencia gravitacional Y actual del builder.
+         * Usado por EnvironmentalContributors para composición multiplicativa.
+         */
+        public double getGravityInfluenceY()   { return gravityInfluenceY; }
+        
+        // ── Legacy getters (deprecated) ───────────────────────────────────
+        
+        /**
+         * @deprecated HRFC-FASE2.5: Usar {@link #getGravityInfluenceX()}.
+         */
+        @Deprecated
+        public double getGravityX() { return gravityInfluenceX; }
+        
+        /**
+         * @deprecated HRFC-FASE2.5: Usar {@link #getGravityInfluenceY()}.
+         */
+        @Deprecated
+        public double getGravityY() { return gravityInfluenceY; }
+
+        /**
+         * Retorna el campo eléctrico X actual del builder.
+         * Usado por EnvironmentalContributors para composición vectorial.
+         */
+        public double getElectricFieldX()      { return electricFieldX; }
+
+        /**
+         * Retorna el campo eléctrico Y actual del builder.
+         * Usado por EnvironmentalContributors para composición vectorial.
+         */
+        public double getElectricFieldY()      { return electricFieldY; }
+
+        /**
+         * Retorna el campo magnético Z actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getMagneticFieldZ()      { return magneticFieldZ; }
+
+        /**
+         * Retorna la radiación ambiental actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getAmbientRadiation()    { return ambientRadiation; }
+
+        /**
+         * Retorna la iluminación actual del builder.
+         * Usado por EnvironmentalContributors para composición aditiva.
+         */
+        public double getIlluminance()         { return illuminance; }
+
+        // ── Build ─────────────────────────────────────────────────────────
 
         /** Construye el EnvironmentState. */
         public EnvironmentState build() { return new EnvironmentState(this); }

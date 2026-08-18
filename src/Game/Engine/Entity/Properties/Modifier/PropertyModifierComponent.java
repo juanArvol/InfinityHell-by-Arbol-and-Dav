@@ -12,6 +12,10 @@ import Game.Engine.GameObjects;
  * de una entidad. Cualquier sistema que quiera aplicar un modificador de
  * propiedad a una entidad lo hace a través de este componente.
  *
+ * ── HRFC-FASE3.5 — Eliminación de String Identity ────────────────────────
+ * Los modificadores se identifican por PropertyModifierSource (referencia),
+ * NO por String. String solo se permite para debugName() (diagnóstico).
+ *
  * NOTA DE NAMING: la clase se llama PropertyModifierComponent para evitar
  * conflicto con el sistema de stats RPG del Engine (ModifierComponent en Stats).
  *
@@ -20,14 +24,22 @@ import Game.Engine.GameObjects;
  *   // En el constructor de una entidad que puede recibir modificadores:
  *   addComponent(new PropertyModifierComponent());
  *
- *   // Desde un sistema de buffs:
+ *   // Desde un sistema de buffs (usando PropertyModifierSource):
  *   PropertyModifierComponent mc = entity.getComponent(PropertyModifierComponent.class);
  *   if (mc != null) {
- *       mc.add(PropertyModifier.multiplicative(PropertyKeys.SPEED, 1.3, "haste_rune"));
+ *       mc.add(PropertyModifier.multiplicative(PropertyKeys.SPEED, 1.3, this));
  *   }
  *
  *   // Cuando el buff expira:
- *   if (mc != null) mc.removeBySource("haste_rune");
+ *   if (mc != null) mc.removeBySource(this);  // this implementa PropertyModifierSource
+ *
+ * ── MIGRACIÓN DESDE String ───────────────────────────────────────────────
+ *
+ *   ANTES (String Identity - prohibido):
+ *     mc.removeBySource("poison");
+ *
+ *   AHORA (Identidad tipada - correcto):
+ *     mc.removeBySource(poisonEffect);  // poisonEffect es PropertyModifierSource
  */
 public final class PropertyModifierComponent extends Component {
 
@@ -45,8 +57,13 @@ public final class PropertyModifierComponent extends Component {
         container.add(modifier);
     }
 
-    public void removeBySource(String sourceId) {
-        container.removeBySource(sourceId);
+    /**
+     * Elimina todos los modificadores registrados por la fuente dada.
+     * 
+     * @param source Fuente del modificador (identidad tipada, NOT String)
+     */
+    public void removeBySource(PropertyModifierSource source) {
+        container.removeBySource(source);
     }
 
     public PropertyModifierContainer getContainer() {

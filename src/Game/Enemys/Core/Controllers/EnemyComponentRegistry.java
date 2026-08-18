@@ -85,11 +85,15 @@ public final class EnemyComponentRegistry {
      * Actualiza todos los componentes registrados.
      * Llamado por Enemy.update() cada frame.
      *
+     * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
+     * Recibe deltaTime para propagarlo a cada EnemyComponent.
+     *
      * @param enemy el Enemy propietario.
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void update(Enemy enemy) {
+    public void update(Enemy enemy, double deltaTime) {
         for (EnemyComponent c : components) {
-            c.update(enemy);
+            c.update(enemy, deltaTime);
         }
     }
 

@@ -96,9 +96,14 @@ public interface Influence {
      * La implementación por defecto retorna siempre true (influencia permanente).
      * Sobreescribir para implementar duración finita o condiciones de expiración.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime para duraciones independientes del framerate.
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      * @return true si la influencia sigue activa; false si ha expirado.
      */
-    default boolean tick() {
+    default boolean tick(double deltaTime) {
         return true;
     }
 

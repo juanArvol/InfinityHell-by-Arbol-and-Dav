@@ -92,7 +92,7 @@ public final class BoomerangMovement implements ResettableMovement {
     }
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double dt) {
         // Capturar origin en el primer tick si aún no fue capturado.
         // Siempre refleja la posición de spawn del bullet actual (no del anterior).
         if (capturedOrigin == null) {

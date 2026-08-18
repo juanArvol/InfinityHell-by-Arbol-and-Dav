@@ -166,7 +166,7 @@ public class PlayerPhysics extends Physics2D {
      */
     @Override
     protected double computeEntityModifier(MovementContext ctx) {
-        double base = 1.0 / mass;
+        double base = 20.0 / mass;
         return ctx.running() ? base * RUN_BOOST : base;
     }
 

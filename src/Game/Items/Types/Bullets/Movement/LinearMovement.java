@@ -21,8 +21,9 @@ public final class LinearMovement implements ProjectileMovement {
     public static final LinearMovement INSTANCE = new LinearMovement();
 
     @Override
-    public void tick(Bullet bullet) {
+    public void tick(Bullet bullet, double deltaTime) {
         // Velocidad constante — no se modifica nada.
+        // deltaTime no se usa porque no hay aceleración ni cambio de velocidad.
     }
 
     /**

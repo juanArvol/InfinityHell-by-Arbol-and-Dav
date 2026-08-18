@@ -9,7 +9,6 @@ import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.ProjectileRegistry;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import Game.Player.Player;
-import Game.Player.PlayerAssembler;
 import Game.Player.PlayerLoadout;
 import Game.World.Core.WorldManager;
 
@@ -96,7 +95,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
-            .initialBullets(BulletType.NORMALBULLET, BulletType.SPRINGBULLET, BulletType.METHEORBULLET)
+            .initialBullets(BulletType.NORMALBULLET, BulletType.METHEORBULLET, BulletType.SPRINGBULLET)
             .initialAmulets()
             .build();
         
@@ -104,7 +103,7 @@ public final class GameWorldBootstrap {
         // Para testing/desarrollo, descomente la línea siguiente:
         // loadout = createDevelopmentLoadout();
         
-        player = PlayerAssembler.assemble(spawnPos,
+        player = Player.create(spawnPos,
             obj -> worldManager.addDynamic(obj),
             eventBus,
             loadout
@@ -148,7 +147,7 @@ public final class GameWorldBootstrap {
         projectileRegistry.getPool().setEventBus(eventBus);
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
-        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 20, eventBus);
+        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 10, eventBus);
     }
 
     /** El Player creado durante el bootstrap. */

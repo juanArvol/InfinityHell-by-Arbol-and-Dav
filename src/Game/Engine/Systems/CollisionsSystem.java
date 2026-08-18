@@ -149,7 +149,21 @@ public class CollisionsSystem {
     private final CollisionDetector detector = new CollisionDetector();
 
 
-    public void update(List<GameObjects> objects) {
+    /**
+     * Ejecuta el pipeline completo de física y colisiones.
+     *
+     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime explícito del simulation step y lo
+     * propaga a todos los métodos de integración física (applyGravity,
+     * flushAccumulatedForces) para garantizar integración temporal correcta.
+     *
+     * deltaTime debe expresarse en segundos (ej: 0.01667s para 60 FPS).
+     *
+     * @param objects lista de objetos activos en el mundo
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void update(List<GameObjects> objects, double deltaTime) {
 
         // ── FASE 0: Aplicar gravedad y fuerzas acumuladas ────────────────
         // Usa el onGround del frame ANTERIOR (todavía válido aquí).
@@ -162,8 +176,9 @@ public class CollisionsSystem {
             if (physics.isGravityManagedExternally()) continue;
             ColliderComponent col = obj.getComponent(ColliderComponent.class);
             if (col == null || col.isTrigger()) continue;
-            physics.applyGravity(physics.getOnGround());
-            physics.flushAccumulatedForces();
+            // Mini-HRFC: Pasar deltaTime para integración temporal correcta
+            physics.applyGravity(physics.getOnGround(), deltaTime);
+            physics.flushAccumulatedForces(deltaTime);
         }
 
         // ── FASE 0.5: Resetear estado de contacto ────────────────────────
@@ -205,8 +220,13 @@ public class CollisionsSystem {
             if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
 
             Physics2D physics = physComp.getPhysics();
-            double    vx      = physics.getVelocity().getX();
-            double    vy      = physics.getVelocity().getY();
+            // ── Mini-HRFC 1.5: Temporal integration correction ────────────
+            // velocity está en units/second. Debe multiplicarse por deltaTime
+            // para obtener displacement en units.
+            // ANTES: vx = velocity.x  (tratado como px/frame)
+            // AHORA: vx = velocity.x × deltaTime  (displacement correcto)
+            double    vx      = physics.getVelocity().getX() * deltaTime;
+            double    vy      = physics.getVelocity().getY() * deltaTime;
             if (vx == 0.0 && vy == 0.0) continue;
 
             List<ContactRecord> records = frameContacts.computeIfAbsent(
@@ -391,8 +411,11 @@ public class CollisionsSystem {
             if (physComp == null) continue;
 
             Physics2D physics = physComp.getPhysics();
-            double vx = physics.getVelocity().getX();
-            double vy = physics.getVelocity().getY();
+            // ── Mini-HRFC 1.5: Temporal integration correction ────────────
+            // velocity está en units/second. Debe multiplicarse por deltaTime
+            // para obtener displacement en units.
+            double vx = physics.getVelocity().getX() * deltaTime;
+            double vy = physics.getVelocity().getY() * deltaTime;
             if (vx == 0.0 && vy == 0.0) {
                 // Sin velocidad — mover completo (no debería ocurrir para bullets)
                 PhysicsStepper.moveWith(obj, 0, 0);

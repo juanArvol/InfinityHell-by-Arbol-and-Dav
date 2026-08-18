@@ -28,10 +28,9 @@ import java.util.List;
  * entidad dinámica viva. Las entidades dinámicas viven aquí, no en chunks.
  *
  * ── PENDIENTE DE ADICIÓN / REMOCIÓN ──────────────────────────────────────
- * Igual que WorldObjectsContainer, las modificaciones se acumulan en
- * pendingAdd / pendingRemove y se aplican en flush() al inicio del tick.
- * Esto evita ConcurrentModificationException si una entidad añade/elimina
- * otras entidades durante su update().
+ * Las modificaciones se acumulan en pendingAdd / pendingRemove y se aplican
+ * en flush() al inicio del tick. Esto evita ConcurrentModificationException
+ * si una entidad añade/elimina otras entidades durante su update().
  *
  * ── CLEANUP AUTOMÁTICO DE DESTROYABLE ────────────────────────────────────
  * En cada flush(), las entidades que implementan {@link Destroyable} y

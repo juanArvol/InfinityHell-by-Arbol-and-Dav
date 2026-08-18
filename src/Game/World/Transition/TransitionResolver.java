@@ -1,9 +1,7 @@
 package Game.World.Transition;
 
-import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.World.Core.World;
-import java.awt.Rectangle;
 import java.util.Optional;
 
 /**
@@ -110,17 +108,18 @@ public final class TransitionResolver {
     /**
      * Coloca el objeto en el borde del sector destino, en el lado más cercano
      * al punto de entrada.
+     * 
+     * ── FASE 7: Legacy TransitionService ─────────────────────────────────────
+     * Este método ya no clampea a world bounds (World.getWidth/Height eliminados).
+     * En mundo infinito basado en chunks, no existen "bordes del mundo".
+     * 
+     * Retorna la posición sin modificar para que TransitionService legacy siga
+     * compilando hasta su eliminación completa.
      */
-    @SuppressWarnings({"deprecation", "removal"})
     public static ResolutionStrategy snapToEdge(int edgeMargin) {
         return (request, world, validator) -> {
-            Vector2D pos = request.getTargetPosition();
-            double x = Math.max(edgeMargin, Math.min(pos.getX(),
-                                                     world.getWidth()  - edgeMargin));
-            double y = Math.max(edgeMargin, Math.min(pos.getY(),
-                                                     world.getHeight() - edgeMargin));
-            TransitionRequest revised = request.withTargetPosition(new Vector2D(x, y));
-            return Optional.of(revised);
+            // En mundo infinito, no hay bordes. Retornar posición sin clamping.
+            return Optional.of(request);
         };
     }
 
@@ -170,13 +169,19 @@ public final class TransitionResolver {
         };
     }
 
-    @SuppressWarnings({"deprecation", "removal"})
+    /**
+     * Clampea posición a "world bounds".
+     * 
+     * ── FASE 7: Legacy TransitionService ─────────────────────────────────────
+     * Este método ya no clampea (World.getWidth/Height eliminados).
+     * En mundo infinito basado en chunks, no existen "bordes del mundo".
+     * 
+     * Retorna la posición sin modificar para que TransitionService legacy siga
+     * compilando hasta su eliminación completa.
+     */
     private static Vector2D clampToWorld(Vector2D pos, World world,
                                           Game.Engine.GameObjects subject) {
-        ColliderComponent col = subject.getComponent(ColliderComponent.class);
-        Rectangle bounds = col != null ? col.getBounds() : new Rectangle(0, 0, 1, 1);
-        double x = Math.max(0, Math.min(pos.getX(), world.getWidth()  - bounds.width));
-        double y = Math.max(0, Math.min(pos.getY(), world.getHeight() - bounds.height));
-        return new Vector2D(x, y);
+        // En mundo infinito, no hay bordes. Retornar posición sin clamping.
+        return pos;
     }
 }

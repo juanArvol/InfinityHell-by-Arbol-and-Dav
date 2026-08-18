@@ -146,7 +146,7 @@ public final class WorldFieldSystem {
         for (int i = 0; i < fields.size(); i++) {
             WorldField<?> field = fields.get(i);
 
-            boolean stillAlive = field.tick();
+            boolean stillAlive = field.tick(1);
 
             if (stillAlive) {
                 // Aplicar el campo sobre todos los objetos del mundo

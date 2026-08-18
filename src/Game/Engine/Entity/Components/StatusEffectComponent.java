@@ -57,6 +57,11 @@ public class StatusEffectComponent extends Component {
     /**
      * Interfaz que implementa cada efecto de estado concreto.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: tick() ahora recibe deltaTime para permitir duraciones
+     * independientes del framerate.
+     *
      * <p>Los efectos concretos viven en paquetes de gameplay (Game.Game.*,
      * Game.Living.*) y pueden importar cualquier tipo necesario. Esta
      * interfaz, al estar en Game.Engine, no impone ninguna dependencia
@@ -67,6 +72,11 @@ public class StatusEffectComponent extends Component {
         /**
          * Procesa un tick del efecto sobre la entidad.
          *
+         * ── HRFC — Unified DeltaTime Migration ───────────────────────────
+         *
+         * CAMBIO: Ahora recibe deltaTime para gestión de duraciones
+         * independientes del framerate.
+         *
          * <p>El efecto es responsable de aplicar sus modificaciones
          * (stats, flags, daño, etc.) sobre la entidad en cada tick.
          * Los efectos que modifican stats implementan StatContributor y
@@ -74,9 +84,10 @@ public class StatusEffectComponent extends Component {
          * una única vez (normalmente en el primer tick o al activarse).
          *
          * @param entity entidad sobre la que actúa el efecto.
+         * @param deltaTime tiempo del simulation step en segundos
          * @return {@code true} si el efecto sigue activo; {@code false} si expiró.
          */
-        boolean tick(GameObjects entity);
+        boolean tick(GameObjects entity, double deltaTime);
 
         /**
          * Llamado por StatusEffectComponent justo antes de eliminar el efecto
@@ -116,15 +127,21 @@ public class StatusEffectComponent extends Component {
      * Los efectos que devuelven false en tick() son eliminados después de
      * llamar a onExpire().
      * Compacta el array in-place: cero allocations por frame.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * CAMBIO: Ahora recibe deltaTime y lo propaga a cada efecto en tick().
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         if (size == 0 || gameObject == null) return;
 
         int alive = 0;
         for (int i = 0; i < size; i++) {
             StatusEffect effect = effects[i];
-            boolean active = effect.tick(gameObject);
+            boolean active = effect.tick(gameObject, deltaTime);
             if (active) {
                 effects[alive++] = effect;
             } else {
