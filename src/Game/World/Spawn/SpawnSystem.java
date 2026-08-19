@@ -108,9 +108,15 @@ public final class SpawnSystem {
     /**
      * Evalúa todos los SpawnRequests registrados y ejecuta los spawns pendientes.
      *
-     * Debe llamarse una vez por tick desde WorldManager.update().
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * Recibe deltaTime y lo propaga a SpawnRequests para temporización correcta.
+     *
+     * Debe llamarse una vez por tick desde WorldManager.update(deltaTime).
+     *
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void update() {
+    public void update(double deltaTime) {
         World activeWorld = currentWorldSupplier.get();
         if (activeWorld == null) return;
 
@@ -118,10 +124,10 @@ public final class SpawnSystem {
         List<SpawnRequest> snapshot = List.copyOf(registry.getAll());
 
         for (SpawnRequest request : snapshot) {
-            // Avanzar cooldown independientemente de si spawna
-            request.tickCooldown(1);
+            // Avanzar cooldown con deltaTime
+            request.tickCooldown(deltaTime);
 
-            if (!request.shouldSpawnNow(activeWorld)) continue;
+            if (!request.shouldSpawnNow(activeWorld, deltaTime)) continue;
 
             executeSpawn(request, activeWorld);
         }

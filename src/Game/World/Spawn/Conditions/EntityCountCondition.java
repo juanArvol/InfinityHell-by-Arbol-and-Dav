@@ -58,7 +58,7 @@ public final class EntityCountCondition implements SpawnCondition {
     }
 
     @Override
-    public boolean isMet(World world) {
+    public boolean isMet(World world, double dt) {
         // Consultar el DynamicEntityRegistry
         long count = world.getDynamicEntityRegistry().getAll().stream()
             .filter(obj -> type == null || type.isInstance(obj))

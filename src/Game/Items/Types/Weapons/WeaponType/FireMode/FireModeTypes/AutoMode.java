@@ -33,5 +33,5 @@ public class AutoMode implements iFireMode {
     }
 
     @Override
-    public void update() {}
+    public void update(double deltaTime) {}
 } 

@@ -91,7 +91,7 @@ public final class SpritePiece implements Renderable {
     private String    currentAnimKey  = null;
     private Animation currentAnim     = null;
     private int       frameIndex      = 0;
-    private int       tick            = 0;
+    private double    elapsed         = 0.0;  // ✅ HRFC: migrado a tiempo real
 
     /** Frame actual resuelto (puede venir de animación o del handle). */
     private SpriteFrame currentFrame  = null;
@@ -185,7 +185,7 @@ public final class SpritePiece implements Renderable {
         currentAnimKey = key;
         currentAnim    = anim;
         frameIndex     = 0;
-        tick           = 0;
+        elapsed        = 0.0;
         currentFrame   = anim.getFirstFrame();
     }
 
@@ -196,33 +196,55 @@ public final class SpritePiece implements Renderable {
         currentAnimKey = null;
         currentAnim    = null;
         frameIndex     = 0;
-        tick           = 0;
+        elapsed        = 0.0;
         resolveDefaultFrame();
     }
 
     /**
-     * Avanza el estado de animación un tick.
-     * Llamado por SpriteComposite.update() o por el sistema de animación.
+     * Avanza el estado de animación usando tiempo real transcurrido.
      *
-     * ── HRFC-004A: migrado al nuevo patrón de Animation ──────────────────
-     * Usa ticksForFrame(frameIndex) en lugar del antiguo getTicksPerFrame()
-     * (que fue renombrado a getDefaultTicksPerFrame() y ya no cubre el caso
-     * de duraciones por frame individuales).
-     * Llama a nextIndex(int) en lugar de la sobrecarga de dos argumentos.
+     * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     *
+     * Migrado desde frame-based (tick++) hacia time-based (elapsed += deltaTime).
+     *
+     * ANTES:
+     *   tick++ cada frame
+     *   if (tick >= frameTicks) → avanzar frame
+     *   A 31 FPS: animación 93% más lenta
+     *   A 120 FPS: animación 100% más rápida
+     *
+     * AHORA:
+     *   elapsed += deltaTime
+     *   if (elapsed >= frameSeconds) → avanzar frame
+     *   A cualquier FPS: velocidad de animación consistente
+     *
+     * NOTA: Animation.ticksForFrame() aún retorna ticks (legado).
+     * Convertimos ticks → segundos @ 60 FPS como valor esperado.
+     * Migración futura: Animation debería aceptar duraciones en segundos.
+     *
+     * Llamado por SpriteSkeletonComponent.update(deltaTime).
+     *
+     * @param deltaTime tiempo real del simulation step en segundos
      */
-    public void updateAnimation() {
+    public void updateAnimation(double deltaTime) {
         if (currentAnim == null) return;
 
-        // Duración efectiva de este frame: individual si está configurada, o la base
+        // Duración del frame actual en ticks (legado)
         int frameTicks = currentAnim.ticksForFrame(frameIndex);
+        
+        // Convertir ticks → segundos (asumiendo 60 FPS como tick-base)
+        // TODO HRFC: migrar Animation a duraciones en segundos
+        double frameSeconds = frameTicks / 60.0;
 
-        tick++;
-        if (tick >= frameTicks) {
-            tick = 0;
+        elapsed += deltaTime;
+        
+        if (elapsed >= frameSeconds) {
+            elapsed -= frameSeconds;  // mantener excedente para precisión
             if (!currentAnim.isFinished(frameIndex)) {
                 frameIndex = currentAnim.nextIndex(frameIndex);
             }
         }
+        
         currentFrame = currentAnim.getFrame(frameIndex);
     }
 
@@ -289,7 +311,7 @@ public final class SpritePiece implements Renderable {
         this.currentAnim  = null;
         this.currentAnimKey = null;
         this.frameIndex   = 0;
-        this.tick         = 0;
+        this.elapsed      = 0.0;
         resolveDefaultFrame();
     }
 

@@ -2,6 +2,20 @@ package Game.Items.Types.Weapons.WeaponType.FireMode;
 
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 
+/**
+ * Interfaz para modos de disparo de armas.
+ *
+ * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ *
+ * MIGRACIÓN TEMPORAL:
+ *   El método update() ahora recibe deltaTime para permitir que los FireModes
+ *   gestionen estado temporal basado en tiempo real en lugar de frames.
+ *
+ *   Implementaciones:
+ *   - AutoMode, SemiAutoMode: update() vacío (sin estado temporal)
+ *   - ChargeMode: acumula tiempo de carga con deltaTime
+ *   - BurstMode (futuro): cuenta tiempo entre disparos de ráfaga
+ */
 public interface iFireMode {
 
     /**
@@ -54,5 +68,20 @@ public interface iFireMode {
         WeaponComport weapon
     );
 
-    void update();
+    /**
+     * Actualiza el estado interno del FireMode con el tiempo transcurrido.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * Recibe deltaTime del simulation step para gestionar estado temporal
+     * de forma independiente del framerate.
+     *
+     * Implementaciones:
+     * - AutoMode, SemiAutoMode: sin estado temporal, método vacío
+     * - ChargeMode: acumula tiempo de carga
+     * - BurstMode: cuenta tiempo entre disparos en ráfaga
+     *
+     * @param deltaTime tiempo real del simulation step en segundos
+     */
+    void update(double deltaTime);
 } 

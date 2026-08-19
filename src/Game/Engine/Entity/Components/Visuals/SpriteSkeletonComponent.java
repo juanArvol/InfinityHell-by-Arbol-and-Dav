@@ -209,9 +209,9 @@ public final class SpriteSkeletonComponent extends Component implements Renderab
 
     @Override
     public void update(double dt) {
-        // Actualizar animaciones de todas las partes
+        // Actualizar animaciones de todas las partes con deltaTime
         for (SpritePiece part : partsMap.values()) {
-            part.updateAnimation();
+            part.updateAnimation(dt);  // ✅ HRFC: propagando deltaTime
         }
     }
 

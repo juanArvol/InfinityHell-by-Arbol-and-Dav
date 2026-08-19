@@ -4,6 +4,7 @@ import Display.Surface.RenderFrame;
 import Display.Surface.RenderGateway;
 import Inputs.KeyBoard;
 import Inputs.MouseInput;
+import Main.Debug.TemporalDiagnostics;
 import Main.States.GameState;
 
 /**
@@ -159,6 +160,10 @@ public final class GameLoop implements Runnable {
         this.keyboard      = keyboard;
         this.mouse         = mouse;
         this.targetTime    = 1_000_000_000.0 / fps;
+
+        // Configurar diagnóstico temporal
+        TemporalDiagnostics.configure(fps, MAX_DELTA_CATCH_UP);
+        TemporalDiagnostics.enable();
     }
 
     public void start() {
@@ -206,6 +211,9 @@ public final class GameLoop implements Runnable {
             //   Lag spike (200ms):    deltaTime = 0.200s → clamped
             double deltaTimeSeconds = elapsed / 1_000_000_000.0;
 
+            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
+            TemporalDiagnostics.recordRawDelta(deltaTimeSeconds);
+
             // Clamp deltaTime para evitar valores extremos durante lag spikes.
             // Esto NO convierte el sistema en fixed timestep — simplemente
             // previene que un GC pause de 500ms cause físicas inestables.
@@ -220,13 +228,22 @@ public final class GameLoop implements Runnable {
                 deltaTimeSeconds = maxDeltaSeconds;
             }
 
+            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
+            TemporalDiagnostics.recordEffectiveDelta(deltaTimeSeconds);
+
             // Ejecutar simulation step con el tiempo real transcurrido
             update(deltaTimeSeconds);
             simulationSteps++;
 
+            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
+            TemporalDiagnostics.recordUpdate();
+
             // Renderizar el estado actualizado
             render();
             renderedFrames++;
+
+            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
+            TemporalDiagnostics.recordRender();
 
             // Sleep para respetar el target framerate
             long frameTime = System.nanoTime() - now;
@@ -240,6 +257,10 @@ public final class GameLoop implements Runnable {
             if (timer >= 1_000_000_000L) {
                 gameState.setFps(renderedFrames);   // renders reales
                 gameState.setUps(simulationSteps);  // updates ejecutados
+
+                // ── HRFC — DIAGNOSTIC REPORT ──────────────────────────────
+                TemporalDiagnostics.checkAndReport();
+
                 renderedFrames   = 0;
                 simulationSteps  = 0;
                 timer            = 0;

@@ -24,9 +24,9 @@ public final class OnceThenDisableCondition implements SpawnCondition {
     }
 
     @Override
-    public boolean isMet(World world) {
+    public boolean isMet(World world, double dt) {
         if (activated) return false;
-        if (delegate.isMet(world)) {
+        if (delegate.isMet(world, dt)) {
             activated = true;
             return true;
         }

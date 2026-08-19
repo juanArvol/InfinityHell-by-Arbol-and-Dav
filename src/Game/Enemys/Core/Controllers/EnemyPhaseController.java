@@ -3,7 +3,6 @@ package Game.Enemys.Core.Controllers;
 import Game.Enemys.Core.Contracts.EnemyPhase;
 import Game.Enemys.Core.Contracts.PhaseTransition;
 import Game.Enemys.Core.Enemy;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -75,7 +74,8 @@ public final class EnemyPhaseController {
      * Llama update() en la fase activa.
      *
      * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
-     * Recibe deltaTime para propagarlo a la fase activa.
+     * Recibe deltaTime y lo propaga tanto a la fase activa como a la
+     * condición de transición (para transiciones temporales).
      *
      * @param enemy el Enemy propietario.
      * @param deltaTime tiempo real del simulation step en segundos
@@ -86,9 +86,9 @@ public final class EnemyPhaseController {
         PhaseEntry current = phases.get(currentIndex);
         current.phase().update(enemy, deltaTime);
 
-        // Evaluar condición de salida
+        // Evaluar condición de salida (pasando deltaTime para transiciones temporales)
         if (current.transition() != null
-                && current.transition().shouldTransition(enemy)
+                && current.transition().shouldTransition(enemy, deltaTime)
                 && currentIndex + 1 < phases.size()) {
             transitionTo(currentIndex + 1, enemy);
         }

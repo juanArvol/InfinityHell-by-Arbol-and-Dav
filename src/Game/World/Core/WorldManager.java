@@ -317,7 +317,7 @@ public class WorldManager {
         affiliationSystem.update(globalDynamicRegistry.getAll(), world.getSpatialIndex());
 
         // ── 9. SpawnSystem ─────────────────────────────────────────────────
-        spawnSystem.update();
+        spawnSystem.update(deltaTime);
 
         // ── 10. CameraSystem ───────────────────────────────────────────────
         cameraSystem.update(deltaTime);

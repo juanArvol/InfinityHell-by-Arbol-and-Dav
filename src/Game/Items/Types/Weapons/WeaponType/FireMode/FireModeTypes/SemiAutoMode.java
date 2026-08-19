@@ -32,5 +32,5 @@ public class SemiAutoMode implements iFireMode {
     }
 
     @Override
-    public void update() {}
+    public void update(double deltaTime) {}
 } 

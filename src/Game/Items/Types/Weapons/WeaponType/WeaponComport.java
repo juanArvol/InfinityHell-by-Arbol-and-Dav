@@ -112,7 +112,7 @@ public abstract class WeaponComport {
     // ── Update ────────────────────────────────────────────────────────────
 
     /**
-     * Avanza los timers internos del arma (cooldown y recarga).
+     * Avanza los timers internos del arma (cooldown, recarga y fireMode).
      * Llamar una vez por frame desde ModifiedWeapon.update().
      *
      * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
@@ -120,14 +120,19 @@ public abstract class WeaponComport {
      * CAMBIO: Ahora recibe deltaTime del simulation step y decrementa
      * los timers en tiempo real, no en ticks discretos.
      *
+     * También propaga deltaTime al FireMode para que pueda gestionar su
+     * propio estado temporal (ej: ChargeMode acumula tiempo de carga).
+     *
      * @param deltaTime tiempo transcurrido en el simulation step (segundos)
      */
     public void update(double deltaTime) {
+        // Cooldown entre disparos
         if (fireWait > 0.0) {
             fireWait -= deltaTime;
             if (fireWait < 0.0) fireWait = 0.0; // clampeo
         }
 
+        // Recarga
         if (reloading) {
             reloadTimer -= deltaTime;
             if (reloadTimer <= 0.0) {
@@ -136,6 +141,9 @@ public abstract class WeaponComport {
                 reloadTimer  = 0.0; // clampeo
             }
         }
+
+        // Propagar deltaTime al FireMode
+        fireMode.update(deltaTime);
     }
 
     // ── Control de disparo ────────────────────────────────────────────────

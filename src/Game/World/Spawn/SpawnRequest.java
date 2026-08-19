@@ -111,14 +111,14 @@ public final class SpawnRequest {
      * @param world el mundo activo
      * @return true si las condiciones de spawn se cumplen
      */
-    public boolean shouldSpawnNow(Game.World.Core.World world) {
+    public boolean shouldSpawnNow(Game.World.Core.World world, double deltaTime) {
         if (completed)            return false;
         if (cooldownRemaining > 0) return false;
 
         int maxInst = descriptor.getMaxInstances();
         if (maxInst > 0 && activeInstances >= maxInst) return false;
 
-        boolean conditionMet = (condition == null) || condition.isMet(world);
+        boolean conditionMet = (condition == null) || condition.isMet(world, deltaTime);
         boolean triggerMet   = (trigger   == null) || trigger.isTriggered(world);
 
         // Si solo hay condición: conditionMet debe ser true

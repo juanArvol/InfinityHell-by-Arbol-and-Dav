@@ -1,8 +1,8 @@
 package Game.Enemys.Core.Transitions;
 
 import Game.Enemys.Core.Contracts.PhaseTransition;
-import Game.Engine.Entity.Components.HealthComponent;
 import Game.Enemys.Core.Enemy;
+import Game.Engine.Entity.Components.HealthComponent;
 
 /**
  * Transición de fase por umbral de vida.
@@ -31,8 +31,20 @@ public final class HealthThresholdTransition implements PhaseTransition {
         this.threshold = threshold;
     }
 
+    /**
+     * Evalúa si la vida del Enemy cayó por debajo del umbral configurado.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * Esta transición no es temporal, por lo que ignora deltaTime.
+     * Solo evalúa el estado actual de vida del Enemy.
+     *
+     * @param enemy el Enemy evaluado
+     * @param deltaTime tiempo real del simulation step (ignorado)
+     * @return true si HP% <= threshold
+     */
     @Override
-    public boolean shouldTransition(Enemy enemy) {
+    public boolean shouldTransition(Enemy enemy, double deltaTime) {
         HealthComponent hp = enemy.getComponent(HealthComponent.class);
         if (hp == null) return false;
         return hp.getHealthPercent() <= threshold;
