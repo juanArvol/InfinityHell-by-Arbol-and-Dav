@@ -166,7 +166,9 @@ public final class AmuletRegistry {
             new AmuletEffect() {
                 @Override
                 public void applyToStats(WeaponStats stats) {
-                    stats.setCooldown((int)(stats.getCooldown() * 0.90));
+                    // HRFC — Unified DeltaTime Migration
+                    // cooldown ahora es double (segundos), no int (frames)
+                    stats.setCooldown(stats.getCooldown() * 0.90);
                 }
             }
         ));

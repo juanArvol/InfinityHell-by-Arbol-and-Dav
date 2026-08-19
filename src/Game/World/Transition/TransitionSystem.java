@@ -6,6 +6,7 @@ import Game.Gameplay.Events.TransitionEvent;
 import Game.World.Core.World;
 import Game.World.Core.WorldCache;
 import Game.World.Core.WorldCoordinator;
+import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Generator.WorldGenerator;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,6 +72,16 @@ public final class TransitionSystem {
     private final WorldGenerator      generator;
     private final Supplier<World>     currentWorldSupplier;
 
+    /**
+     * Registry global del universo.
+     * Necesario para crear Worlds nuevos con el registry correcto.
+     *
+     * HRFC — World Lifecycle Integrity:
+     * TransitionSystem necesita crear Worlds vecinos cuando detecta transiciones.
+     * Esos Worlds deben nacer con el registry global correcto, no con uno temporal.
+     */
+    private final DynamicEntityRegistry globalDynamicRegistry;
+
     /** Gates registrados: portales, puertas, triggers explícitos. */
     private final List<TransitionGate> gates = new ArrayList<>();
 
@@ -93,19 +104,22 @@ public final class TransitionSystem {
      * @param currentWorldSupplier proveedor del mundo activo (siempre dinámico)
      * @param cache                caché de mundos
      * @param generator            generador de mundos para crear sectores nuevos
+     * @param globalDynamicRegistry registry global del universo (para crear Worlds correctos)
      * @param eventBus             bus de eventos para publicar TransitionEvent
      */
     public TransitionSystem(Supplier<World>  currentWorldSupplier,
                              WorldCache       cache,
                              WorldGenerator   generator,
+                             DynamicEntityRegistry globalDynamicRegistry,
                              GameEventBus     eventBus) {
-        this.currentWorldSupplier = currentWorldSupplier;
-        this.cache                = cache;
-        this.generator            = generator;
-        this.eventBus             = eventBus;
-        this.detector             = new TransitionDetector();
-        this.validator            = new TransitionValidator();
-        this.resolver             = new TransitionResolver();
+        this.currentWorldSupplier  = currentWorldSupplier;
+        this.cache                 = cache;
+        this.generator             = generator;
+        this.globalDynamicRegistry = globalDynamicRegistry;
+        this.eventBus              = eventBus;
+        this.detector              = new TransitionDetector();
+        this.validator             = new TransitionValidator();
+        this.resolver              = new TransitionResolver();
     }
 
     // ── Configuración ─────────────────────────────────────────────────────
@@ -153,23 +167,27 @@ public final class TransitionSystem {
      * Evalúa y procesa todas las transiciones del tick actual.
      * Llamado por WorldManager una vez por tick.
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
      * @param world        el mundo activo
      * @param currentCoord el sector activo
      * @param worldWidth   ancho lógico de cada sector
      * @param worldHeight  alto lógico de cada sector
+     * @param deltaTime    tiempo del simulation step en segundos
      * @return nueva WorldCoordinator si el world controller cambió de sector, null si no
      */
     public WorldCoordinator update(World world,
                                     WorldCoordinator currentCoord,
                                     int worldWidth,
-                                    int worldHeight) {
+                                    int worldHeight,
+                                    double deltaTime) {
         // Guardar dimensiones para request() que no recibe estos parámetros
         this.lastWorldWidth  = worldWidth;
         this.lastWorldHeight = worldHeight;
         WorldCoordinator result = null;
 
         // ── 1. Actualizar transiciones pendientes (con style animado) ─────
-        result = updatePending(result);
+        result = updatePending(deltaTime, result);
 
         // ── 2. Detección automática por borde ─────────────────────────────
         List<TransitionRequest> detected = detector.detect(
@@ -276,14 +294,22 @@ public final class TransitionSystem {
     /**
      * Actualiza las transiciones pendientes (con style animado).
      *
+     * @param deltaTime tiempo del simulation step en segundos
+     * @param current coordenada actual (puede ser modificada si algún controller transita)
      * @return nueva WorldCoordinator si algún world controller completó su transición.
      */
-    private WorldCoordinator updatePending(WorldCoordinator current) {
+    private WorldCoordinator updatePending(double deltaTime, WorldCoordinator current) {
         WorldCoordinator result = current;
         List<PendingTransition> toRemove = new ArrayList<>();
 
         for (PendingTransition pending : pendingTransitions) {
-            pending.request.getStyle().update();
+            // HRFC — Unified DeltaTime Migration
+            // Propagar deltaTime a estilos animados que lo requieran
+            if (pending.request.getStyle() instanceof TransitionStyle.FadeTransitionStyle fade) {
+                fade.update(deltaTime);
+            } else {
+                pending.request.getStyle().update();
+            }
 
             if (pending.request.getStyle().readyToTransfer() && !pending.transferred) {
                 // Es el momento de transferir
@@ -373,7 +399,26 @@ public final class TransitionSystem {
     private void ensureWorldExists(WorldCoordinator coord, int worldWidth, int worldHeight) {
         synchronized (cache) {
             if (!cache.contains(coord)) {
-                cache.put(generator.generate(worldWidth, worldHeight, coord));
+                // HRFC — World Lifecycle Integrity:
+                // WorldGenerator.generate() crea un World con registry temporal.
+                // Extraemos el chunk generado y creamos un World nuevo con el
+                // registry global correcto.
+                World tempWorld = generator.generate(worldWidth, worldHeight, coord);
+                
+                // Extraer el chunk generado
+                Game.World.Chunk.Chunk generatedChunk = null;
+                for (Game.World.Chunk.Chunk chunk : tempWorld.getChunkStorage().allChunks()) {
+                    generatedChunk = chunk;
+                    break; // Solo hay un chunk por World generado
+                }
+                
+                // Crear World con el registry global correcto
+                World properWorld = new World(worldWidth, worldHeight, coord, globalDynamicRegistry);
+                if (generatedChunk != null) {
+                    properWorld.addChunk(generatedChunk);
+                }
+                
+                cache.put(properWorld);
             }
         }
     }

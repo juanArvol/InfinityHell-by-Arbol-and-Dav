@@ -52,7 +52,7 @@ public final class SansTeleportAction implements EnemyAction {
         SansInvincibilityComponent invComp =
             enemy.getComponentRegistry().get(SansInvincibilityComponent.class);
         if (invComp != null) {
-            invComp.activateTimer(SansVariables.INVINCIBLE_FRAMES);
+            invComp.activateTimer(SansVariables.INVINCIBLE_SECONDS);
         }
     }
 }

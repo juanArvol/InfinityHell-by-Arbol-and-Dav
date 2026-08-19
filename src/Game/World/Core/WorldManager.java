@@ -158,10 +158,18 @@ public class WorldManager {
 
         this.cameraSystem = new CameraSystem(virtualWidth, virtualHeight);
 
+        // Registry global — único para todo el universo, invariante ante
+        // cambios de sector.
+        // HRFC — World Lifecycle Integrity:
+        // Debe inicializarse ANTES de TransitionService porque este lo necesita
+        // para crear Worlds nuevos.
+        this.globalDynamicRegistry = new DynamicEntityRegistry();
+
         this.transitionService = new WorldTransitionService(
             cache, generator,
             this.eventBus,
-            this::getCurrentWorld
+            this::getCurrentWorld,
+            this.globalDynamicRegistry
         );
 
         double streamingRadius = Math.max(width, height) * 2.5;
@@ -177,10 +185,6 @@ public class WorldManager {
         this.collisionsSystem   = new CollisionsSystem();
         this.statusEffectSystem = new StatusEffectSystem();
         this.affiliationSystem  = new ChunkAffiliationSystem(width, height);
-
-        // Registry global — único para todo el universo, invariante ante
-        // cambios de sector.
-        this.globalDynamicRegistry = new DynamicEntityRegistry();
 
         regenerateInitialWorld();
     }
@@ -213,17 +217,33 @@ public class WorldManager {
     public World getCurrentWorld() {
         synchronized (cache) {
             if (!cache.contains(currentCoord)) {
-                World generated = generateLegacyWorld(logicalWidth, logicalHeight, currentCoord);
-                // Inyectar el registry global para que addDynamic() en este World
-                // también registre entidades en el globalDynamicRegistry.
-                generated.setGlobalDynamicRegistry(globalDynamicRegistry);
-                cache.put(generated);
+                // HRFC — World Lifecycle Integrity:
+                // WorldGenerator.generate() crea un World con registry temporal.
+                // Inmediatamente reemplazamos el World completo con uno nuevo
+                // que tiene el registry global correcto.
+                World tempWorld = generateLegacyWorld(logicalWidth, logicalHeight, currentCoord);
+                
+                // Extraer el chunk generado del World temporal
+                Game.World.Chunk.Chunk generatedChunk = null;
+                for (Game.World.Chunk.Chunk chunk : tempWorld.getChunkStorage().allChunks()) {
+                    generatedChunk = chunk;
+                    break; // Solo hay un chunk en el World generado
+                }
+                
+                // Crear un nuevo World con el registry global correcto
+                World properWorld = new World(logicalWidth, logicalHeight, currentCoord, globalDynamicRegistry);
+                if (generatedChunk != null) {
+                    properWorld.addChunk(generatedChunk);
+                }
+                
+                cache.put(properWorld);
+                return properWorld;
             }
-            World w = cache.get(currentCoord);
-            // Garantizar que siempre tiene el registry global inyectado
-            // (puede haberse creado antes o recuperado del cache)
-            w.setGlobalDynamicRegistry(globalDynamicRegistry);
-            return w;
+            
+            // HRFC — World Lifecycle Integrity:
+            // Los Worlds del cache ya tienen el registry correcto desde su creación.
+            // NO intentar reinyectar — el registry es final.
+            return cache.get(currentCoord);
         }
     }
 
@@ -329,7 +349,7 @@ public class WorldManager {
 
         // ── 12. TransitionService (legacy) ─────────────────────────────────
         WorldCoordinator nextCoord = transitionService.processTransitions(
-            world, currentCoord, logicalWidth, logicalHeight
+            world, currentCoord, logicalWidth, logicalHeight, deltaTime
         );
 
         if (nextCoord != null) {
@@ -450,7 +470,24 @@ public class WorldManager {
     private void regenerateInitialWorld() {
         synchronized (cache) {
             cache.clear();
-            cache.put(generateLegacyWorld(logicalWidth, logicalHeight, currentCoord));
+            // HRFC — World Lifecycle Integrity:
+            // El mundo inicial también debe crearse con el registry global correcto.
+            World tempWorld = generateLegacyWorld(logicalWidth, logicalHeight, currentCoord);
+            
+            // Extraer el chunk generado
+            Game.World.Chunk.Chunk generatedChunk = null;
+            for (Game.World.Chunk.Chunk chunk : tempWorld.getChunkStorage().allChunks()) {
+                generatedChunk = chunk;
+                break;
+            }
+            
+            // Crear World con el registry global correcto
+            World properWorld = new World(logicalWidth, logicalHeight, currentCoord, globalDynamicRegistry);
+            if (generatedChunk != null) {
+                properWorld.addChunk(generatedChunk);
+            }
+            
+            cache.put(properWorld);
         }
     }
 

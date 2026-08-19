@@ -8,11 +8,15 @@ package Game.Engine.Entity.Stats;
  * Describe ÚNICAMENTE las propiedades que cuantifican la capacidad ofensiva
  * y defensiva de una entidad. No contiene movimiento ni percepción.
  *
+ * ── HRFC Phase 2 — Unified Real-Time Simulation Stabilization ────────────
+ * MIGRACIÓN TEMPORAL: attackCooldown ahora se expresa en SEGUNDOS (tiempo real),
+ * no en frames. Esto garantiza que el cooldown sea independiente del framerate.
+ *
  * ── Campos ────────────────────────────────────────────────────────────────
  *   damage          — daño base por ataque.
  *   defense         — reducción porcentual de daño recibido (0.0–1.0).
  *   attackRange     — distancia máxima desde la que puede atacar (px).
- *   attackCooldown  — frames de espera entre ataques.
+ *   attackCooldown  — segundos de espera entre ataques (tiempo real).
  *   criticalChance  — probabilidad de golpe crítico (0.0–1.0).
  *   teleportRange   — distancia máxima de teletransporte (0 = no puede).
  */

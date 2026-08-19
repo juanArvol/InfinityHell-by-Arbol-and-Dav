@@ -29,20 +29,23 @@ public final class SansVariables {
     public static final int PHASE1_HP = 1;
 
     // ── Fase 1 — el perezoso ──────────────────────────────────────────────
-    public static final int    PHASE1_ATK_COOLDOWN   = 120;    // 2 seg a 60 fps
+    // HRFC Phase 2: Migrado a tiempo real en segundos
+    public static final double PHASE1_ATK_COOLDOWN   = 2.0;     // 2 segundos (antes: 120 frames @ 60 fps)
     public static final double PHASE1_TELEPORT_RANGE = 300.0;
     public static final int    PHASE1_DAMAGE         = 4;
     public static final double PHASE1_SPEED          = 1.8;
 
     // ── Fase 2 — la determinación ─────────────────────────────────────────
-    public static final int    PHASE2_ATK_COOLDOWN   = 30;     // más agresivo
+    // HRFC Phase 2: Migrado a tiempo real en segundos
+    public static final double PHASE2_ATK_COOLDOWN   = 0.5;     // 0.5 segundos (antes: 30 frames @ 60 fps)
     public static final double PHASE2_TELEPORT_RANGE = 800.0;
     public static final int    PHASE2_DAMAGE         = 16;
     public static final double PHASE2_SPEED          = 2.4;
 
     // ── Timer de invulnerabilidad post-teleporte ──────────────────────────
-    /** Frames de invulnerabilidad que se activan al teletransportarse. */
-    public static final int INVINCIBLE_FRAMES = 30;
+    // HRFC Phase 2: Migrado a tiempo real en segundos
+    /** Segundos de invulnerabilidad que se activan al teletransportarse. */
+    public static final double INVINCIBLE_SECONDS = 0.5;  // 0.5 segundos (antes: 30 frames @ 60 fps)
 
     private SansVariables() {}
 }

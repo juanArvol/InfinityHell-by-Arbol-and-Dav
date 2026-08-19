@@ -206,6 +206,8 @@ public final class WorldSimulation {
      *   2. WorldFieldSystem — campos espaciales continuos
      *   3. PhysicsCoordinator — resolución property-driven del estado físico
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
      * @param objects   lista de objetos activos en el mundo este frame.
      * @param deltaTime tiempo transcurrido desde el último frame, en segundos.
      */
@@ -213,15 +215,6 @@ public final class WorldSimulation {
         influenceSystem.update();
         fieldSystem.update(objects);
         coordinator.simulate(objects, deltaTime);
-    }
-
-    /**
-     * Sobrecarga con deltaTime fijo de 1/60 s.
-     *
-     * @param objects lista de objetos activos en el mundo este frame.
-     */
-    public void update(List<GameObjects> objects) {
-        update(objects, 1.0 / 60.0);
     }
 
     // ── Acceso a subsistemas ──────────────────────────────────────────────

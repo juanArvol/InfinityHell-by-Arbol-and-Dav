@@ -69,17 +69,16 @@ public final class BoneBarragePattern implements AttackPattern {
     }
 
     /**
-     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── HRFC Phase 2 — Unified Real-Time Simulation Stabilization ────────
      *
-     * CAMBIO: AttackCooldownInt() asume frames. Necesita convertirse a segundos @ 60 FPS.
-     * TODO: Migrar EnemyStats.getAttackCooldownInt() → getAttackCooldown() que retorne double.
+     * MIGRADO: attackCooldown ahora es double en segundos.
+     * Ya no necesita conversión de frames a segundos.
      */
     @Override
     public void execute(Enemy enemy, EnemyContext ctx) {
         // Aplicar el cooldown configurado en EnemyStats para esta fase
-        // MIGRACIÓN: convertir frames → segundos
-        int cooldownFrames = enemy.getStats().getAttackCooldownInt();
-        cooldownTimer = cooldownFrames / 60.0; // TODO: migrar EnemyStats a segundos
+        // MIGRADO: attackCooldown ahora es directamente en segundos
+        cooldownTimer = enemy.getStats().getAttackCooldown();
 
         // Emitir SpawnProjectileEvent — el sistema de proyectiles lo procesa.
         // "sans.bone" identifica el tipo de proyectil a instanciar.

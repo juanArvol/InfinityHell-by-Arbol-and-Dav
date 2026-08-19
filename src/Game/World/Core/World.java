@@ -59,13 +59,17 @@ public class World {
     /**
      * Registry global de entidades dinámicas del universo.
      * 
-     * Inyectado por WorldManager. Representa la ÚNICA fuente de verdad para
+     * Inyectado en construcción. Representa la ÚNICA fuente de verdad para
      * entidades dinámicas en todo el universo. Todas las operaciones
      * add/remove/query van directamente a este registry.
      * 
      * No existen copias locales ni sincronización manual entre registries.
+     *
+     * HRFC — World Lifecycle Integrity:
+     * El registry es final e inmutable tras construcción.
+     * Un World válido es válido inmediatamente después de new World(...).
      */
-    private DynamicEntityRegistry globalDynamicRegistry = null;
+    private final DynamicEntityRegistry globalDynamicRegistry;
 
     // ── Shim de compatibilidad (eliminar en Etapa 9) ─────────────────────────
 
@@ -81,37 +85,49 @@ public class World {
 
     /**
      * Constructor completo — mundo con todas las estructuras nuevas.
-     * El globalDynamicRegistry debe ser inyectado por WorldManager después
-     * de la construcción.
+     *
+     * HRFC — World Lifecycle Integrity:
+     * El globalDynamicRegistry se inyecta en construcción, no posteriormente.
+     * Un World válido es válido inmediatamente después de su creación.
+     * No existe estado "World parcialmente inicializado".
      *
      * @param width      ancho del chunk (shim — eliminar en Etapa 9)
      * @param height     alto del chunk (shim — eliminar en Etapa 9)
      * @param coordinate coordenada del sector inicial (shim — eliminar en Etapa 9)
+     * @param globalDynamicRegistry el registry global del universo (singleton)
      */
-    public World(int width, int height, WorldCoordinator coordinate) {
+    public World(int width, int height, WorldCoordinator coordinate,
+                 DynamicEntityRegistry globalDynamicRegistry) {
+        if (globalDynamicRegistry == null) {
+            throw new IllegalArgumentException("globalDynamicRegistry no puede ser null");
+        }
         this.width           = width;
         this.height          = height;
         this.coordinate      = coordinate;
         this.chunkStorage    = new ChunkStorage();
         this.spatialIndex    = new WorldSpatialIndex(width, height);
-        // globalDynamicRegistry se inyecta después vía setGlobalDynamicRegistry()
+        this.globalDynamicRegistry = globalDynamicRegistry;
     }
 
-    // ── Registry global — inyectado por WorldManager ─────────────────────────
+    // ── Registry global — DEPRECATED ──────────────────────────────────────────
 
     /**
-     * Inyecta el registry global de WorldManager.
-     * Establecido una única vez por WorldManager después de crear o recuperar
-     * un World del cache. Todas las operaciones de entidades dinámicas van
-     * directamente a este registry.
+     * @deprecated ELIMINADO — El registry se inyecta en el constructor.
+     *             Un World válido siempre tiene su registry configurado.
+     *             No existe inicialización posterior.
      *
-     * @param registry el globalDynamicRegistry del WorldManager (singleton del universo)
+     * Este método se mantiene temporalmente para compatibilidad de compilación
+     * pero lanza UnsupportedOperationException si se llama.
+     *
+     * @param registry ignorado
+     * @throws UnsupportedOperationException siempre
      */
+    @Deprecated(forRemoval = true)
     public void setGlobalDynamicRegistry(DynamicEntityRegistry registry) {
-        if (registry == null) {
-            throw new IllegalArgumentException("globalDynamicRegistry no puede ser null");
-        }
-        this.globalDynamicRegistry = registry;
+        throw new UnsupportedOperationException(
+            "setGlobalDynamicRegistry() fue eliminado. " +
+            "El registry se inyecta en el constructor de World."
+        );
     }
 
     // ── NUEVA API — entidades dinámicas ───────────────────────────────────────
@@ -123,10 +139,8 @@ public class World {
      * @param entity la entidad dinámica a añadir
      */
     public void addDynamic(GameObjects entity) {
-        if (globalDynamicRegistry == null) {
-            throw new IllegalStateException(
-                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
-        }
+        // HRFC — El registry es final y siempre válido tras construcción.
+        // No requiere validación.
         globalDynamicRegistry.add(entity);
     }
 
@@ -137,10 +151,8 @@ public class World {
      * @param entity la entidad a eliminar
      */
     public void removeDynamic(GameObjects entity) {
-        if (globalDynamicRegistry == null) {
-            throw new IllegalStateException(
-                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
-        }
+        // HRFC — El registry es final y siempre válido tras construcción.
+        // No requiere validación.
         globalDynamicRegistry.remove(entity);
     }
 
@@ -181,14 +193,14 @@ public class World {
      * Todos los consumidores (TransitionDetector, EntityCountCondition,
      * SceneRenderer) reciben la misma vista: el registro global completo.
      *
+     * HRFC — World Lifecycle Integrity:
+     * El registry es final y siempre válido. No puede ser null.
+     *
      * @return el globalDynamicRegistry (singleton del universo)
-     * @throws IllegalStateException si no fue configurado vía setGlobalDynamicRegistry()
      */
     public DynamicEntityRegistry getDynamicEntityRegistry() {
-        if (globalDynamicRegistry == null) {
-            throw new IllegalStateException(
-                "globalDynamicRegistry no configurado. Llamar setGlobalDynamicRegistry() primero.");
-        }
+        // HRFC — El registry es final y siempre válido tras construcción.
+        // No requiere validación.
         return globalDynamicRegistry;
     }
 

@@ -3,6 +3,7 @@ package Game.World.Generator;
 import Game.World.Chunk.Chunk;
 import Game.World.Core.World;
 import Game.World.Core.WorldCoordinator;
+import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Generator.Layer.WorldLayer;
 import java.util.Random;
 
@@ -114,12 +115,33 @@ public class WorldGenerator {
     /**
      * Genera un World con seed explícita.
      *
-     * @deprecated Ver {@link #generate(int, int, WorldCoordinator)}.
+     * HRFC — World Lifecycle Integrity:
+     * World ahora requiere globalDynamicRegistry en construcción.
+     * Pero WorldGenerator NO tiene acceso al registry (es responsabilidad de WorldManager).
+     *
+     * SOLUCIÓN TEMPORAL:
+     * Crear un DynamicEntityRegistry vacío y temporal para cada World generado.
+     * WorldManager DEBE reemplazarlo inmediatamente después via el nuevo constructor.
+     *
+     * @deprecated Este método existe exclusivamente para compatibilidad con
+     *             WorldCache y WorldManager durante la transición.
+     *             Será eliminado en la Etapa 3 cuando World se convierta en
+     *             el agregador global y WorldCache pase a ChunkStorage.
+     *             Usar {@link #generateChunk(int, int, WorldCoordinator)}.
      */
     @Deprecated(forRemoval = true)
     public World generate(int width, int height, WorldCoordinator coord, long seed) {
         // Generar el Chunk con posiciones globales
         Chunk chunk = generateChunk(width, height, coord, seed);
+
+        // HRFC — World Lifecycle Integrity:
+        // Crear un registry temporal vacío. WorldManager DEBE inyectar
+        // el registry global inmediatamente después de llamar generate().
+        //
+        // IMPORTANTE: Este World NO ES FUNCIONAL hasta que WorldManager
+        // inyecte el registry correcto. Es responsabilidad de WorldManager
+        // garantizar que nunca se use este World antes de la inyección.
+        DynamicEntityRegistry temporaryRegistry = new DynamicEntityRegistry();
 
         // Envolver en un World para compatibilidad con el sistema actual.
         // CORRECCIÓN CRÍTICA: usar world.addChunk(chunk) para que:
@@ -127,7 +149,7 @@ public class WorldGenerator {
         //   2. SimulationRegion.rebuildFromStorage() los encuentre en el storage.
         //   3. El terreno NO termine en el globalDynamicRegistry como entidad dinámica.
         //   4. El terreno NO reciba update() de física cada frame.
-        World world = new World(width, height, coord);
+        World world = new World(width, height, coord, temporaryRegistry);
         world.addChunk(chunk);
         return world;
     }

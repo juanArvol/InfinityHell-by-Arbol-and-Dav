@@ -3,44 +3,63 @@ package Game.Gameplay.UI;
 /**
  * Cronómetro simple para temporización de eventos en UI/gameplay.
  *
- * FIX DESIGN-008: en el original, lastTime se actualizaba cada frame
- * aunque el cronómetro no estuviera corriendo, causando que el primer
- * delta al iniciar fuera el tiempo desde el último frame, no desde el
- * momento en que se llamó run().
+ * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
+ *
+ * MIGRACIÓN: System.currentTimeMillis() → acumulación de deltaTime.
+ *
+ * ANTES:
+ *   startTime = System.currentTimeMillis()
+ *   elapsed = System.currentTimeMillis() - startTime
+ *   Tiempo independiente del game loop
+ *
+ * AHORA:
+ *   elapsed += deltaTime (propagado desde GameLoop)
+ *   Tiempo coherente con la simulación
+ *
+ * VENTAJAS:
+ *   - Consistente con el resto del sistema temporal
+ *   - Pausa automática cuando el juego pausa
+ *   - No desincroniza durante lag spikes
+ *   - Testeable sin depender del reloj del sistema
  */
 public class Cronometer {
 
-    private long startTime;
-    private long endTime;   // FIX B-01: guardamos el instante real de expiración
-    private long duration;
+    private double duration;         // duración total en segundos
+    private double elapsed;          // tiempo acumulado en segundos
     private boolean running;
 
     public Cronometer() {
-        running = false;
+        this.running = false;
+        this.elapsed = 0.0;
+        this.duration = 0.0;
     }
 
     /**
-     * Inicia el cronómetro por 'millis' milisegundos.
+     * Inicia el cronómetro por 'seconds' segundos.
+     *
+     * @param seconds duración en segundos
      */
-    public void run(long millis) {
-        this.duration  = millis;
-        this.startTime = System.currentTimeMillis();
-        this.endTime   = 0;
-        this.running   = true;
+    public void run(double seconds) {
+        this.duration = seconds;
+        this.elapsed  = 0.0;
+        this.running  = true;
     }
 
     /**
      * Actualiza el estado del cronómetro.
-     * Llama cada frame.
+     *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void update() {
+    public void update(double deltaTime) {
         if (!running) return;
 
-        long now     = System.currentTimeMillis();
-        long elapsed = now - startTime;
+        elapsed += deltaTime;
         if (elapsed >= duration) {
-            endTime = now;   // capturamos el momento exacto de expiración
             running = false;
+            // Clamp para evitar que elapsed exceda duration significativamente
+            elapsed = duration;
         }
     }
 
@@ -50,29 +69,31 @@ public class Cronometer {
     }
 
     /**
-     * Milisegundos transcurridos desde que se inició.
+     * Segundos transcurridos desde que se inició.
      *
-     * FIX B-01: la versión anterior retornaba 0 cuando el cronómetro había
-     * expirado, confundiendo a los callers que usaban getElapsed() para
-     * animaciones post-expiración (fade-outs, efectos de UI).
-     *
-     * Ahora:
-     *  - Si está corriendo  → tiempo real desde startTime.
-     *  - Si expiró          → tiempo total transcurrido hasta la expiración
-     *                         (endTime - startTime ≈ duration).
-     *  - Si nunca arrancó   → 0.
+     * @return tiempo acumulado en segundos
      */
-    public long getElapsed() {
-        if (running)    return System.currentTimeMillis() - startTime;
-        if (endTime > 0) return endTime - startTime;
-        return 0;
+    public double getElapsed() {
+        return elapsed;
+    }
+
+    /**
+     * Progreso de 0.0 (inicio) a 1.0 (completado).
+     *
+     * @return progreso normalizado [0.0, 1.0]
+     */
+    public double getProgress() {
+        return duration > 0.0 ? Math.min(1.0, elapsed / duration) : 0.0;
     }
 
     /** Detiene el cronómetro manualmente. */
     public void stop() {
-        if (running) {
-            endTime = System.currentTimeMillis();
-            running = false;
-        }
+        running = false;
+    }
+
+    /** Reinicia el cronómetro con la misma duración. */
+    public void restart() {
+        elapsed = 0.0;
+        running = true;
     }
 }

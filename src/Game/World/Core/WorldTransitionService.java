@@ -37,9 +37,10 @@ public final class WorldTransitionService {
     public WorldTransitionService(WorldCache cache,
                                    Game.World.Generator.WorldGenerator generator,
                                    Game.Engine.GameEventBus eventBus,
-                                   java.util.function.Supplier<World> currentWorldSupplier) {
+                                   java.util.function.Supplier<World> currentWorldSupplier,
+                                   Game.World.Entity.DynamicEntityRegistry globalDynamicRegistry) {
         this.transitionSystem = new TransitionSystem(
-            currentWorldSupplier, cache, generator, eventBus
+            currentWorldSupplier, cache, generator, globalDynamicRegistry, eventBus
         );
     }
 
@@ -60,18 +61,22 @@ public final class WorldTransitionService {
      *
      * Delega completamente en TransitionSystem.update().
      *
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
      * @param world         el mundo actual
      * @param currentCoord  coordenada del sector actual
      * @param worldWidth    ancho lógico de cada sector
      * @param worldHeight   alto lógico de cada sector
+     * @param deltaTime     tiempo del simulation step en segundos
      * @return nueva WorldCoordinator si el world controller cambió de sector,
      *         null si el sector activo no cambió
      */
     public WorldCoordinator processTransitions(World world,
                                                WorldCoordinator currentCoord,
                                                int worldWidth,
-                                               int worldHeight) {
-        return transitionSystem.update(world, currentCoord, worldWidth, worldHeight);
+                                               int worldHeight,
+                                               double deltaTime) {
+        return transitionSystem.update(world, currentCoord, worldWidth, worldHeight, deltaTime);
     }
 
     /**

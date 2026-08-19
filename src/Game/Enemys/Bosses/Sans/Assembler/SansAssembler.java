@@ -42,8 +42,9 @@ import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
  */
 public final class SansAssembler extends EnemyAssembler {
 
-    /** Duración de la Fase 1 en frames (~10 segundos a 60 fps). */
-    private static final int PHASE1_DURATION_FRAMES = 600;
+    // HRFC Phase 2: Migrado a tiempo real en segundos
+    /** Duración de la Fase 1 en segundos. */
+    private static final double PHASE1_DURATION_SECONDS = 10.0;  // 10 segundos (antes: 600 frames @ 60 fps)
 
     @Override
     protected EnemyDefinition definition() {
@@ -105,9 +106,9 @@ public final class SansAssembler extends EnemyAssembler {
 
     @Override
     protected void configurePhases(Enemy enemy) {
-        // Phase1 → [600 frames] → Phase2 (fase final)
+        // Phase1 → [10 segundos] → Phase2 (fase final)
         enemy.getPhaseController()
-            .addPhase(new SansPhase1(), new TimedTransition(PHASE1_DURATION_FRAMES));
+            .addPhase(new SansPhase1(), new TimedTransition(PHASE1_DURATION_SECONDS));
         enemy.getPhaseController()
             .addPhase(new SansPhase2(), null);
 

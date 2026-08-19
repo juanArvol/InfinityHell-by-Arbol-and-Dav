@@ -105,44 +105,71 @@ public interface TransitionStyle {
     /**
      * Estilo de fade a negro.
      *
-     * Fase 1 (ticks 0 → halfDuration): fade OUT (alpha 0→1).
-     * Fase 2 (ticks halfDuration+1 → halfDuration*2): fade IN (alpha 1→0).
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     *
+     * MIGRACIÓN: tick → elapsed (segundos).
+     *
+     * ANTES (frame-based):
+     *   tick++ cada frame
+     *   fadeOut: tick / halfDuration  (dependía de framerate)
+     *   fadeIn: (tick - halfDuration) / halfDuration
+     *   
+     * AHORA (time-based):
+     *   elapsed += deltaTime cada update
+     *   fadeOut: elapsed / halfDurationSeconds
+     *   fadeIn: (elapsed - halfDurationSeconds) / halfDurationSeconds
+     *
+     * Fase 1 (0 → halfDuration segundos): fade OUT (alpha 0→1).
+     * Fase 2 (halfDuration → halfDuration*2 segundos): fade IN (alpha 1→0).
      * La transferencia ocurre al final de la fase 1.
      *
      * alpha() puede ser consultado por el renderer para aplicar el efecto.
      */
     final class FadeTransitionStyle implements TransitionStyle {
 
-        private final int halfDuration;
-        private int       tick           = 0;
-        private boolean   transferDone   = false;
+        private final double halfDurationSeconds;
+        private double       elapsed        = 0.0;
+        private boolean      transferDone   = false;
 
-        FadeTransitionStyle(int halfDuration) {
-            this.halfDuration = Math.max(1, halfDuration);
+        FadeTransitionStyle(int halfDurationTicks) {
+            // Convertir ticks legacy → segundos @ 60 FPS
+            this.halfDurationSeconds = Math.max(0.016, halfDurationTicks / 60.0);
         }
 
         @Override
         public void update() {
-            tick++;
+            // NO implementado — la actualización ocurre en update(deltaTime)
+            // Este método existe por compatibilidad con la interfaz TransitionStyle
+        }
+
+        /**
+         * Actualiza el tiempo transcurrido de la transición.
+         *
+         * ── HRFC — Unified DeltaTime Migration ───────────────────────────
+         *
+         * @param deltaTime tiempo del simulation step en segundos
+         */
+        public void update(double deltaTime) {
+            elapsed += deltaTime;
         }
 
         @Override
         public boolean readyToTransfer() {
-            return !transferDone && tick >= halfDuration;
+            return !transferDone && elapsed >= halfDurationSeconds;
         }
 
         @Override
         public boolean isComplete() {
-            return tick >= halfDuration * 2;
+            return elapsed >= halfDurationSeconds * 2.0;
         }
 
         /** Alpha del fade [0.0 = transparente, 1.0 = negro total]. */
         public float alpha() {
-            if (tick <= halfDuration) {
-                return (float) tick / halfDuration;
+            if (elapsed <= halfDurationSeconds) {
+                return (float) (elapsed / halfDurationSeconds);
             } else {
-                int remaining = tick - halfDuration;
-                return 1.0f - (float) remaining / halfDuration;
+                double remaining = elapsed - halfDurationSeconds;
+                return (float) (1.0 - remaining / halfDurationSeconds);
             }
         }
 
