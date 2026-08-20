@@ -23,9 +23,11 @@ import Inputs.KeyBoard;
  *     - EntityFlags check obligatorio: respeta isAbleToMove() para inhibición por
  *       efectos de estado (frozen, stunned, rooted) además de congelado.
  *
- *   SIN CAMBIOS:
- *     - No conoce Player directamente.
- *     - Recibe PlayerPhysics y PlayerState — solo lo que necesita.
+ * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────────
+ *
+ * MIGRACIÓN:
+ *     - update() ahora recibe deltaTime y lo propaga a physics.moveX()
+ *     - La aceleración horizontal es ahora independiente del FPS
  *
  * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
  *
@@ -110,7 +112,14 @@ public class PlayerController {
 
     // ── Update ────────────────────────────────────────────────────────────
 
-    public void update() {
+    /**
+     * Procesa el input del jugador y actualiza física/estado.
+     *
+     * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────
+     *
+     * @param deltaTime tiempo del simulation step en segundos
+     */
+    public void update(double deltaTime) {
         // Prioridad 1: inhibición por sistema de juego (cutscene, trampa).
         if (state.isApuntando()) return;
 
@@ -123,9 +132,9 @@ public class PlayerController {
         state.setAiming(cPressed);
 
         if (cPressed) {
-            handleAimingMode();
+            handleAimingMode(deltaTime);
         } else {
-            handleMovementInput();
+            handleMovementInput(deltaTime);
             handleJumpInput();
         }
     }
@@ -137,9 +146,9 @@ public class PlayerController {
      * El deslizamiento sigue activo (moveX con inputX=0 aplica el slide).
      * Evalúa drop-through si hay intención de bajar.
      */
-    private void handleAimingMode() {
+    private void handleAimingMode(double deltaTime) {
         // inputX = 0 inhibe la aceleración activa; el slide hace el resto.
-        physics.moveX(0, state.isEnElSuelo(), state.isRunning());
+        physics.moveX(0, state.isEnElSuelo(), state.isRunning(), deltaTime);
 
         // Drop-through: C + apuntando abajo + en el suelo.
         if (state.isMirandoAbajo() && state.isEnElSuelo()) {
@@ -165,7 +174,7 @@ public class PlayerController {
 
     // ── Movimiento normal ─────────────────────────────────────────────────
 
-    private void handleMovementInput() {
+    private void handleMovementInput(double deltaTime) {
         double inputX = 0;
 
         if (KeyBoard.getState("left")) {
@@ -180,7 +189,7 @@ public class PlayerController {
         boolean running = KeyBoard.getState("shift");
         state.setRunning(running);
 
-        physics.moveX(inputX, state.isEnElSuelo(), running);
+        physics.moveX(inputX, state.isEnElSuelo(), running, deltaTime);
     }
 
     private void handleJumpInput() {

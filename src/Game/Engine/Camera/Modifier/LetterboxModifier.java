@@ -5,7 +5,7 @@ package Game.Engine.Camera.Modifier;
  *
  * ── USOS ──────────────────────────────────────────────────────────────────
  *   // Cinemática con bandas de 80px arriba y abajo:
- *   modifiers.add(new LetterboxModifier(80, 80, 60, 0.08f));
+ *   modifiers.add(new LetterboxModifier(80, 80, 1.0, 0.08f));
  *
  *   // Solo banda inferior (subtítulos):
  *   modifiers.add(new LetterboxModifier(0, 60, 0, 0.05f));
@@ -19,27 +19,27 @@ package Game.Engine.Camera.Modifier;
  */
 public final class LetterboxModifier implements CameraModifier {
 
-    private final int   targetTop;
-    private final int   targetBottom;
-    private final int   durationTicks;  // 0 = permanente
-    private final float lerpFactor;
+    private final int    targetTop;
+    private final int    targetBottom;
+    private final double durationSeconds;  // 0 = permanente
+    private final float  lerpFactor;
 
-    private float currentTop    = 0.0f;
-    private float currentBottom = 0.0f;
-    private int   ticksElapsed  = 0;
+    private float  currentTop     = 0.0f;
+    private float  currentBottom  = 0.0f;
+    private double elapsedSeconds = 0.0;
 
     /**
-     * @param targetTop     píxeles de banda superior objetivo
-     * @param targetBottom  píxeles de banda inferior objetivo
-     * @param durationTicks duración total (0 = permanente)
-     * @param lerpFactor    velocidad de interpolación
+     * @param targetTop       píxeles de banda superior objetivo
+     * @param targetBottom    píxeles de banda inferior objetivo
+     * @param durationSeconds duración total en segundos (0 = permanente)
+     * @param lerpFactor      velocidad de interpolación
      */
     public LetterboxModifier(int targetTop, int targetBottom,
-                              int durationTicks, float lerpFactor) {
-        this.targetTop     = targetTop;
-        this.targetBottom  = targetBottom;
-        this.durationTicks = durationTicks;
-        this.lerpFactor    = Math.max(0.01f, Math.min(1.0f, lerpFactor));
+                              double durationSeconds, float lerpFactor) {
+        this.targetTop       = targetTop;
+        this.targetBottom    = targetBottom;
+        this.durationSeconds = durationSeconds;
+        this.lerpFactor      = Math.max(0.01f, Math.min(1.0f, lerpFactor));
     }
 
     /** Letterbox cinematic estándar (permanente hasta eliminar). */
@@ -55,17 +55,17 @@ public final class LetterboxModifier implements CameraModifier {
     }
 
     @Override
-    public void update() {
-        ticksElapsed++;
+    public void update(double deltaTime) {
+        elapsedSeconds += deltaTime;
 
-        if (durationTicks <= 0) {
+        if (durationSeconds <= 0) {
             currentTop    += (targetTop    - currentTop)    * lerpFactor;
             currentBottom += (targetBottom - currentBottom) * lerpFactor;
             return;
         }
 
-        float halfway = durationTicks / 2.0f;
-        if (ticksElapsed <= halfway) {
+        double halfway = durationSeconds / 2.0;
+        if (elapsedSeconds <= halfway) {
             currentTop    += (targetTop    - currentTop)    * lerpFactor;
             currentBottom += (targetBottom - currentBottom) * lerpFactor;
         } else {
@@ -76,7 +76,7 @@ public final class LetterboxModifier implements CameraModifier {
 
     @Override
     public boolean isExpired() {
-        if (durationTicks <= 0) return false;
-        return ticksElapsed >= durationTicks;
+        if (durationSeconds <= 0) return false;
+        return elapsedSeconds >= durationSeconds;
     }
 }

@@ -76,11 +76,13 @@ public final class CameraModifierStack {
 
     /**
      * Actualiza todos los modificadores y elimina los expirados.
-     * Llamar una vez por tick ANTES de applyAll().
+     * Llamar una vez por frame ANTES de applyAll().
+     *
+     * @param deltaTime tiempo transcurrido desde el último frame en segundos
      */
-    public void update() {
+    public void update(double deltaTime) {
         modifiers.removeIf(m -> {
-            m.update();
+            m.update(deltaTime);
             return m.isExpired();
         });
     }
@@ -103,10 +105,11 @@ public final class CameraModifierStack {
      * Conveniencia: actualiza, aplica al estado compartido y lo retorna.
      * El estado compartido es reutilizado — no guardar la referencia entre frames.
      *
+     * @param deltaTime tiempo transcurrido desde el último frame en segundos
      * @return CameraState con los efectos de todos los modificadores activos.
      */
-    public CameraState computeState() {
-        update();
+    public CameraState computeState(double deltaTime) {
+        update(deltaTime);
         sharedState.reset();
         applyAll(sharedState);
         return sharedState;

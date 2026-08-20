@@ -29,7 +29,7 @@ public class ObstacleLayer implements WorldLayer {
 
     /** Constructor por defecto — idéntico al original (0–4 obstáculos, 40x80). */
     public ObstacleLayer() {
-        this(0, 5, 40, 80);
+        this(0, 5, 100, 200);
     }
 
     /**

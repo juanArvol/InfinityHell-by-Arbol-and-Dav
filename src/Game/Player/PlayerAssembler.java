@@ -87,7 +87,7 @@ public final class PlayerAssembler {
 
     private static final int    BASE_HP      = 1;
     private static final int    BASE_HP_MAX  = 200;
-    private static final double BASE_GRAVITY = 0.78;
+    private static final double BASE_GRAVITY = 23.4;
     private static final int    INVENTORY_SLOTS = 20;
 
     // ── Collider ──────────────────────────────────────────────────────────

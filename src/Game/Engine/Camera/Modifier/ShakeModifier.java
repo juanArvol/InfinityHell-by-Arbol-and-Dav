@@ -5,16 +5,16 @@ package Game.Engine.Camera.Modifier;
  *
  * ── USOS ──────────────────────────────────────────────────────────────────
  *   // Impacto de bala (corto y fuerte):
- *   modifierStack.add(ShakeModifier.impact(6.0f, 12));
+ *   modifierStack.add(ShakeModifier.impact(6.0f, 0.2));
  *
  *   // Explosión (más largo y potente):
- *   modifierStack.add(ShakeModifier.explosion(12.0f, 30));
+ *   modifierStack.add(ShakeModifier.explosion(12.0f, 0.5));
  *
  *   // Terremoto (continuo mientras dura):
- *   modifierStack.add(ShakeModifier.sustained(4.0f, 120));
+ *   modifierStack.add(ShakeModifier.sustained(4.0f, 2.0));
  *
  * ── ALGORITMO ─────────────────────────────────────────────────────────────
- * Aplica un offset aleatorio en cada tick, con amplitud decreciente
+ * Aplica un offset aleatorio en cada frame, con amplitud decreciente
  * (decay linear desde maxAmplitude hasta 0 a lo largo de la duración).
  *
  * ── ACUMULACIÓN ───────────────────────────────────────────────────────────
@@ -24,41 +24,41 @@ package Game.Engine.Camera.Modifier;
  */
 public final class ShakeModifier implements CameraModifier {
 
-    private final float maxAmplitude;
-    private final int   totalDuration;
-    private int         ticksElapsed = 0;
-    private boolean     decays;
+    private final float  maxAmplitude;
+    private final double durationSeconds;
+    private double       elapsedSeconds = 0.0;
+    private boolean      decays;
 
     /**
      * @param maxAmplitude amplitud máxima en píxeles
-     * @param durationTicks duración total en ticks
+     * @param durationSeconds duración total en segundos
      * @param decays        si true, la amplitud decrece hasta cero al final
      */
-    public ShakeModifier(float maxAmplitude, int durationTicks, boolean decays) {
-        this.maxAmplitude  = maxAmplitude;
-        this.totalDuration = Math.max(1, durationTicks);
-        this.decays        = decays;
+    public ShakeModifier(float maxAmplitude, double durationSeconds, boolean decays) {
+        this.maxAmplitude     = maxAmplitude;
+        this.durationSeconds  = Math.max(0.001, durationSeconds);
+        this.decays           = decays;
     }
 
-    public ShakeModifier(float maxAmplitude, int durationTicks) {
-        this(maxAmplitude, durationTicks, true);
+    public ShakeModifier(float maxAmplitude, double durationSeconds) {
+        this(maxAmplitude, durationSeconds, true);
     }
 
     // ── Factories ─────────────────────────────────────────────────────────
 
     /** Shake de impacto corto con decay. */
-    public static ShakeModifier impact(float amplitude, int durationTicks) {
-        return new ShakeModifier(amplitude, durationTicks, true);
+    public static ShakeModifier impact(float amplitude, double durationSeconds) {
+        return new ShakeModifier(amplitude, durationSeconds, true);
     }
 
     /** Shake de explosión más prolongado. */
-    public static ShakeModifier explosion(float amplitude, int durationTicks) {
-        return new ShakeModifier(amplitude, durationTicks, true);
+    public static ShakeModifier explosion(float amplitude, double durationSeconds) {
+        return new ShakeModifier(amplitude, durationSeconds, true);
     }
 
     /** Shake continuo sin decay (terremoto, vibración de motor). */
-    public static ShakeModifier sustained(float amplitude, int durationTicks) {
-        return new ShakeModifier(amplitude, durationTicks, false);
+    public static ShakeModifier sustained(float amplitude, double durationSeconds) {
+        return new ShakeModifier(amplitude, durationSeconds, false);
     }
 
     // ── CameraModifier ────────────────────────────────────────────────────
@@ -74,18 +74,18 @@ public final class ShakeModifier implements CameraModifier {
     }
 
     @Override
-    public void update() {
-        ticksElapsed++;
+    public void update(double deltaTime) {
+        elapsedSeconds += deltaTime;
     }
 
     @Override
     public boolean isExpired() {
-        return ticksElapsed >= totalDuration;
+        return elapsedSeconds >= durationSeconds;
     }
 
     private float currentAmplitude() {
         if (!decays) return maxAmplitude;
-        float progress = (float) ticksElapsed / totalDuration;
+        float progress = (float) (elapsedSeconds / durationSeconds);
         return maxAmplitude * (1.0f - progress);
     }
 }

@@ -74,7 +74,7 @@ public final class PriorityCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         // Eliminar expirados
         candidates.removeIf(t -> {
             if (t.isExpired()) {
@@ -85,7 +85,7 @@ public final class PriorityCameraTarget implements CameraTarget {
         });
 
         // Actualizar todos
-        for (CameraTarget t : candidates) t.update();
+        for (CameraTarget t : candidates) t.update(deltaTime);
 
         // Seleccionar el activo de mayor prioridad
         CameraTarget best = candidates.stream()

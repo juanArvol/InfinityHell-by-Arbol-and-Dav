@@ -40,9 +40,11 @@ public interface CameraModifier {
     void apply(CameraState state);
 
     /**
-     * Avanza el estado interno del modificador (un tick).
+     * Avanza el estado interno del modificador.
+     *
+     * @param deltaTime tiempo transcurrido desde el último frame en segundos
      */
-    void update();
+    void update(double deltaTime);
 
     /**
      * True cuando este modificador ha terminado y debe ser eliminado.

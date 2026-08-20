@@ -54,10 +54,11 @@ public final class EnemyAIController {
      * Llamado por Enemy.update() cada frame.
      *
      * ── HRFC — Real DeltaTime Authority ──────────────────────────────────
-     * Recibe deltaTime aunque los comportamientos actuales no lo usen directamente.
+     * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────
+     *
+     * Propaga deltaTime a EnemyAction.execute() para integración temporal correcta.
      * Los comportamientos modifican velocidad (que se integra en CollisionsSystem
-     * con deltaTime), no posición directamente. El parámetro está disponible
-     * para futuros comportamientos temporales.
+     * con deltaTime) y pueden tener timers internos que requieren deltaTime.
      *
      * @param enemy el Enemy propietario.
      * @param ctx   contexto del objetivo; puede ser null.
@@ -68,7 +69,7 @@ public final class EnemyAIController {
 
         EnemyAction action = behavior.decideAction(enemy, ctx);
         if (action != null) {
-            action.execute(enemy);
+            action.execute(enemy, deltaTime);
         }
     }
 }

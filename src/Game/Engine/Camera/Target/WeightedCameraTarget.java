@@ -74,9 +74,9 @@ public final class WeightedCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         entries.removeIf(e -> e.target().isExpired());
-        for (WeightedEntry e : entries) e.target().update();
+        for (WeightedEntry e : entries) e.target().update(deltaTime);
     }
 
     @Override

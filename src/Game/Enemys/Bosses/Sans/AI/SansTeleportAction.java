@@ -22,7 +22,7 @@ import Game.Enemys.Core.Enemy;
 public final class SansTeleportAction implements EnemyAction {
 
     @Override
-    public void execute(Enemy enemy) {
+    public void execute(Enemy enemy, double deltaTime) {
         double range = enemy.getStats().getTeleportRange();
         if (range <= 0) range = 300.0; // fallback por seguridad
 

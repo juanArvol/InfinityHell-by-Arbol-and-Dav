@@ -47,7 +47,7 @@ public class FollowSteeringCommand implements EnemyAction {
     }
 
     @Override
-    public void execute(Enemy enemy) {
+    public void execute(Enemy enemy, double deltaTime) {
         enemy.getState().setMoving(true);
 
         Vector2D desired = ctx.getCenter()

@@ -106,10 +106,11 @@ public interface TransitionStyle {
      * Estilo de fade a negro.
      *
      * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * MIGRACIÓN: tick → elapsed (segundos).
      *
-     * ANTES (frame-based):
+     * ANTES (frame-based @ 30 FPS):
      *   tick++ cada frame
      *   fadeOut: tick / halfDuration  (dependía de framerate)
      *   fadeIn: (tick - halfDuration) / halfDuration
@@ -132,8 +133,8 @@ public interface TransitionStyle {
         private boolean      transferDone   = false;
 
         FadeTransitionStyle(int halfDurationTicks) {
-            // Convertir ticks legacy → segundos @ 60 FPS
-            this.halfDurationSeconds = Math.max(0.016, halfDurationTicks / 60.0);
+            // Convertir ticks legacy → segundos @ 30 FPS (CORRECCIÓN: era 60, ahora 30)
+            this.halfDurationSeconds = Math.max(0.016, halfDurationTicks / 30.0);
         }
 
         @Override

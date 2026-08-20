@@ -136,19 +136,22 @@ public final class SpawnRequest {
      * SpawnSystem llama este método después de añadir el objeto al mundo.
      *
      * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * CAMBIO: cooldown ahora debe convertirse de ticks a segundos.
      * SpawnDescriptor.getCooldownTicks() debería migrar a getCooldownSeconds().
-     * Por ahora, asumiendo getCooldownTicks() retorna frames → convertir a segundos @ 60 FPS.
+     * 
+     * CORRECCIÓN CRÍTICA: El sistema legacy operaba a 30 FPS, no 60 FPS.
+     * Por ahora, asumiendo getCooldownTicks() retorna frames → convertir a segundos @ 30 FPS.
      */
     public void onSpawned() {
         totalSpawned++;
         activeInstances++;
 
-        // Reiniciar cooldown (MIGRACIÓN: convertir ticks → segundos)
+        // Reiniciar cooldown (MIGRACIÓN: convertir ticks → segundos @ 30 FPS)
         int cdTicks = descriptor.getCooldownTicks();
         if (cdTicks > 0) {
-            cooldownRemaining = cdTicks / 60.0; // TODO: migrar SpawnDescriptor a segundos
+            cooldownRemaining = cdTicks / 30.0; // TODO: migrar SpawnDescriptor a getCooldownSeconds()
         }
 
         // Consumir trigger si existe

@@ -8,8 +8,21 @@ import Game.Items.Types.Bullets.ResettableMovement;
 /**
  * Movimiento orbital — el proyectil orbita alrededor de un centro dinámico.
  *
+ * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
+ * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────────
+ *
  * El proyectil describe un círculo alrededor del objeto central a una distancia
  * constante y con velocidad angular configurable.
+ *
+ * MIGRACIÓN TEMPORAL:
+ *   La velocidad angular ahora se expresa en grados/segundo (deg/s) en lugar
+ *   de grados/frame, garantizando independencia del framerate.
+ *
+ *   ANTES (frame-based @ 30 FPS):
+ *     angularSpeed = 3.0 deg/frame → 90 deg/s @ 30 FPS, 180 deg/s @ 60 FPS
+ *
+ *   AHORA (time-based):
+ *     angularSpeed = 90.0 deg/s → 90 deg/s independientemente del FPS
  *
  * Casos de uso:
  *   - Escudos orbitales del jugador
@@ -21,7 +34,8 @@ import Game.Items.Types.Bullets.ResettableMovement;
  *   // 3 proyectiles orbitando al jugador a 60px, separados 120°:
  *   for (int i = 0; i < 3; i++) {
  *       double phase = i * 120.0;
- *       ProjectileMovement m = new OrbitalMovement(player, 60.0, 3.0, phase);
+ *       // 90 deg/s de velocidad angular
+ *       ProjectileMovement m = new OrbitalMovement(player, 60.0, 90.0, phase);
  *       bullets.add(factory.create(m));
  *   }
  *
@@ -68,14 +82,17 @@ public final class OrbitalMovement implements ResettableMovement {
     private final AbstractEntity center;
 
     private final double radius;
-    private final double angularSpeedRad;
-    private final double initialAngleRad; // guardado para reset()
-    private double angle;                 // ángulo actual en radianes — estado mutable
+    private final double angularSpeedRad;  // radianes/segundo (no por frame)
+    private final double initialAngleRad;   // guardado para reset()
+    private double angle;                   // ángulo actual en radianes — estado mutable
 
     /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     *
      * @param center           la entidad alrededor de la cual orbitar. Puede ser null.
      * @param radius           radio de la órbita en unidades
-     * @param angularSpeedDeg  velocidad angular en grados/frame (positivo = antihorario)
+     * @param angularSpeedDeg  velocidad angular en grados/segundo (deg/s)
      * @param initialAngleDeg  ángulo inicial en grados
      */
     public OrbitalMovement(AbstractEntity center,
@@ -89,6 +106,26 @@ public final class OrbitalMovement implements ResettableMovement {
         this.angle           = this.initialAngleRad;
     }
 
+    /**
+     * Factory method para compatibilidad con código legacy que usaba deg/frame.
+     *
+     * @param center                la entidad alrededor de la cual orbitar
+     * @param radius                radio de la órbita en unidades
+     * @param angularSpeedDegFrame  velocidad angular en grados/frame @ 30 FPS
+     * @param initialAngleDeg       ángulo inicial en grados
+     * @return OrbitalMovement configurado con velocidad angular en deg/s
+     *
+     * @deprecated Usar constructor con deg/s directamente
+     */
+    @Deprecated
+    public static OrbitalMovement fromFrames(AbstractEntity center,
+                                             double radius,
+                                             double angularSpeedDegFrame,
+                                             double initialAngleDeg) {
+        // Convertir deg/frame @ 30 FPS → deg/s
+        return new OrbitalMovement(center, radius, angularSpeedDegFrame * 30.0, initialAngleDeg);
+    }
+
     @Override
     public void tick(Bullet bullet, double dt) {
         // Sin centro → no actualizar velocidad
@@ -99,7 +136,10 @@ public final class OrbitalMovement implements ResettableMovement {
         // El proyectil mantiene su última velocidad y expirará por lifeTime.
         if (center.isDead()) return;
 
-        angle += angularSpeedRad;
+        // ── HRFC + Mini-HRFC: Integración temporal ───────────────────────
+        // angle += angularSpeedRad × dt
+        // angularSpeedRad está en rad/s, dt en segundos
+        angle += angularSpeedRad * dt;
 
         Vector2D centerPos = center.getTransform().getPosition();
         double targetX = centerPos.getX() + Math.cos(angle) * radius;

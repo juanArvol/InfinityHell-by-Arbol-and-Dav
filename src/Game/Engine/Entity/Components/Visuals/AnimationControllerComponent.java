@@ -58,13 +58,16 @@ public class AnimationControllerComponent extends Component {
 
     /**
      * Tiempo acumulado dentro del frame actual en segundos.
-     * Se compara con Animation.ticksForFrame(frameIndex) / 60.0 para determinar
+     * Se compara con Animation.ticksForFrame(frameIndex) / 30.0 para determinar
      * cuándo avanzar al siguiente frame.
      *
      * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * MIGRACIÓN: Cambiado de int tick (frames) a double elapsedTime (segundos).
-     * La conversión desde Animation.ticksForFrame() se hace dividiendo por 60.0.
+     * La conversión desde Animation.ticksForFrame() se hace dividiendo por 30.0.
+     * 
+     * CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
      */
     private double elapsedTime = 0.0;
 
@@ -129,9 +132,9 @@ public class AnimationControllerComponent extends Component {
     public void update(double deltaTime) {
         if (currentAnimation == null || renderer == null) return;
 
-        // Duración efectiva del frame actual (ticks → segundos)
+        // Duración efectiva del frame actual (ticks → segundos @ 30 FPS)
         int frameTicks = currentAnimation.ticksForFrame(frameIndex);
-        double frameDuration = frameTicks / 60.0; // TODO: Animation should migrate to seconds
+        double frameDuration = frameTicks / 30.0; // TODO: Animation should migrate to seconds
 
         elapsedTime += deltaTime;
         if (elapsedTime >= frameDuration) {

@@ -295,7 +295,7 @@ public final class GameCamera {
      */
     public void commitFrame() {
         // 1. Calcular estado acumulado de los modificadores
-        CameraState state = modifierStack.computeState();
+        CameraState state = modifierStack.computeState(0.016); // Asume 60 FPS para legacy
         lastModifierState = state;
 
         // 2. Aplicar offsets de modificadores a la posición base
@@ -310,7 +310,37 @@ public final class GameCamera {
         var constrained = constraintList.apply(
             candidateX, candidateY,
             virtualWidth, virtualHeight,
-            effectiveZoom
+            effectiveZoom,
+            0.016 // Asume 60 FPS para legacy
+        );
+
+        finalX = constrained.getX();
+        finalY = constrained.getY();
+    }
+
+    /**
+     * Aplica modifiers y constraints con deltaTime real.
+     * Versión preferida que recibe el tiempo de frame real.
+     */
+    public void commitFrame(double deltaTime) {
+        // 1. Calcular estado acumulado de los modificadores
+        CameraState state = modifierStack.computeState(deltaTime);
+        lastModifierState = state;
+
+        // 2. Aplicar offsets de modificadores a la posición base
+        double candidateX = x + state.offsetX;
+        double candidateY = y + state.offsetY;
+
+        // 3. Aplicar zoom y rotación efectivos
+        effectiveZoom     = zoom     * state.zoomDelta;
+        effectiveRotation = rotation + state.rotationDelta;
+
+        // 4. Aplicar constraints en cadena priorizada
+        var constrained = constraintList.apply(
+            candidateX, candidateY,
+            virtualWidth, virtualHeight,
+            effectiveZoom,
+            deltaTime
         );
 
         finalX = constrained.getX();

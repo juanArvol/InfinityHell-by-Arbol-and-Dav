@@ -7,22 +7,23 @@ import Game.World.Spawn.SpawnCondition;
  * Condición de spawn activada por tiempo real.
  *
  * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────────
  *
  * MIGRACIÓN TEMPORAL:
  *   TimedSpawnCondition ahora usa tiempo real en segundos en lugar de ticks.
  *   Esto garantiza que el intervalo de spawn es independiente del framerate.
  *
- *   ANTES (frame-based):
+ *   ANTES (frame-based @ 30 FPS):
  *     ticksSinceLastActivation++ cada tick
  *     intervalTicks = 120 ticks
- *     A 31 FPS: 120 ticks = 3.87 segundos
+ *     A 30 FPS: 120 ticks = 4.00 segundos
  *     A 60 FPS: 120 ticks = 2.00 segundos
  *     A 120 FPS: 120 ticks = 1.00 segundos
  *
  *   AHORA (time-based):
  *     elapsedSinceLastActivation += deltaTime
- *     intervalSeconds = 2.0 segundos
- *     A cualquier FPS: intervalo = 2.00 segundos
+ *     intervalSeconds = 4.0 segundos
+ *     A cualquier FPS: intervalo = 4.00 segundos
  *
  * ── COMPORTAMIENTO ────────────────────────────────────────────────────────
  *
@@ -30,18 +31,20 @@ import Game.World.Spawn.SpawnCondition;
  *
  * ── Uso ──────────────────────────────────────────────────────────────────
  *
- *   // Spawn cada 2 segundos
- *   SpawnRequest.withCondition(desc, TimedSpawnCondition.every(2.0))
+ *   // Spawn cada 4 segundos
+ *   SpawnRequest.withCondition(desc, TimedSpawnCondition.every(4.0))
  *
- *   // Spawn cada 2 segundos, máximo 5 veces
- *   SpawnRequest.withCondition(desc, TimedSpawnCondition.every(2.0).times(5))
+ *   // Spawn cada 4 segundos, máximo 5 veces
+ *   SpawnRequest.withCondition(desc, TimedSpawnCondition.every(4.0).times(5))
  *
  * ── Migración desde código legacy ─────────────────────────────────────────
- *   ANTES: TimedSpawnCondition.every(120)  // 120 ticks @ 60 FPS
- *   AHORA: TimedSpawnCondition.every(2.0)  // 2.0 segundos
+ *   CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
+ *   
+ *   ANTES: TimedSpawnCondition.every(120)  // 120 ticks @ 30 FPS
+ *   AHORA: TimedSpawnCondition.every(4.0)  // 120/30 = 4.0 segundos
  *
- *   O usar factory:
- *   TimedSpawnCondition.fromTicks(120, 60)  // convierte 120 ticks a segundos
+ *   O usar factory (especificando 30 como targetFps):
+ *   TimedSpawnCondition.fromTicks(120, 30)  // convierte 120 ticks @ 30 FPS a segundos
  */
 public final class TimedSpawnCondition implements SpawnCondition {
 
@@ -70,8 +73,10 @@ public final class TimedSpawnCondition implements SpawnCondition {
     /**
      * Factory method para compatibilidad con código legacy que usaba ticks.
      *
+     * CORRECCIÓN: Especificar targetFps=30 para código legacy, no 60.
+     *
      * @param intervalTicks cantidad de ticks entre spawns
-     * @param targetFps framerate asumido por el código legacy (típicamente 60)
+     * @param targetFps framerate asumido por el código legacy (típicamente 30)
      * @return TimedSpawnCondition configurado con tiempo equivalente en segundos
      *
      * @deprecated Usar every() con segundos directamente

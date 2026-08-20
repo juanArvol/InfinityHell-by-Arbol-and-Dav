@@ -8,9 +8,26 @@ import Game.Items.Types.Bullets.ResettableMovement;
  * Movimiento boomerang — el proyectil avanza, frena y vuelve al origen de spawn.
  *
  * Fases:
- *   1. OUTWARD   — avanza en la dirección inicial durante travelTicks frames.
+ *   1. OUTWARD   — avanza en la dirección inicial durante travelDuration segundos.
  *   2. RETURNING — gira hacia el punto de origen y regresa.
  *   3. ARRIVED   — cuando llega al origen, el proyectil muere.
+ *
+ * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────────
+ *
+ * MIGRACIÓN CRÍTICA:
+ *   BoomerangMovement ahora usa tiempo en segundos en lugar de frameCount.
+ *
+ *   ANTES (frame-based):
+ *     frameCount++ cada tick
+ *     if (frameCount <= travelTicks) → comportamiento dependiente del FPS
+ *
+ *   AHORA (time-based):
+ *     elapsedTime += deltaTime
+ *     if (elapsedTime <= travelDuration) → comportamiento independiente del FPS
+ *
+ *   CONVERSIÓN:
+ *     travelTicks @ 30 FPS → travelDuration en segundos
+ *     travelDuration = travelTicks / 30.0
  *
  * ── HRFC §12 — Pool semantic parity: corrección de origin ─────────────────
  *
@@ -23,15 +40,15 @@ import Game.Items.Types.Bullets.ResettableMovement;
  * SOLUCIÓN ARQUITECTÓNICA GENERALIZABLE:
  *   El origin es POSICIÓN DE SPAWN DEL PROYECTIL, no configuración del movimiento.
  *   El movimiento captura el origin automáticamente del bullet en el PRIMER TICK
- *   (cuando frameCount == 0 antes de incrementar). En ese frame, el bullet
+ *   (cuando elapsedTime == 0 antes de incrementar). En ese frame, el bullet
  *   ya tiene la posición de spawn correcta.
  *
- *   reset() limpia tanto frameCount como origin (lo marca como no-capturado).
+ *   reset() limpia tanto elapsedTime como origin (lo marca como no-capturado).
  *   Así el próximo ciclo de vida recaptura automáticamente la nueva posición.
  *
  *   GENERALIZACIÓN: cualquier movement que necesite la posición de spawn del
  *   bullet debe capturarla en el primer tick, no recibirla en el constructor.
- *   El constructor solo recibe CONFIGURACIÓN (travelTicks, returnSpeed) —
+ *   El constructor solo recibe CONFIGURACIÓN (travelDuration, returnSpeed) —
  *   valores que no cambian entre disparos del mismo tipo.
  *
  * Casos de uso:
@@ -42,9 +59,9 @@ import Game.Items.Types.Bullets.ResettableMovement;
  *
  * Uso:
  *   // Ya no se pasa origin — se captura automáticamente del bullet al spawn.
- *   ProjectileMovement m = new BoomerangMovement(45, 10.0);
- *   //   travelTicks=45: frames de vuelo hacia afuera antes de volver
- *   //   returnSpeed=10: velocidad de regreso en unidades/frame
+ *   ProjectileMovement m = new BoomerangMovement(0.75, 600.0);
+ *   //   travelDuration=0.75: segundos de vuelo hacia afuera antes de volver
+ *   //   returnSpeed=600: velocidad de regreso en unidades/s
  *
  * Pool:
  *   Implementa ResettableMovement. reset() marca origin como no-capturado.
@@ -53,11 +70,11 @@ import Game.Items.Types.Bullets.ResettableMovement;
  */
 public final class BoomerangMovement implements ResettableMovement {
 
-    private final int      travelTicks;
-    private final double   returnSpeed;
+    private final double travelDuration;  // segundos de viaje antes de volver
+    private final double returnSpeed;     // velocidad de regreso en units/s
 
-    /** Frame counter. Reseteable. */
-    private int frameCount = 0;
+    /** Elapsed time counter. Resettable. */
+    private double elapsedTime = 0.0;
 
     /**
      * Posición de spawn capturada en el primer tick.
@@ -67,25 +84,41 @@ public final class BoomerangMovement implements ResettableMovement {
     private Vector2D capturedOrigin = null;
 
     /**
-     * @param travelTicks  ticks que el proyectil avanza antes de volver
-     * @param returnSpeed  velocidad de regreso (unidades/frame)
+     * Constructor principal — recibe duración en segundos.
+     *
+     * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────
+     *
+     * @param travelDuration segundos que el proyectil avanza antes de volver
+     * @param returnSpeed velocidad de regreso en units/s
      */
-    public BoomerangMovement(int travelTicks, double returnSpeed) {
-        this.travelTicks = travelTicks;
+    public BoomerangMovement(double travelDuration, double returnSpeed) {
+        this.travelDuration = travelDuration;
         this.returnSpeed = returnSpeed;
+    }
+
+    /**
+     * Constructor legacy que acepta travelTicks (frames @ 60 FPS).
+     *
+     * @param travelTicks frames de viaje @ 30 FPS (convertido a segundos)
+     * @param returnSpeed velocidad de regreso en units/s
+     *
+     * @deprecated Usar constructor con travelDuration en segundos directamente
+     */
+    @Deprecated
+    public BoomerangMovement(int travelTicks, double returnSpeed) {
+        this(travelTicks / 30.0, returnSpeed);
     }
 
     /**
      * Constructor de compatibilidad que acepta origin explícito.
      *
-     * @deprecated Pasar origin explícito está obsoleto. Usar {@link #BoomerangMovement(int, double)}
+     * @deprecated Pasar origin explícito está obsoleto. Usar {@link #BoomerangMovement(double, double)}
      *             — el origin se captura automáticamente del bullet en el primer tick.
      *             Este constructor sigue funcionando pero origin será ignorado al hacer reset().
      */
     @Deprecated
     public BoomerangMovement(Vector2D origin, int travelTicks, double returnSpeed) {
-        this.travelTicks   = travelTicks;
-        this.returnSpeed   = returnSpeed;
+        this(travelTicks / 30.0, returnSpeed);
         // Captura inmediata del origin provisto — compatible con código existente.
         // En el primer tick el capturedOrigin ya está listo, no se sobreescribe.
         this.capturedOrigin = new Vector2D(origin.getX(), origin.getY());
@@ -100,9 +133,10 @@ public final class BoomerangMovement implements ResettableMovement {
             capturedOrigin = new Vector2D(pos.getX(), pos.getY());
         }
 
-        frameCount++;
+        // ── HRFC Phase 3: Temporal integration ───────────────────────────
+        elapsedTime += dt;
 
-        if (frameCount <= travelTicks) {
+        if (elapsedTime <= travelDuration) {
             return; // fase de avance — la velocidad inicial ya está fija
         }
 
@@ -111,7 +145,7 @@ public final class BoomerangMovement implements ResettableMovement {
         double dy   = capturedOrigin.getY() - pos.getY();
         double dist = Math.hypot(dx, dy);
 
-        if (dist < returnSpeed) {
+        if (dist < returnSpeed * dt) {
             bullet.getBulletLife().kill();
             return;
         }
@@ -133,13 +167,13 @@ public final class BoomerangMovement implements ResettableMovement {
     /**
      * Resetea el estado para el próximo ciclo de vida.
      *
-     * Limpia frameCount Y el capturedOrigin — en el primer tick del nuevo ciclo
+     * Limpia elapsedTime Y el capturedOrigin — en el primer tick del nuevo ciclo
      * se recapturará la posición del nuevo bullet, garantizando que el boomerang
      * regresa al spawn correcto del nuevo disparo.
      */
     @Override
     public void reset() {
-        frameCount     = 0;
+        elapsedTime    = 0.0;
         capturedOrigin = null; // se recaptura en el primer tick del nuevo ciclo
     }
 }

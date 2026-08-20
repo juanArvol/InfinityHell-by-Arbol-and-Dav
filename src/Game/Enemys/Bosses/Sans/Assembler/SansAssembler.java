@@ -42,9 +42,26 @@ import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
  */
 public final class SansAssembler extends EnemyAssembler {
 
-    // HRFC Phase 2: Migrado a tiempo real en segundos
+    // ── HRFC Phase 2 — Temporal Migration ────────────────────────────────
+    // ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+    //
+    // CORRECCIÓN CRÍTICA: El sistema legacy operaba a 30 FPS, no 60 FPS.
+    //
+    // DERIVACIÓN:
+    //   Si el legacy usaba 600 frames @ 30 FPS:
+    //     600 / 30 = 20.0 segundos
+    //   
+    //   Si el legacy usaba 300 frames @ 30 FPS:
+    //     300 / 30 = 10.0 segundos
+    //
+    // VALOR ACTUAL: 10.0 segundos
+    // ASUMIENDO: El legacy era 300 frames, no 600.
+    // 
+    // TODO: Verificar con comportamiento de juego real si la fase dura
+    // el tiempo esperado. Si la fase se siente "muy corta", aumentar a 20.0s.
+    
     /** Duración de la Fase 1 en segundos. */
-    private static final double PHASE1_DURATION_SECONDS = 10.0;  // 10 segundos (antes: 600 frames @ 60 fps)
+    private static final double PHASE1_DURATION_SECONDS = 10.0;  // (asumiendo 300 frames @ 30 FPS)
 
     @Override
     protected EnemyDefinition definition() {

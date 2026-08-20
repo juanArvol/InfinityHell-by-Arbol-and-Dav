@@ -22,11 +22,11 @@ public final class RegionConstraint implements CameraConstraint {
     private final double minY;
     private final double maxX;
     private final double maxY;
-    private final int    durationTicks;
+    private final double durationSeconds;
     private final int    priority;
 
-    private int     ticksElapsed = 0;
-    private boolean active       = true;
+    private double  elapsedSeconds = 0.0;
+    private boolean active         = true;
 
     /**
      * @param minX, minY    esquina superior izquierda de la región (en coords de mundo)
@@ -37,16 +37,22 @@ public final class RegionConstraint implements CameraConstraint {
     }
 
     public RegionConstraint(double minX, double minY, double maxX, double maxY,
-                             int durationTicks, int priority) {
-        this.minX          = minX;
-        this.minY          = minY;
-        this.maxX          = maxX;
-        this.maxY          = maxY;
-        this.durationTicks = durationTicks;
-        this.priority      = priority;
+                             double durationSeconds, int priority) {
+        this.minX             = minX;
+        this.minY             = minY;
+        this.maxX             = maxX;
+        this.maxY             = maxY;
+        this.durationSeconds  = durationSeconds;
+        this.priority         = priority;
     }
 
     public void deactivate() { active = false; }
+
+    public void update(double deltaTime) {
+        if (durationSeconds > 0) {
+            elapsedSeconds += deltaTime;
+        }
+    }
 
     @Override
     public Vector2D constrain(double desiredX, double desiredY,
@@ -69,9 +75,8 @@ public final class RegionConstraint implements CameraConstraint {
     @Override
     public boolean isExpired() {
         if (!active) return true;
-        if (durationTicks <= 0) return false;
-        ticksElapsed++;
-        return ticksElapsed >= durationTicks;
+        if (durationSeconds <= 0) return false;
+        return elapsedSeconds >= durationSeconds;
     }
 
     @Override

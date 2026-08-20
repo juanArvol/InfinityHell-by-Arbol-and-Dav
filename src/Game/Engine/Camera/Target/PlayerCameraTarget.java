@@ -77,7 +77,7 @@ public final class PlayerCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double dt) {
         Vector2D pos = positionSupplier.get();
         if (pos != null) lastPosition = new Vector2D(pos.getX(), pos.getY());
     }

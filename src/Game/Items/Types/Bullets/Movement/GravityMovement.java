@@ -8,6 +8,15 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *
  * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
  * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────────
+ * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────────
+ *
+ * MIGRACIÓN TEMPORAL:
+ *   GravityMovement ahora integra aceleración con deltaTime: Δv = a × dt
+ *
+ *   UNIDADES:
+ *     gravity → units/s² (aceleración gravitacional)
+ *     deltaTime → s (segundos)
+ *     velocity → units/s
  *
  * El proyectil cae progresivamente a medida que avanza. Ideal para:
  *   - Flechas
@@ -46,15 +55,17 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  * movimiento con GravityMovement.
  *
  * Uso:
- *   ProjectileMovement m = new GravityMovement(0.5);  // caída lenta
- *   ProjectileMovement m = new GravityMovement(1.5);  // caída pesada
+ *   ProjectileMovement m = new GravityMovement(30.0);  // caída lenta (0.5 @ 60 FPS)
+ *   ProjectileMovement m = new GravityMovement(90.0);  // caída pesada (1.5 @ 60 FPS)
  */
 public final class GravityMovement implements ProjectileMovement {
 
-    private final double gravity;
+    private final double gravity;  // aceleración gravitacional en units/s²
 
     /**
-     * @param gravity aceleración gravitacional por frame (positivo = hacia abajo)
+     * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────
+     *
+     * @param gravity aceleración gravitacional en units/s² (positivo = hacia abajo)
      */
     public GravityMovement(double gravity) {
         this.gravity = gravity;
@@ -86,8 +97,9 @@ public final class GravityMovement implements ProjectileMovement {
         double a_drag = (dragForce / mass) * dragDirection;
 
         // ── 4. Integración de aceleración neta ───────────────────────────
+        // HRFC Phase 3: Δv = a × dt (temporal integration)
         double a_net = a_gravity + a_drag;
-        double newVy = vy + a_net;
+        double newVy = vy + (a_net * dt);
 
         physics.setYspeed(newVy);
     }

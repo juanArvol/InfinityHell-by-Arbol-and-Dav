@@ -9,16 +9,16 @@ import java.util.List;
  *
  * ── USO ───────────────────────────────────────────────────────────────────
  *   ScriptedCameraTarget script = ScriptedCameraTarget.builder()
- *       .moveTo(640, 300, 60)   // moverse a (640,300) en 60 ticks
- *       .hold(30)               // mantener posición 30 ticks
- *       .moveTo(200, 400, 45)   // luego a (200,400) en 45 ticks
+ *       .moveTo(640, 300, 1.0)   // moverse a (640,300) en 1 segundo
+ *       .hold(0.5)               // mantener posición 0.5 segundos
+ *       .moveTo(200, 400, 0.75)  // luego a (200,400) en 0.75 segundos
  *       .build();
  *
  *   cameraSystem.pushTarget(script, 300); // prioridad muy alta
  *
  * ── INTERPOLACIÓN ─────────────────────────────────────────────────────────
  * La posición entre keyframes se interpola linealmente.
- * Para cinemáticas suaves, usar keyframes con duraciones largas (60-120 ticks).
+ * Para cinemáticas suaves, usar keyframes con duraciones largas (1-2 segundos).
  *
  * ── CICLO DE VIDA ─────────────────────────────────────────────────────────
  * El target expira cuando se completan todos los keyframes.
@@ -28,7 +28,7 @@ public final class ScriptedCameraTarget implements CameraTarget {
 
     // ── Keyframe ──────────────────────────────────────────────────────────
 
-    public record Keyframe(double x, double y, int durationTicks) {}
+    public record Keyframe(double x, double y, double durationSeconds) {}
 
     // ── Estado ────────────────────────────────────────────────────────────
 
@@ -36,9 +36,9 @@ public final class ScriptedCameraTarget implements CameraTarget {
     private final boolean        loop;
     private final int            priority;
 
-    private int     currentKeyframe = 0;
-    private int     tickInKeyframe  = 0;
-    private boolean expired         = false;
+    private int     currentKeyframe  = 0;
+    private double  elapsedInKeyframe = 0.0;
+    private boolean expired          = false;
 
     // ── Constructor ───────────────────────────────────────────────────────
 
@@ -59,17 +59,17 @@ public final class ScriptedCameraTarget implements CameraTarget {
         private boolean              loop      = false;
         private int                  priority  = 150;
 
-        /** Mover la cámara hasta (x, y) durante durationTicks ticks. */
-        public Builder moveTo(double x, double y, int durationTicks) {
-            keyframes.add(new Keyframe(x, y, Math.max(1, durationTicks)));
+        /** Mover la cámara hasta (x, y) durante durationSeconds segundos. */
+        public Builder moveTo(double x, double y, double durationSeconds) {
+            keyframes.add(new Keyframe(x, y, Math.max(0.001, durationSeconds)));
             return this;
         }
 
-        /** Mantener la última posición durante durationTicks ticks. */
-        public Builder hold(int durationTicks) {
+        /** Mantener la última posición durante durationSeconds segundos. */
+        public Builder hold(double durationSeconds) {
             if (!keyframes.isEmpty()) {
                 Keyframe last = keyframes.get(keyframes.size() - 1);
-                keyframes.add(new Keyframe(last.x(), last.y(), Math.max(1, durationTicks)));
+                keyframes.add(new Keyframe(last.x(), last.y(), Math.max(0.001, durationSeconds)));
             }
             return this;
         }
@@ -105,7 +105,7 @@ public final class ScriptedCameraTarget implements CameraTarget {
 
         // Interpolar desde el keyframe anterior
         Keyframe prev = keyframes.get(currentKeyframe - 1);
-        double t = (double) tickInKeyframe / kf.durationTicks();
+        double t = elapsedInKeyframe / kf.durationSeconds();
         t = Math.min(1.0, t);
 
         double x = prev.x() + (kf.x() - prev.x()) * t;
@@ -114,14 +114,14 @@ public final class ScriptedCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         if (expired || keyframes.isEmpty()) return;
 
         Keyframe kf = keyframes.get(currentKeyframe);
-        tickInKeyframe++;
+        elapsedInKeyframe += deltaTime;
 
-        if (tickInKeyframe >= kf.durationTicks()) {
-            tickInKeyframe = 0;
+        if (elapsedInKeyframe >= kf.durationSeconds()) {
+            elapsedInKeyframe = 0.0;
             currentKeyframe++;
 
             if (currentKeyframe >= keyframes.size()) {

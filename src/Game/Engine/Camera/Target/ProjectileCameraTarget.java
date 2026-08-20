@@ -14,12 +14,12 @@ import java.util.function.Supplier;
  *       bullet,
  *       bullet::isPendingDestruction
  *   );
- *   cameraSystem.pushTarget(t, 80); // prioridad alta durante 80 ticks
+ *   cameraSystem.pushTarget(t, 80); // prioridad alta durante vida del proyectil
  *
  * ── CICLO DE VIDA ─────────────────────────────────────────────────────────
  * El target expira cuando:
  *   - El proyectil es destruido (isDestroyed retorna true), O
- *   - Se supera el maxDurationTicks (0 = sin límite por tiempo)
+ *   - Se supera el maxDurationSeconds (0 = sin límite por tiempo)
  *
  * Cuando expira, la cámara vuelve al target anterior de forma automática.
  *
@@ -31,12 +31,12 @@ public final class ProjectileCameraTarget implements CameraTarget {
 
     private final Supplier<Vector2D> positionSupplier;
     private final BooleanSupplier    isDestroyed;
-    private final int                maxDurationTicks;
+    private final double             maxDurationSeconds;
     private final float              leadFactor;
     private final int                priority;
 
-    private int      ticksElapsed = 0;
-    private Vector2D lastPos      = null;
+    private double   elapsedSeconds = 0.0;
+    private Vector2D lastPos        = null;
 
     // ── Factories ─────────────────────────────────────────────────────────
 
@@ -55,25 +55,25 @@ public final class ProjectileCameraTarget implements CameraTarget {
 
     public static ProjectileCameraTarget of(GameObjects projectile,
                                             BooleanSupplier isDestroyedFn,
-                                            int maxDurationTicks,
+                                            double maxDurationSeconds,
                                             float leadFactor) {
         return new ProjectileCameraTarget(
             () -> projectile.getTransform().getPosition(),
             isDestroyedFn,
-            maxDurationTicks, leadFactor, 200
+            maxDurationSeconds, leadFactor, 200
         );
     }
 
     public ProjectileCameraTarget(Supplier<Vector2D> positionSupplier,
                                    BooleanSupplier isDestroyed,
-                                   int maxDurationTicks,
+                                   double maxDurationSeconds,
                                    float leadFactor,
                                    int priority) {
-        this.positionSupplier  = positionSupplier;
-        this.isDestroyed       = isDestroyed;
-        this.maxDurationTicks  = maxDurationTicks;
-        this.leadFactor        = leadFactor;
-        this.priority          = priority;
+        this.positionSupplier   = positionSupplier;
+        this.isDestroyed        = isDestroyed;
+        this.maxDurationSeconds = maxDurationSeconds;
+        this.leadFactor         = leadFactor;
+        this.priority           = priority;
     }
 
     @Override
@@ -92,16 +92,16 @@ public final class ProjectileCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         Vector2D pos = positionSupplier.get();
         if (pos != null) lastPos = new Vector2D(pos.getX(), pos.getY());
-        ticksElapsed++;
+        elapsedSeconds += deltaTime;
     }
 
     @Override
     public boolean isExpired() {
         if (isDestroyed.getAsBoolean()) return true;
-        return maxDurationTicks > 0 && ticksElapsed >= maxDurationTicks;
+        return maxDurationSeconds > 0 && elapsedSeconds >= maxDurationSeconds;
     }
 
     @Override

@@ -33,21 +33,21 @@ public final class HardConstraint implements CameraConstraint {
     private final boolean constrainY;
     private final int     priority;
 
-    private boolean active  = true;
-    private int     ticksElapsed = 0;
-    private final int durationTicks;
+    private boolean active          = true;
+    private double  elapsedSeconds  = 0.0;
+    private final double durationSeconds;
 
     private HardConstraint(double minX, double minY, double maxX, double maxY,
                             boolean constrainX, boolean constrainY,
-                            int durationTicks, int priority) {
-        this.minX          = minX;
-        this.minY          = minY;
-        this.maxX          = maxX;
-        this.maxY          = maxY;
-        this.constrainX    = constrainX;
-        this.constrainY    = constrainY;
-        this.durationTicks = durationTicks;
-        this.priority      = priority;
+                            double durationSeconds, int priority) {
+        this.minX             = minX;
+        this.minY             = minY;
+        this.maxX             = maxX;
+        this.maxY             = maxY;
+        this.constrainX       = constrainX;
+        this.constrainY       = constrainY;
+        this.durationSeconds  = durationSeconds;
+        this.priority         = priority;
     }
 
     /** Restringe ambos ejes a la caja dada. */
@@ -68,14 +68,20 @@ public final class HardConstraint implements CameraConstraint {
                                    false, true, 0, 600);
     }
 
-    /** Restricción temporal de caja (expira después de durationTicks). */
+    /** Restricción temporal de caja (expira después de durationSeconds). */
     public static HardConstraint temporaryBox(double minX, double minY,
                                                double maxX, double maxY,
-                                               int durationTicks) {
-        return new HardConstraint(minX, minY, maxX, maxY, true, true, durationTicks, 600);
+                                               double durationSeconds) {
+        return new HardConstraint(minX, minY, maxX, maxY, true, true, durationSeconds, 600);
     }
 
     public void deactivate() { active = false; }
+
+    public void update(double deltaTime) {
+        if (durationSeconds > 0) {
+            elapsedSeconds += deltaTime;
+        }
+    }
 
     @Override
     public Vector2D constrain(double desiredX, double desiredY,
@@ -104,9 +110,8 @@ public final class HardConstraint implements CameraConstraint {
     @Override
     public boolean isExpired() {
         if (!active) return true;
-        if (durationTicks <= 0) return false;
-        ticksElapsed++;
-        return ticksElapsed >= durationTicks;
+        if (durationSeconds <= 0) return false;
+        return elapsedSeconds >= durationSeconds;
     }
 
     @Override

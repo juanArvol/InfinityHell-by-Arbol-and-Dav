@@ -76,8 +76,10 @@ public interface CameraTarget {
     default void onSelected() {}
 
     /**
-     * Actualiza el estado interno del target (un tick).
+     * Actualiza el estado interno del target.
      * Útil para targets con animación, duración finita o lógica propia.
+     *
+     * @param deltaTime tiempo transcurrido desde el último frame en segundos
      */
-    default void update() {}
+    default void update(double deltaTime) {}
 }

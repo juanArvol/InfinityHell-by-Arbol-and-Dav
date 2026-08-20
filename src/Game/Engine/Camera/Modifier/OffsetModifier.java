@@ -4,39 +4,39 @@ package Game.Engine.Camera.Modifier;
  * Modificador de offset posicional temporal de la cámara.
  *
  * ── USOS ──────────────────────────────────────────────────────────────────
- *   // Desplazar la vista 100px hacia abajo durante 60 ticks (revelar suelo):
- *   modifiers.add(new OffsetModifier(0, 100, 60, 0.08f));
+ *   // Desplazar la vista 100px hacia abajo durante 1 segundo (revelar suelo):
+ *   modifiers.add(new OffsetModifier(0, 100, 1.0, 0.08f));
  *
  *   // Offset permanente (ventana dividida, interfaz específica):
  *   modifiers.add(new OffsetModifier(200, 0, 0, 1.0f));
  *
  * ── DIFERENCIA CON SHAKE ──────────────────────────────────────────────────
- * ShakeModifier aplica offsets aleatorios en cada tick.
+ * ShakeModifier aplica offsets aleatorios en cada frame.
  * OffsetModifier aplica un offset suave y determinista (lerp hacia un punto).
  */
 public final class OffsetModifier implements CameraModifier {
 
     private final double targetOffsetX;
     private final double targetOffsetY;
-    private final int    durationTicks;   // 0 = permanente
+    private final double durationSeconds;   // 0 = permanente
     private final float  lerpFactor;
 
     private double currentOffsetX = 0.0;
     private double currentOffsetY = 0.0;
-    private int    ticksElapsed   = 0;
+    private double elapsedSeconds = 0.0;
 
     /**
-     * @param targetOffsetX desplazamiento X objetivo en píxeles
-     * @param targetOffsetY desplazamiento Y objetivo en píxeles
-     * @param durationTicks duración (0 = permanente)
-     * @param lerpFactor    velocidad de interpolación
+     * @param targetOffsetX   desplazamiento X objetivo en píxeles
+     * @param targetOffsetY   desplazamiento Y objetivo en píxeles
+     * @param durationSeconds duración en segundos (0 = permanente)
+     * @param lerpFactor      velocidad de interpolación
      */
     public OffsetModifier(double targetOffsetX, double targetOffsetY,
-                          int durationTicks, float lerpFactor) {
-        this.targetOffsetX = targetOffsetX;
-        this.targetOffsetY = targetOffsetY;
-        this.durationTicks = durationTicks;
-        this.lerpFactor    = Math.max(0.01f, Math.min(1.0f, lerpFactor));
+                          double durationSeconds, float lerpFactor) {
+        this.targetOffsetX   = targetOffsetX;
+        this.targetOffsetY   = targetOffsetY;
+        this.durationSeconds = durationSeconds;
+        this.lerpFactor      = Math.max(0.01f, Math.min(1.0f, lerpFactor));
     }
 
     @Override
@@ -46,18 +46,18 @@ public final class OffsetModifier implements CameraModifier {
     }
 
     @Override
-    public void update() {
-        ticksElapsed++;
+    public void update(double deltaTime) {
+        elapsedSeconds += deltaTime;
 
-        if (durationTicks <= 0) {
+        if (durationSeconds <= 0) {
             // Permanente: lerp hacia el objetivo
             currentOffsetX += (targetOffsetX - currentOffsetX) * lerpFactor;
             currentOffsetY += (targetOffsetY - currentOffsetY) * lerpFactor;
             return;
         }
 
-        float halfway = durationTicks / 2.0f;
-        if (ticksElapsed <= halfway) {
+        double halfway = durationSeconds / 2.0;
+        if (elapsedSeconds <= halfway) {
             currentOffsetX += (targetOffsetX - currentOffsetX) * lerpFactor;
             currentOffsetY += (targetOffsetY - currentOffsetY) * lerpFactor;
         } else {
@@ -69,7 +69,7 @@ public final class OffsetModifier implements CameraModifier {
 
     @Override
     public boolean isExpired() {
-        if (durationTicks <= 0) return false;
-        return ticksElapsed >= durationTicks;
+        if (durationSeconds <= 0) return false;
+        return elapsedSeconds >= durationSeconds;
     }
 }

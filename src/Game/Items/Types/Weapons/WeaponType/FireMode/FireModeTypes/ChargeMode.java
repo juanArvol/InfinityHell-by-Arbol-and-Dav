@@ -44,7 +44,7 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
  * ── CONFIGURACIÓN ─────────────────────────────────────────────────────────
  *
  * maxChargeSeconds: tiempo para alcanzar el multiplicador máximo (2.0x)
- * Por defecto: 1.0 segundos (equivalente a 60 frames @ 60 FPS legacy)
+ * Por defecto: 1.0 segundos (ajustable según gameplay - legacy era 30 FPS)
  */
 /**
  * Modo de disparo por carga — el daño y velocidad escalan con el tiempo
@@ -60,13 +60,13 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
  *   ANTES (frame-based):
  *     chargeTime++ en cada update
  *     maxCharge = 60 frames
- *     A 31 FPS: 60 frames = 1.94 segundos de carga
+ *     A 30 FPS: 60 frames = 2.00 segundos de carga
  *     A 60 FPS: 60 frames = 1.00 segundos de carga
  *     A 120 FPS: 60 frames = 0.50 segundos de carga
  *
  *   AHORA (time-based):
  *     chargeElapsed += deltaTime
- *     maxChargeSeconds = 1.0 segundos
+ *     maxChargeSeconds = 1.0 segundos (configurable)
  *     A cualquier FPS: maxCharge = 1.00 segundos de carga
  *
  * ── COMPORTAMIENTO ────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
  * ── CONFIGURACIÓN ─────────────────────────────────────────────────────────
  *
  * maxChargeSeconds: tiempo para alcanzar el multiplicador máximo (2.0x)
- * Por defecto: 1.0 segundos (equivalente a 60 frames @ 60 FPS legacy)
+ * Por defecto: 1.0 segundos (ajustable según gameplay - legacy era 30 FPS)
  */
 public class ChargeMode implements iFireMode {
 
@@ -105,11 +105,16 @@ public class ChargeMode implements iFireMode {
     }
 
     /**
-     * Constructor por defecto (1 segundo de carga).
-     * Equivalente al comportamiento legacy de 60 frames @ 60 FPS.
+     * Constructor por defecto (2 segundos de carga).
+     * 
+     * CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
+     * Si el legacy usaba 60 frames de carga: 60 / 30 = 2.0 segundos.
+     * 
+     * Si el comportamiento deseado es 1 segundo, el legacy debió usar 30 frames.
+     * Mantener 1.0s por ahora como valor de gameplay, pero documentar la discrepancia.
      */
     public ChargeMode() {
-        this(1.0);
+        this(1.0);  // TODO: Verificar si debería ser 2.0s para coincidir con legacy
     }
 
     /**

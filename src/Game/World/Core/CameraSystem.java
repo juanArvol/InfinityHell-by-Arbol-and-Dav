@@ -57,7 +57,7 @@ public final class CameraSystem {
         if (cameraController != null) {
             cameraController.update(camera, deltaTime);
         }
-        camera.commitFrame();
+        camera.commitFrame(deltaTime);
     }
 
     // ── Tracking ─────────────────────────────────────────────────────────

@@ -193,7 +193,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         AimSelection.apply(state);
 
         // 3. Controller — procesar input de movimiento
-        controller.update();
+        controller.update(deltaTime);
 
         // 4. Runtime — coordinar inventario y equipamiento
         if (playerRuntime != null) {

@@ -9,7 +9,7 @@ package Main.Debug;
  * cada consumidor temporal, identificando dónde se pierde velocidad de
  * simulación.
  *
- * IMPORTANTE:
+ * IMPORTANTE: 
  *   Este sistema NO asume que la causa del slowdown sea únicamente:
  *     - targetFps=31
  *     - Los cinco subsistemas frame-based conocidos

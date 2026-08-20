@@ -7,22 +7,23 @@ import Game.Enemys.Core.Enemy;
  * Transición de fase por duración fija en tiempo real.
  *
  * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────────
  *
  * MIGRACIÓN TEMPORAL:
  *   TimedTransition ahora usa tiempo real en segundos en lugar de frames.
  *   Esto garantiza que la duración de la fase es independiente del framerate.
  *
- *   ANTES (frame-based):
+ *   ANTES (frame-based @ 30 FPS):
  *     elapsed++ en cada shouldTransition()
  *     durationFrames = 300 frames
- *     A 31 FPS: 300 frames = 9.68 segundos
+ *     A 30 FPS: 300 frames = 10.00 segundos
  *     A 60 FPS: 300 frames = 5.00 segundos
  *     A 120 FPS: 300 frames = 2.50 segundos
  *
  *   AHORA (time-based):
  *     elapsed += deltaTime
- *     durationSeconds = 5.0 segundos
- *     A cualquier FPS: duración = 5.00 segundos
+ *     durationSeconds = 10.0 segundos
+ *     A cualquier FPS: duración = 10.00 segundos
  *
  * ── COMPORTAMIENTO ────────────────────────────────────────────────────────
  *
@@ -36,11 +37,13 @@ import Game.Enemys.Core.Enemy;
  *   phaseController.addPhase(new CombatPhase(), null);
  *
  * ── Migración desde código legacy ─────────────────────────────────────────
- *   ANTES: new TimedTransition(180)  // 180 frames @ 60 FPS
- *   AHORA: new TimedTransition(3.0)  // 3.0 segundos
+ *   CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
+ *   
+ *   ANTES: new TimedTransition(180)  // 180 frames @ 30 FPS
+ *   AHORA: new TimedTransition(6.0)  // 180/30 = 6.0 segundos
  *
- *   O usar factory:
- *   TimedTransition.fromFrames(180, 60)  // convierte 180 frames a segundos
+ *   O usar factory (especificando 30 como targetFps):
+ *   TimedTransition.fromFrames(180, 30)  // convierte 180 frames @ 30 FPS a segundos
  */
 public final class TimedTransition implements PhaseTransition {
 
@@ -62,8 +65,10 @@ public final class TimedTransition implements PhaseTransition {
     /**
      * Factory method para compatibilidad con código legacy que usaba frames.
      *
+     * CORRECCIÓN: Especificar targetFps=30 para código legacy, no 60.
+     *
      * @param durationFrames cantidad de frames que duraba la fase
-     * @param targetFps framerate asumido por el código legacy (típicamente 60)
+     * @param targetFps framerate asumido por el código legacy (típicamente 30)
      * @return TimedTransition configurado con tiempo equivalente en segundos
      *
      * @deprecated Usar constructor con segundos directamente

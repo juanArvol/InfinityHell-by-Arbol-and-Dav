@@ -224,13 +224,16 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
 
     /**
      * Variante sin deltaTime — fallback para compatibilidad legacy.
-     * Usa 1/60s como deltaTime de emergencia.
+     * Usa 1/30s como deltaTime de emergencia (legacy @ 30 FPS).
+     *
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     * CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
      *
      * @deprecated Usar update(ctx, deltaTime) con tiempo real
      */
     @Deprecated
     public void update(EnemyContext ctx) {
-        update(ctx, 1.0 / 60.0);
+        update(ctx, 1.0 / 30.0);
     }
 
     @Override
@@ -238,10 +241,15 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
 
     /**
      * Fallback sin deltaTime - compatibilidad con código legacy.
+     * Usa 1/30s como deltaTime de emergencia (legacy @ 30 FPS).
+     *
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     * CORRECCIÓN: El sistema legacy operaba a 30 FPS, no 60 FPS.
+     *
      * @deprecated Usar update(double) con deltaTime real
      */
     @Deprecated
-    public void update() { update(null, 1.0 / 60.0); }
+    public void update() { update(null, 1.0 / 30.0); }
 
     /**
      * Implementa ContextualUpdatable — el contexto esperado es EnemyContext.

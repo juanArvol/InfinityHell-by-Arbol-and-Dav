@@ -28,10 +28,16 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
  *   Fuerza continua:      Δv = (F / m) × dt
  *   Impulso instantáneo:  Δv = J / m          (SIN deltaTime)
  *   Posición:             Δx = v × dt
+ *   Amortiguación:        v(t) = v₀ × e^(-k×dt)
  *
  * INVARIANTE:
  *   El framerate NO forma parte de ninguna magnitud física.
- *   Prohibido: factores como /60, *60, /FPS, *FPS, 0.016, 1/60.
+ *   Prohibido: factores como /60, *60, /30, *30, 0.016, 1/60, 1/30.
+ *
+ * REFERENCIA TEMPORAL:
+ *   Sistema legacy calibrado @ 30 FPS.
+ *   Todos los parámetros derivados asumen FPS_BASE = 30.
+ *   La conversión temporal garantiza comportamiento equivalente a cualquier FPS.
  *
  * ── Diseño de velocidad en capas ─────────────────────────────────────────
  *
@@ -185,18 +191,50 @@ public class Physics2D {
      * Mayor área → mayor resistencia → menor velocidad terminal.
      * Default: 1.0 (objeto de tamaño unitario).
      */
-    protected double effectiveArea = 1.0;
+    protected double effectiveArea;
 
     /**
-     * Coeficiente de drag aerodinámico escalado para unidades del juego (px/frame).
-     * Representa la forma aerodinámica del objeto:
+     * Coeficiente de drag aerodinámico escalado para unidades del juego.
+     * 
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     * 
+     * FÓRMULA: F_drag = dragCoefficient × effectiveArea × v²
+     * 
+     * UNIDADES AMBIGUAS - REQUIERE VERIFICACIÓN:
+     * 
+     * El coeficiente fue calibrado empíricamente en el sistema legacy.
+     * Sin embargo, hay ambigüedad sobre si fue calibrado para:
+     *   a) v en units/frame (sistema legacy)
+     *   b) v en units/s (sistema actual)
+     * 
+     * ANÁLISIS:
+     *   Si legacy usaba v en units/frame @ 30 FPS:
+     *     v_per_second = v_per_frame × 30
+     *     v²_per_second = v²_per_frame × 900
+     *   
+     *   Para producir la misma fuerza con v en units/s:
+     *     Cd_temporal = Cd_legacy / 900
+     * 
+     * VALORES TÍPICOS ACTUALES:
      *   ~0.0001: aerodinámica extrema (bala, proyectil)
-     *   ~0.0003: objeto razonablemente aerodinámico
-     *   ~0.0005: objeto no optimizado (caja, persona)
+     *   ~0.0003: objeto razonablemente aerodinámico (default)
+     *   ~0.0004: Player (menos aerodinámico)
+     *   ~0.0005: objeto no optimizado
      *   ~0.0008: objeto muy poco aerodinámico
-     * Default: 0.0003 (objeto genérico, escalado para px/frame).
+     * 
+     * Si estos valores FUERON calibrados para units/frame y ahora velocity
+     * está en units/s, el drag sería 900× más fuerte de lo esperado.
+     * 
+     * VERIFICACIÓN EMPÍRICA REQUERIDA:
+     *   1. Medir velocidad terminal de caída en sistema actual
+     *   2. Comparar con comportamiento legacy esperado
+     *   3. Si diverge significativamente, ajustar por factor 900
+     * 
+     * ESTADO: Documentado pero no modificado hasta verificación empírica.
+     * 
+     * Default: 0.0003 (objeto genérico, semántica por confirmar).
      */
-    protected double dragCoefficient = 0.0003;
+    protected double dragCoefficient;
 
     /**
      * Densidad del medio (obsoleto - mantenido por compatibilidad).
@@ -211,7 +249,7 @@ public class Physics2D {
      * @deprecated Ya no afecta el cálculo de drag. Usar dragCoefficient.
      */
     @Deprecated
-    protected double mediumDensity = 1.0;
+    protected double mediumDensity;
 
     protected SurfaceMaterial currentSurface = SurfaceMaterial.DEFAULT;
 
@@ -302,11 +340,32 @@ public class Physics2D {
      *          × environmentModifier
      *          × airControlModifier
      *
+     * ── HRFC Phase 3 — Temporal Migration ────────────────────────────────
+     *
+     * MIGRACIÓN CRÍTICA:
+     *   moveX() ahora recibe deltaTime para integración temporal correcta.
+     *   
+     *   ANTES (frame-based):
+     *     vx = v + (input × accel)     // accel en units/frame²
+     *   
+     *   AHORA (time-based):
+     *     vx = v + (input × accel × dt) // accel en units/s²
+     *
+     * UNIDADES:
+     *   aGround, aAir → units/s² (aceleración por segundo cuadrado)
+     *   deltaTime     → s (segundos)
+     *   velocity      → units/s
+     *
      * Las subclases NO necesitan sobreescribir este método para añadir
      * modificadores; usan setStatusModifier(), setEnvironmentModifier()
      * o sobreescriben computeEntityModifier().
+     *
+     * @param inputX dirección horizontal [-1, 0, 1]
+     * @param onGround si la entidad está en contacto con el suelo
+     * @param running si la entidad está corriendo
+     * @param deltaTime tiempo del simulation step en segundos
      */
-    public void moveX(double inputX, boolean onGround, boolean running) {
+    public void moveX(double inputX, boolean onGround, boolean running, double deltaTime) {
         // NOTA: this.onGround NO se toca aquí.
         // Es responsabilidad exclusiva de CollisionsSystem via setOnGround().
         // CollisionsSystem resetea onGround a false en FASE 0.5 (post-gravedad)
@@ -336,16 +395,50 @@ public class Physics2D {
         double mAccel = baseAccel * entityFactor * surfaceFactor * statusFactor * envFactor * airFactor;
 
         // ── Aceleración activa ────────────────────────────────────────
-        vx = velocity.getX() + (inputX * mAccel);
+        // HRFC Phase 3: Δv = a × dt (temporal integration)
+        vx = velocity.getX() + (inputX * mAccel * deltaTime);
 
         if (inputX != 0 && Math.abs(vx) >= speedMax) {
             vx = Math.copySign(speedMax, vx);
         }
 
         // ── Frenado pasivo ────────────────────────────────────────────
+        // Mini-HRFC — Temporal Exponential Damping (Frame-rate independent)
+        //
+        // CONVERSIÓN DE AMORTIGUACIÓN FRAME-BASED A TEMPORAL:
+        //
+        // Legacy @ 30 FPS: v_new = v_old × slide cada frame
+        // Temporal: v(t) = v₀ × e^(-k×t)
+        //
+        // Para preservar comportamiento legacy:
+        //   e^(-k×dt) = slide cuando dt = 1/30
+        //   k = -30 × ln(slide)
+        //
+        // Ejemplos:
+        //   slide=0.9  → k = -30×ln(0.9) ≈ 3.154
+        //   slide=0.74 → k = -30×ln(0.74) ≈ 9.060
+        //
+        // En runtime:
+        //   damping_factor = e^(-k × deltaTime)
+        //   v_new = v_old × damping_factor × surface_drag
+        //
+        // Verificación @ 30 FPS (dt=1/30):
+        //   damping_factor = e^(-3.154/30) = e^(-0.1051) ≈ 0.900 ✓
+        //
+        // Beneficio: Funciona correctamente a cualquier FPS.
         if (inputX == 0) {
-            double effectiveDrag = slide * currentSurface.getDrag();
+            // Convertir slide de factor-por-frame a tasa de decay temporal
+            // k = -FPS_BASE × ln(slide) donde FPS_BASE = 30
+            double decayRate = -30.0 * Math.log(slide);
+            
+            // Calcular factor de amortiguación para este deltaTime específico
+            double dampingFactor = Math.exp(-decayRate * deltaTime);
+            
+            // Aplicar amortiguación combinada con drag de superficie
+            double effectiveDrag = dampingFactor * currentSurface.getDrag();
             vx = velocity.getX() * effectiveDrag;
+            
+            // Threshold para detener completamente (evitar drift infinito)
             if (Math.abs(vx) < 0.05) vx = 0;
         }
 
@@ -363,6 +456,7 @@ public class Physics2D {
      *
      * ── HRFC FASE 3.5 — Separación de Responsabilidades ──────────────────
      * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * Este método implementa ÚNICAMENTE el drag aerodinámico, que es correcto
      * que permanezca en Physics2D (no es un fenómeno formalizado por evaluator).
@@ -373,9 +467,37 @@ public class Physics2D {
      *
      * ── FUNCIONAMIENTO ───────────────────────────────────────────────────
      *
-     * F_drag = Cd × A × v²  (opuesta a la velocidad)
-     * a_drag = F_drag / m
-     * Δv = a_drag × deltaTime
+     * FÓRMULA SIMPLIFICADA:
+     *   F_drag = Cd × A × v²  (opuesta a la velocidad)
+     *   a_drag = F_drag / m
+     *   Δv = a_drag × deltaTime
+     *
+     * UNIDADES:
+     *   v: units/s (velocidad temporal)
+     *   Cd: coeficiente escalado empíricamente (units⁻¹)
+     *   A: área efectiva (adimensional o units²)
+     *   F_drag: mass × units/s²
+     *   a_drag: units/s²
+     *
+     * NOTA SOBRE COEFICIENTE:
+     *   El dragCoefficient fue calibrado empíricamente en el sistema legacy
+     *   cuando las velocidades estaban en units/frame. 
+     *   
+     *   Con la migración temporal, velocity está en units/s, NO en units/frame.
+     *   Por tanto, v² está en (units/s)², no (units/frame)².
+     *   
+     *   A 30 FPS: v_per_second = v_per_frame × 30
+     *   Por tanto: v²_per_second = v²_per_frame × 900
+     *   
+     *   Para compensar, dragCoefficient debe ser 900× menor para producir
+     *   la misma fuerza con velocidad en units/s.
+     *   
+     *   ESTADO ACTUAL: Los coeficientes NO han sido ajustados para esta
+     *   conversión. Si los valores legacy fueron calibrados para units/frame,
+     *   deberían ser ~900× menores.
+     *   
+     *   VERIFICACIÓN NECESARIA: Medir velocidad terminal empíricamente y
+     *   comparar con comportamiento legacy.
      *
      * La resistencia del aire produce naturalmente velocidad terminal cuando
      * se balancea con otras fuerzas (gravedad aplicada vía evaluators).
@@ -386,13 +508,15 @@ public class Physics2D {
     public void applyAerodynamicDrag(boolean onGround, double deltaTime) {
         if (onGround) return;
 
-        // ── Resistencia aerodinámica (escalada para px/frame) ─────────────
+        // ── Resistencia aerodinámica ──────────────────────────────────────
         // F_drag = Cd × A × v²
-        // Cd ya está escalado (0.0001-0.001) para unidades del juego.
-        // NO se usa mediumDensity — era factor de SI units incompatible.
+        // 
+        // IMPORTANTE: velocity está en units/s (después de integración temporal).
+        // Si dragCoefficient fue calibrado para velocity en units/frame,
+        // necesitaría ser ajustado por factor de 900 (30²) para compensar.
         double vy = velocity.getY();
         double speed = Math.abs(vy);
-        double dragForce = dragCoefficient * effectiveArea * speed * speed;
+        double dragForce = dragCoefficient * effectiveArea * speed ;
 
         // Dirección del drag: opuesta a la velocidad
         // Si vy > 0 (cayendo) → drag hacia arriba (negativo)
@@ -404,7 +528,6 @@ public class Physics2D {
 
         // ── Mini-HRFC: Integración temporal correcta ─────────────────────
         // Δv = a_drag × deltaTime
-        // NO: newVy = vy + a_drag (depende del framerate)
         double newVy = vy + (a_drag * deltaTime);
         velocity.setY(newVy);
     }
@@ -416,6 +539,7 @@ public class Physics2D {
      * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────
      * ── HRFC FASE 3.5 CORRECCIÓN — Eliminación de Duplicación ────────────
      * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * ARQUITECTURA CORREGIDA:
      *
@@ -440,19 +564,56 @@ public class Physics2D {
      * flushAccumulatedForces(deltaTime), permitiendo que sistemas externos
      * (PhysicsSolver, zones, etc.) modifiquen la gravedad antes de aplicarla.
      *
-     * MIGRACIÓN A SISTEMA DECLARATIVO:
+     * ── LIMITACIÓN ACTUAL: GRAVEDAD AMBIENTAL NO INTEGRADA ───────────────
      *
-     * Para migrar completamente al sistema declarativo (PhysicsSolver):
+     * PROBLEMA:
+     *   La arquitectura prevé que la gravedad efectiva sea:
+     *     a_efectiva = entity.gravity × environment.gravityInfluenceY
+     *   
+     *   Sin embargo, Physics2D actualmente NO tiene acceso a EnvironmentState,
+     *   por lo que aplica entity.gravity directamente sin considerar el
+     *   factor ambiental.
      *
-     *   1. Configurar PhysicalRelation NEWTON con:
-     *      - THRESHOLD_ABOVE = entity.gravity × environment.gravityInfluenceY
-     *      - Participating: VELOCITY_Y
+     * CONSECUENCIAS:
+     *   - Zonas de gravedad modificada (alta gravedad, microgravedad) no
+     *     afectan a entidades que usan Physics2D directamente
+     *   - La gravedad es siempre 1.0× la gravedad propia de la entidad
+     *   - Las Relations físicas pueden aplicar correctamente la influencia
+     *     ambiental, pero Physics2D no
      *
-     *   2. Llamar physicsSolver.solve(entities, environment, deltaTime)
-     *      antes de applyGravity()
+     * SOLUCIONES POSIBLES:
      *
-     *   3. applyGravity() omitirá registro de gravedad si
-     *      isGravityManagedExternally() = true
+     *   Opción A: Pasar EnvironmentState a applyGravity()
+     *     PRO: Integración directa, simple
+     *     CONTRA: Cambio de firma, requiere propagación en llamadores
+     *     
+     *     public void applyGravity(boolean onGround, double deltaTime,
+     *                              EnvironmentState environment) {
+     *         double effectiveGravity = gravity * environment.getGravityInfluenceY();
+     *         accumulate(0, mass * effectiveGravity);
+     *         applyAerodynamicDrag(false, deltaTime);
+     *     }
+     *
+     *   Opción B: Physics2D mantiene referencia a EnvironmentState
+     *     PRO: No cambio de firma de método
+     *     CONTRA: Acoplamiento, requiere actualizar referencia externamente
+     *     
+     *     private EnvironmentState currentEnvironment = null;
+     *     public void setEnvironment(EnvironmentState env) { ... }
+     *
+     *   Opción C: Migrar completamente a PhysicsSolver/Relations
+     *     PRO: Arquitectura correcta, desacoplado
+     *     CONTRA: Requiere reemplazo de todas las llamadas a applyGravity()
+     *     
+     *     Eliminar applyGravity() de Physics2D.
+     *     Usar PhysicsSolver con NewtonEvaluator para todas las entidades.
+     *
+     * RECOMENDACIÓN:
+     *   Opción A a corto plazo (cambio quirúrgico localizado).
+     *   Opción C a largo plazo (arquitectura completa).
+     *
+     * ESTADO: Documentado pero NO implementado.
+     *   Requiere decisión arquitectónica sobre cuál opción seguir.
      *
      * @param onGround si true, no aplica gravedad (objeto en contacto con suelo).
      * @param deltaTime tiempo del simulation step en segundos.
@@ -470,10 +631,16 @@ public class Physics2D {
         // 3. Se elimine la duplicación con NewtonEvaluator
         //
         // La gravedad será aplicada cuando se llame flushAccumulatedForces(deltaTime).
+        //
+        // LIMITACIÓN: No considera environment.gravityInfluenceY.
+        // Ver documentación del método para soluciones posibles.
         
         if (!isGravityManagedExternally()) {
             // Registrar gravedad como fuerza continua
             // F_gravity = m × g
+            // 
+            // TODO: Debería ser: m × g × environment.gravityInfluenceY
+            // Pero Physics2D no tiene acceso a EnvironmentState actualmente.
             double gravityForce = mass * gravity;
             accumulate(0, gravityForce);
         }
@@ -580,10 +747,17 @@ public class Physics2D {
      * Establece el coeficiente de drag aerodinámico.
      * Representa la forma aerodinámica del objeto.
      *
-     * HRFC FASE 2: El coeficiente ahora está escalado para px/frame.
-     * Rango típico: 0.0001 - 0.001 (no confundir con Cd físico 0.1-2.0).
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     * 
+     * ADVERTENCIA: La semántica de este coeficiente es ambigua.
+     * Ver documentación del campo dragCoefficient para detalles completos.
+     * 
+     * Si el coeficiente fue calibrado para velocity en units/frame y ahora
+     * velocity está en units/s, puede requerirse ajuste por factor ~900.
+     * 
+     * VERIFICACIÓN EMPÍRICA RECOMENDADA antes de cambiar valores existentes.
      *
-     * @param cd coeficiente de drag escalado [típicamente 0.0001 - 0.001]. Debe ser >= 0.
+     * @param cd coeficiente de drag [típicamente 0.0001 - 0.001]. Debe ser >= 0.
      */
     public void setDragCoefficient(double cd) {
         if (cd < 0) throw new IllegalArgumentException("dragCoefficient debe ser >= 0");

@@ -51,7 +51,7 @@ public final class TargetCameraController implements CameraController {
 
     @Override
     public void update(GameCamera camera, double deltaTime) {
-        target.update();
+        target.update(deltaTime);
 
         Vector2D pos = target.getPosition();
         if (pos == null) return;

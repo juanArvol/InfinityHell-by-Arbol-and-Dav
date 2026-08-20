@@ -12,15 +12,15 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
  *   - Combate: fijar la vista en un punto de interés
  *
  * ── DURACIÓN OPCIONAL ─────────────────────────────────────────────────────
- * Si se crea con durationTicks > 0, el target expira automáticamente
- * tras ese número de ticks y la cámara vuelve al target anterior.
+ * Si se crea con durationSeconds > 0, el target expira automáticamente
+ * tras ese tiempo y la cámara vuelve al target anterior.
  */
 public final class StaticLocationTarget implements CameraTarget {
 
     private final Vector2D position;
-    private final int      durationTicks;  // 0 = infinito
+    private final double   durationSeconds;  // 0 = infinito
     private final int      priority;
-    private int            ticksElapsed = 0;
+    private double         elapsedSeconds = 0.0;
 
     /**
      * Target estático permanente en la posición dada.
@@ -39,15 +39,15 @@ public final class StaticLocationTarget implements CameraTarget {
     /**
      * Target estático con duración finita.
      *
-     * @param x             coordenada X en el mundo
-     * @param y             coordenada Y en el mundo
-     * @param durationTicks ticks antes de expirar (0 = permanente)
-     * @param priority      prioridad respecto a otros targets
+     * @param x               coordenada X en el mundo
+     * @param y               coordenada Y en el mundo
+     * @param durationSeconds segundos antes de expirar (0 = permanente)
+     * @param priority        prioridad respecto a otros targets
      */
-    public StaticLocationTarget(double x, double y, int durationTicks, int priority) {
-        this.position      = new Vector2D(x, y);
-        this.durationTicks = durationTicks;
-        this.priority      = priority;
+    public StaticLocationTarget(double x, double y, double durationSeconds, int priority) {
+        this.position         = new Vector2D(x, y);
+        this.durationSeconds  = durationSeconds;
+        this.priority         = priority;
     }
 
     public static StaticLocationTarget at(double x, double y) {
@@ -58,8 +58,8 @@ public final class StaticLocationTarget implements CameraTarget {
         return new StaticLocationTarget(pos.getX(), pos.getY());
     }
 
-    public static StaticLocationTarget at(double x, double y, int durationTicks) {
-        return new StaticLocationTarget(x, y, durationTicks, 50);
+    public static StaticLocationTarget at(double x, double y, double durationSeconds) {
+        return new StaticLocationTarget(x, y, durationSeconds, 50);
     }
 
     @Override
@@ -68,13 +68,13 @@ public final class StaticLocationTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
-        if (durationTicks > 0) ticksElapsed++;
+    public void update(double deltaTime) {
+        if (durationSeconds > 0) elapsedSeconds += deltaTime;
     }
 
     @Override
     public boolean isExpired() {
-        return durationTicks > 0 && ticksElapsed >= durationTicks;
+        return durationSeconds > 0 && elapsedSeconds >= durationSeconds;
     }
 
     @Override

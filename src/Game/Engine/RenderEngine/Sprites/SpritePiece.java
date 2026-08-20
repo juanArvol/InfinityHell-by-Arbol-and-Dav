@@ -204,22 +204,24 @@ public final class SpritePiece implements Renderable {
      * Avanza el estado de animación usando tiempo real transcurrido.
      *
      * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────
+     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
      *
      * Migrado desde frame-based (tick++) hacia time-based (elapsed += deltaTime).
      *
-     * ANTES:
+     * ANTES (frame-based @ 30 FPS):
      *   tick++ cada frame
      *   if (tick >= frameTicks) → avanzar frame
-     *   A 31 FPS: animación 93% más lenta
-     *   A 120 FPS: animación 100% más rápida
+     *   A 30 FPS: animación velocidad esperada
+     *   A 60 FPS: animación 100% más rápida
+     *   A 120 FPS: animación 300% más rápida
      *
-     * AHORA:
+     * AHORA (time-based):
      *   elapsed += deltaTime
      *   if (elapsed >= frameSeconds) → avanzar frame
      *   A cualquier FPS: velocidad de animación consistente
      *
-     * NOTA: Animation.ticksForFrame() aún retorna ticks (legado).
-     * Convertimos ticks → segundos @ 60 FPS como valor esperado.
+     * NOTA: Animation.ticksForFrame() aún retorna ticks (legado @ 30 FPS).
+     * Convertimos ticks → segundos @ 30 FPS como valor esperado.
      * Migración futura: Animation debería aceptar duraciones en segundos.
      *
      * Llamado por SpriteSkeletonComponent.update(deltaTime).
@@ -229,12 +231,12 @@ public final class SpritePiece implements Renderable {
     public void updateAnimation(double deltaTime) {
         if (currentAnim == null) return;
 
-        // Duración del frame actual en ticks (legado)
+        // Duración del frame actual en ticks (legado @ 30 FPS)
         int frameTicks = currentAnim.ticksForFrame(frameIndex);
         
-        // Convertir ticks → segundos (asumiendo 60 FPS como tick-base)
+        // Convertir ticks → segundos @ 30 FPS (CORRECCIÓN: era 60, ahora 30)
         // TODO HRFC: migrar Animation a duraciones en segundos
-        double frameSeconds = frameTicks / 60.0;
+        double frameSeconds = frameTicks / 30.0;
 
         elapsed += deltaTime;
         

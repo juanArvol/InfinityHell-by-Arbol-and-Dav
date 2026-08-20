@@ -52,10 +52,20 @@ public final class CameraConstraintList {
      * @param virtualWidth  ancho del viewport
      * @param virtualHeight alto del viewport
      * @param zoom          zoom actual
+     * @param deltaTime     tiempo transcurrido desde el último frame en segundos
      * @return posición final después de aplicar todas las constraints.
      */
     public Vector2D apply(double desiredX, double desiredY,
-                          int virtualWidth, int virtualHeight, float zoom) {
+                          int virtualWidth, int virtualHeight, float zoom, double deltaTime) {
+        // Actualizar constraints con tiempo
+        for (CameraConstraint constraint : constraints) {
+            if (constraint instanceof HardConstraint hc) {
+                hc.update(deltaTime);
+            } else if (constraint instanceof RegionConstraint rc) {
+                rc.update(deltaTime);
+            }
+        }
+
         // Eliminar expiradas
         constraints.removeIf(CameraConstraint::isExpired);
 

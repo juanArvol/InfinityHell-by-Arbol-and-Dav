@@ -34,7 +34,7 @@ public class PathSteeringCommand implements EnemyAction {
     }
 
     @Override
-    public void execute(Enemy enemy) {
+    public void execute(Enemy enemy, double deltaTime) {
         if (path.isEmpty()) return;
 
         Vector2D target = path.get(index);

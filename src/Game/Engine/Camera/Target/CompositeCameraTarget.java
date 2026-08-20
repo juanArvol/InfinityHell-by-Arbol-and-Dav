@@ -75,9 +75,9 @@ public final class CompositeCameraTarget implements CameraTarget {
     }
 
     @Override
-    public void update() {
+    public void update(double deltaTime) {
         targets.removeIf(CameraTarget::isExpired);
-        for (CameraTarget t : targets) t.update();
+        for (CameraTarget t : targets) t.update(deltaTime);
     }
 
     @Override
