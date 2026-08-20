@@ -253,7 +253,7 @@ public class PlayerPhysics extends Physics2D {
 
     public PlayerPhysics(double gravity) {
         super(gravity);
-        mass            = 1.0;
+        mass            = 40.0;
         aGround         = ACCEL_GROUND;
         aAir            = ACCEL_AIR;
 

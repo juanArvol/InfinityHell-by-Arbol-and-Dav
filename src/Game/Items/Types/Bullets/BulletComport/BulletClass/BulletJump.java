@@ -96,7 +96,7 @@ import Game.Items.Types.Bullets.ProjectileMovement;
 public class BulletJump extends BulletBehavior {
 
     private static final ProjectileData DEFAULT_DATA =
-            ProjectileData.flat(5000, 2.9, 60);
+            ProjectileData.flat(5000, 80, 60);
 
     private static final ProjectileMovement GRAVITY =
             new GravityMovement(1);

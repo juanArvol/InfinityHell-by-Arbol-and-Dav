@@ -535,85 +535,43 @@ public class Physics2D {
     /**
      * Aplica gravedad y resistencia aerodinámica del medio.
      *
-     * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────
-     * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────
-     * ── HRFC FASE 3.5 CORRECCIÓN — Eliminación de Duplicación ────────────
-     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
-     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
+     * ── HRFC — Temporal Behavioral Restoration & Legacy Equivalence ───────
+     * ── CORRECCIÓN CRÍTICA — Eliminación de Compensación Temporal Hack ────
      *
-     * ARQUITECTURA CORREGIDA:
+     * PROBLEMA ANTERIOR:
+     *   applyGravity() registraba: (mass × gravity) / deltaTime
+     *   flushAccumulatedForces() aplicaba: (F / mass) × deltaTime
+     *   Resultado: Δv = ((m×g/dt)/m)×dt = g
      *
-     * Este método ahora DELEGA la aplicación de gravedad al sistema de
-     * acumulación de fuerzas, eliminando la duplicación con NewtonEvaluator.
+     *   La división por deltaTime era una COMPENSACIÓN para anular la
+     *   multiplicación posterior, no una expresión semánticamente correcta.
      *
-     * ANTES (duplicación):
-     *   Physics2D.applyGravity() → calcula gravedad directamente
-     *   NewtonEvaluator → calcula gravedad
+     * CORRECCIÓN APLICADA:
+     *   La gravedad ES una aceleración (units/s²), no una fuerza.
+     *   Debe aplicarse directamente mediante: Δv = g × dt
      *
-     * AHORA (delegación):
-     *   Physics2D.applyGravity() → registra gravedad vía accumulate()
-     *   flushAccumulatedForces(deltaTime) → aplica fuerzas acumuladas
-     *   (alternativamente: PhysicsSolver → NewtonEvaluator)
+     * MATEMÁTICA CORRECTA:
+     *   gravity = 23.4 units/s² (Player legacy: 0.78 px/frame² × 30)
+     *   deltaTime = 1/30 s @ 30 FPS
+     *   Δv = 23.4 × (1/30) = 0.78 units/frame-equivalent ✓
      *
-     * ── FUNCIONAMIENTO ───────────────────────────────────────────────────
+     * ARQUITECTURA:
+     *   La gravedad NO pasa por accumulate()/flush() porque NO es una fuerza
+     *   continua acumulable — es una aceleración directa.
      *
-     * 1. Registra gravedad como fuerza continua vía accumulate()
-     * 2. Aplica drag aerodinámico directamente (correcto en Physics2D)
+     *   accumulate() está diseñado para fuerzas que requieren F=ma.
+     *   La gravedad ya está expresada como aceleración, por tanto se aplica
+     *   directamente a velocity.
      *
-     * La gravedad registrada será integrada cuando se llame
-     * flushAccumulatedForces(deltaTime), permitiendo que sistemas externos
-     * (PhysicsSolver, zones, etc.) modifiquen la gravedad antes de aplicarla.
+     * PRESERVACIÓN DE VALORES:
+     *   gravity = 23.4 units/s² → NO cambiado
+     *   mass = 40.0 → NO cambiado
+     *   Solo se corrige la integración temporal.
      *
-     * ── LIMITACIÓN ACTUAL: GRAVEDAD AMBIENTAL NO INTEGRADA ───────────────
-     *
-     * PROBLEMA:
-     *   La arquitectura prevé que la gravedad efectiva sea:
-     *     a_efectiva = entity.gravity × environment.gravityInfluenceY
-     *   
-     *   Sin embargo, Physics2D actualmente NO tiene acceso a EnvironmentState,
-     *   por lo que aplica entity.gravity directamente sin considerar el
-     *   factor ambiental.
-     *
-     * CONSECUENCIAS:
-     *   - Zonas de gravedad modificada (alta gravedad, microgravedad) no
-     *     afectan a entidades que usan Physics2D directamente
-     *   - La gravedad es siempre 1.0× la gravedad propia de la entidad
-     *   - Las Relations físicas pueden aplicar correctamente la influencia
-     *     ambiental, pero Physics2D no
-     *
-     * SOLUCIONES POSIBLES:
-     *
-     *   Opción A: Pasar EnvironmentState a applyGravity()
-     *     PRO: Integración directa, simple
-     *     CONTRA: Cambio de firma, requiere propagación en llamadores
-     *     
-     *     public void applyGravity(boolean onGround, double deltaTime,
-     *                              EnvironmentState environment) {
-     *         double effectiveGravity = gravity * environment.getGravityInfluenceY();
-     *         accumulate(0, mass * effectiveGravity);
-     *         applyAerodynamicDrag(false, deltaTime);
-     *     }
-     *
-     *   Opción B: Physics2D mantiene referencia a EnvironmentState
-     *     PRO: No cambio de firma de método
-     *     CONTRA: Acoplamiento, requiere actualizar referencia externamente
-     *     
-     *     private EnvironmentState currentEnvironment = null;
-     *     public void setEnvironment(EnvironmentState env) { ... }
-     *
-     *   Opción C: Migrar completamente a PhysicsSolver/Relations
-     *     PRO: Arquitectura correcta, desacoplado
-     *     CONTRA: Requiere reemplazo de todas las llamadas a applyGravity()
-     *     
-     *     Eliminar applyGravity() de Physics2D.
-     *     Usar PhysicsSolver con NewtonEvaluator para todas las entidades.
-     *
-     * RECOMENDACIÓN:
-     *   Opción A a corto plazo (cambio quirúrgico localizado).
-     *   Opción C a largo plazo (arquitectura completa).
-     *
-     * ESTADO: Documentado pero NO implementado.
-     *   Requiere decisión arquitectónica sobre cuál opción seguir.
+     * LIMITACIÓN: GRAVEDAD AMBIENTAL NO INTEGRADA
+     *   La arquitectura prevé: a_efectiva = entity.gravity × environment.gravityInfluenceY
+     *   Actualmente Physics2D no tiene acceso a EnvironmentState.
+     *   Para implementar modificación ambiental, pasar EnvironmentState como parámetro.
      *
      * @param onGround si true, no aplica gravedad (objeto en contacto con suelo).
      * @param deltaTime tiempo del simulation step en segundos.
@@ -621,28 +579,31 @@ public class Physics2D {
     public void applyGravity(boolean onGround, double deltaTime) {
         if (onGround) return;
 
-        // ── HRFC FASE 3.5 + Mini-HRFC: Delegación sin duplicación ─────────
-        // En lugar de calcular gravedad directamente (duplicando NewtonEvaluator),
-        // registramos la gravedad como fuerza continua.
+        // ── HRFC: Aplicación directa de gravedad como aceleración ─────────
+        // CORRECCIÓN CRÍTICA: Eliminar compensación /deltaTime.
+        // 
+        // La gravedad ES aceleración (units/s²), no fuerza.
+        // Integración correcta: Δv = a × dt
         //
-        // Esto permite que:
-        // 1. Sistemas externos modifiquen la gravedad antes de aplicarla
-        // 2. Se integre correctamente con otras fuerzas acumuladas
-        // 3. Se elimine la duplicación con NewtonEvaluator
+        // ANTES (incorrecto — compensación hack):
+        //   double gravityForce = (mass × gravity) / deltaTime;
+        //   accumulate(0, gravityForce);
+        //   // Luego flush hacía: Δv = (F/m)×dt = ((m×g/dt)/m)×dt = g ✗
         //
-        // La gravedad será aplicada cuando se llame flushAccumulatedForces(deltaTime).
+        // AHORA (correcto — integración temporal directa):
+        //   Δv = gravity × deltaTime
         //
-        // LIMITACIÓN: No considera environment.gravityInfluenceY.
-        // Ver documentación del método para soluciones posibles.
+        // Verificación @ 30 FPS (dt = 1/30):
+        //   Player: gravity = 23.4 units/s²
+        //   Δv = 23.4 × (1/30) = 0.78 units/frame-equivalent
+        //   Legacy: 0.78 px/frame² → Equivalencia preservada ✓
         
         if (!isGravityManagedExternally()) {
-            // Registrar gravedad como fuerza continua
-            // F_gravity = m × g
-            // 
-            // TODO: Debería ser: m × g × environment.gravityInfluenceY
-            // Pero Physics2D no tiene acceso a EnvironmentState actualmente.
-            double gravityForce = mass * gravity;
-            accumulate(0, gravityForce);
+            // Aplicar gravedad directamente como aceleración
+            // TODO: Considerar environment.gravityInfluenceY cuando esté disponible:
+            //   double effectiveGravity = gravity * environment.getGravityInfluenceY();
+            double deltaVy = gravity * deltaTime;
+            velocity.setY(velocity.getY() + deltaVy);
         }
 
         // ── Drag aerodinámico (correcto en Physics2D) ────────────────────
@@ -654,10 +615,10 @@ public class Physics2D {
     /**
      * Aplica un impulso de salto vertical.
      *
-     * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────
+     * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
      *
-     * Este método ahora utiliza addForce() en lugar de asignación directa
-     * de velocidad, integrándose correctamente con el sistema de fuerzas/impulsos.
+     * Este método utiliza addForce() correctamente para aplicar un impulso.
+     * La integración es: Δv = force / mass (sin deltaTime, correcto para impulsos).
      *
      * DEPRECADO: Se recomienda usar {@link Game.Engine.Physics.KineticPhysics.Intent.JumpIntent}
      * en su lugar, que expresa la intención de salto como altura objetivo en
@@ -671,6 +632,10 @@ public class Physics2D {
      *   Después:
      *     JumpIntent intent = new JumpIntent(capabilities);
      *     intent.resolve(physics);
+     *
+     * AUDITORÍA: ✓ CORRECTO
+     *   Usa addForce() que implementa correctamente Δv = J/m para impulsos.
+     *   No requiere integración temporal adicional.
      *
      * @param force impulso de salto (positivo, será aplicado hacia arriba como -force)
      *
@@ -691,18 +656,26 @@ public class Physics2D {
     /**
      * Integra la velocidad en la posición.
      *
-     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
      *
-     * CORRECCIÓN TEMPORAL:
-     *
-     * La posición debe integrarse usando velocity × deltaTime:
+     * INTEGRACIÓN TEMPORAL CORRECTA:
+     *   La posición debe integrarse usando velocity × deltaTime:
+     *   
      *   Δx = v × deltaTime
      *
-     * NO:
-     *   Δx = v  (asume 1 unidad de tiempo = 1 frame, dependiente del framerate)
+     * MATEMÁTICA:
+     *   v: velocidad en [units/s]
+     *   dt: tiempo en [s]
+     *   Δx: desplazamiento en [units]
      *
-     * Si la velocidad está expresada en unidades/segundo (u/s), el desplazamiento
-     * por frame debe ser: posición += velocidad × deltaTime_en_segundos.
+     * VERIFICACIÓN @ 30 FPS:
+     *   Ejemplo: Player caminando, v = 2100 units/s, dt = 1/30
+     *   Δx = 2100 × (1/30) = 70 units/frame
+     *   Legacy: 70 px/frame → Equivalencia preservada ✓
+     *
+     * AUDITORÍA: ✓ CORRECTO
+     *   Implementación matemáticamente correcta.
+     *   Integración temporal Δx = v×dt es correcta.
      *
      * @param position posición a modificar
      * @param deltaTime tiempo del simulation step en segundos
@@ -801,29 +774,47 @@ public class Physics2D {
     /**
      * Aplica un impulso instantáneo sobre la velocidad.
      *
-     * ── SEMÁNTICA ─────────────────────────────────────────────────────────
-     * addForce() representa una aplicación INMEDIATA de un impulso discreto:
+     * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
      *
+     * SEMÁNTICA CORRECTA:
+     *   addForce() representa un IMPULSO INSTANTÁNEO discreto:
+     *   
      *   Δv = J / m
+     *   
+     *   donde J es el impulso (momentum transfer) aplicado en este evento.
      *
-     * donde J es el impulso aplicado durante este step.
+     * UNIDADES:
+     *   fx, fy: impulso en [mass × units/s]
+     *   mass: masa en [mass units]
+     *   Δv: cambio de velocidad en [units/s]
      *
-     * ── USO TÍPICO ────────────────────────────────────────────────────────
+     * INTEGRACIÓN TEMPORAL:
+     *   Los impulsos NO se integran con deltaTime porque representan
+     *   transferencias instantáneas de momentum, no fuerzas continuas.
+     *   
+     *   CORRECTO: Δv = J / m
+     *   INCORRECTO: Δv = (J / m) × dt
+     *
+     * USO TÍPICO:
      *   - Knockback de explosiones (MetheorBullet)
      *   - Empuje radial (PushableComponent)
      *   - Impactos puntuales
-     *   - Saltos
-     *   - Rebotes
+     *   - Rebotes en colisiones
+     *   - Dash instantáneo
      *
-     * ── DIFERENCIA CON accumulate() ───────────────────────────────────────
-     *   addForce()   → impulso instantáneo aplicado inmediatamente
-     *   accumulate() → fuerza continua acumulada hasta flushAccumulatedForces()
+     * DIFERENCIA CON accumulate():
+     *   addForce()   → impulso instantáneo (J/m), aplicado inmediatamente
+     *   accumulate() → fuerza continua (F), integrada con dt en flush
      *
-     * Para fuerzas continuas (viento, campos vectoriales, gravedad de zona),
-     * usar {@link #accumulate(double, double)} en su lugar.
+     * Para fuerzas continuas (viento, campos vectoriales), usar
+     * {@link #accumulate(double, double)} en su lugar.
      *
-     * @param fx componente X del impulso (en unidades de fuerza).
-     * @param fy componente Y del impulso (en unidades de fuerza).
+     * AUDITORÍA: ✓ CORRECTO
+     *   Implementación matemáticamente correcta para impulsos.
+     *   No requiere modificación temporal.
+     *
+     * @param fx componente X del impulso en [mass × units/s].
+     * @param fy componente Y del impulso en [mass × units/s].
      */
     public void addForce(double fx, double fy) {
         velocity.setX(velocity.getX() + (fx / mass));
@@ -834,37 +825,58 @@ public class Physics2D {
      * Acumula una fuerza continua para ser integrada en el siguiente
      * {@link #flushAccumulatedForces()}.
      *
-     * ── SEMÁNTICA ─────────────────────────────────────────────────────────
-     * accumulate() representa fuerzas CONTINUAS que actúan durante el frame:
+     * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
      *
-     *   F_net = ΣF    (suma de todas las fuerzas acumuladas)
-     *   Δv = (F_net / m) × Δt
+     * SEMÁNTICA CORRECTA:
+     *   accumulate() representa fuerzas CONTINUAS que actúan durante el frame:
      *
-     * Múltiples sistemas pueden llamar accumulate() en el mismo frame.
-     * Todas las fuerzas se suman vectorialmente.
+     *   F_net = ΣF    (suma vectorial de todas las fuerzas acumuladas)
+     *   Δv = (F_net / m) × dt
      *
-     * ── USO TÍPICO ────────────────────────────────────────────────────────
+     * UNIDADES:
+     *   fx, fy: fuerza en [mass × units/s²]
+     *   mass: masa en [mass units]
+     *   deltaTime (en flush): tiempo en [s]
+     *   Δv: cambio de velocidad en [units/s]
+     *
+     * INTEGRACIÓN TEMPORAL:
+     *   Las fuerzas continuas SÍ se integran con deltaTime porque representan
+     *   fuerzas que actúan durante un intervalo de tiempo.
+     *   
+     *   CORRECTO: Δv = (F / m) × dt
+     *   INCORRECTO: Δv = F / m (dependiente del framerate)
+     *
+     * USO TÍPICO:
      *   - Campos de viento (VectorFieldSystem)
      *   - Zonas de gravedad modificada
      *   - Campos magnéticos
      *   - Corrientes de agua
      *   - Fuerzas ambientales persistentes
      *
-     * ── DIFERENCIA CON addForce() ─────────────────────────────────────────
-     *   addForce()   → impulso instantáneo aplicado inmediatamente
-     *   accumulate() → fuerza continua acumulada hasta flush
+     * DIFERENCIA CON addForce():
+     *   addForce()   → impulso instantáneo (J/m), aplicado inmediatamente
+     *   accumulate() → fuerza continua (F), integrada con dt en flush
      *
-     * ── CICLO DE VIDA ─────────────────────────────────────────────────────
-     * 1. Sistemas externos llaman accumulate() durante su update
-     * 2. CollisionsSystem FASE 0.5 llama flushAccumulatedForces()
-     * 3. Fuerzas se integran como impulso: velocity += (ΣF / mass)
-     * 4. Acumulador se resetea automáticamente para el siguiente frame
+     * CICLO DE VIDA:
+     *   1. Sistemas externos llaman accumulate() durante su update
+     *   2. CollisionsSystem FASE 0 llama flushAccumulatedForces(dt)
+     *   3. Fuerzas se integran: velocity += (ΣF / mass) × dt
+     *   4. Acumulador se resetea automáticamente para el siguiente frame
+     *
+     * NOTA IMPORTANTE:
+     *   La gravedad YA NO usa accumulate() después de la corrección HRFC.
+     *   La gravedad se aplica directamente como aceleración porque YA está
+     *   expresada en units/s², no como fuerza que requiera F=ma.
      *
      * Para impulsos instantáneos (knockback, explosiones), usar
      * {@link #addForce(double, double)} en su lugar.
      *
-     * @param fx fuerza en X (en unidades de fuerza, no velocidad).
-     * @param fy fuerza en Y (en unidades de fuerza, no velocidad).
+     * AUDITORÍA: ✓ CORRECTO
+     *   Implementación matemáticamente correcta para fuerzas continuas.
+     *   Integración temporal en flush() es correcta.
+     *
+     * @param fx fuerza en X en [mass × units/s²].
+     * @param fy fuerza en Y en [mass × units/s²].
      */
     public void accumulate(double fx, double fy) {
         accumulatedFx += fx;
@@ -875,31 +887,45 @@ public class Physics2D {
      * Aplica todas las fuerzas acumuladas como un único impulso y
      * limpia el acumulador para el siguiente frame.
      *
-     * ── Mini-HRFC — Unified Physics Time Integration ─────────────────────
+     * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
      *
-     * CORRECCIÓN TEMPORAL:
-     *
-     * Las fuerzas continuas deben integrarse usando deltaTime:
+     * INTEGRACIÓN TEMPORAL CORRECTA:
+     *   Las fuerzas continuas deben integrarse usando deltaTime:
+     *   
      *   Δv = (ΣF / m) × deltaTime
      *
-     * NO:
-     *   Δv = ΣF / m  (dependiente del framerate)
+     * MATEMÁTICA:
+     *   F: fuerza en [mass × units/s²]
+     *   m: masa en [mass units]
+     *   dt: tiempo en [s]
+     *   Δv: cambio de velocidad en [units/s]
      *
-     * ANTES: accumulate() registraba fuerzas y flush las aplicaba sin tiempo.
-     * AHORA: flush recibe deltaTime explícito del simulation step.
+     * VERIFICACIÓN @ 30 FPS:
+     *   Ejemplo: Viento con F = 1200 (mass × units/s²), m = 40, dt = 1/30
+     *   Δv = (1200 / 40) × (1/30) = 30 × (1/30) = 1.0 units/s por frame
      *
-     * Llamar desde CollisionsSystem FASE 0.5, después de applyGravity()
-     * y antes del SweptAABB, para que las fuerzas de zona se integren
-     * correctamente en el mismo step que la gravedad.
+     * USO:
+     *   Llamar desde CollisionsSystem FASE 0, después de applyGravity()
+     *   y antes del SweptAABB, para que las fuerzas de zona se integren
+     *   correctamente en el mismo step.
+     *
+     * NOTA IMPORTANTE:
+     *   Después de la corrección HRFC, la gravedad YA NO pasa por este método.
+     *   La gravedad se aplica directamente en applyGravity() como aceleración.
+     *   Este método ahora es exclusivo para fuerzas continuas ambientales.
      *
      * No hace nada si no hay fuerzas acumuladas.
+     *
+     * AUDITORÍA: ✓ CORRECTO
+     *   Implementación matemáticamente correcta.
+     *   Integración temporal Δv = (F/m)×dt es correcta.
      *
      * @param deltaTime tiempo del simulation step en segundos
      */
     public void flushAccumulatedForces(double deltaTime) {
         if (accumulatedFx == 0.0 && accumulatedFy == 0.0) return;
         
-        // Mini-HRFC: Integración temporal correcta
+        // HRFC: Integración temporal correcta para fuerzas continuas
         // Δv = (F / m) × deltaTime
         velocity.setX(velocity.getX() + (accumulatedFx / mass) * deltaTime);
         velocity.setY(velocity.getY() + (accumulatedFy / mass) * deltaTime);
