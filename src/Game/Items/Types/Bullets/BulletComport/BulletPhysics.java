@@ -65,14 +65,38 @@ public class BulletPhysics extends Physics2D {
     private int lastContactNormalY = 0;
 
     /**
-     * @param xSpeed velocidad inicial en X (unidades/frame)
-     * @param ySpeed velocidad inicial en Y (unidades/frame)
+     * @param xSpeed velocidad inicial en X (unidades/frame del sistema legacy @ 30 FPS)
+     * @param ySpeed velocidad inicial en Y (unidades/frame del sistema legacy @ 30 FPS)
+     * 
+     * ── HRFC-DT-007 — Temporal Correctness ────────────────────────────────
+     * 
+     * CORRECCIÓN CRÍTICA: Conversión de unidades legacy a temporales.
+     * 
+     * PROBLEMA:
+     *   Los valores de velocidad provienen del sistema legacy calibrado @ 30 FPS,
+     *   expresados en units/frame. Sin embargo, Physics2D.velocity debe estar
+     *   en units/s para integración temporal correcta.
+     * 
+     * CONVERSIÓN:
+     *   velocity [units/s] = speed [units/frame @ 30 FPS] × 30
+     * 
+     * EJEMPLO:
+     *   WeaponPistola.bulletSpeedBase = 10 units/frame
+     *   → velocity = 10 × 30 = 300 units/s
+     *   → A 30 FPS: Δx = 300 × (1/30) = 10 units/frame ✓
+     * 
+     * INVARIANTE PRESERVADO:
+     *   El comportamiento observable a 30 FPS es idéntico al sistema legacy,
+     *   pero ahora funciona correctamente a cualquier framerate.
      */
     public BulletPhysics(double xSpeed, double ySpeed) {
         super(0.0); // gravedad base cero — la gestiona ProjectileMovement
         setMass(1);
-        velocity.setX(xSpeed);
-        velocity.setY(ySpeed);
+        
+        // HRFC-DT-007: Conversión temporal de legacy units/frame a units/s
+        // Sistema legacy calibrado @ 30 FPS → multiplicar por 30
+        velocity.setX(xSpeed * 30.0);
+        velocity.setY(ySpeed * 30.0);
 
         // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────
         // HRFC FASE 2: Coeficientes escalados para px/frame.

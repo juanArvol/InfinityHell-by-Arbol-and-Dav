@@ -426,6 +426,11 @@ public class Physics2D {
         //   damping_factor = e^(-3.154/30) = e^(-0.1051) ≈ 0.900 ✓
         //
         // Beneficio: Funciona correctamente a cualquier FPS.
+        //
+        // CORRECCIÓN CRÍTICA (HRFC-DT-014):
+        //   El damping debe aplicarse a vx (velocidad acumulada este frame),
+        //   NO a velocity.getX() (velocidad del frame anterior).
+        //   Esto produce consistencia entre diferentes frame rates.
         if (inputX == 0) {
             // Convertir slide de factor-por-frame a tasa de decay temporal
             // k = -FPS_BASE × ln(slide) donde FPS_BASE = 30
@@ -435,8 +440,9 @@ public class Physics2D {
             double dampingFactor = Math.exp(-decayRate * deltaTime);
             
             // Aplicar amortiguación combinada con drag de superficie
+            // CORRECCIÓN: Aplicar a vx (velocidad acumulada), no velocity.getX()
             double effectiveDrag = dampingFactor * currentSurface.getDrag();
-            vx = velocity.getX() * effectiveDrag;
+            vx = vx * effectiveDrag;
             
             // Threshold para detener completamente (evitar drift infinito)
             if (Math.abs(vx) < 0.05) vx = 0;

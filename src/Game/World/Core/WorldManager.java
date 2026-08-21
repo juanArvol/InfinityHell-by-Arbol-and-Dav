@@ -261,8 +261,16 @@ public class WorldManager {
      *   - CameraSystem: movimiento de cámara
      *   - Otros sistemas temporales según se agreguen
      *
+     * ── HRFC-DT-002 — Unified Temporal Context ───────────────────────────
+     *
+     * EVOLUCIÓN:
+     *
+     * El parámetro deltaTime (double) fue reemplazado por TemporalContext.
+     * WorldManager extrae deltaTime del contexto y lo distribuye a sistemas
+     * que aún usan double (transición gradual).
+     *
      * CONTRATO:
-     *   deltaTime representa segundos reales del simulation step.
+     *   temporalContext representa el tiempo del simulation step.
      *   Todos los sistemas físicos deben usar este valor para integración temporal.
      *   Sistemas que no requieren tiempo continuo (SpawnSystem con ticks discretos,
      *   UI, etc.) pueden actualizar sin deltaTime hasta su migración.
@@ -271,9 +279,17 @@ public class WorldManager {
      *   GameLoop (calcula) → GameState (propaga) → WorldManager (distribuye)
      *     → CollisionsSystem → Physics2D (integra)
      *
-     * @param deltaTime tiempo del simulation step en segundos (autoridad de GameLoop)
+     * PLAN DE MIGRACIÓN:
+     *   - Fase 1 (actual): WorldManager recibe TemporalContext, extrae deltaTime
+     *   - Fase 2 (futuro): Sistemas críticos reciben TemporalContext directamente
+     *   - Fase 3 (ideal): Todos los sistemas temporales usan TemporalContext
+     *
+     * @param temporalContext contexto temporal del simulation step (autoridad única)
      */
-    public void update(double deltaTime) {
+    public void update(Main.TemporalContext temporalContext) {
+        // Extraer deltaTime del contexto temporal canónico
+        double deltaTime = temporalContext.getDeltaTime();
+
         // El World activo provee el externalRegistry para interoperabilidad legacy.
         World world = getCurrentWorld();
 

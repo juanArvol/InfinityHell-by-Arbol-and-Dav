@@ -36,10 +36,25 @@ public final class SansMovement implements MovementStrategy {
     private static final double COMFORT_DISTANCE  = 220.0;
     /** Margen de tolerancia: dentro de este rango, Sans permanece en IDLE. */
     private static final double COMFORT_MARGIN    = 40.0;
-    /** Velocidad de orbitación angular (radianes por frame). */
-    private static final double ORBIT_ANGULAR_SPEED = 0.012;
-    /** Velocidad de movimiento de aproximación/retirada (px/frame). */
-    private static final double MOVE_SPEED        = 1.8;
+    
+    // ── HRFC-DT-011 — Enemy Temporal Correctness ──────────────────────────
+    /**
+     * Velocidad de orbitación angular en radianes por segundo.
+     * 
+     * MIGRACIÓN TEMPORAL:
+     * ANTES (frame-based @ 30 FPS): 0.012 rad/frame
+     * AHORA (time-based): 0.012 × 30 = 0.36 rad/s
+     */
+    private static final double ORBIT_ANGULAR_SPEED = 0.36;
+    
+    /**
+     * Velocidad de movimiento de aproximación/retirada en px/s.
+     * 
+     * MIGRACIÓN TEMPORAL:
+     * ANTES (frame-based @ 30 FPS): 1.8 px/frame
+     * AHORA (time-based): 1.8 × 30 = 54.0 px/s
+     */
+    private static final double MOVE_SPEED = 54.0;
 
     private double orbitAngle = 0.0;
 
@@ -59,6 +74,13 @@ public final class SansMovement implements MovementStrategy {
 
     // ── Movimiento por frame ──────────────────────────────────────────────
 
+    /**
+     * ── HRFC-DT-011 — Enemy Temporal Correctness ─────────────────────────
+     * 
+     * MIGRACIÓN TEMPORAL:
+     * - orbitAngle ahora incrementa con deltaTime: θ += ω × dt
+     * - Las velocidades ya están en px/s, la física las integra con deltaTime
+     */
     @Override
     public void move(Enemy enemy, EnemyContext ctx, double deltaTime) {
         if (ctx == null) return;
@@ -94,7 +116,8 @@ public final class SansMovement implements MovementStrategy {
 
         } else {
             // ── ORBIT: rodear al jugador en arco ──────────────────────────
-            orbitAngle += ORBIT_ANGULAR_SPEED;
+            // CORRECCIÓN TEMPORAL: θ += ω × dt
+            orbitAngle += ORBIT_ANGULAR_SPEED * deltaTime;
             double orbitX = targetX + Math.cos(orbitAngle) * COMFORT_DISTANCE;
             double orbitY = targetY + Math.sin(orbitAngle) * COMFORT_DISTANCE;
 

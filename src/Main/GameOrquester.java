@@ -9,6 +9,8 @@ import Inputs.Listeners.KeyActionListener;
 import Inputs.MouseInput;
 import Main.Debug.DebugGameSettings;
 import Main.States.GameState;
+import Main.States.IdleState;
+import Main.States.StateManager;
 import Sprites.Assets;
 import java.awt.Color;
 
@@ -22,7 +24,8 @@ import java.awt.Color;
  *   - DisplayManager: ciclo de vida del Display (EDT).
  *   - RenderGateway:  acceso del GameLoop a superficies publicadas.
  *   - GameLoop:       consume frames sin conocer DisplayManager.
- *   - GameState:      estado del juego y gameplay.
+ *   - StateManager:   gestiona estados del juego (GameState, MenuState, etc.).
+ *   - GameState:      estado inicial del juego y gameplay.
  *   - Input:          teclado y ratón conectados al canvas.
  *
  * ──────────────────────────────────────────────────────────────────────────
@@ -38,18 +41,37 @@ import java.awt.Color;
  *   WindowManager usa JFrame.DO_NOTHING_ON_CLOSE. GameOrquester registra
  *   un WindowAdapter en el JFrame después de init() que llama stop() y
  *   luego dispone la ventana. stop() para el GameLoop y llama
- *   GameState.shutdown() (que para el bgExecutor con awaitTermination).
+ *   StateManager.shutdown() (que para el estado activo con awaitTermination).
  *   Solo entonces se llama frame.dispose(), que cierra la ventana y
  *   permite que la JVM termine limpiamente.
  *
  *   El WindowAdapter se registra DESPUÉS de init() para evitar que se
  *   active durante la inicialización del Display.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * HRFC-DT-003 — Temporal State Pipeline
+ *
+ * EVOLUCIÓN:
+ *
+ * GameOrquester ahora crea StateManager y lo configura con GameState como
+ * estado inicial. GameLoop recibe StateManager en lugar de GameState.
+ *
+ * FLUJO DE CONSTRUCCIÓN:
+ *   1. Crear GameState
+ *   2. Crear StateManager
+ *   3. Inyectar MouseInput en GameState
+ *   4. Establecer GameState como estado inicial (activa onEnter)
+ *   5. Crear GameLoop con StateManager
+ *
+ * SHUTDOWN:
+ *   1. Detener GameLoop
+ *   2. StateManager.shutdown() → onExit() + shutdown() en estado activo
  */
 public class GameOrquester {
 
     private DisplayManager display;
     private GameLoop       loop;
-    private GameState      state;
+    private StateManager   stateManager;
 
     public void start() {
 
@@ -90,35 +112,59 @@ public class GameOrquester {
         // Viewport inicial
         mouse.setViewport(display.getViewport());
 
-        // ── 6. Listeners de teclado ───────────────────────────────────────────
+        // ── 6. Game State ─────────────────────────────────────────────────────
+        GameState gameState = new GameState(
+            display.getVirtualWidth(),
+            display.getVirtualHeight()
+        );
+
+        // ── 7. State Manager ──────────────────────────────────────────────────
+        // ── HRFC-DT-003: StateManager gestiona estados del juego ──────────────
+        stateManager = new StateManager(mouse);
+
+        // Inyectar MouseInput en GameState para lifecycle (onEnter/onExit)
+        gameState.setMouseInput(mouse);
+
+        // Establecer GameState como estado inicial (activa onEnter)
+        stateManager.setState(gameState);
+
+        // Conectar cambios de resolución virtual al StateManager.
+        // Si se envía DisplayCommand.ChangeResolution, StateManager propagará
+        // el cambio al estado activo (GameState, MenuState, etc.).
+        display.addVirtualResolutionListener((w, h) ->
+            stateManager.onVirtualDimensionsChanged(w, h)
+        );
+
+        // ── 8. Listeners de teclado ───────────────────────────────────────────
         keyboard.addKeyActionListener((KeyActionListener) action -> {
             switch (action) {
                 case "toggleFullscreen" ->
                     display.requestToggleFullscreen();
                 case "toggleFps" ->
                     DebugGameSettings.getInstance().toggleFps();
+                // ── HRFC-DT-003: Prueba arquitectónica de cambio de estado ───
+                case "toggleIdleState" -> {
+                    // Demostración de transición entre estados
+                    if (stateManager.getActiveState() instanceof GameState) {
+                        // Cambiar a IdleState
+                        IdleState idleState = new IdleState(
+                            display.getVirtualWidth(),
+                            display.getVirtualHeight()
+                        );
+                        stateManager.setState(idleState);
+                    } else {
+                        // Volver a GameState
+                        stateManager.setState(gameState);
+                    }
+                }
             }
         });
 
-        // ── 7. Game State ─────────────────────────────────────────────────────
-        state = new GameState(
-            display.getVirtualWidth(),
-            display.getVirtualHeight()
-        );
-
-        // Conectar cambios de resolución virtual al GameState.
-        // Si se envía DisplayCommand.ChangeResolution, GameState, WorldManager
-        // y GameCamera se actualizan con las nuevas dimensiones virtuales.
-        display.addVirtualResolutionListener((w, h) ->
-            state.onVirtualDimensionsChanged(w, h)
-        );
-
-        // ── 8. Game Loop ──────────────────────────────────────────────────────
-        state.registerMouseInput(mouse);
-
+        // ── 9. Game Loop ──────────────────────────────────────────────────────
+        // ── HRFC-DT-003: GameLoop recibe StateManager, no GameState ──────────
         loop = new GameLoop(
             display.getRenderGateway(),
-            state,
+            stateManager,
             keyboard,
             mouse,
             settings.targetFps
@@ -126,7 +172,7 @@ public class GameOrquester {
 
         loop.start();
 
-        // ── 9. Shutdown al cerrar la ventana ──────────────────────────────────
+        // ── 10. Shutdown al cerrar la ventana ─────────────────────────────────
         // addWindowCloseListener encapsula el registro dentro del subsistema
         // Display, sin exponer el JFrame hacia GameOrquester.
         // El callback para el GameLoop y para disposeWindow() son la
@@ -138,7 +184,7 @@ public class GameOrquester {
     }
 
     public void stop() {
-        if (loop  != null) loop.stop();
-        if (state != null) state.shutdown();
+        if (loop         != null) loop.stop();
+        if (stateManager != null) stateManager.shutdown();
     }
 }

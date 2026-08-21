@@ -191,8 +191,8 @@ public class PlayerPhysics extends Physics2D {
     // Los coeficientes están calibrados para el sistema a 30 FPS.
     // La velocidad terminal emerge del balance F_gravity ≈ F_drag.
     //
-    // Con gravity=0.4 (units/frame² @ 30 FPS → 12 units/s²),
-    // mass=40.0, effectiveArea=1.2, dragCoefficient=0.0004:
+    // Con gravity=23.4 units/s² (0.78 units/frame² @ 30 FPS),
+    // mass=40.0, effectiveArea=0, dragCoefficient=9.0004:
     //   - Velocidad terminal emerge naturalmente del sistema
     //   - Comportamiento de caída natural y controlado
     //   - Sin límites artificiales
@@ -221,23 +221,23 @@ public class PlayerPhysics extends Physics2D {
      * Altura base de salto del jugador en píxeles virtuales.
      * 
      * NOTA SOBRE GRAVEDAD Y SALTO:
-     * El valor de gravedad en PlayerController debe expresarse en units/s²,
+     * El valor de gravedad en PlayerAssembler debe expresarse en units/s²,
      * no en units/frame². 
      * 
-     * Si PlayerController usa gravity=0.4, esto representa:
-     *   - Legacy: 0.4 units/frame² @ 30 FPS
-     *   - Correcto: 0.4 × 30 = 12 units/s²
+     * VALOR ACTUAL: gravity = 23.4 units/s²
+     *   - Legacy: 0.78 units/frame² @ 30 FPS
+     *   - Correcto: 0.78 × 30 = 23.4 units/s²
      * 
-     * Con gravity=12 units/s² y baseJumpHeight=15:
-     *   v₀ = sqrt(2 × g × h) = sqrt(2 × 12 × 15) = sqrt(360) ≈ 19 units/s
+     * Con gravity=23.4 units/s² y baseJumpHeight=15:
+     *   v₀ = sqrt(2 × g × h) = sqrt(2 × 23.4 × 15) = sqrt(702) ≈ 26.5 units/s
      * 
      * Verificación @ 30 FPS (dt=1/30s):
-     *   Altura alcanzada: h = v₀²/(2g) = 19²/(2×12) = 361/24 ≈ 15 units ✓
+     *   Altura alcanzada: h = v₀²/(2g) = 26.5²/(2×23.4) = 702/46.8 ≈ 15 units ✓
      * 
      * El valor legacy physics.jump(10) era un impulso mal calibrado:
      *   v₀ = 10/mass = 10/40 = 0.25 units/frame @ 30 FPS
      *   Convertido: 0.25 × 30 = 7.5 units/s
-     *   Altura: 7.5²/(2×12) ≈ 2.3 units (salto muy bajo)
+     *   Altura: 7.5²/(2×23.4) ≈ 1.2 units (salto muy bajo)
      * 
      * Por tanto, baseJumpHeight=15 produce un salto mucho más alto que el
      * legacy jump(10), lo cual probablemente era intencional para corregir

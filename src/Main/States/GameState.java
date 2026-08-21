@@ -15,8 +15,13 @@ import Main.Debug.FpsOverlay;
 /**
  * Estado del juego — fachada ligera del gameplay.
  *
+ * ── HRFC-DT-003 — Temporal State Pipeline ────────────────────────────────
+ *
+ * GameState implementa State — es uno de los posibles estados del juego.
+ * Recibe TemporalContext desde StateManager y decide ejecutar simulación física.
+ *
  * RESPONSABILIDADES QUE PERMANECEN:
- *   - Punto de entrada del gameplay (instanciado por GameOrquester).
+ *   - Implementar contrato State (update, draw, lifecycle).
  *   - Dueño del ciclo update(): delega en worldManager y uiManager.
  *   - Dueño del ciclo draw(): delega en worldManager, uiManager y fpsOverlay.
  *   - Gestión de resize y FPS counter.
@@ -27,13 +32,20 @@ import Main.Debug.FpsOverlay;
  *   - Renderizado del overlay de FPS           → FpsOverlay.
  *   - Gestión de cámara                        → WorldManager + GameCamera.
  *
+ * CICLO DE VIDA (State interface):
+ *   - onEnter():  registra PlayerCombat en MouseInput
+ *   - update():   ejecuta simulación física con TemporalContext
+ *   - draw():     renderiza mundo, UI y overlays
+ *   - onExit():   desregistra PlayerCombat de MouseInput
+ *   - shutdown(): libera recursos permanentemente
+ *
  * REGLA DE ORO:
  *   Si en el futuro un nuevo sistema (Inventory, Quest, Audio) necesita
  *   inicializarse, NO se añade aquí. Se crea un nuevo Bootstrap o se extiende
  *   uno existente. GameState solo conoce los sistemas que necesita en runtime
  *   (worldManager, uiManager, player, fpsOverlay).
  */
-public class GameState {
+public class GameState implements State {
 
     // ── Runtime dependencies ─────────────────────────────────────────────────
     private final DebugGameSettings    settings;
@@ -54,6 +66,18 @@ public class GameState {
      * y AmuletRegistry retengan objetos del World destruido.
      */
     private final GameWorldBootstrap   worldBootstrap;
+
+    /**
+     * Referencia a MouseInput para gestión de listeners en lifecycle.
+     *
+     * ── HRFC-DT-003: GameState necesita MouseInput para onEnter/onExit ───
+     *
+     * El patrón anterior era que GameOrquester llamaba registerMouseInput()
+     * externamente. Ahora que GameState implementa State, los listeners
+     * deben gestionarse dentro de onEnter() y onExit() para que las
+     * transiciones de estado sean correctas.
+     */
+    private MouseInput mouseInput;
 
     private int fpsPorSegundo = 0;
     private int upsPorSegundo = 0;  // Updates Per Second (simulation rate)
@@ -103,11 +127,52 @@ public class GameState {
 
     // ── Resize ────────────────────────────────────────────────────────────────
 
+    /**
+     * Notifica que las dimensiones virtuales han cambiado.
+     *
+     * ── HRFC-DT-003: implementa State.onVirtualDimensionsChanged() ───────
+     *
+     * @param newVirtualWidth nueva anchura virtual
+     * @param newVirtualHeight nueva altura virtual
+     */
+    @Override
     public void onVirtualDimensionsChanged(int newVirtualWidth, int newVirtualHeight) {
         this.virtualWidth  = newVirtualWidth;
         this.virtualHeight = newVirtualHeight;
         worldManager.onVirtualResize(newVirtualWidth, newVirtualHeight);
         uiManager.onResize(newVirtualWidth, newVirtualHeight);
+    }
+
+    // ── Lifecycle (State interface) ───────────────────────────────────────────
+
+    /**
+     * Llamado cuando GameState se activa.
+     *
+     * ── HRFC-DT-003: implementa State.onEnter() ──────────────────────────
+     *
+     * Registra PlayerCombat como listener de MouseInput para que
+     * los clicks disparen armas.
+     */
+    @Override
+    public void onEnter() {
+        if (mouseInput != null) {
+            mouseInput.addMouseActionListener(player.getCombat());
+        }
+    }
+
+    /**
+     * Llamado cuando GameState se desactiva.
+     *
+     * ── HRFC-DT-003: implementa State.onExit() ───────────────────────────
+     *
+     * Desregistra PlayerCombat de MouseInput para que no reciba eventos
+     * de click mientras el estado no está activo.
+     */
+    @Override
+    public void onExit() {
+        if (mouseInput != null) {
+            mouseInput.removeMouseActionListener(player.getCombat());
+        }
     }
 
     // ── Update ────────────────────────────────────────────────────────────────
@@ -119,20 +184,39 @@ public class GameState {
      *
      * DISTRIBUCIÓN TEMPORAL:
      *
-     * Recibe deltaTime de GameLoop (autoridad única) y lo propaga a:
+     * Recibe TemporalContext de StateManager (que lo recibe de GameLoop)
+     * y lo propaga a:
      *   - WorldManager: sistemas de física, colisiones, simulación
      *   - Otros sistemas temporales según se agreguen
      *
-     * CONTRATO:
-     *   deltaTime representa segundos reales transcurridos en el simulation step.
-     *   Este valor NO debe ser modificado ni recalculado aquí.
-     *   Sistemas que no requieren tiempo (uiManager) no reciben deltaTime.
+     * ── HRFC-DT-002 — Unified Temporal Context ───────────────────────────
      *
-     * @param deltaTime tiempo del simulation step en segundos (propagado inmutablemente)
+     * EVOLUCIÓN:
+     *
+     * El parámetro deltaTime (double) fue reemplazado por TemporalContext.
+     * GameState propaga el MISMO contexto temporal a todos los subsistemas.
+     *
+     * CONTRATO:
+     *   - El contexto representa el tiempo del simulation step
+     *   - NO debe ser modificado ni reconstruido
+     *   - Sistemas que no requieren tiempo (uiManager) no reciben el contexto
+     *   - Todos los sistemas temporales reciben LA MISMA INSTANCIA
+     *
+     * VERIFICACIÓN:
+     *   Todos los subsistemas que reciben temporalContext deben poder
+     *   verificar temporalContext.verifyStepId() con el mismo stepId.
+     *
+     * ── HRFC-DT-003: implementa State.update() ───────────────────────────
+     *
+     * GameState es un estado que EJECUTA SIMULACIÓN FÍSICA.
+     * Otros estados (MenuState, PauseState) pueden decidir no ejecutarla.
+     *
+     * @param temporalContext contexto temporal del simulation step (propagado inmutablemente)
      */
-    public void update(double deltaTime) {
+    @Override
+    public void update(Main.TemporalContext temporalContext) {
         Mechanics.updateMechanics(player);
-        worldManager.update(deltaTime);
+        worldManager.update(temporalContext);
         uiManager.update();
     }
 
@@ -153,7 +237,10 @@ public class GameState {
      *
      * GameLoop llama frame.flushLayers() tras este método para componer las
      * capas sobre el framebuffer antes de present().
+     *
+     * ── HRFC-DT-003: implementa State.draw() ─────────────────────────────
      */
+    @Override
     public void draw(RenderFrame frame) {
         // Mundo: entidades, tiles, efectos. Con transformación de cámara.
         worldManager.draw(frame.getLayerGraphics(LayerIndex.WORLD_ENTITIES));
@@ -166,6 +253,8 @@ public class GameState {
             fpsOverlay.draw(frame.getLayerGraphics(LayerIndex.OVERLAY), fpsPorSegundo);
         }
     }
+
+    // ── FPS/UPS tracking ──────────────────────────────────────────────────────
 
     public void setFps(int fps) {
         this.fpsPorSegundo = fps;
@@ -190,31 +279,54 @@ public class GameState {
      *
      * WeaponRegistry y AmuletRegistry.definitions son singletons de aplicación
      * y NO se destruyen aquí — viven hasta que termina el proceso.
+     *
+     * ── HRFC-DT-003: implementa State.shutdown() ─────────────────────────
      */
+    @Override
     public void shutdown() {
         worldBootstrap.shutdown();   // cancela ProjectileRegistry + AmuletRegistry.entityProvider
         worldManager.shutdown();     // libera ExecutorService del world
     }
 
+    // ── MouseInput injection ──────────────────────────────────────────────────
+
+    /**
+     * Inyecta la referencia a MouseInput.
+     *
+     * ── HRFC-DT-003: Necesario para onEnter/onExit ───────────────────────
+     *
+     * Debe llamarse después de la construcción pero antes de onEnter().
+     * Idealmente desde GameOrquester o StateManager al crear GameState.
+     *
+     * @param mouseInput sistema de input de ratón
+     */
+    public void setMouseInput(MouseInput mouseInput) {
+        this.mouseInput = mouseInput;
+    }
+
+    // ── Deprecated methods (mantener temporalmente para compatibilidad) ───────
+
+    // ── Deprecated methods (mantener temporalmente para compatibilidad) ───────
+
     /**
      * Registra el combat del player como listener de eventos de ratón.
-     * Debe llamarse desde GameOrquester después de crear GameState,
-     * pasando la instancia de MouseInput.
+     *
+     * @deprecated HRFC-DT-003: usar onEnter() en su lugar.
+     *             Mantenido temporalmente para compatibilidad.
      */
+    @Deprecated
     public void registerMouseInput(MouseInput mouse) {
+        this.mouseInput = mouse;
         mouse.addMouseActionListener(player.getCombat());
     }
 
     /**
      * Desregistra el combat del player como listener de eventos de ratón.
-     * Debe llamarse desde GameOrquester antes de destruir GameState o al
-     * cambiar de estado, para evitar que el antiguo PlayerCombat siga
-     * recibiendo eventos de click después de que el estado fue reemplazado.
      *
-     * CONTRATO:
-     *   registerMouseInput(mouse)   → al activar el GameState
-     *   unregisterMouseInput(mouse) → al desactivar o destruir el GameState
+     * @deprecated HRFC-DT-003: usar onExit() en su lugar.
+     *             Mantenido temporalmente para compatibilidad.
      */
+    @Deprecated
     public void unregisterMouseInput(MouseInput mouse) {
         mouse.removeMouseActionListener(player.getCombat());
     }

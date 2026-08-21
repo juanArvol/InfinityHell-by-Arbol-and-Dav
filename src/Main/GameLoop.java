@@ -6,6 +6,7 @@ import Inputs.KeyBoard;
 import Inputs.MouseInput;
 import Main.Debug.TemporalDiagnostics;
 import Main.States.GameState;
+import Main.States.StateManager;
 
 /**
  * Loop principal del juego.
@@ -99,15 +100,46 @@ import Main.States.GameState;
  *
  * DISTRIBUCIÓN:
  *   GameLoop.update(deltaTime)
- *     → GameState.update(deltaTime)
- *       → WorldManager.update(deltaTime)
- *         → CollisionsSystem.update(objects, deltaTime)
- *           → Physics2D.applyGravity(onGround, deltaTime)
- *           → Physics2D.flushAccumulatedForces(deltaTime)
- *           → Physics2D.updateMoves(position, deltaTime)
+ *     → StateManager.update(temporalContext)
+ *       → State.update(temporalContext)
+ *         → [si GameState] WorldManager.update(temporalContext)
+ *           → CollisionsSystem.update(objects, temporalContext)
+ *             → Physics2D.applyGravity(onGround, deltaTime)
+ *             → Physics2D.flushAccumulatedForces(deltaTime)
+ *             → Physics2D.updateMoves(position, deltaTime)
  *
  * Ningún subsistema debe calcular su propio deltaTime. Todos reciben
  * el valor calculado aquí y lo propagan hacia abajo.
+ *
+ * ── HRFC-DT-003 — Temporal State Pipeline ────────────────────────────────
+ *
+ * EVOLUCIÓN ARQUITECTÓNICA:
+ *
+ * GameLoop ya no conoce GameState directamente. En su lugar delega
+ * a StateManager, que distribuye el TemporalContext al estado activo:
+ *
+ *   GameLoop (calcula TemporalContext)
+ *     ↓
+ *   StateManager (distribuye a estado activo)
+ *     ↓
+ *   State (GameState, MenuState, PauseState, etc.)
+ *
+ * DESACOPLAMIENTO:
+ *
+ * GameLoop NO conoce:
+ *   - Physics2D, Player, Bullet, Weapon, World, Enemy
+ *   - Qué estado está activo
+ *   - Si el estado ejecuta simulación física o no
+ *
+ * GameLoop SOLO conoce:
+ *   - RenderGateway (para render)
+ *   - StateManager (para distribuir tiempo)
+ *   - Input (para polling)
+ *
+ * GARANTÍA TEMPORAL:
+ *
+ * El TemporalContext fluye consistentemente sin importar qué estado
+ * esté activo. La transición entre estados no rompe el flujo temporal.
  *
  * ── Threading ────────────────────────────────────────────────────────────
  *
@@ -116,14 +148,25 @@ import Main.States.GameState;
  */
 public final class GameLoop implements Runnable {
 
-    private final RenderGateway renderGateway;
-    private final GameState     gameState;
-    private final KeyBoard      keyboard;
-    private final MouseInput    mouse;
+    private final RenderGateway  renderGateway;
+    private final StateManager   stateManager;
+    private final KeyBoard       keyboard;
+    private final MouseInput     mouse;
 
     private final double  targetTime;
     private Thread        thread;
     private volatile boolean running = false;
+
+    /**
+     * Contador monótono de simulation steps.
+     *
+     * ── HRFC-DT-002 — Unified Temporal Context ───────────────────────────
+     *
+     * Incrementa en cada simulation step para generar stepIds únicos.
+     * Permite verificar que todos los sistemas utilizan el mismo
+     * TemporalContext durante un step mediante comparación de stepId.
+     */
+    private long simulationStepCounter = 0;
 
     /**
      * Multiplicador para el clamp de deltaTime durante lag spikes.
@@ -151,12 +194,12 @@ public final class GameLoop implements Runnable {
     private static final double MAX_DELTA_CATCH_UP = 5.0;
 
     public GameLoop(RenderGateway renderGateway,
-                    GameState gameState,
+                    StateManager stateManager,
                     KeyBoard keyboard,
                     MouseInput mouse,
                     int fps) {
         this.renderGateway = renderGateway;
-        this.gameState     = gameState;
+        this.stateManager  = stateManager;
         this.keyboard      = keyboard;
         this.mouse         = mouse;
         this.targetTime    = 1_000_000_000.0 / fps;
@@ -231,8 +274,20 @@ public final class GameLoop implements Runnable {
             // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
             TemporalDiagnostics.recordEffectiveDelta(deltaTimeSeconds);
 
-            // Ejecutar simulation step con el tiempo real transcurrido
-            update(deltaTimeSeconds);
+            // ── HRFC-DT-002 — Unified Temporal Context ───────────────────
+            // Crear el contexto temporal único para este simulation step.
+            // Este contexto será propagado inmutablemente a través de toda
+            // la jerarquía de sistemas. Ningún sistema debe calcular su
+            // propio deltaTime — todos derivan su comportamiento temporal
+            // de este contexto.
+            TemporalContext temporalContext = TemporalContext.of(
+                simulationStepCounter,
+                deltaTimeSeconds
+            );
+            simulationStepCounter++;
+
+            // Ejecutar simulation step con el contexto temporal canónico
+            update(temporalContext);
             simulationSteps++;
 
             // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
@@ -255,8 +310,14 @@ public final class GameLoop implements Runnable {
 
             // Actualizar contadores cada segundo
             if (timer >= 1_000_000_000L) {
-                gameState.setFps(renderedFrames);   // renders reales
-                gameState.setUps(simulationSteps);  // updates ejecutados
+                // ── HRFC-DT-003: FPS/UPS a través de StateManager ────────
+                // Si el estado activo es GameState, actualizar contadores.
+                // Otros estados pueden no tener esta funcionalidad.
+                if (stateManager.getActiveState() instanceof GameState) {
+                    GameState gameState = (GameState) stateManager.getActiveState();
+                    gameState.setFps(renderedFrames);   // renders reales
+                    gameState.setUps(simulationSteps);  // updates ejecutados
+                }
 
                 // ── HRFC — DIAGNOSTIC REPORT ──────────────────────────────
                 TemporalDiagnostics.checkAndReport();
@@ -287,39 +348,62 @@ public final class GameLoop implements Runnable {
      * Este valor se propaga inmutablemente a través de toda la jerarquía
      * de sistemas sin ser recalculado ni modificado.
      *
-     * EJEMPLOS (60 FPS target):
-     *   Frame rápido:  deltaTime = 0.008s (8ms real)
-     *   Frame normal:  deltaTime = 0.016s (16ms real)
-     *   Frame lento:   deltaTime = 0.050s (50ms real)
-     *   Lag spike:     deltaTime = 0.083s (clamped a ~5 frames)
+     * ── HRFC-DT-002 — Unified Temporal Context ───────────────────────────
+     *
+     * EVOLUCIÓN:
+     *
+     * El deltaTime primitivo (double) fue reemplazado por TemporalContext,
+     * una abstracción que:
+     *   1. Transporta simulationDeltaTime calculado por GameLoop
+     *   2. Tiene un stepId único verificable por identidad
+     *   3. Es inmutable — no puede ser modificado por sistemas
+     *   4. Es package-private en construcción — solo GameLoop lo crea
      *
      * DISTRIBUCIÓN:
-     *   update(deltaTime) → gameState.update(deltaTime)
-     *                    → worldManager.update(deltaTime)
-     *                    → subsystems...
+     *   update(context) → stateManager.update(context)
+     *                  → state.update(context)
+     *                  → [si GameState] worldManager.update(context)
+     *                  → subsystems...
      *
      * INVARIANTE:
-     *   Ningún subsistema modifica deltaTime.
+     *   Ningún subsistema modifica el contexto.
      *   Ningún subsistema calcula su propio deltaTime.
-     *   Todos los sistemas temporales derivan su comportamiento de este valor.
+     *   Todos los sistemas temporales derivan su comportamiento de este contexto.
+     *   Todos los sistemas reciben LA MISMA INSTANCIA de TemporalContext.
      *
-     * @param deltaTime tiempo REAL del simulation step en segundos (autoridad única)
+     * ── HRFC-DT-003 — Temporal State Pipeline ────────────────────────────
+     *
+     * DESACOPLAMIENTO:
+     *
+     * GameLoop delega a StateManager, que distribuye el contexto al estado
+     * activo. GameLoop NO conoce si el estado ejecuta física, renderiza UI,
+     * o simplemente ignora el tiempo.
+     *
+     * @param temporalContext contexto temporal del simulation step (autoridad única)
      */
-    private void update(double deltaTime) {
+    private void update(TemporalContext temporalContext) {
         keyboard.update();
         mouse.flushEvents();
-        gameState.update(deltaTime);
+        stateManager.update(temporalContext);
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
+    /**
+     * Renderiza el estado activo.
+     *
+     * ── HRFC-DT-003: Render a través de StateManager ─────────────────────
+     *
+     * GameLoop no conoce qué estado está activo ni qué dibuja cada estado.
+     * Delega a StateManager, que delega al estado activo.
+     */
     private void render() {
         RenderFrame frame = renderGateway.acquireFrame();
         if (frame == null) return; // sin superficie: drop silencioso
 
         try {
-            // Fase 1: render por capas.
-            gameState.draw(frame);
+            // Fase 1: render por capas (estado decide qué dibuja).
+            stateManager.draw(frame);
 
             // Fase 2: componer capas sobre el framebuffer.
             frame.flushLayers();

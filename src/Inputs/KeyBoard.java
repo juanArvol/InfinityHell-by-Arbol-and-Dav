@@ -60,6 +60,7 @@ public class KeyBoard implements KeyListener, FocusListener {
         KeyBinding.edgeOnly      (KeyEvent.VK_F11,    "toggleFullscreen"),
         KeyBinding.edgeOnly      (KeyEvent.VK_ESCAPE, "pause"),
         KeyBinding.edgeOnly      (KeyEvent.VK_F3,     "toggleFps"),
+        KeyBinding.edgeOnly      (KeyEvent.VK_F4,     "toggleIdleState"),  // HRFC-DT-003: prueba arquitectónica
     };
 
     // ─── Estado continuo indexado por stateKey ────────────────────────────────
