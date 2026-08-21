@@ -72,7 +72,7 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 public class PlayerPhysics extends Physics2D {
 
     /** Multiplicador de aceleración cuando el jugador corre. */
-    private static final double RUN_BOOST = 1.8;
+    private static final double RUN_BOOST = 9;
 
     /**
      * Fuerza muscular base del jugador (parámetro de gameplay).
@@ -116,25 +116,25 @@ public class PlayerPhysics extends Physics2D {
      * Velocidad máxima horizontal caminando en units/s.
      * DERIVACIÓN: 70 px/frame @ 30 FPS → 70 × 30 = 2100 units/s
      */
-    private static final double WALK_SPEED_GROUND = 2100.0;
+    private static final double WALK_SPEED_GROUND = 4800.0;
     
     /** 
      * Velocidad máxima horizontal corriendo en units/s.
      * DERIVACIÓN: 135 px/frame @ 30 FPS → 135 × 30 = 4050 units/s
      */
-    private static final double RUN_SPEED_GROUND  = 4050.0;
+    private static final double RUN_SPEED_GROUND  = 8050.0;
 
     /** 
      * Velocidad máxima horizontal en el aire caminando en units/s.
      * DERIVACIÓN: 10 px/frame @ 30 FPS → 10 × 30 = 300 units/s
      */
-    private static final double WALK_SPEED_AIR    = 300.0;
+    private static final double WALK_SPEED_AIR    = 700.0;
     
     /** 
      * Velocidad máxima horizontal en el aire corriendo en units/s.
      * DERIVACIÓN: 18.5 px/frame @ 30 FPS → 18.5 × 30 = 555 units/s
      */
-    private static final double RUN_SPEED_AIR     = 555.0;
+    private static final double RUN_SPEED_AIR     = 1255.0;
 
     /** 
      * Factor de deslizamiento en el suelo (adimensional, frame-based @ 30 FPS).
@@ -152,7 +152,7 @@ public class PlayerPhysics extends Physics2D {
      * 
      * El comportamiento temporal ahora es independiente del framerate.
      */
-    private static final double SLIDE_GROUND      = 0.9;
+    private static final double SLIDE_GROUND      = 0.84;
     
     /** 
      * Factor de deslizamiento en el aire (adimensional, frame-based @ 30 FPS).
@@ -170,19 +170,19 @@ public class PlayerPhysics extends Physics2D {
      * El factor más bajo que SLIDE_GROUND proporciona más control aéreo
      * (deceleración más rápida sin input).
      */
-    private static final double SLIDE_AIR         = 0.74;
+    private static final double SLIDE_AIR         = 0.38;
 
     /** 
      * Aceleración base en el suelo en units/s².
      * DERIVACIÓN: 2.5 px/frame² @ 30 FPS → 2.5 × 30 = 75 units/s²
      */
-    private static final double ACCEL_GROUND      = 75.0;
+    private static final double ACCEL_GROUND      = 180;
     
     /** 
      * Aceleración base en el aire en units/s².
      * DERIVACIÓN: 1.07 px/frame² @ 30 FPS → 1.07 × 30 = 32.1 units/s²
      */
-    private static final double ACCEL_AIR         = 32.1;
+    private static final double ACCEL_AIR         = 70;
 
     // ── Propiedades aerodinámicas (HRFC — Consolidación) ─────────────────
     // ── Mini-HRFC — Temporal Normalization ────────────────────────────────
@@ -202,7 +202,7 @@ public class PlayerPhysics extends Physics2D {
     // comportamiento de caída original.
 
     /** Área efectiva del jugador expuesta al flujo de aire. */
-    private static final double PLAYER_EFFECTIVE_AREA = 0;
+    private static final double PLAYER_EFFECTIVE_AREA = 90;
 
     /** 
      * Coeficiente de drag del jugador (calibrado empíricamente @ 30 FPS).
@@ -211,7 +211,7 @@ public class PlayerPhysics extends Physics2D {
      * El cálculo usa: F_drag = dragCoefficient × effectiveArea × v²
      * (sin densidad del medio - ya absorbida en el coeficiente).
      */
-    private static final double PLAYER_DRAG_COEFFICIENT = 9.0004;
+    private static final double PLAYER_DRAG_COEFFICIENT = 0.04;
 
     // ── Capacidades Físicas (HRFC — Motion Intent) ───────────────────────
     // HRFC: Kinetic Physics — separación de masa (propiedad física) y
@@ -243,7 +243,7 @@ public class PlayerPhysics extends Physics2D {
      * legacy jump(10), lo cual probablemente era intencional para corregir
      * un salto demasiado bajo.
      */
-    private static final double BASE_JUMP_HEIGHT = 15.0;
+    private static final double BASE_JUMP_HEIGHT = 8.0;
 
     /**
      * Capacidades físicas del jugador (fuerza, capacidad de salto, etc.).
@@ -253,7 +253,7 @@ public class PlayerPhysics extends Physics2D {
 
     public PlayerPhysics(double gravity) {
         super(gravity);
-        mass            = 40.0;
+        mass            = 20.0;
         aGround         = ACCEL_GROUND;
         aAir            = ACCEL_AIR;
 

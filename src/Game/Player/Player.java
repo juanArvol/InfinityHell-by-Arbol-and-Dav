@@ -224,7 +224,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
      */
     public void receiveDamage(int amount) {
         if (playerStats.isInvulnerable()) return;
-        damage(amount);                         // AbstractEntity → HealthComponent
+        gotDamage(amount);                         // AbstractEntity → HealthComponent
         playerStats.triggerInvulnerability();
     }
 

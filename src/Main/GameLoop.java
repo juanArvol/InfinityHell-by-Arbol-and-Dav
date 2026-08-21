@@ -4,7 +4,6 @@ import Display.Surface.RenderFrame;
 import Display.Surface.RenderGateway;
 import Inputs.KeyBoard;
 import Inputs.MouseInput;
-import Main.Debug.TemporalDiagnostics;
 import Main.States.GameState;
 import Main.States.StateManager;
 
@@ -169,16 +168,9 @@ public final class GameLoop implements Runnable {
     private long simulationStepCounter = 0;
 
     /**
-     * Multiplicador para el clamp de deltaTime durante lag spikes.
+     * Máximo deltaTime permitido en segundos.
      *
-     * MAX_DELTA_CATCH_UP = 5.0 significa que el deltaTime máximo permitido
-     * es 5 veces el targetTime (5 frames de margen).
-     *
-     * Para 60 FPS (targetTime = 16.67ms):
-     *   maxDelta = 5 × 16.67ms = 83.35ms (~12 FPS mínimo)
-     *
-     * Para 30 FPS (targetTime = 33.33ms):
-     *   maxDelta = 5 × 33.33ms = 166.65ms (~6 FPS mínimo)
+     * MAX_DELTA_SECONDS = 0.083333 (~83.33ms, equivalente a ~12 FPS mínimo).
      *
      * Lag spikes mayores (GC pause de 500ms, debugger break, OS suspend)
      * se clampan a este valor máximo. El juego "pierde" ese tiempo en lugar
@@ -188,10 +180,13 @@ public final class GameLoop implements Runnable {
      *   - Evitar sprints de lógica sin renders intercalados
      *   - Prevenir físicas inestables con dt extremos (tunneling, overflow)
      *
+     * Esta constante es INDEPENDIENTE del targetFps y del targetTime.
+     * Define el clamp temporal basado en estabilidad física, no en framerate.
+     *
      * Esto NO convierte el sistema en fixed timestep — deltaTime sigue siendo
      * variable y representa tiempo real, solo con un límite superior de seguridad.
      */
-    private static final double MAX_DELTA_CATCH_UP = 5.0;
+    private static final double MAX_DELTA_SECONDS = 0.083333;
 
     public GameLoop(RenderGateway renderGateway,
                     StateManager stateManager,
@@ -202,11 +197,10 @@ public final class GameLoop implements Runnable {
         this.stateManager  = stateManager;
         this.keyboard      = keyboard;
         this.mouse         = mouse;
-        this.targetTime    = 1_000_000_000.0 / fps;
-
-        // Configurar diagnóstico temporal
-        TemporalDiagnostics.configure(fps, MAX_DELTA_CATCH_UP);
-        TemporalDiagnostics.enable();
+        
+        // fps > 0: FPS limitado
+        // fps <= 0: FPS ilimitado (targetTime = 0, sin frame pacing)
+        this.targetTime    = fps > 0 ? 1_000_000_000.0 / fps : 0;
     }
 
     public void start() {
@@ -254,25 +248,20 @@ public final class GameLoop implements Runnable {
             //   Lag spike (200ms):    deltaTime = 0.200s → clamped
             double deltaTimeSeconds = elapsed / 1_000_000_000.0;
 
-            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
-            TemporalDiagnostics.recordRawDelta(deltaTimeSeconds);
-
             // Clamp deltaTime para evitar valores extremos durante lag spikes.
             // Esto NO convierte el sistema en fixed timestep — simplemente
             // previene que un GC pause de 500ms cause físicas inestables.
             //
-            // MAX_DELTA_CATCH_UP = 5.0 representa ~5 frames a 60 FPS.
-            // Equivale a ~83ms máximo por simulation step (12 FPS mínimo).
+            // MAX_DELTA_SECONDS = 0.083333 representa ~83ms máximo por simulation step.
+            // Este valor es INDEPENDIENTE del targetFps — define un límite de estabilidad
+            // física, no un límite de framerate.
+            //
             // Durante un lag spike mayor, el juego "pierde" ese tiempo en
             // lugar de intentar recuperarlo, que es correcto para un juego
             // de acción (preferir continuidad sobre precisión absoluta).
-            double maxDeltaSeconds = MAX_DELTA_CATCH_UP * (targetTime / 1_000_000_000.0);
-            if (deltaTimeSeconds > maxDeltaSeconds) {
-                deltaTimeSeconds = maxDeltaSeconds;
+            if (deltaTimeSeconds > MAX_DELTA_SECONDS) {
+                deltaTimeSeconds = MAX_DELTA_SECONDS;
             }
-
-            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
-            TemporalDiagnostics.recordEffectiveDelta(deltaTimeSeconds);
 
             // ── HRFC-DT-002 — Unified Temporal Context ───────────────────
             // Crear el contexto temporal único para este simulation step.
@@ -290,22 +279,19 @@ public final class GameLoop implements Runnable {
             update(temporalContext);
             simulationSteps++;
 
-            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
-            TemporalDiagnostics.recordUpdate();
-
             // Renderizar el estado actualizado
             render();
             renderedFrames++;
 
-            // ── HRFC — DIAGNOSTIC INSTRUMENTATION ─────────────────────────
-            TemporalDiagnostics.recordRender();
-
-            // Sleep para respetar el target framerate
-            long frameTime = System.nanoTime() - now;
-            long sleepMs   = (long)(targetTime - frameTime) / 1_000_000;
-            if (sleepMs > 0) {
-                try { Thread.sleep(sleepMs); }
-                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            // Sleep para respetar el target framerate (solo si targetTime > 0)
+            // targetTime == 0 significa FPS ilimitado — no sleep, continuar inmediatamente
+            if (targetTime > 0) {
+                long frameTime = System.nanoTime() - now;
+                long sleepMs   = (long)(targetTime - frameTime) / 1_000_000;
+                if (sleepMs > 0) {
+                    try { Thread.sleep(sleepMs); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                }
             }
 
             // Actualizar contadores cada segundo
@@ -318,9 +304,6 @@ public final class GameLoop implements Runnable {
                     gameState.setFps(renderedFrames);   // renders reales
                     gameState.setUps(simulationSteps);  // updates ejecutados
                 }
-
-                // ── HRFC — DIAGNOSTIC REPORT ──────────────────────────────
-                TemporalDiagnostics.checkAndReport();
 
                 renderedFrames   = 0;
                 simulationSteps  = 0;

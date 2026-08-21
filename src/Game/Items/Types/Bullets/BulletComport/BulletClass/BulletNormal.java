@@ -30,7 +30,7 @@ public class BulletNormal extends BulletBehavior {
     public void onCollision(Bullet bullet, GameObjects other) {
         // Dañar a cualquier entidad con vida
         if (other instanceof AbstractEntity entity) {
-            entity.damage((int) bullet.getDamage());
+            entity.gotDamage((int) bullet.getBulletDamage());
         }
         // Morir al impactar contra cualquier cosa
         bullet.getBulletLife().kill();

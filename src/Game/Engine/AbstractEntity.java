@@ -127,7 +127,7 @@ public abstract class AbstractEntity extends GameObjects {
      * Aplica daño a esta entidad.
      * No tiene efecto si la entidad no tiene HealthComponent.
      */
-    public void damage(int amount) {
+    public void gotDamage(int amount) {
         HealthComponent hp = getHealth();
         if (hp != null) hp.damage(amount);
     }
@@ -136,7 +136,7 @@ public abstract class AbstractEntity extends GameObjects {
      * Cura a esta entidad.
      * No tiene efecto si la entidad no tiene HealthComponent.
      */
-    public void heal(int amount) {
+    public void gotHeal(int amount) {
         HealthComponent hp = getHealth();
         if (hp != null) hp.heal(amount);
     }

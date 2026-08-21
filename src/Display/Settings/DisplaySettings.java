@@ -178,22 +178,10 @@ public final class DisplaySettings {
             return background(new SolidColorBackground(c != null ? c : Color.BLACK));
         }
 
-        /**
-         * @deprecated Usar {@link #fillColor(Color)} para las barras de relleno
-         *             y {@link #backgroundColor(Color)} para el fondo del frame.
-         *             Mantenido por compatibilidad; aplica ambos al mismo color.
-         */
-        @Deprecated(since = "refactor-display-v2", forRemoval = true)
-        public Builder letterboxColor(Color c) {
-            fillColor(c);
-            backgroundColor(c);
-            return this;
-        }
-
         public DisplaySettings build() {
             if (virtualWidth  <= 0) throw new IllegalStateException("virtualWidth must be > 0");
             if (virtualHeight <= 0) throw new IllegalStateException("virtualHeight must be > 0");
-            if (targetFps     <= 0) throw new IllegalStateException("targetFps must be > 0");
+            if (targetFps     < 0) throw new IllegalStateException("targetFps must be > 0");
             if (bufferCount < 2 || bufferCount > 4)
                 throw new IllegalStateException("bufferCount must be 2, 3, or 4");
             return new DisplaySettings(this);

@@ -1,6 +1,7 @@
 package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
 import Game.Engine.AbstractEntity;
+import Game.Engine.GameObjects;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
@@ -68,9 +69,9 @@ import java.util.List;
  */
 public class MetheorBullet extends BulletBehavior {
 
-    private static final double BASE_DAMAGE          = 35.0;
-    private static final double GRAVITY_STRENGTH     = 0.5;
-    private static final double EXPLOSION_POWER_MULT = 2.3;
+    private static final double BASE_DAMAGE          = 35000.0;
+    private static final double GRAVITY_STRENGTH     = 1200;
+    private static final double EXPLOSION_POWER_MULT = 2500;
     private static final double RADIUS_BASE          = 250.0;
     private static final double RADIUS_SCALE         = 1.5;
     private static final int    DEFAULT_LIFETIME     = 300;  // 5 segundos a 60fps
@@ -80,9 +81,9 @@ public class MetheorBullet extends BulletBehavior {
     // HRFC FASE 2: Coeficientes escalados para px/frame.
     // El meteoro es masivo y poco aerodinámico, resultando en velocidad
     // terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
-    private static final double METEOR_MASS              = 3.0;     // 3x más masivo que proyectil normal
-    private static final double METEOR_EFFECTIVE_AREA    = 1.5;     // área grande
-    private static final double METEOR_DRAG_COEFFICIENT  = 0.0005;  // poco aerodinámico (escalado para px/frame)
+    private static final double METEOR_MASS              = 300.0;     // 3x más masivo que proyectil normal
+    private static final double METEOR_EFFECTIVE_AREA    = 15;     // área grande
+    private static final double METEOR_DRAG_COEFFICIENT  = 0.0021;  // poco aerodinámico (escalado para px/frame)
 
     @Override
     public ProjectileData getDefaultData() {
@@ -90,7 +91,7 @@ public class MetheorBullet extends BulletBehavior {
                 (int) BASE_DAMAGE, // damage base del proyectil
                 1.0,               // speedFactor (base speed viene de WeaponStats o BulletType)
                 DEFAULT_LIFETIME,
-                0.0,               // gravityValue (manejado por GravityMovement)
+                GRAVITY_STRENGTH,               // gravityValue (manejado por GravityMovement)
                 8,                 // width
                 8,                 // height
                 "bullet.comet"      // assetKey
@@ -122,7 +123,10 @@ public class MetheorBullet extends BulletBehavior {
     }
 
     @Override
-    public void onCollision(Bullet bullet, Game.Engine.GameObjects hitEntity) {
+    public void onCollision(Bullet bullet, GameObjects other) {
+        if(other instanceof AbstractEntity entity){
+            //entity.gotDamage((int) bullet.getBulletDamage());
+        }
         // MetheorBullet explota al impactar cualquier objetivo válido
         // El CollisionProfile ya garantiza que solo recibimos colisiones válidas
         explode(bullet);
@@ -141,6 +145,7 @@ public class MetheorBullet extends BulletBehavior {
      *   - force = (maxRadius - distance) × 0.1
      */
     private void explode(Bullet bullet) {
+        
         // Calcular potencia de explosión basada en velocidad de caída
         double velocityY = bullet.getPhysics().getYspeed();
         double explosionPower = Math.abs(velocityY) * EXPLOSION_POWER_MULT;
@@ -155,17 +160,26 @@ public class MetheorBullet extends BulletBehavior {
         
         // Buscar todas las entidades en el radio de explosión
         var entitiesInRange = findNearbyEntities(bullet, center, maxRadius);
-        
+        System.out.println("=== METEOR EXPLOSION ===");
+System.out.println("center = " + centerX + ", " + centerY);
+System.out.println("velocityY = " + velocityY);
+System.out.println("explosionPower = " + explosionPower);
+System.out.println("maxRadius = " + maxRadius);
+System.out.println("entitiesInRange = " + entitiesInRange.size());
         // Aplicar daño y empuje radial a cada entidad afectada
         for (AbstractEntity entity : entitiesInRange) {
+            System.out.println(
+    "EXPLOSION HIT -> " +
+    entity.getClass().getSimpleName()
+);
             Vector2D entityPos = entity.getTransform().getPosition();
             double dx = entityPos.getX() - centerX;
             double dy = entityPos.getY() - centerY;
-            double distance = Math.sqrt(dx * dx + dy * dy);
+            double distance = Math.sqrt((dx * dx) + (dy * dy));
             
             // Evitar división por cero si la entidad está exactamente en el centro
             if (distance < 1.0) {
-                distance = 1.0;
+                distance = 0.000000000000000001;
             }
             
             // Calcular daño escalado con distancia (preserva fórmula legacy)
@@ -173,7 +187,7 @@ public class MetheorBullet extends BulletBehavior {
             double finalDamage = BASE_DAMAGE + (explosionPower * damageFactor);
             
             // Aplicar daño via AbstractEntity.damage()
-            entity.damage((int) finalDamage);
+            entity.gotDamage((int) finalDamage);
             
             // Calcular fuerza de empuje radial (preserva fórmula legacy)
             double force = (maxRadius - distance) * PUSH_FORCE_SCALE;

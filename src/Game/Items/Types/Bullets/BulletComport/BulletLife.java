@@ -62,7 +62,7 @@ public final class BulletLife {
      * @param initialLife duración de vida inicial en segundos. Debe ser > 0.
      */
     public BulletLife(double initialLife) {
-        if (initialLife <= 0.0) initialLife = 0.001; // defensivo — nunca 0 de inicio
+        //if (initialLife <= 0.0) initialLife = 0.001;  defensivo — nunca 0 de inicio
         this.remaining = initialLife;
         this.dead      = false;
     }
@@ -149,7 +149,6 @@ public final class BulletLife {
      * @param extraTime segundos adicionales a añadir (debe ser > 0; ignorado si <= 0)
      */
     public void extend(double extraTime) {
-        if (extraTime <= 0.0) return;
         remaining += extraTime;
         dead = false; // extender vida reactiva el proyectil
     }

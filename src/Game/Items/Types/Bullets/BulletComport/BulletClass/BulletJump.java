@@ -96,14 +96,14 @@ import Game.Items.Types.Bullets.ProjectileMovement;
 public class BulletJump extends BulletBehavior {
 
     private static final ProjectileData DEFAULT_DATA =
-            ProjectileData.flat(5000, 1.6, 60);
+            ProjectileData.flat(0, 1.6, 10);
 
     private static final ProjectileMovement GRAVITY =
             new GravityMovement(1);
 
     private static final double INTERACTION_RADIUS = 100.0;
 
-    private static final double JUMP_BOOST = -14.0;
+    private static final double JUMP_BOOST = -90;
     private static final double FRICTION   = 1.01; // divisor de vx en cada rebote
 
     @Override
@@ -123,8 +123,9 @@ public class BulletJump extends BulletBehavior {
 
     @Override
     public void onCollision(Bullet bullet, GameObjects other) {
-        if (other instanceof AbstractEntity) {
+        if (other instanceof AbstractEntity entity) {
             // Impacto con entidad viva — el proyectil muere
+            entity.gotDamage((int)bullet.getBulletDamage());
             bullet.getBulletLife().kill();
             return;
         }
@@ -138,7 +139,7 @@ public class BulletJump extends BulletBehavior {
         int nx = physics.getLastContactNormalX();
         int ny = physics.getLastContactNormalY();
 
-        bullet.getBulletLife().extend(1);
+        bullet.getBulletLife().extend(0.1);
         if (ny == -1) {
             // Cara TOP del obstáculo → suelo → rebote hacia arriba.
             // HRFC — Motion Intent: Convertir a impulso.

@@ -94,7 +94,7 @@ public class GameOrquester {
             .monitorIndex(0)
             .scalingMode(ScalingMode.FIT)
             .useInterpolation(false)
-            .targetFps(30)
+            .targetFps(0)
             .fillColor(Color.BLACK)
             .background(SolidColorBackground.WHITE)
             .build();

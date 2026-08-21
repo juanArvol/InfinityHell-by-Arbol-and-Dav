@@ -24,14 +24,14 @@ public class WeaponPistola extends WeaponComport {
     public WeaponPistola() {
         super(new WeaponStats(
             0.667, // cooldown en segundos (20 frames @ 30 FPS)
-            1, // balas por disparo
-            0, // spread
+            32, // balas por disparo
+            32, // spread
             15, // daño
             10 // velocidad
             ), 
         new AutoMode(), 
         10, 
-        20, 
+        4, 
         "Gun.wav");
     }
 } 

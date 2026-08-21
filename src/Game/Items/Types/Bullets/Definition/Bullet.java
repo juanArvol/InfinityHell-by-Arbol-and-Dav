@@ -362,7 +362,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     // ── API pública ────────────────────────────────────────────────────────
 
     public BulletLife         getBulletLife() { return bulletLife; }
-    public double             getDamage()     { return damage; }
+    public double             getBulletDamage()     { return damage; }
     public BulletBehavior     getBehavior()   { return behavior; }
     public ProjectileMovement getMovement()   { return movement; }
     public BulletFlyweight    getFlyweight()  { return flyweight; }
@@ -729,7 +729,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             bullet.setCollisionProfile(profile);
         }
 
-        @Override public double getDamage()               { return bullet.getDamage(); }
+        @Override public double getDamage()               { return bullet.getBulletDamage(); }
         @Override public void   changeDamage(double d)    { bullet.resetDamage(d); }
         @Override public BulletBehavior getBehavior()     { return bullet.getBehavior(); }
         @Override public void changeBehavior(BulletBehavior b) {
