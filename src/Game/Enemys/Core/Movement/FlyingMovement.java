@@ -1,8 +1,8 @@
 package Game.Enemys.Core.Movement;
 
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.MovementStrategy;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyContext;
 
 /**
  * Estrategia de movimiento volador.
@@ -21,8 +21,8 @@ import Game.Enemys.Core.Enemy;
  * Sin jerarquías paralelas, sin reconstruir el Enemy.
  *
  * ── Relación con la física ───────────────────────────────────────────────
- * El EnemyAssembler del volador configura EnemyPhysicsConfig.flyingStandard()
- * (gravity = 0) en la EnemyDefinition. FlyingMovement asume que la física
+ * El EnemyAssembler del volador configura EnemyPhysics con gravity mínima
+ * (0.1) en la EnemyDefinition. FlyingMovement asume que la física
  * ya está configurada correctamente — no la modifica.
  */
 public final class FlyingMovement implements MovementStrategy {

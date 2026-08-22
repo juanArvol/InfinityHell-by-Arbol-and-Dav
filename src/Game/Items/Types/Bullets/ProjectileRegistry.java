@@ -255,18 +255,6 @@ public final class ProjectileRegistry {
 
     // ── Pool context ──────────────────────────────────────────────────────
 
-    /**
-     * Inyecta el ProjectileContext en el pool interno.
-     *
-     * Llamar desde GameWorldBootstrap después de crear el mundo:
-     *   registry.setProjectileContext(new WorldProjectileContext(worldManager));
-     *
-     * @param context contexto de interacción con el mundo
-     */
-    public void setProjectileContext(Game.Items.Types.Bullets.Definition.ProjectileContext context) {
-        pool.setContext(context);
-    }
-
     /** Acceso de solo lectura al pool para estadísticas/diagnóstico. */
     public ProjectilePool getPool() {
         return pool;

@@ -8,6 +8,7 @@ import Game.Enemys.Core.Controllers.EnemyPhaseController;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PhysicsComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
 import Game.Engine.Entity.Stats.EntityStats;
@@ -122,6 +123,8 @@ public abstract class EnemyAssembler {
             col.setSize(def.colliderW, def.colliderH);
         }
 
+        Physics2DComponent physics;
+        
         // ── 6b. PhysicsComponent — opt-in y declarativo ───────────────────
         // Mini-HRFC — Declarative PhysicalState Ownership
         //

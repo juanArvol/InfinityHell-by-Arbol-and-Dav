@@ -4,8 +4,12 @@ import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
+import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
+import Game.Items.Types.Bullets.Capability.ProjectileSpawningCapability;
+import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
+import Game.Items.Types.Bullets.Capability.WorldProjectileSpawningProvider;
+import Game.Items.Types.Bullets.Capability.WorldSpatialCapabilityProvider;
 import Game.Items.Types.Bullets.Definition.BulletType;
-import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.ProjectileRegistry;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import Game.Player.Player;
@@ -49,7 +53,7 @@ import Game.World.Core.WorldManager;
  *   4. Lo registra como tracked object (cámara).
  *   5. Configura el WorldController predicate en TransitionService.
  *   6. Instala el listener de bullets con referencia al globalDynamicRegistry.
- *   7. Inyecta WorldProjectileContext en el pool de ProjectileRegistry.
+ *   7. Registra capability providers en ProjectileContextResolver.
  *   8. Inyecta el bus en el ProjectilePool para eventos de proyectil.
  *   9. Configura AmuletRegistry con proveedor de entidades dinámico.
  *  10. Spawna los enemigos iniciales con el bus inyectado.
@@ -76,6 +80,55 @@ public final class GameWorldBootstrap {
         // ── Registros globales de ítems ──────────────────────────────────
         ItemRegistry.init();
 
+        // ── ProjectileContext — ANTES de crear el Player ─────────────────
+        // 
+        // BUG FIX: El contexto debe existir ANTES de que el Player pueda disparar.
+        // 
+        // Problema anterior:
+        //   1. Player.create() → weapon.shoot() puede disparar inmediatamente
+        //   2. ProjectilePool.acquire() inyecta ProjectileContext.NULL
+        //   3. Proyectiles entraban al mundo con contexto NULL
+        //   4. [TARDE] setProjectileContext(worldContext)
+        // 
+        // Solución:
+        //   1. Crear WorldProjectileContext primero
+        //   2. Inyectar en ProjectileRegistry/Pool
+        //   3. AHORA Player.create() (disparos tienen contexto correcto)
+        // 
+        // ── ProjectileContext Resolver — ANTES de crear el Player ────────────
+        // 
+        // BUG FIX: El contexto debe existir ANTES de que el Player pueda disparar.
+        // 
+        // ARQUITECTURA COMPOSABLE:
+        //   1. Crear ProjectileContextResolver
+        //   2. Registrar capability providers (World-backed)
+        //   3. Inyectar resolver en ProjectilePool
+        //   4. AHORA Player.create() (disparos resuelven contexto correcto)
+        // 
+        // Este reordenamiento garantiza que NINGÚN proyectil de gameplay pueda
+        // nacer con ProjectileContext.NULL cuando existe infraestructura real.
+        projectileRegistry = ProjectileRegistry.getInstance();
+        
+        // Create resolver and register capability providers
+        ProjectileContextResolver resolver = new ProjectileContextResolver();
+        
+        // Register WorldManager-backed capability providers
+        resolver.registerProvider(
+            SpatialQueryCapability.class,
+            new WorldSpatialCapabilityProvider(worldManager)
+        );
+        
+        resolver.registerProvider(
+            ProjectileSpawningCapability.class,
+            new WorldProjectileSpawningProvider(worldManager, projectileRegistry.getPool())
+        );
+        
+        // Inject resolver into pool
+        projectileRegistry.getPool().setContextResolver(resolver);
+        
+        // Bus en el pool — también antes del Player
+        projectileRegistry.getPool().setEventBus(eventBus);
+
         // ── Posición de spawn del jugador ────────────────────────────────
         Vector2D spawnPos = new Vector2D(
             (double) virtualWidth  / 2.0,
@@ -95,7 +148,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.ESCOPETA)
-            .initialBullets(BulletType.METHEORBULLET)
+            .initialBullets(BulletType.SPRINGBULLET)
             .initialAmulets()
             .build();
         
@@ -103,10 +156,14 @@ public final class GameWorldBootstrap {
         // Para testing/desarrollo, descomente la línea siguiente:
         // loadout = createDevelopmentLoadout();
         
+        // ── HRFC — ProjectilePool Integration Consolidation ──────────────
+        // Pasar el pool configurado al Player para que las armas lo usen.
+        // El pool ya tiene el ProjectileContextResolver con los providers registrados.
         player = Player.create(spawnPos,
             obj -> worldManager.addDynamic(obj),
             eventBus,
-            loadout
+            loadout,
+            projectileRegistry.getPool()  // Pool configurado con resolver
         );
 
         worldManager.addDynamic(player);
@@ -128,23 +185,10 @@ public final class GameWorldBootstrap {
         // ── ProjectileRegistry — listener en el bus del mundo ────────────
         // Scope: WORLD. Se cancela llamando projectileRegistry.uninstallListener()
         // o ProjectileRegistry.shutdown() desde este bootstrap.shutdown().
-        projectileRegistry = ProjectileRegistry.getInstance();
         projectileRegistry.installListener(
             eventBus,
             bullet -> worldManager.addDynamic(bullet)
         );
-
-        // ── ProjectileContext — contexto real del mundo ───────────────────
-        ProjectileContext worldContext = new Game.World.Systems.WorldProjectileContext(
-            worldManager,
-            projectileRegistry.getPool()
-        );
-        projectileRegistry.setProjectileContext(worldContext);
-
-        // ── Bus en el pool de proyectiles ─────────────────────────────────
-        // Los Bullets adquiridos desde el pool recibirán el bus para emitir
-        // eventos de colisión, expiración y destrucción.
-        projectileRegistry.getPool().setEventBus(eventBus);
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
         new EnemySpawner().spawn(worldManager.getCurrentWorld(), 10, eventBus);

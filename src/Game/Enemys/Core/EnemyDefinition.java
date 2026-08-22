@@ -1,7 +1,6 @@
 package Game.Enemys.Core;
 
 import Game.Enemys.EnemyPhysics;
-import Game.Enemys.EnemyPhysicsConfig;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Components.Collisions.MaterialComponent;
 import Game.Engine.Entity.Flags.EntityFlags;
@@ -193,7 +192,6 @@ public final class EnemyDefinition {
 
         public Builder sprite(SpriteHandle handle)          { this.sprite = handle; return this; }
         public Builder health(int maxHealth)                { this.health = maxHealth; return this; }
-        public Builder physics(EnemyPhysicsConfig config)   { this.physics = new EnemyPhysics(config); return this; }
         public Builder physics(EnemyPhysics physics)        { this.physics = physics; return this; }
         public Builder material(MaterialComponent mat)      { this.material = mat; return this; }
         public Builder collider(int width, int height)      { this.colliderW = width; this.colliderH = height; return this; }

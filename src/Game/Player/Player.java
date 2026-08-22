@@ -306,12 +306,14 @@ public class Player extends MovingObjects implements EntityInfoProvider {
      * @param spawn         posición inicial
      * @param bulletSpawner callback para añadir balas al mundo
      * @param eventBus      bus de eventos
+     * @param projectilePool pool de proyectiles configurado (obligatorio desde HRFC consolidation)
      * @return Player completamente ensamblado
      */
     public static Player create(Vector2D spawn,
                                 Consumer<Bullet> bulletSpawner,
                                 Game.Engine.GameEventBus eventBus,
-                                PlayerLoadout loadout) {
-        return PlayerAssembler.assemble(spawn, bulletSpawner, eventBus, loadout);
+                                PlayerLoadout loadout,
+                                Game.Items.Types.Bullets.Definition.ProjectilePool projectilePool) {
+        return PlayerAssembler.assemble(spawn, bulletSpawner, eventBus, loadout, projectilePool);
     }
 }

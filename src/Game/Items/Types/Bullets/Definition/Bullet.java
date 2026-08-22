@@ -175,6 +175,27 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     ProjectileContext projectileContext = ProjectileContext.NULL;
 
+    // ── Metadata del Proyectil ────────────────────────────────────────────
+    
+    /**
+     * Entidad que disparó este proyectil (Player, Enemy, Turret, etc.).
+     * null = origen desconocido o proyectil del mundo.
+     * 
+     * Metadata intrínseca del proyectil, NO forma parte del ProjectileContext
+     * (que representa servicios externos). Owner es información propia que
+     * permite: faction queries, allegiance checks, scoring, damage attribution.
+     */
+    private Object owner = null;
+    
+    /**
+     * Posición donde este proyectil fue spawneado originalmente.
+     * Útil para: efectos visuales (trails desde origen), cálculos de distancia
+     * recorrida, mecánicas basadas en trayectoria.
+     * 
+     * Metadata intrínseca del proyectil, NO forma parte del ProjectileContext.
+     */
+    private Vector2D spawnOrigin = null;
+
     // ── Constructor principal ─────────────────────────────────────────────
 
     /**
@@ -520,6 +541,9 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         // ownerPool y eventBus se limpian aquí; el pool los reinyecta justo después
         this.ownerPool = null;
         this.eventBus  = null;
+        // owner y spawnOrigin se limpian aquí; el pool los reinyecta justo después
+        this.owner = null;
+        this.spawnOrigin = null;
 
         // ── HRFC — Reset Physical Properties (cinemático) ────────────────
         // Resetear masa, área efectiva y coeficiente de drag a valores por
@@ -654,6 +678,40 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     void setProjectileContext(ProjectileContext ctx) {
         this.projectileContext = (ctx != null) ? ctx : ProjectileContext.NULL;
+    }
+    
+    /**
+     * Configura el owner de este proyectil.
+     * Package-private: llamado por ProjectilePool/BulletFactory durante construcción.
+     */
+    void setOwner(Object owner) {
+        this.owner = owner;
+    }
+    
+    /**
+     * Configura el origen de spawn de este proyectil.
+     * Package-private: llamado por ProjectilePool/BulletFactory durante construcción.
+     */
+    void setSpawnOrigin(Vector2D origin) {
+        this.spawnOrigin = origin;
+    }
+    
+    /**
+     * Retorna el owner de este proyectil (puede ser null).
+     * 
+     * @return entidad que disparó el proyectil, o null si desconocido
+     */
+    public Object getOwner() {
+        return owner;
+    }
+    
+    /**
+     * Retorna la posición de spawn original de este proyectil.
+     * 
+     * @return posición de origen, o null si no fue establecida
+     */
+    public Vector2D getSpawnOrigin() {
+        return spawnOrigin;
     }
 
     /**

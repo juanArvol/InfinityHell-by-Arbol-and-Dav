@@ -1,8 +1,9 @@
 package Game.Enemys.Core.Controllers;
 
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.AttackPattern;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyContext;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,7 +67,8 @@ public final class EnemyAttackController {
      * @param enemy el Enemy atacante.
      * @param ctx   contexto del objetivo; puede ser null.
      * @param deltaTime tiempo real del simulation step en segundos
-     * @return true si al menos un patrón se ejecutó este frame.
+     * @return true si al menos un 
+     * patrón se ejecutó este frame.
      */
     public boolean update(Enemy enemy, EnemyContext ctx, double deltaTime) {
         boolean attacked = false;

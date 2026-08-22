@@ -1,9 +1,9 @@
 
 package Game.Enemys.Core.Movement;
 
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.MovementStrategy;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyContext;
 import Game.Engine.Entity.Components.Physics2DComponent;
 
 /**

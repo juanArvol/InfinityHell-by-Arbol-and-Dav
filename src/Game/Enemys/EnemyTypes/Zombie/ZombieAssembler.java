@@ -1,11 +1,11 @@
 package Game.Enemys.EnemyTypes.Zombie;
 
-import Game.Enemys.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
+import Game.Enemys.Core.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Movement.GroundMovement;
-import Game.Enemys.EnemyPhysicsConfig;
+import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSource;
 import Game.Engine.Entity.Combat.AttackSources;
@@ -35,10 +35,23 @@ public final class ZombieAssembler extends EnemyAssembler {
 
     @Override
     protected EnemyDefinition definition() {
+        // Física terrestre con todos los parámetros de groundStandard()
+        EnemyPhysics physics = new EnemyPhysics(
+            580,  // gravity
+            80,   // mass
+            1.0,  // effectiveArea
+            9,    // dragCoefficient
+            0.8,  // slide
+            190,  // aGround
+            300,  // aAir
+            900,  // speedMaxGround
+            600   // speedMaxAir
+        );
+        
         return EnemyDefinition.builder()
             .sprite(EnemyAssets.normalHandle)
             .health(MAX_HEALTH)
-            .physics(EnemyPhysicsConfig.groundStandard())
+            .physics(physics)
             .collider(24, 30)
             .animation("idle")
             .animation("walk")
@@ -69,7 +82,7 @@ public final class ZombieAssembler extends EnemyAssembler {
     protected void configureMovement(Enemy enemy) {
         enemy.getMovementController().setStrategy(new GroundMovement());
         enemy.getAIController().setBehavior(
-            new AggressiveBehavior(DETECTION_RANGE, ATTACK_RANGE, MOVE_SPEED)
+            new AggressiveBehavior(DETECTION_RANGE, ATTACK_RANGE)
         );
     }
 

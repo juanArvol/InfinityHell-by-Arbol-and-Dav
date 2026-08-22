@@ -1,149 +1,172 @@
 package Game.Items.Types.Bullets.Definition;
 
+import Game.Engine.AbstractEntity;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
+import java.util.List;
 
 /**
- * Contexto de interacción con el mundo para proyectiles y behaviors.
- *
- * ── HRFC — Projectile Construction & Transformation Pipeline ─────────────
- *
- * Algunos behaviors necesitan interactuar con el mundo durante su ciclo de
- * vida: spawnear proyectiles secundarios, aplicar efectos de área, buscar
- * entidades cercanas, notificar al mundo de una explosión, etc.
- *
- * Sin ProjectileContext, los behaviors tienen dos opciones malas:
- *   1. Depender de singletons arbitrarios (WorldManager.getInstance()...).
- *   2. Depender de GameEventBus.GLOBAL para todo (el bus se convierte en
- *      mutación implícita disfrazada de eventos).
- *
- * ProjectileContext proporciona una superficie mínima, explícita y orientada
- * a las necesidades reales de proyectiles.
- *
- * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
- *
- *   ProjectileContext  = cómo un behavior solicita operaciones del mundo.
- *   ProjectileEvents   = qué eventos emite un proyectil durante su vida.
- *   GameEventBus       = infraestructura de comunicación entre sistemas.
- *
- * El contexto es inyectado, no global. Los behaviors lo reciben como parámetro.
- * Quien construye el contexto controla exactamente qué capacidades expone.
- *
- * ── OPERACIONES DISPONIBLES ───────────────────────────────────────────────
- *
- *   spawnProjectile(blueprint, position, direction)
- *       Spawnear un proyectil secundario (explosión, fragmentación, etc.)
- *
- *   spawnProjectile(blueprint, origin, target)
- *       Versión con posición objetivo, la dirección se calcula automáticamente.
- *
- *   findEntitiesInRadius(center, radius)
- *       Buscar entidades en un radio (área de efecto, explosiones).
- *
- * ── EXTENSIÓN ─────────────────────────────────────────────────────────────
- *
- * Si un behavior necesita más capacidades del mundo, añadir métodos aquí.
- * No añadir métodos sin necesidad real — mantener el contexto pequeño.
- *
- * ── IMPLEMENTACIÓN ────────────────────────────────────────────────────────
- *
- * ProjectileContext es una interfaz. La implementación concreta la provee
- * el sistema que gestiona el mundo (GameWorldBootstrap, WorldController, etc.)
- * cuando inicializa el ciclo de disparo.
- *
- * Una implementación vacía NullProjectileContext está disponible para
- * behaviors que no la usen o para tests.
- *
- * ── USO EN BEHAVIORS ─────────────────────────────────────────────────────
- *
- *   // En onExpire():
+ * Contexto de interacción abstracto para proyectiles.
+ * 
+ * ── ARQUITECTURA COMPOSABLE ───────────────────────────────────────────────
+ * 
+ * ProjectileContext representa el conjunto de capacidades contextuales
+ * disponibles para un proyectil. NO es una interfaz monolítica que acumula
+ * métodos obligatorios — es un contenedor abstracto de capacidades componibles.
+ * 
+ * Principios arquitectónicos:
+ *   1. Cada proyectil recibe UN ProjectileContext
+ *   2. El contenido del contexto depende de las necesidades del BulletBehavior
+ *   3. Las capacidades se acceden via getCapability(Class<T>)
+ *   4. Agregar capacidades NO requiere modificar esta interfaz
+ * 
+ * ── SEPARACIÓN METADATA VS SERVICIOS ──────────────────────────────────────
+ * 
+ * ProjectileContext = servicios externos que el proyectil CONSUME
+ * Owner/origin = metadata que el proyectil POSEE
+ * 
+ * Por lo tanto:
+ *   bullet.getOwner()           ✓ metadata propia
+ *   bullet.getSpawnOrigin()     ✓ metadata propia
+ *   bullet.getProjectileContext() ✓ servicios externos
+ * 
+ * ── CAPACIDADES DISPONIBLES ───────────────────────────────────────────────
+ * 
+ * Capacidades actuales:
+ *   - ProjectileSpawningCapability: spawn de proyectiles secundarios
+ *   - SpatialQueryCapability: búsqueda espacial de entidades
+ * 
+ * Capacidades futuras (ejemplos):
+ *   - FactionQueryCapability: consultas de alianza/enemigo
+ *   - EnvironmentQueryCapability: gravedad, agua, etc.
+ *   - TargetingCapability: buscar objetivos
+ * 
+ * ── EJEMPLO DE USO ────────────────────────────────────────────────────────
+ * 
+ * En MetheorBullet:
+ * 
  *   @Override
- *   public void onExpire(Bullet bullet, ProjectileContext ctx) {
- *       // Fragmentar el proyectil al expirar
- *       Vector2D pos = bullet.getTransform().getPosition();
- *       for (int i = 0; i < 5; i++) {
- *           Vector2D dir = randomDirection();
- *           ctx.spawnProjectile(fragmentBlueprint, pos, dir);
- *       }
+ *   public Set<Class<?>> getRequiredCapabilities() {
+ *       return Set.of(SpatialQueryCapability.class);
  *   }
+ *   
+ *   private void explode(Bullet bullet) {
+ *       SpatialQueryCapability spatial = 
+ *           bullet.getProjectileContext()
+ *                 .getCapability(SpatialQueryCapability.class);
+ *       
+ *       if (spatial == null) {
+ *           throw new IllegalStateException("MetheorBullet requires SpatialQuery");
+ *       }
+ *       
+ *       List<? extends AbstractEntity> entities = 
+ *           spatial.findEntitiesInRadius(center, radius);
+ *       // ... aplicar daño ...
+ *   }
+ * 
+ * ── NULL OBJECT ───────────────────────────────────────────────────────────
+ * 
+ * ProjectileContext.NULL existe para tests, construcción temporal o ausencia
+ * explícita de infraestructura. NO debe usarse silenciosamente durante gameplay.
+ * 
+ * Si un behavior requiere una capacidad y no está disponible, eso es un error
+ * de configuración que debe detectarse explícitamente.
  */
 public interface ProjectileContext {
-
-    // ── Spawn ─────────────────────────────────────────────────────────────
-
+    
+    // ── Core capability API ───────────────────────────────────────────────
+    
     /**
-     * Spawnea un proyectil secundario en el mundo.
-     *
-     * La posición y dirección ya están calculadas por el caller.
-     *
-     * @param blueprint definición del proyectil a spawnear
-     * @param position  posición de spawn en coordenadas del mundo
-     * @param direction dirección normalizada de vuelo
+     * Obtiene una capacidad específica si está disponible.
+     * 
+     * @param capabilityType tipo de la capacidad (interfaz)
+     * @param <T> tipo de retorno (inferido del parámetro)
+     * @return instancia de la capacidad, o null si no está disponible
      */
-    void spawnProjectile(ProjectileBlueprint blueprint,
-                         Vector2D position,
-                         Vector2D direction);
-
+    <T> T getCapability(Class<T> capabilityType);
+    
     /**
-     * Spawnea un proyectil apuntando a una posición objetivo.
-     * La dirección se calcula internamente como normalize(target - origin).
-     *
+     * Verifica si una capacidad está disponible sin obtenerla.
+     * 
+     * @param capabilityType tipo de la capacidad
+     * @return true si la capacidad está disponible
+     */
+    default boolean hasCapability(Class<?> capabilityType) {
+        return getCapability(capabilityType) != null;
+    }
+    
+    // ── Convenience methods ───────────────────────────────────────────────
+    // Delegan a getCapability() internamente. Proporcionan ergonomía sin
+    // sacrificar la arquitectura composable.
+    
+    /**
+     * Spawnea un proyectil secundario.
+     * Método de conveniencia que delega a ProjectileSpawningCapability.
+     * 
+     * No-op seguro si la capacidad no está disponible.
+     * 
      * @param blueprint definición del proyectil
-     * @param origin    posición de spawn
-     * @param target    posición objetivo (puede ser null, usará dirección (1,0))
+     * @param position posición de spawn
+     * @param direction dirección normalizada
+     */
+    default void spawnProjectile(ProjectileBlueprint blueprint,
+                                 Vector2D position,
+                                 Vector2D direction) {
+        // Default no-op — las implementaciones reales delegan a la capacidad
+    }
+    
+    /**
+     * Spawnea un proyectil apuntando hacia un objetivo.
+     * Método de conveniencia que delega a ProjectileSpawningCapability.
+     * 
+     * @param blueprint definición del proyectil
+     * @param origin posición de spawn
+     * @param target posición objetivo (null = dirección default)
      */
     default void spawnProjectileToward(ProjectileBlueprint blueprint,
                                        Vector2D origin,
                                        Vector2D target) {
-        Vector2D direction;
-        if (target != null) {
-            double dx = target.getX() - origin.getX();
-            double dy = target.getY() - origin.getY();
-            double len = Math.hypot(dx, dy);
-            direction = (len > 1e-6)
-                    ? new Vector2D(dx / len, dy / len)
-                    : new Vector2D(1, 0);
-        } else {
-            direction = new Vector2D(1, 0);
-        }
-        spawnProjectile(blueprint, origin, direction);
+        // Default no-op — las implementaciones reales delegan a la capacidad
     }
-
-    // ── Búsqueda de entidades ─────────────────────────────────────────────
-
+    
     /**
-     * Retorna las entidades del mundo dentro de un radio dado.
-     *
-     * Usado para efectos de área (explosiones, daño en zona).
-     * La lista retornada es una snapshot — no modificar.
-     *
-     * @param center posición central del área
-     * @param radius radio de búsqueda en unidades del mundo
-     * @return lista de AbstractEntity dentro del radio (puede estar vacía)
+     * Busca entidades en un radio.
+     * Método de conveniencia que delega a SpatialQueryCapability.
+     * 
+     * Retorna lista vacía si la capacidad no está disponible.
+     * 
+     * @param center posición central
+     * @param radius radio de búsqueda
+     * @return lista inmutable de entidades (puede estar vacía, nunca null)
      */
-    java.util.List<? extends Game.Engine.AbstractEntity> findEntitiesInRadius(
-            Vector2D center, double radius);
-
-    // ── Implementación nula ────────────────────────────────────────────────
-
+    default List<? extends AbstractEntity> findEntitiesInRadius(
+            Vector2D center, double radius) {
+        return List.of(); // Default: lista vacía
+    }
+    
+    // ── Null Object ───────────────────────────────────────────────────────
+    
     /**
-     * Contexto vacío — todas las operaciones son no-ops.
-     *
-     * Usar cuando no hay un mundo activo (tests, behaviors que no usan el ctx)
-     * o como placeholder hasta que el contexto real esté disponible.
+     * Null Object para ausencia de contexto.
+     * 
+     * Uso apropiado:
+     *   - Tests unitarios sin WorldManager
+     *   - Construcción temporal durante bootstrap
+     *   - Escenarios explícitos sin infraestructura
+     * 
+     * Uso INAPROPIADO:
+     *   - Gameplay normal donde existe WorldManager
+     *   - Ocultar errores de wiring/configuración
      */
     ProjectileContext NULL = new ProjectileContext() {
         @Override
-        public void spawnProjectile(ProjectileBlueprint blueprint,
-                                    Vector2D position,
-                                    Vector2D direction) {
-            // no-op
+        public <T> T getCapability(Class<T> capabilityType) {
+            return null; // No capabilities available
         }
-
+        
         @Override
-        public java.util.List<? extends Game.Engine.AbstractEntity>
-                findEntitiesInRadius(Vector2D center, double radius) {
-            return java.util.List.of();
+        public String toString() {
+            return "ProjectileContext.NULL";
         }
     };
 }

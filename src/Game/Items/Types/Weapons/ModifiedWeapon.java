@@ -5,8 +5,8 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.WeaponEvents;
 import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
-import Game.Items.Types.Bullets.BulletFactory;
 import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletFactory;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.Definition.ProjectilePool;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
@@ -29,24 +29,24 @@ import java.util.List;
  *   3. bulletType.create()               → BulletBehavior base
  *   4. AmuletRegistry.applyAll()         → modifica stats + envuelve behavior
  *   5. ProjectileBlueprint.from()        → definición resuelta del proyectil
- *   6. pool.acquire() / BulletFactory.build() → instancia Bullet
+ *   6. pool.acquire()                    → instancia Bullet con ProjectileContext
  *
- * ── POOL OPCIONAL ─────────────────────────────────────────────────────────
+ * ── HRFC — ProjectilePool Integration Consolidation ──────────────────────
  *
- * ModifiedWeapon acepta un ProjectilePool opcional en construcción.
+ * ProjectilePool es ahora OBLIGATORIO para ModifiedWeapon. El fallback legacy
+ * a BulletFactory.build() ha sido eliminado.
  *
- * Si se provee un pool:
- *   → bullets.acquire(blueprint, position, direction, owner)
- *   → El pool decide si reutiliza una instancia o crea una nueva via la Factory.
- *   → Esto es el camino recomendado para proyectiles del jugador en combate.
+ * RAZONES:
+ *   1. BulletFactory.build() NO asigna ProjectileContext
+ *   2. Proyectiles sin contexto no pueden acceder a capacidades (SpatialQuery, etc.)
+ *   3. No existían casos de uso legítimos para armas sin pool en gameplay
+ *   4. El fallback ocultaba silenciosamente errores de configuración
  *
- * Si no se provee pool (pool == null):
- *   → BulletFactory.build(blueprint, position, direction, owner)
- *   → Camino directo, sin pooling. Útil en tests, cutscenes, o sistemas
- *     donde el lifecycle del proyectil no justifica pooling.
- *
- * Ambos caminos usan el mismo Blueprint y producen Bullets idénticas en
- * comportamiento. La única diferencia es si se reutilizan instancias.
+ * ARQUITECTURA ACTUAL:
+ *   - ModifiedWeapon REQUIERE ProjectilePool en construcción
+ *   - El pool viene pre-configurado desde GameWorldBootstrap con ProjectileContextResolver
+ *   - Todos los proyectiles pasan por pool.acquire() que resuelve capacidades
+ *   - No hay rutas alternativas que produzcan proyectiles incompletamente inicializados
  *
  * ── LO QUE NO HACE ────────────────────────────────────────────────────────
  *
@@ -54,6 +54,7 @@ import java.util.List;
  *   - No conoce Player, Enemy ni ninguna entidad concreta.
  *   - No gestiona el ciclo de vida de los proyectiles.
  *   - No llama setCollisionProfile() manualmente.
+ *   - No resuelve ProjectileContext (eso es responsabilidad del ProjectilePool).
  *
  * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────────
  *
@@ -86,7 +87,11 @@ public class ModifiedWeapon {
 
     /**
      * Pool de proyectiles para reutilización de instancias.
-     * null = sin pooling — usa BulletFactory directamente.
+     * 
+     * ── HRFC — ProjectilePool Integration Consolidation ──────────────────
+     * 
+     * Ya NO es nullable. Obligatorio desde construcción.
+     * El pool viene pre-configurado con ProjectileContextResolver.
      */
     private final ProjectilePool pool;
 
@@ -113,7 +118,18 @@ public class ModifiedWeapon {
      * @param weaponType tipo declarativo del arma (requerido)
      * @param comport    comportamiento del arma (cadencia, cooldown, munición)
      * @param amulets    amuletos del portador del arma
-     * @param pool       pool de proyectiles para reutilización (null = sin pooling)
+     * ── HRFC — ProjectilePool Integration Consolidation ──────────────
+     *
+     * ProjectilePool es ahora obligatorio. Los constructores legacy que permitían
+     * pool=null han sido eliminados porque:
+     *   1. Permitían el fallback a BulletFactory.build() sin contexto
+     *   2. Ocultaban silenciosamente la falta de ProjectileContext
+     *   3. No había casos de uso legítimos en gameplay para armas sin pool
+     *
+     * @param weaponType identidad declarativa del arma (obligatorio)
+     * @param comport    comportamiento del arma (obligatorio)
+     * @param amulets    inventario de amuletos para modificar proyectiles (obligatorio)
+     * @param pool       pool de proyectiles configurado (obligatorio)
      * @param owner      el objeto portador del arma (Player, Turret, etc.), o null
      * @param eventBus   bus de eventos (null = sin eventos de arma)
      */
@@ -126,6 +142,7 @@ public class ModifiedWeapon {
         if (weaponType == null) throw new IllegalArgumentException("weaponType es requerido");
         if (comport == null) throw new IllegalArgumentException("comport es requerido");
         if (amulets == null) throw new IllegalArgumentException("amulets es requerido");
+        if (pool == null) throw new IllegalArgumentException("pool es requerido");
 
         this.weaponType = weaponType;
         this.comport    = comport;
@@ -136,35 +153,6 @@ public class ModifiedWeapon {
     }
 
     /**
-     * Constructor con owner y bus sin pool — sin reutilización de instancias.
-     *
-     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
-     *
-     * WeaponType es obligatorio en todos los constructores.
-     */
-    public ModifiedWeapon(WeaponType weaponType,
-                          WeaponComport comport,
-                          AmuletInventory amulets,
-                          Object owner,
-                          GameEventBus eventBus) {
-        this(weaponType, comport, amulets, null, owner, eventBus);
-    }
-
-    /**
-     * Constructor sin owner ni pool — compatibilidad con código existente.
-     * No emite eventos de arma ni de spawn de proyectil.
-     *
-     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
-     *
-     * WeaponType es obligatorio en todos los constructores.
-     */
-    public ModifiedWeapon(WeaponType weaponType,
-                          WeaponComport comport,
-                          AmuletInventory amulets) {
-        this(weaponType, comport, amulets, null, null, null);
-    }
-
-    /**
      * Constructor legacy con BulletType fijo — ELIMINADO.
      * 
      * ── HRFC — Player Inventory & Domain Ownership Consolidation ─────────
@@ -172,11 +160,19 @@ public class ModifiedWeapon {
      * Los constructores legacy con BulletType fijo han sido eliminados porque
      * las armas ya no tienen BulletType fijo. El tipo de bala se pasa como
      * parámetro a handleInput() en runtime.
+     *
+     * ── HRFC — ProjectilePool Integration Consolidation ──────────────────
+     *
+     * Los constructores que permitían pool=null también han sido eliminados:
+     *   - ModifiedWeapon(weaponType, comport, amulets, owner, eventBus)
+     *   - ModifiedWeapon(weaponType, comport, amulets)
+     *
+     * Razón: No existen casos de uso legítimos para armas sin ProjectilePool
+     * en gameplay. El fallback a BulletFactory.build() produce proyectiles sin
+     * ProjectileContext, lo cual es arquitectónicamente incorrecto.
      * 
      * Migrar a:
-     *   ModifiedWeapon(comport, amulets, pool, owner, eventBus)
-     *   ModifiedWeapon(comport, amulets, owner, eventBus)  
-     *   ModifiedWeapon(comport, amulets)
+     *   ModifiedWeapon(weaponType, comport, amulets, pool, owner, eventBus)
      * 
      * Y usar:
      *   weapon.handleInput(bulletType, held, pressed, x, y, right, direction)
@@ -253,12 +249,12 @@ public class ModifiedWeapon {
                     .normalize();
 
             // ── Adquisición unificada ─────────────────────────────────────
-            Bullet bullet;
-            if (pool != null) {
-                bullet = pool.acquire(resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
-            } else {
-                bullet = BulletFactory.build(eventBus, resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
-            }
+            // Owner se pasa como parámetro runtime, no como parte del blueprint
+            //
+            // ── HRFC — ProjectilePool Integration Consolidation ──────────
+            // Pool es ahora obligatorio (validado en constructor).
+            // Ruta única: pool.acquire() que resuelve ProjectileContext correctamente.
+            Bullet bullet = pool.acquire(resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
             bullets.add(bullet);
         }
 

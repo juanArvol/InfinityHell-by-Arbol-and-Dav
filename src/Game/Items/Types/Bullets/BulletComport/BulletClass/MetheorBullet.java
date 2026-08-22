@@ -1,17 +1,19 @@
 package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
 import Game.Engine.AbstractEntity;
-import Game.Engine.GameObjects;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Game.Items.Types.Bullets.ProjectileMovement;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Behavior del MetheorBullet — proyectil de alta masa con explosión al impacto.
@@ -69,7 +71,7 @@ import java.util.List;
  */
 public class MetheorBullet extends BulletBehavior {
 
-    private static final double BASE_DAMAGE          = 35000.0;
+    private static final double BASE_DAMAGE          = 0;
     private static final double GRAVITY_STRENGTH     = 1200;
     private static final double EXPLOSION_POWER_MULT = 2500;
     private static final double RADIUS_BASE          = 250.0;
@@ -84,6 +86,12 @@ public class MetheorBullet extends BulletBehavior {
     private static final double METEOR_MASS              = 300.0;     // 3x más masivo que proyectil normal
     private static final double METEOR_EFFECTIVE_AREA    = 15;     // área grande
     private static final double METEOR_DRAG_COEFFICIENT  = 0.0021;  // poco aerodinámico (escalado para px/frame)
+
+    @Override
+    public Set<Class<?>> getRequiredCapabilities() {
+        // MetheorBullet requires spatial query for explosion area effect
+        return Set.of(SpatialQueryCapability.class);
+    }
 
     @Override
     public ProjectileData getDefaultData() {
@@ -125,7 +133,7 @@ public class MetheorBullet extends BulletBehavior {
     @Override
     public void onCollision(Bullet bullet, GameObjects other) {
         if(other instanceof AbstractEntity entity){
-            //entity.gotDamage((int) bullet.getBulletDamage());
+            entity.gotDamage((int) bullet.getBulletDamage());
         }
         // MetheorBullet explota al impactar cualquier objetivo válido
         // El CollisionProfile ya garantiza que solo recibimos colisiones válidas
@@ -160,18 +168,10 @@ public class MetheorBullet extends BulletBehavior {
         
         // Buscar todas las entidades en el radio de explosión
         var entitiesInRange = findNearbyEntities(bullet, center, maxRadius);
-        System.out.println("=== METEOR EXPLOSION ===");
-System.out.println("center = " + centerX + ", " + centerY);
-System.out.println("velocityY = " + velocityY);
-System.out.println("explosionPower = " + explosionPower);
-System.out.println("maxRadius = " + maxRadius);
-System.out.println("entitiesInRange = " + entitiesInRange.size());
+        
         // Aplicar daño y empuje radial a cada entidad afectada
         for (AbstractEntity entity : entitiesInRange) {
-            System.out.println(
-    "EXPLOSION HIT -> " +
-    entity.getClass().getSimpleName()
-);
+            
             Vector2D entityPos = entity.getTransform().getPosition();
             double dx = entityPos.getX() - centerX;
             double dy = entityPos.getY() - centerY;
@@ -184,7 +184,7 @@ System.out.println("entitiesInRange = " + entitiesInRange.size());
             
             // Calcular daño escalado con distancia (preserva fórmula legacy)
             double damageFactor = 1.0 - (distance / maxRadius);
-            double finalDamage = BASE_DAMAGE + (explosionPower * damageFactor);
+            double finalDamage = BASE_DAMAGE * (explosionPower * damageFactor);
             
             // Aplicar daño via AbstractEntity.damage()
             entity.gotDamage((int) finalDamage);
@@ -208,20 +208,31 @@ System.out.println("entitiesInRange = " + entitiesInRange.size());
     /**
      * Encuentra entidades cercanas para la explosión en área.
      *
-     * Usa ProjectileContext.findEntitiesInRadius() que ahora es accesible
-     * via Bullet.getProjectileContext().
+     * Usa SpatialQueryCapability mediante getCapability() del ProjectileContext.
+     * Este es el patrón composable: el behavior declara qué necesita (en
+     * getRequiredCapabilities) y luego consume esa capacidad específica.
      *
      * @param bullet bullet que explota
      * @param center posición central del área de explosión
      * @param radius radio de búsqueda en unidades del mundo
-     * @return lista de entidades encontradas, o lista vacía si no hay contexto
+     * @return lista de entidades encontradas, o lista vacía si no hay capacidad disponible
      */
     private List<? extends AbstractEntity> findNearbyEntities(Bullet bullet, Vector2D center, double radius) {
         ProjectileContext context = bullet.getProjectileContext();
+        
         if (context == null || context == ProjectileContext.NULL) {
             return List.of();
         }
-        return context.findEntitiesInRadius(center, radius);
+        
+        // Get the spatial query capability from the composed context
+        SpatialQueryCapability spatialQuery = context.getCapability(SpatialQueryCapability.class);
+        
+        if (spatialQuery == null) {
+            // Context doesn't provide spatial query - shouldn't happen if blueprint requirements were met
+            return List.of();
+        }
+        
+        return spatialQuery.findEntitiesInRadius(center, radius);
     }
 
     /**

@@ -1,9 +1,9 @@
 package Game.Enemys.Core.Controllers;
 
-import Game.Enemys.AI.EnemyAction;
-import Game.Enemys.AI.EnemyComport;
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyAction;
+import Game.Enemys.Core.AI.EnemyComport;
+import Game.Enemys.Core.AI.EnemyContext;
 
 /**
  * Controlador de IA del Enemy.

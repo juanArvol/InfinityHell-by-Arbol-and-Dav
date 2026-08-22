@@ -8,7 +8,7 @@ import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
 import Game.Enemys.Core.Transitions.TimedTransition;
-import Game.Enemys.EnemyPhysicsConfig;
+import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSource;
 import Game.Engine.Entity.Combat.AttackSources;
@@ -65,10 +65,19 @@ public final class SansAssembler extends EnemyAssembler {
 
     @Override
     protected EnemyDefinition definition() {
+        // Sans: boss volador con física de flyingStandard()
+        EnemyPhysics physics = new EnemyPhysics(
+            0.1,  // gravity (mínima para voladores)
+            40,   // mass
+            0,    // effectiveArea (aerodinámica optimizada)
+            0,    // dragCoefficient (forma optimizada)
+            1     // slide
+        );
+        
         return EnemyDefinition.builder()
             .sprite(EnemyAssets.flyingHandle)     // placeholder — reemplazar con SansAssets
             .health(SansVariables.PHASE1_HP)
-            .physics(EnemyPhysicsConfig.flyingStandard())
+            .physics(physics)
             .collider(32, 48)
             .animation("idle")
             .animation("attack")

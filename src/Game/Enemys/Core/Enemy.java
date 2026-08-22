@@ -1,6 +1,6 @@
 package Game.Enemys.Core;
 
-import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.AI.EnemyContext;
 import Game.Enemys.Core.Controllers.EnemyAIController;
 import Game.Enemys.Core.Controllers.EnemyAttackController;
 import Game.Enemys.Core.Controllers.EnemyComponentRegistry;

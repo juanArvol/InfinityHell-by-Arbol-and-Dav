@@ -153,7 +153,7 @@ public class ChargeMode implements iFireMode {
             // Calcular multiplicador basado en tiempo de carga
             // Escala linealmente de 1.0 (sin carga) a 2.0 (carga completa)
             double chargeRatio = Math.min(1.0, chargeElapsed / maxChargeSeconds);
-            double multiplier = 1.0 + chargeRatio;
+            double multiplier = 1.0 * chargeRatio;
 
             // Resetear carga para el próximo disparo
             chargeElapsed = 0.0;

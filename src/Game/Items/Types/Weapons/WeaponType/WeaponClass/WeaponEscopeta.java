@@ -1,6 +1,6 @@
 package Game.Items.Types.Weapons.WeaponType.WeaponClass;
 
-import Game.Items.Types.Weapons.WeaponType.FireMode.FireModeTypes.ChargeMode;
+import Game.Items.Types.Weapons.WeaponType.FireMode.FireModeTypes.AutoMode;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 
@@ -29,7 +29,7 @@ public class WeaponEscopeta extends WeaponComport {
             17, // daño
             20 // velocidad
             ),
-        new ChargeMode(),
+        new AutoMode(),
         12, 
         5,
         "Gun.wav");

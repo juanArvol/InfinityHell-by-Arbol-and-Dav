@@ -3,7 +3,7 @@ package Game.Items.Types.Bullets.Definition;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Pooling.AbstractObjectPool;
-import Game.Items.Types.Bullets.BulletFactory;
+import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweightCache;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
@@ -105,8 +105,11 @@ import Game.Items.Types.Bullets.ResettableMovement;
  */
 public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
-    /** Contexto inyectado en cada proyectil adquirido. NULL por defecto. */
-    private ProjectileContext context = ProjectileContext.NULL;
+    /** 
+     * Resolver that composes ProjectileContext from registered capability providers.
+     * null = no resolver, all bullets get ProjectileContext.NULL
+     */
+    private ProjectileContextResolver contextResolver = null;
 
     /**
      * Bus de eventos inyectado en cada proyectil adquirido.
@@ -122,10 +125,11 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
     // ── Context ───────────────────────────────────────────────────────────
 
     /**
-     * Configura el ProjectileContext inyectado en cada proyectil adquirido.
+     * Configura el ProjectileContextResolver usado para componer contextos
+     * según las capacidades requeridas por cada blueprint.
      */
-    public void setContext(ProjectileContext ctx) {
-        this.context = (ctx != null) ? ctx : ProjectileContext.NULL;
+    public void setContextResolver(ProjectileContextResolver resolver) {
+        this.contextResolver = resolver;
     }
 
     /**
@@ -163,6 +167,7 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
      * @param direction dirección normalizada de vuelo
      * @param owner     el objeto que originó el disparo (puede ser null)
      * @return Bullet lista para añadir al mundo
+     * @throws IllegalStateException si el blueprint requiere capacidades pero no hay resolver configurado
      */
     public Bullet acquire(ProjectileBlueprint blueprint,
                           Vector2D position,
@@ -174,56 +179,125 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
         // Exponer blueprint para createInstance() y canReuse() del base
         this.currentBlueprint = blueprint;
+        
+        try {
+            // findReusable() del base llama canReuse(candidate) — que usa currentBlueprint
+            Bullet bullet = findReusable();
 
-        // findReusable() del base llama canReuse(candidate) — que usa currentBlueprint
-        Bullet bullet = findReusable();
+            if (bullet != null) {
+                // ── Reutilizar instancia compatible ───────────────────────────
+                recordAcquireHit();
 
-        if (bullet != null) {
-            // ── Reutilizar instancia compatible ───────────────────────────
-            recordAcquireHit();
+                BulletFlyweight newFlyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
 
-            BulletFlyweight newFlyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
+                // Reset completo: posición, velocidad, vida, damage, behavior,
+                // movement (con reset si ResettableMovement), flyweight y flags.
+                // PRE: onRelease() ya fue invocado por emitDestroy() antes de
+                // que isPendingDestruction() llamara release().
+                // Mini-HRFC: pasa el PhysicalState del blueprint.
+                bullet.resetState(
+                        position.getX(), position.getY(),
+                        xSpeed, ySpeed,
+                        blueprint.lifeTime(),
+                        blueprint.damage(),
+                        blueprint.behavior(),
+                        blueprint.movement(),
+                        newFlyweight,
+                        blueprint.physicalState()  // Mini-HRFC
+                );
 
-            // Reset completo: posición, velocidad, vida, damage, behavior,
-            // movement (con reset si ResettableMovement), flyweight y flags.
-            // PRE: onRelease() ya fue invocado por emitDestroy() antes de
-            // que isPendingDestruction() llamara release().
-            // Mini-HRFC: pasa el PhysicalState del blueprint.
-            bullet.resetState(
-                    position.getX(), position.getY(),
-                    xSpeed, ySpeed,
-                    blueprint.lifeTime(),
-                    blueprint.damage(),
-                    blueprint.behavior(),
-                    blueprint.movement(),
-                    newFlyweight,
-                    blueprint.physicalState()  // Mini-HRFC
+            } else {
+                // ── No hay instancia compatible — construir una nueva ─────────
+                // BulletFactory es la única autoridad de construcción.
+                // buildForPool() construye sin emitir el evento de spawn:
+                // el pool lo emitirá a continuación con el owner correcto,
+                // en el mismo punto que las instancias reutilizadas.
+                recordAcquireMiss();
+                bullet = BulletFactory.buildForPool(blueprint, position, direction);
+            }
+
+            // Inyectar referencia al pool — mecanismo de auto-devolución.
+            // Cuando bullet.isPendingDestruction() detecte destrucción,
+            // llamará this.release(bullet) automáticamente.
+            bullet.assignPool(this);
+
+            // ── Resolver contexto según capacidades requeridas ────────────────
+            ProjectileContext resolvedContext = resolveContext(blueprint);
+            bullet.setProjectileContext(resolvedContext);
+
+            // ── Configurar spawn origin ───────────────────────────────────────
+            bullet.setSpawnOrigin(position);
+
+            // ── Único punto de emisión de OnProjectileSpawn ───────────────────
+            // emitSpawn() establece el eventBus Y el owner en el bullet antes
+            // de emitir el evento — única fuente de verdad para ownership.
+            BulletFactory.emitSpawn(eventBus, bullet, owner);
+
+            return bullet;
+            
+        } finally {
+            // Limpiar referencia temporal incluso si ocurre excepción
+            this.currentBlueprint = null;
+        }
+    }
+    
+    /**
+     * Resuelve el ProjectileContext según las capacidades requeridas.
+     * 
+     * Casos:
+     *   A. Sin capacidades requeridas → ProjectileContext.NULL válido
+     *   B. Con capacidades + resolver configurado → resolver context
+     *   C. Con capacidades SIN resolver → IllegalStateException
+     * 
+     * @param blueprint blueprint del proyectil
+     * @return ProjectileContext válido, nunca null
+     * @throws IllegalStateException si requiere capacidades sin resolver configurado
+     */
+    private ProjectileContext resolveContext(ProjectileBlueprint blueprint) {
+        java.util.Set<Class<?>> requiredCapabilities = blueprint.getRequiredCapabilities();
+        
+        // Caso A — Sin capacidades requeridas
+        if (requiredCapabilities.isEmpty()) {
+            return ProjectileContext.NULL;
+        }
+        
+        // Caso C — Requiere capacidades pero no hay resolver
+        if (contextResolver == null) {
+            throw new IllegalStateException(
+                "ProjectilePool cannot acquire projectile because the blueprint " +
+                "requires projectile capabilities but no ProjectileContextResolver " +
+                "has been configured.\n" +
+                "Behavior: " + blueprint.behavior().getClass().getSimpleName() + "\n" +
+                "Required capabilities: " + requiredCapabilities
             );
-
-        } else {
-            // ── No hay instancia compatible — construir una nueva ─────────
-            // BulletFactory es la única autoridad de construcción.
-            // buildForPool() construye sin emitir el evento de spawn:
-            // el pool lo emitirá a continuación con el owner correcto,
-            // en el mismo punto que las instancias reutilizadas.
-            recordAcquireMiss();
-            bullet = BulletFactory.buildForPool(blueprint, position, direction);        }
-
-        this.currentBlueprint = null; // limpiar referencia temporal
-
-        // Inyectar referencia al pool — mecanismo de auto-devolución.
-        // Cuando bullet.isPendingDestruction() detecte destrucción,
-        // llamará this.release(bullet) automáticamente.
-        bullet.assignPool(this);
-
-        // Inyectar contexto actualizado para onExpire.
-        bullet.setProjectileContext(context);
-
-        // ── Único punto de emisión de OnProjectileSpawn ───────────────────
-        // También inyecta el eventBus en el bullet para eventos de ciclo de vida.
-        BulletFactory.emitSpawn(eventBus, bullet, owner);
-
-        return bullet;
+        }
+        
+        // Caso B — Resolver capacidades
+        ProjectileContext resolvedContext = contextResolver.resolve(requiredCapabilities);
+        
+        // Validar que el resolver no retornó null
+        if (resolvedContext == null) {
+            throw new IllegalStateException(
+                "ProjectileContextResolver.resolve() returned null for required capabilities.\n" +
+                "Behavior: " + blueprint.behavior().getClass().getSimpleName() + "\n" +
+                "Required capabilities: " + requiredCapabilities
+            );
+        }
+        
+        // Validar que todas las capacidades requeridas estén presentes
+        for (Class<?> capabilityType : requiredCapabilities) {
+            if (!resolvedContext.hasCapability(capabilityType)) {
+                throw new IllegalStateException(
+                    "ProjectileContext is missing required capability.\n" +
+                    "Behavior: " + blueprint.behavior().getClass().getSimpleName() + "\n" +
+                    "Missing capability: " + capabilityType.getSimpleName() + "\n" +
+                    "Required capabilities: " + requiredCapabilities + "\n" +
+                    "Resolved context: " + resolvedContext
+                );
+            }
+        }
+        
+        return resolvedContext;
     }
 
     // ── Release (package-private para Bullet) ────────────────────────────

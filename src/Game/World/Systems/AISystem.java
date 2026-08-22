@@ -1,6 +1,6 @@
 package Game.World.Systems;
 
-import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.AI.EnemyContext;
 import Game.Engine.ContextualUpdatable;
 import Game.Engine.GameObjects;
 import Game.Player.Player;

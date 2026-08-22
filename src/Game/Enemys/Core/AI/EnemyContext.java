@@ -1,4 +1,4 @@
-package Game.Enemys.AI;
+package Game.Enemys.Core.AI;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
 

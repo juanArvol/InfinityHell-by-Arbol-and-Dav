@@ -1,11 +1,11 @@
 package Game.Enemys.EnemyTypes.Flying;
 
-import Game.Enemys.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
+import Game.Enemys.Core.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Core.Movement.FlyingMovement;
-import Game.Enemys.EnemyPhysicsConfig;
+import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSource;
 import Game.Engine.Entity.Combat.AttackSources;
@@ -30,15 +30,25 @@ import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 public final class FlyingEnemyAssembler extends EnemyAssembler {
 
     private static final int    MAX_HEALTH     = 80;
-    private static final double MAX_SPEED      = 3.0;
-    private static final double STEERING_FORCE = 0.15;
+    private static final double MAX_SPEED      = 190;
+    private static final double STEERING_FORCE = 0.2;
 
     @Override
     protected EnemyDefinition definition() {
+        // Enemigo volador: mínima gravedad, sin parámetros terrestres
+        // Usa valores de flyingStandard() pero sin drag (effectiveArea=0, dragCoefficient=0)
+        EnemyPhysics physics = new EnemyPhysics(
+            0.1,  // gravity (mínima para voladores)
+            40,   // mass
+            0,    // effectiveArea (aerodinámica optimizada)
+            0,    // dragCoefficient (forma optimizada)
+            1     // slide
+        );
+        
         return EnemyDefinition.builder()
             .sprite(EnemyAssets.flyingHandle)
             .health(MAX_HEALTH)
-            .physics(EnemyPhysicsConfig.flyingStandard())
+            .physics(physics)
             .collider(24, 30)
             .shadow(18, 7)
             .animation("idle")
@@ -70,7 +80,7 @@ public final class FlyingEnemyAssembler extends EnemyAssembler {
     protected void configureMovement(Enemy enemy) {
         enemy.getMovementController().setStrategy(new FlyingMovement());
         enemy.getAIController().setBehavior(
-            new FlyingBehavior(MAX_SPEED, STEERING_FORCE)
+            new FlyingBehavior(STEERING_FORCE)
         );
     }
 

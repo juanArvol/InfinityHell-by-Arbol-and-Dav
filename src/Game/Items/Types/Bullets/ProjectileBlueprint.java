@@ -1,8 +1,10 @@
 package Game.Items.Types.Bullets;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.Core.PhysicalState;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.Definition.BulletFactory;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
@@ -74,6 +76,10 @@ public final class ProjectileBlueprint {
     private final String             assetKey;
     private final CollisionProfile   collisionProfile;
     private final PhysicalState      physicalState;  // Mini-HRFC — null = sin física
+    
+    // ── Metadata del proyectil ────────────────────────────────────────────
+    private final Vector2D                   spawnOrigin;       // Posición de spawn
+    private final java.util.Set<Class<?>>    requiredCapabilities; // Capacidades requeridas
 
     // ── Constructor privado ───────────────────────────────────────────────
 
@@ -87,7 +93,9 @@ public final class ProjectileBlueprint {
             int              height,
             String           assetKey,
             CollisionProfile collisionProfile,
-            PhysicalState    physicalState
+            PhysicalState    physicalState,
+            Vector2D         spawnOrigin,
+            java.util.Set<Class<?>> requiredCapabilities
     ) {
         // Defensivo — los withers no deben producir nulls en comportamiento obligatorio
         this.behavior         = (behavior != null) ? behavior : new DefaultBehavior();
@@ -100,6 +108,10 @@ public final class ProjectileBlueprint {
         this.assetKey         = assetKey;         // null = default, permitido
         this.collisionProfile = collisionProfile; // null = default PLAYER_BULLET en Bullet
         this.physicalState    = physicalState;    // null = sin física, permitido
+        this.spawnOrigin      = spawnOrigin;      // null = sin origen conocido, permitido
+        this.requiredCapabilities = (requiredCapabilities != null) 
+            ? java.util.Set.copyOf(requiredCapabilities) 
+            : java.util.Set.of();  // Inmutable y defensivo
     }
 
     // ── Factory estático principal ────────────────────────────────────────
@@ -142,6 +154,9 @@ public final class ProjectileBlueprint {
             movement = movement.andThen(new GravityMovement(data.gravityValue()));
         }
 
+        // Derivar requirements del behavior — única fuente de verdad
+        java.util.Set<Class<?>> requirements = behavior.getRequiredCapabilities();
+
         return new ProjectileBlueprint(
                 behavior,
                 movement,
@@ -152,7 +167,9 @@ public final class ProjectileBlueprint {
                 data.height(),
                 data.assetKey(),
                 null,    // collisionProfile: default PLAYER_BULLET — Bullet lo aplica
-                physics  // Mini-HRFC — null si el behavior no declara física
+                physics, // Mini-HRFC — null si el behavior no declara física
+                null,    // spawnOrigin: debe configurarse via wither
+                requirements // Derivado del behavior
         );
     }
 
@@ -177,49 +194,57 @@ public final class ProjectileBlueprint {
     /** Retorna una copia con un behavior diferente. */
     public ProjectileBlueprint withBehavior(BulletBehavior newBehavior) {
         return new ProjectileBlueprint(newBehavior, movement, speed, damage,
-                lifeTime, width, height, assetKey, collisionProfile, physicalState);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con un movement diferente. */
     public ProjectileBlueprint withMovement(ProjectileMovement newMovement) {
         return new ProjectileBlueprint(behavior, newMovement, speed, damage,
-                lifeTime, width, height, assetKey, collisionProfile, physicalState);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con una speed diferente. */
     public ProjectileBlueprint withSpeed(double newSpeed) {
         return new ProjectileBlueprint(behavior, movement, newSpeed, damage,
-                lifeTime, width, height, assetKey, collisionProfile, physicalState);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con un damage diferente. */
     public ProjectileBlueprint withDamage(double newDamage) {
         return new ProjectileBlueprint(behavior, movement, speed, newDamage,
-                lifeTime, width, height, assetKey, collisionProfile, physicalState);
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con un lifeTime diferente. */
     public ProjectileBlueprint withLifeTime(int newLifeTime) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                newLifeTime, width, height, assetKey, collisionProfile, physicalState);
+                newLifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con dimensiones de collider diferentes. */
     public ProjectileBlueprint withSize(int newWidth, int newHeight) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, newWidth, newHeight, assetKey, collisionProfile, physicalState);
+                lifeTime, newWidth, newHeight, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con un assetKey diferente. */
     public ProjectileBlueprint withAssetKey(String newAssetKey) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, width, height, newAssetKey, collisionProfile, physicalState);
+                lifeTime, width, height, newAssetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con un CollisionProfile diferente. */
     public ProjectileBlueprint withCollisionProfile(CollisionProfile newProfile) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, width, height, assetKey, newProfile, physicalState);
+                lifeTime, width, height, assetKey, newProfile, physicalState,
+                spawnOrigin, requiredCapabilities);
     }
 
     /**
@@ -228,7 +253,15 @@ public final class ProjectileBlueprint {
      */
     public ProjectileBlueprint withPhysicalState(PhysicalState newPhysicalState) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
-                lifeTime, width, height, assetKey, collisionProfile, newPhysicalState);
+                lifeTime, width, height, assetKey, collisionProfile, newPhysicalState,
+                spawnOrigin, requiredCapabilities);
+    }
+    
+    /** Retorna una copia con un spawnOrigin diferente. */
+    public ProjectileBlueprint withSpawnOrigin(Vector2D newSpawnOrigin) {
+        return new ProjectileBlueprint(behavior, movement, speed, damage,
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                newSpawnOrigin, requiredCapabilities);
     }
 
     /** Retorna una copia con movement compuesto (this.movement.andThen(extra)). */
@@ -248,6 +281,12 @@ public final class ProjectileBlueprint {
     public String             assetKey()          { return assetKey;          }
     public CollisionProfile   collisionProfile()  { return collisionProfile;  }
     public PhysicalState      physicalState()     { return physicalState;     } // Mini-HRFC
+    
+    /** Retorna la posición de spawn del proyectil (puede ser null). */
+    public Vector2D getSpawnOrigin() { return spawnOrigin; }
+    
+    /** Retorna las capacidades contextuales requeridas (nunca null, puede estar vacío). */
+    public java.util.Set<Class<?>> getRequiredCapabilities() { return requiredCapabilities; }
 
 
 

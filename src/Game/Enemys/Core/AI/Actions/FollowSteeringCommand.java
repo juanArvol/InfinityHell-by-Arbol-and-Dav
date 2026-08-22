@@ -1,16 +1,21 @@
-package Game.Enemys.AI.Actions;
+package Game.Enemys.Core.AI.Actions;
 
-import Game.Enemys.AI.EnemyAction;
-import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.AI.EnemyAction;
+import Game.Enemys.Core.AI.EnemyContext;
 import Game.Enemys.Core.Enemy;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * Sigue al objetivo con steering suave.
  *
- * CAMBIO vs. original:
- *   - Recibe `EnemyContext ctx` en lugar de `Player player`.
- *   - Mismo algoritmo de steering — solo cambia de dónde lee la posición objetivo.
+ * ── HRFC — Enemy Physics & Domain Refactor ───────────────────────────────
+ *
+ * AGREGADO: updateMaxSpeed() para actualizar el límite de velocidad
+ * desde EntityStats en runtime.
+ *
+ * FlyingBehavior consulta enemy.getStats().getSpeed() cada frame y
+ * actualiza este command, permitiendo que buffs/debuffs afecten el
+ * movimiento sin reconstruir el command.
  *
  * FIX BUG-14 (conservado): steeringForce era 9999999 (teleport).
  * Ahora default = 0.15 → persecución fluida y realista.
@@ -22,7 +27,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 public class FollowSteeringCommand implements EnemyAction {
 
     private EnemyContext ctx;
-    private final double maxSpeed;
+    private double maxSpeed;
     private final double steeringForce;
 
     /** Constructor con EnemyContext — el preferido desde FlyingBehavior. */
@@ -44,6 +49,14 @@ public class FollowSteeringCommand implements EnemyAction {
      */
     public void updateContext(EnemyContext newCtx) {
         this.ctx = newCtx;
+    }
+
+    /**
+     * Actualiza la velocidad máxima desde EntityStats.
+     * Permite que buffs/debuffs afecten el movimiento dinámicamente.
+     */
+    public void updateMaxSpeed(double newMaxSpeed) {
+        this.maxSpeed = newMaxSpeed;
     }
 
     @Override

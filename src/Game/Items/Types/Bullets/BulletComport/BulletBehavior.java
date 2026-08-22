@@ -299,4 +299,65 @@ public abstract class BulletBehavior {
      * Default: no-op.
      */
     public void resetBehaviorState() {}
+    
+    // ── Capacidades contextuales requeridas ───────────────────────────────
+    
+    /**
+     * Declara qué capacidades contextuales necesita este behavior.
+     * 
+     * ── ARQUITECTURA COMPOSABLE ───────────────────────────────────────────
+     * 
+     * El behavior declara explícitamente qué servicios del mundo necesita
+     * mediante los tipos de interfaz de capacidad. El resolver del contexto
+     * compone automáticamente un ProjectileContext con esas capacidades.
+     * 
+     * Default: Set.of() — no requiere capacidades adicionales.
+     * 
+     * ── EJEMPLO ───────────────────────────────────────────────────────────
+     * 
+     * MetheorBullet necesita búsqueda espacial para explosión en área:
+     * 
+     * <pre>{@code
+     * @Override
+     * public Set<Class<?>> getRequiredCapabilities() {
+     *     return Set.of(SpatialQueryCapability.class);
+     * }
+     * }</pre>
+     * 
+     * Posteriormente, en explode():
+     * 
+     * <pre>{@code
+     * SpatialQueryCapability spatial = 
+     *     bullet.getProjectileContext()
+     *           .getCapability(SpatialQueryCapability.class);
+     * 
+     * if (spatial == null) {
+     *     throw new IllegalStateException("MetheorBullet requires SpatialQuery");
+     * }
+     * 
+     * List<? extends AbstractEntity> entities = 
+     *     spatial.findEntitiesInRadius(center, radius);
+     * }</pre>
+     * 
+     * ── CAPACIDADES DISPONIBLES ───────────────────────────────────────────
+     * 
+     * Actuales:
+     *   - SpatialQueryCapability: búsqueda de entidades en radio
+     *   - ProjectileSpawningCapability: spawn de proyectiles secundarios
+     * 
+     * Futuras (ejemplos):
+     *   - FactionQueryCapability: consultas de alianza/enemigo
+     *   - EnvironmentQueryCapability: gravedad, fluidos, temperatura ambiente
+     * 
+     * ── EXTENSIBILIDAD ────────────────────────────────────────────────────
+     * 
+     * Agregar una nueva capacidad NO requiere modificar esta clase.
+     * Solo crear la interfaz de capacidad y su provider, registrarlos durante
+     * bootstrap, y declararla aquí cuando un behavior la necesite.
+     * 
+     * @return conjunto inmutable de tipos de capacidad requeridos (nunca null)
+     */
+    public java.util.Set<Class<?>> getRequiredCapabilities() {
+        return java.util.Set.of(); // Default: sin capacidades adicionales
+    }
 }

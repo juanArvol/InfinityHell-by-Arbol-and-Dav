@@ -2,7 +2,7 @@ package Game.Enemys.Core.Controllers;
 
 import Game.Enemys.Core.Contracts.MovementStrategy;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.AI.EnemyContext;
+import Game.Enemys.Core.AI.EnemyContext;
 
 /**
  * Controlador de movimiento del Enemy.

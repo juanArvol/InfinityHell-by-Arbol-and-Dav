@@ -1,9 +1,9 @@
 package Game.Enemys.Bosses.Sans.AI;
 
-import Game.Enemys.AI.EnemyAction;
 import Game.Enemys.Bosses.Sans.Components.SansInvincibilityComponent;
 import Game.Enemys.Bosses.Sans.Variables.SansVariables;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyAction;
 
 /**
  * Acción de teletransporte de Sans.

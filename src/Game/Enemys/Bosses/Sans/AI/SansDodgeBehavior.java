@@ -1,10 +1,10 @@
 package Game.Enemys.Bosses.Sans.AI;
 
-import Game.Enemys.AI.Actions.IdleCommand;
-import Game.Enemys.AI.EnemyAction;
-import Game.Enemys.AI.EnemyComport;
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyAction;
+import Game.Enemys.Core.AI.EnemyComport;
+import Game.Enemys.Core.AI.EnemyContext;
+import Game.Enemys.Core.AI.Actions.IdleCommand;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**

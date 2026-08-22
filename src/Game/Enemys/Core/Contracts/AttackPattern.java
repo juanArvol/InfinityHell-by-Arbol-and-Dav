@@ -1,7 +1,7 @@
 package Game.Enemys.Core.Contracts;
 
-import Game.Enemys.AI.EnemyContext;
 import Game.Enemys.Core.Enemy;
+import Game.Enemys.Core.AI.EnemyContext;
 
 /**
  * Patrón de ataque de un enemigo.

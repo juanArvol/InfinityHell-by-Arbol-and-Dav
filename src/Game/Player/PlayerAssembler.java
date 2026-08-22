@@ -150,20 +150,33 @@ public final class PlayerAssembler {
      *   • Inyección de dependencias limpia sin referencias diferidas
      *   • PlayerStats vincula TODOS los sistemas Entity (gateway completo)
      *
+     * ── HRFC — ProjectilePool Integration Consolidation ──────────────────
+     *
+     * ProjectilePool ahora es obligatorio para gameplay. Las armas del jugador
+     * requieren el pool configurado con ProjectileContextResolver para que los
+     * proyectiles reciban las capacidades contextuales necesarias (SpatialQuery,
+     * ProjectileSpawning, etc.).
+     *
+     * El pool debe venir pre-configurado desde el composition root (GameWorldBootstrap)
+     * con el resolver y los capability providers ya registrados.
+     *
      * @param spawn         posición inicial en el mundo
      * @param bulletSpawner callback para añadir balas al mundo
      * @param eventBus      bus de eventos del juego
      * @param loadout       configuración de equipamiento inicial
+     * @param projectilePool pool de proyectiles configurado con resolver (obligatorio)
      * @return Player completamente configurado y listo para el ciclo de juego
      */
     public static Player assemble(Vector2D spawn,
                                   Consumer<Bullet> bulletSpawner,
                                   GameEventBus eventBus,
-                                  PlayerLoadout loadout) {
+                                  PlayerLoadout loadout,
+                                  Game.Items.Types.Bullets.Definition.ProjectilePool projectilePool) {
         if (spawn         == null) throw new IllegalArgumentException("spawn es requerido");
         if (bulletSpawner == null) throw new IllegalArgumentException("bulletSpawner es requerido");
         if (eventBus      == null) throw new IllegalArgumentException("eventBus es requerido");
         if (loadout       == null) throw new IllegalArgumentException("loadout es requerido");
+        if (projectilePool == null) throw new IllegalArgumentException("projectilePool es requerido");
 
         // ── 1. Entity Systems — configuración de sistemas genéricos ──────
         EntityStats entityStats = new EntityStats();
@@ -258,12 +271,20 @@ public final class PlayerAssembler {
         // 
         // WeaponType se pasa explícitamente a ModifiedWeapon constructor para
         // conservar la identidad declarativa en la instancia runtime.
+        //
+        // ── HRFC — ProjectilePool Integration Consolidation ──────────────
+        //
+        // Inyectamos el ProjectilePool configurado desde el bootstrap a cada arma.
+        // Esto garantiza que todos los proyectiles del jugador se adquieren via
+        // pool.acquire() con ProjectileContext correcto, en lugar del fallback
+        // BulletFactory.build() que no asigna contexto.
         for (WeaponType weaponType : loadout.getWeapons()) {
             WeaponComport comport = weaponType.createComport();
             ModifiedWeapon weapon = new ModifiedWeapon(
-                weaponType,  // Identidad declarativa conservada
+                weaponType,       // Identidad declarativa conservada
                 comport,
                 amulets,
+                projectilePool,   // Pool configurado con resolver
                 player,
                 eventBus
             );
