@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.BulletComport.BulletClass;
 import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.BulletComport.TrajectoryProvider;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 
@@ -24,6 +25,20 @@ public class BulletNormal extends BulletBehavior {
     @Override
     public ProjectileData getDefaultData() {
         return DEFAULT_DATA;
+    }
+
+    /**
+     * Provider de trayectoria para BulletNormal.
+     *
+     * ── UI TRAJECTORY PREDICTION ──────────────────────────────────────────
+     *
+     * BulletNormal usa física simple: trayectoria lineal con gravedad estándar.
+     * Este es el comportamiento por defecto de BulletBehavior, pero lo
+     * declaramos explícitamente para claridad.
+     */
+    @Override
+    public TrajectoryProvider getTrajectoryProvider() {
+        return TrajectoryProvider.DEFAULT_LINEAR_GRAVITY;
     }
 
     @Override

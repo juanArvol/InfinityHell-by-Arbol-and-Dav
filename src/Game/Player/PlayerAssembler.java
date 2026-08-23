@@ -215,6 +215,10 @@ public final class PlayerAssembler {
             eventBus
         );
 
+        // ── 4.5. AimCapabilityManager — capabilities de visualización ─────
+        Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities = 
+                new Game.Gameplay.UI.Aim.AimCapabilityManager();
+
         // ── 5. Player — entidad principal ────────────────────────────────
         Player player = new Player(
             spawn,
@@ -228,7 +232,8 @@ public final class PlayerAssembler {
             playerStats,
             amulets,
             controller,
-            combat
+            combat,
+            aimCapabilities
         );
 
         // ── 6. Post-construcción — inyección de dependencias diferidas ────

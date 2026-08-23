@@ -248,6 +248,49 @@ public abstract class BulletBehavior {
      */
     public void onCollision(Bullet bullet, GameObjects other) {}
 
+    // ── UI Trajectory Prediction ──────────────────────────────────────────
+
+    /**
+     * Provider de predicción de trayectoria para UI.
+     *
+     * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────
+     *
+     * La UI NO debe implementar la física del proyectil.
+     * Si MetheorBullet tiene un comportamiento determinado, la UI no debería
+     * tener un if (isMeteor) ...
+     *
+     * Cada BulletBehavior expone su propia lógica de predicción de trayectoria.
+     * La UI simplemente llama behavior.getTrajectoryProvider().predict(...).
+     *
+     * ── DEFAULT ──────────────────────────────────────────────────────────
+     *
+     * El default retorna TrajectoryProvider.DEFAULT_LINEAR_GRAVITY, que simula
+     * física simple: velocidad constante + gravedad estándar (0.4).
+     *
+     * ── SOBREESCRITURA ───────────────────────────────────────────────────
+     *
+     * Sobreescribir para tipos con física custom:
+     *
+     *   // En MetheorBullet (gravedad alta):
+     *   {@code @Override}
+     *   {@code public TrajectoryProvider getTrajectoryProvider() {}
+     *   {@code     return TrajectoryProvider.HEAVY_GRAVITY;}
+     *   {@code }}
+     *
+     *   // En HomingBullet (trayectoria con curvas):
+     *   {@code @Override}
+     *   {@code public TrajectoryProvider getTrajectoryProvider() {}
+     *   {@code     return (spawn, dir, speed, life) -> }
+     *   {@code         ProjectileTrajectoryPredictor.predictHoming(}
+     *   {@code             spawn, dir, speed, life, targetPos, 0.8);}
+     *   {@code }}
+     *
+     * @return provider de trayectoria. Nunca null.
+     */
+    public TrajectoryProvider getTrajectoryProvider() {
+        return TrajectoryProvider.DEFAULT_LINEAR_GRAVITY;
+    }
+
     // ── Comportamiento de expiración ──────────────────────────────────────
 
     /**

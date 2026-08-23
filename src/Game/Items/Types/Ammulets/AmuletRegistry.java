@@ -141,6 +141,21 @@ public final class AmuletRegistry {
             }
         ));
 
+        // ── UI / Visualización ────────────────────────────────────────────
+
+        register(new AmuletDefinition(
+            "marksman_sight",
+            "Ojo del Tirador",
+            "Revela la trayectoria completa de tus disparos, incluyendo información del arma y predicción de impactos. El primer amuleto visual del juego.",
+            ItemRarity.EPIC,
+            new Game.Items.Types.Ammulets.Effects.UICapabilityEffect(
+                () -> new Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability(
+                    Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability.TrajectoryStyle.FADE,
+                    java.awt.Color.CYAN
+                )
+            )
+        ));
+
         // ── Velocidad de proyectil / alcance ──────────────────────────────
 
         register(new AmuletDefinition(

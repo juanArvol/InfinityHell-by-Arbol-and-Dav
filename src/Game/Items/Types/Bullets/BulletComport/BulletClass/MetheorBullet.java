@@ -6,12 +6,14 @@ import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
+import Game.Items.Types.Bullets.BulletComport.TrajectoryProvider;
 import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
 import Game.Items.Types.Bullets.ProjectileMovement;
+import Game.Items.Types.Bullets.ProjectileTrajectoryPredictor;
 import java.util.List;
 import java.util.Set;
 
@@ -110,6 +112,31 @@ public class MetheorBullet extends BulletBehavior {
     public ProjectileMovement getDefaultMovement() {
         // GravityMovement se compondrá con el movimiento lineal base del proyectil
         return new GravityMovement(GRAVITY_STRENGTH);
+    }
+
+    /**
+     * Provider de trayectoria custom para MetheorBullet.
+     *
+     * ── UI TRAJECTORY PREDICTION ──────────────────────────────────────────
+     *
+     * MetheorBullet tiene gravedad extremadamente alta (1200.0) y drag significativo
+     * (0.0021), resultando en una trayectoria parabólica pronunciada con velocidad
+     * terminal. La UI debe representar esto fielmente.
+     *
+     * Este provider usa exactamente los mismos valores que el comportamiento real
+     * del proyectil, garantizando consistencia entre preview y gameplay.
+     */
+    @Override
+    public TrajectoryProvider getTrajectoryProvider() {
+        return (spawnPosition, direction, speed, lifeTime) ->
+                ProjectileTrajectoryPredictor.predict(
+                        spawnPosition,
+                        direction,
+                        speed,
+                        lifeTime,
+                        GRAVITY_STRENGTH,        // Gravedad alta (10x estándar)
+                        METEOR_DRAG_COEFFICIENT  // Drag significativo
+                );
     }
 
     /**

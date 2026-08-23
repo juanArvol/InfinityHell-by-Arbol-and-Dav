@@ -9,6 +9,20 @@ import java.util.function.Supplier;
 /**
  * Tipos de bala — efectos únicos que se obtienen una sola vez por run.
  *
+ * ── REFACTOR — Extensibilidad sin romper contratos ───────────────────────
+ *
+ * CAMBIO ARQUITECTÓNICO:
+ *   - BulletType ya NO es enum (conjunto cerrado)
+ *   - BulletType es ahora una class con registro estático
+ *   - Permite añadir nuevos tipos sin modificar este archivo
+ *
+ * CONTRATOS PRESERVADOS:
+ *   ✅ bulletType.create() — sigue funcionando exactamente igual
+ *   ✅ bulletType.defaultRarity — sigue siendo public final
+ *   ✅ bulletType.displayName — sigue siendo public final
+ *   ✅ bulletType.description — sigue siendo public final
+ *   ✅ BulletType.buildOfferPool() — sigue funcionando igual
+ *
  * ── DISEÑO ───────────────────────────────────────────────────────────────
  * Cada BulletType representa un EFECTO FANTÁSTICO permanente, no munición
  * consumible. Una vez que el jugador lo obtiene, lo tiene para siempre en
@@ -25,56 +39,66 @@ import java.util.function.Supplier;
  * los ya obtenidos antes de mostrarlos.
  *
  * ── AÑADIR UN NUEVO TIPO ─────────────────────────────────────────────────
- * 1. Crear la clase de behavior en BulletComport/BulletClass/.
- * 2. Añadir la entrada aquí con su rareza por defecto.
- * 3. Nada más — el resto del sistema lo recoge automáticamente.
+ * ANTES (enum cerrado):
+ *   1. Modificar BulletType.java
+ *   2. Añadir entrada en el enum
+ *
+ * AHORA (class extensible):
+ *   1. Crear la clase de behavior en tu módulo (ej: FrostBullet.java)
+ *   2. Registrar en tu módulo:
+ *      BulletType.register(new BulletType("frost_bolt", FrostBullet::new, ...))
+ *   3. ¡Listo! — BulletType.java NO se modifica
  */
-public enum BulletType {
+public final class BulletType {
 
-    // ── Tipos base ────────────────────────────────────────────────────────
+    // ── Registro estático ─────────────────────────────────────────────────
 
-    /** Proyectil estándar — base para el arma de inicio. */
-    NORMALBULLET   (BulletNormal::new, ItemRarity.COMMON,
-                  "Esquirla del Vacío",
-                  "Un fragmento de energía pura, sin forma ni afinidad."),
+    /** Registro de todos los tipos de bala (orden de registro preservado). */
+    private static final Map<String, BulletType> REGISTRY = new LinkedHashMap<>();
 
-    /** La bala impacta al enemigo y genera un impulso de salto. */
-    SPRINGBULLET   (BulletJump::new,   ItemRarity.UNCOMMON,
-                  "Bala saltarina",
-                  "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."),
-    
-    METHEORBULLET   (MetheorBullet::new, ItemRarity.RARE,
-                  "Bala nuke",
-                  "Proyectil de alta masa que ignora la física normal."),
-    // ── Efectos elementales (pendientes de implementar sus behaviors) ─────
-    // Descomenta cada uno cuando crees la clase de behavior correspondiente.
+    /** Tipos predefinidos — constantes para compatibilidad con código existente. */
+    public static final BulletType NORMALBULLET;
+    public static final BulletType SPRINGBULLET;
+    public static final BulletType METHEORBULLET;
 
-    /*
-    FROSTBOLT    (FrostBullet::new,   ItemRarity.UNCOMMON,
-                  "Rayo de Escarcha",
-                  "Congela brevemente al enemigo, reduciéndole la velocidad."),
+    static {
+        // Inicializar tipos base — mismo orden que el enum original
+        NORMALBULLET = register(new BulletType(
+            "normal_bullet",
+            BulletNormal::new,
+            ItemRarity.COMMON,
+            "Bala",
+            "Un fragmento de energía pura, sin forma ni afinidad."
+        ));
 
-    EMBERSHARD   (EmberBullet::new,   ItemRarity.UNCOMMON,
-                  "Fragmento Ascua",
-                  "Prende fuego al objetivo; el daño continúa después del impacto."),
+        SPRINGBULLET = register(new BulletType(
+            "spring_bullet",
+            BulletJump::new,
+            ItemRarity.UNCOMMON,
+            "Bala saltarina",
+            "Al impactar en el suelo u objetos esta bala continuara rebotando hasta impactar contra un enemy."
+        ));
 
-    ARCLANCE     (ThunderBullet::new, ItemRarity.RARE,
-                  "Lanza de Arco",
-                  "Un rayo que salta entre enemigos cercanos al impactar."),
+        METHEORBULLET = register(new BulletType(
+            "meteor_bullet",
+            MetheorBullet::new,
+            ItemRarity.RARE,
+            "Bala nuke",
+            "Proyectil de alta masa que ignora la física normal."
+        ));
+    }
 
-    VOIDMETEOR   (MetheorBullet::new, ItemRarity.RARE,
-                  "Meteoro del Vacío",
-                  "Proyectil de alta masa que ignora la física normal."),
+    // ── Identidad del tipo ────────────────────────────────────────────────
 
-    PHANTOM_WISP (SummonBullet::new,  ItemRarity.EPIC,
-                  "Fuego Fantasma",
-                  "Invoca un espectro que persigue enemigos durante unos segundos."),
-    */
-    ;
+    /** ID único del tipo (snake_case). Inmutable. */
+    public final String id;
 
-    // ── Datos del tipo ────────────────────────────────────────────────────
+    // ── Comportamiento del tipo ───────────────────────────────────────────
 
+    /** Factory que crea BulletBehavior. Inmutable. */
     private final Supplier<BulletBehavior> factory;
+
+    // ── Metadata del tipo ─────────────────────────────────────────────────
 
     /** Rareza por defecto. Puede sobreescribirse desde configuración externa. */
     public final ItemRarity defaultRarity;
@@ -85,22 +109,116 @@ public enum BulletType {
     /** Descripción del efecto para la UI de selección. */
     public final String description;
 
-    BulletType(Supplier<BulletBehavior> factory,
-               ItemRarity defaultRarity,
-               String displayName,
-               String description) {
-        this.factory        = factory;
-        this.defaultRarity  = defaultRarity;
-        this.displayName    = displayName;
-        this.description    = description;
+    // ── Constructor (público para extensibilidad) ─────────────────────────
+
+    /**
+     * Construye un nuevo BulletType.
+     *
+     * @param id             identificador único (snake_case)
+     * @param factory        factory que crea BulletBehavior
+     * @param defaultRarity  rareza por defecto
+     * @param displayName    nombre visible
+     * @param description    descripción del efecto
+     */
+    public BulletType(String id,
+                      Supplier<BulletBehavior> factory,
+                      ItemRarity defaultRarity,
+                      String displayName,
+                      String description) {
+        if (id == null || id.isBlank())
+            throw new IllegalArgumentException("id no puede estar vacío");
+        if (factory == null)
+            throw new IllegalArgumentException("factory no puede ser null");
+        if (defaultRarity == null)
+            throw new IllegalArgumentException("defaultRarity no puede ser null");
+
+        this.id            = id;
+        this.factory       = factory;
+        this.defaultRarity = defaultRarity;
+        this.displayName   = displayName != null ? displayName : id;
+        this.description   = description != null ? description : "";
     }
+
+    // ── API pública — CONTRATOS PRESERVADOS ───────────────────────────────
 
     /**
      * Crea una nueva instancia del BulletBehavior asociado.
      * Cada bala individual tiene su propia instancia (con estado propio).
+     *
+     * ✅ CONTRATO PRESERVADO — este método funciona exactamente igual que antes.
      */
     public BulletBehavior create() {
         return factory.get();
+    }
+
+    // ── Registro y consulta ───────────────────────────────────────────────
+
+    /**
+     * Registra un nuevo tipo de bala.
+     *
+     * EXTENSIBILIDAD:
+     *   Módulos externos pueden registrar sus propios tipos sin modificar
+     *   este archivo. Ejemplo:
+     *
+     *   BulletType FROSTBOLT = BulletType.register(new BulletType(
+     *       "frost_bolt", FrostBullet::new, ItemRarity.UNCOMMON,
+     *       "Rayo de Escarcha", "Congela enemigos..."
+     *   ));
+     *
+     * @param type tipo a registrar
+     * @return el mismo tipo (para asignación en constantes)
+     * @throws IllegalStateException si el ID ya está registrado
+     */
+    public static BulletType register(BulletType type) {
+        if (type == null)
+            throw new IllegalArgumentException("type no puede ser null");
+        if (REGISTRY.containsKey(type.id))
+            throw new IllegalStateException("BulletType duplicado: '" + type.id + "'");
+        
+        REGISTRY.put(type.id, type);
+        return type;
+    }
+
+    /**
+     * Obtiene un tipo por su ID.
+     *
+     * @param id identificador del tipo
+     * @return el tipo correspondiente
+     * @throws IllegalArgumentException si no existe
+     */
+    public static BulletType get(String id) {
+        BulletType type = REGISTRY.get(id);
+        if (type == null)
+            throw new IllegalArgumentException("BulletType no encontrado: '" + id + "'");
+        return type;
+    }
+
+    /**
+     * Busca un tipo por su ID sin lanzar excepción.
+     *
+     * @param id identificador del tipo
+     * @return el tipo correspondiente, o null si no existe
+     */
+    public static BulletType find(String id) {
+        return REGISTRY.get(id);
+    }
+
+    /**
+     * Verifica si existe un tipo con el ID dado.
+     */
+    public static boolean has(String id) {
+        return REGISTRY.containsKey(id);
+    }
+
+    /**
+     * Retorna todos los tipos registrados.
+     *
+     * ✅ CONTRATO PRESERVADO — reemplaza enum.values()
+     *
+     * @return colección inmutable de todos los tipos
+     */
+    public static Collection<BulletType> values() {
+        return Collections.unmodifiableCollection(REGISTRY.values());
     }
 
     // ── Pool de oferta ────────────────────────────────────────────────────
@@ -135,7 +253,7 @@ public enum BulletType {
 
         // Pool de candidatos: todos los tipos que el jugador aún no tiene
         List<BulletType> candidates = new ArrayList<>();
-        for (BulletType bt : BulletType.values()) {
+        for (BulletType bt : values()) {
             if (!alreadyOwned.contains(bt)) {
                 candidates.add(bt);
             }
@@ -165,5 +283,25 @@ public enum BulletType {
             }
         }
         return Collections.unmodifiableList(result);
+    }
+
+    // ── Object identity ───────────────────────────────────────────────────
+
+    @Override
+    public String toString() {
+        return "BulletType{id='" + id + "', rarity=" + defaultRarity + "}";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof BulletType)) return false;
+        BulletType that = (BulletType) o;
+        return id.equals(that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return id.hashCode();
     }
 }

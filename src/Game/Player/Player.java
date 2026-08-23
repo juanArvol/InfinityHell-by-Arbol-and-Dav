@@ -103,6 +103,9 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     private final PlayerState      state;
     private final AmuletInventory  amulets;
 
+    // ── UI / Visualización ────────────────────────────────────────────────
+    private final Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities;
+
     // ── Runtime del Player ────────────────────────────────────────────────
     private PlayerRuntime playerRuntime;
 
@@ -126,7 +129,8 @@ public class Player extends MovingObjects implements EntityInfoProvider {
            PlayerStats playerStats,
            AmuletInventory amulets,
            PlayerController controller,
-           PlayerCombat combat) {
+           PlayerCombat combat,
+           Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities) {
 
         super(spawn, PlayerAssets.handle, physics, SizeSyncMode.NONE);
 
@@ -140,6 +144,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         this.amulets          = amulets;
         this.controller       = controller;
         this.combat           = combat;
+        this.aimCapabilities  = aimCapabilities;
     }
 
     // ── Post-construcción — llamado por PlayerAssembler ───────────────────
@@ -293,6 +298,11 @@ public class Player extends MovingObjects implements EntityInfoProvider {
 
     /** Inventario de amuletos de la run. */
     public AmuletInventory getAmulets()     { return amulets;       }
+
+    /** Gestor de capabilities de visualización de apuntado. */
+    public Game.Gameplay.UI.Aim.AimCapabilityManager getAimCapabilities() { 
+        return aimCapabilities; 
+    }
 
     /** Posición actual en el mundo (shortcut de conveniencia). */
     public Vector2D getPosition()           { return getTransform().getPosition(); }

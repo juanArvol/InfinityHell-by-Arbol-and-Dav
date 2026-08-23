@@ -1,69 +1,85 @@
 package Game.Gameplay.UI.Types;
 
 import Game.Engine.Camera.GameCamera;
-import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Gameplay.UI.Aim.AimCapabilityManager;
+import Game.Gameplay.UI.Aim.AimVisualizationCapability;
+import Game.Gameplay.UI.Aim.BasicCrosshairCapability;
 import Game.Gameplay.UI.UIElement;
-import Game.Items.Types.Weapons.ModifiedWeapon.ProjectilePreview;
 import Game.Player.Player;
 import Inputs.MouseInput;
-import java.awt.Color;
 import java.awt.Graphics2D;
 import java.util.function.Supplier;
 
 /**
- * HUD del crosshair y preview de trayectoria.
+ * HUD del crosshair — coordina capabilities de visualización de apuntado.
  *
- * ── HRFC — Player Inventory & Domain Ownership Consolidation ──────────────
+ * ── REFACTORIZACIÓN — Capability-Based Architecture ──────────────────────
  *
  * CAMBIO ARQUITECTÓNICO:
- *   - CrossHairHUD ahora usa player.getCombat().getProjectilePreview()
- *   - Eliminado uso directo de weapon.getBulletType(), BulletFactory, ProjectileBlueprint
- *   - PlayerState es la fuente de verdad del estado lógico del Player
- *   - weapon.isReloading() representa únicamente la mecánica interna del arma
+ *   - CrossHairHUD ya NO implementa directamente el renderizado
+ *   - Delega a capabilities activas del Player (AimCapabilityManager)
+ *   - Capabilities son concedidas por amuletos de forma aditiva
+ *   - Sin if/else para tipos específicos de visualización
  *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- * CrossHairHUD NO debe:
- *   ✗ crear BulletBehavior
- *   ✗ crear ProjectileBlueprint  
- *   ✗ invocar BulletFactory
- *   ✗ resolver BulletType
- *   ✗ conocer detalles internos del pipeline de disparo
- *   ✗ depender de ModifiedWeapon.getBulletType()
+ * CrossHairHUD (coordinador):
+ *   ✓ Obtiene capabilities activas desde player.getAimCapabilities()
+ *   ✓ Itera sobre capabilities en orden de prioridad
+ *   ✓ Convierte coordenadas (cámara offset)
+ *   ✓ Controla visibilidad global (botón derecho)
  *
- * CrossHairHUD SÍ debe:
- *   ✓ consultar ProjectilePreview desde PlayerCombat
- *   ✓ renderizar crosshair según estado del arma
- *   ✓ dibujar trayectoria matemática usando stats de preview
- *   ✓ convertir coordenadas mundo → pantalla virtual
+ * AimVisualizationCapability (implementación):
+ *   ✓ Renderiza su aspecto visual específico
+ *   ✓ Consulta estado del arma/proyectil según necesite
+ *   ✓ No conoce otros capabilities
  *
- * ── HRFC-001: usa GameCamera (entidad del Engine) ─────────────────────────
+ * ── ARQUITECTURA ──────────────────────────────────────────────────────────
  *
- * La cámara se inyecta como Supplier<GameCamera>. La conversión de
- * coordenadas de mundo a pantalla virtual sigue siendo la misma:
- *   screenX = worldX - camera.getX()
- *   screenY = worldY - camera.getY()
+ *   CrossHairHUD
+ *          │
+ *          └── Player.getAimCapabilities()
+ *               │
+ *               └── List<AimVisualizationCapability> (ordenado por prioridad)
+ *                    │
+ *                    ├── BasicCrosshairCapability (siempre activo)
+ *                    ├── TrajectoryVisualizationCapability (concedido por amuleto)
+ *                    └── WeaponInfoCapability (concedido por amuleto)
  *
- * Con zoom=1 y rotation=0 (caso actual), el resultado es idéntico al anterior.
- * Con zoom≠1, la conversión correcta requeriría aplicar el viewTransform, pero
- * para el crosshair (UI en espacio de pantalla) la posición central no cambia.
- * La trayectoria que parte del player SÍ necesita el offset correcto.
+ * ── CAPABILITIES POR DEFECTO ──────────────────────────────────────────────
  *
- * ── CORRECCIÓN BUG-9 — COORDENADAS DE PANTALLA ───────────────────────────
+ * Todos los Players tienen BasicCrosshairCapability desde el inicio.
+ * Las capabilities adicionales se conceden mediante amuletos:
  *
- * La trayectoria de la bala se calcula en coordenadas de MUNDO y se convierte
- * a coordenadas de PANTALLA VIRTUAL restando el offset de cámara antes de dibujar.
+ *   "Ojo del Tirador" → TrajectoryVisualizationCapability
+ *   (futuros amuletos) → WeaponInfoCapability, RangeIndicatorCapability, etc.
+ *
+ * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
+ *
+ * Añadir nuevas visualizaciones:
+ *   1. Crear nueva clase que implemente AimVisualizationCapability
+ *   2. Crear amuleto que conceda la capability via UICapabilityEffect
+ *   3. Registrar amuleto en AmuletRegistry
+ *   4. ¡Listo! — CrossHairHUD lo usa automáticamente sin modificación
+ *
+ * ── COORDINACIÓN CON CÁMARA ───────────────────────────────────────────────
+ *
+ * CrossHairHUD obtiene el offset de cámara y lo pasa a cada capability.
+ * Las capabilities convierten coordenadas de mundo → pantalla virtual
+ * restando el offset antes de dibujar.
  */
 public class CrossHairHUD implements UIElement {
 
-    private final Player              player;
+    private final Player               player;
     private final Supplier<GameCamera> cameraSupplier;
+    private final int                  virtualWidth;
+    private final int                  virtualHeight;
 
-    private int centerX;
-    private int centerY;
+    // Capability básica — siempre presente
+    private BasicCrosshairCapability basicCrosshair;
 
     /**
-     * @param player          el jugador (para posición y estado del arma)
+     * @param player          el jugador (para capabilities y estado)
      * @param cameraSupplier  proveedor de la GameCamera activa del Engine
      * @param virtualWidth    DisplaySettings.virtualWidth
      * @param virtualHeight   DisplaySettings.virtualHeight
@@ -74,79 +90,72 @@ public class CrossHairHUD implements UIElement {
                         int virtualHeight) {
         this.player         = player;
         this.cameraSupplier = cameraSupplier;
-        recalcPosition(virtualWidth, virtualHeight);
+        this.virtualWidth   = virtualWidth;
+        this.virtualHeight  = virtualHeight;
+
+        // Inicializar capability básica
+        initializeDefaultCapabilities();
     }
 
-    @Override public void update() {}
+    /**
+     * Inicializa las capabilities por defecto que todos los Players tienen.
+     */
+    private void initializeDefaultCapabilities() {
+        basicCrosshair = new BasicCrosshairCapability(virtualWidth, virtualHeight);
+        
+        // Añadir el crosshair básico al manager del Player
+        AimCapabilityManager capabilities = player.getAimCapabilities();
+        if (capabilities != null) {
+            capabilities.add(basicCrosshair);
+        }
+    }
+
+    @Override 
+    public void update() {
+        // No-op — las capabilities son stateless o se actualizan individualmente
+    }
 
     @Override
     public void onResize(int virtualWidth, int virtualHeight) {
-        recalcPosition(virtualWidth, virtualHeight);
+        // Recrear capability básica con nuevas dimensiones
+        basicCrosshair = new BasicCrosshairCapability(virtualWidth, virtualHeight);
+        
+        // Reemplazar en el manager
+        AimCapabilityManager capabilities = player.getAimCapabilities();
+        if (capabilities != null) {
+            capabilities.removeByClass(BasicCrosshairCapability.class);
+            capabilities.add(basicCrosshair);
+        }
+
+        // Nota: Otras capabilities (concedidas por amuletos) podrían necesitar
+        // actualización de dimensiones. Por ahora, son stateless respecto a
+        // la resolución o se recalculan en cada frame.
     }
 
     @Override
     public void draw(Graphics2D g) {
-
-        if (!MouseInput.getButtonState("rightPressed")) return;
-
-        // ── HRFC — Player Inventory & Domain Ownership Consolidation ─────
-        // Usar ProjectilePreview desde PlayerCombat en lugar de reconstruir
-        // manualmente el pipeline de disparo desde CrossHairHUD.
-        ProjectilePreview preview = player.getCombat().getProjectilePreview();
+        // Verificar visibilidad global
+        boolean shouldShow = MouseInput.getButtonState("rightPressed");
         
-        if (preview == null) return; // Sin arma o bala activa
-
-        Color prevColor = g.getColor();
-
-        // Color según estado del arma
-        // ── HRFC: Consultar PlayerState para recarga ─────────────────────────
-        if (player.getState().isReloading()) {
-            g.setColor(Color.YELLOW);
-        } else if (player.getRuntime().getCurrentWeapon() != null 
-                   && player.getRuntime().getCurrentWeapon().getFireWait() == 0) {
-            g.setColor(Color.GREEN);
-        } else {
-            g.setColor(Color.RED);
-        }
-
-        // ── Crosshair en el centro virtual ────────────────────────────────
-        final int HAIR_SIZE = 8;
-        g.drawLine(centerX - HAIR_SIZE, centerY, centerX + HAIR_SIZE, centerY);
-        g.drawLine(centerX, centerY - HAIR_SIZE, centerX, centerY + HAIR_SIZE);
-
-        // ── Trayectoria matemática desde ProjectilePreview ───────────────
-        // Offset de cámara para convertir coordenadas de mundo → pantalla virtual.
+        // Obtener offset de cámara
         GameCamera camera = cameraSupplier.get();
         double camX = (camera != null) ? camera.getX() : 0;
         double camY = (camera != null) ? camera.getY() : 0;
 
-        // Convertir spawn de MUNDO a PANTALLA VIRTUAL
-        double screenSpawnX = preview.spawnPosition().getX() - camX;
-        double screenSpawnY = preview.spawnPosition().getY() - camY;
+        // Obtener capabilities activas del Player
+        AimCapabilityManager capabilityManager = player.getAimCapabilities();
+        if (capabilityManager == null) return;
 
-        Vector2D aim = player.getState().getAimDirection();
+        // Renderizar cada capability en orden de prioridad
+        for (AimVisualizationCapability capability : capabilityManager.getAll()) {
+            // Verificar si esta capability requiere apuntado activo
+            if (capability.requiresAiming() && !shouldShow) {
+                continue; // Saltar capabilities que requieren botón derecho
+            }
 
-        double velX    = aim.getX() * preview.speed();
-        double velY    = aim.getY() * preview.speed();
-        double gravity = preview.hasGravity() ? 0.4 : 0.0;
-        int    steps   = preview.lifeTime();
-
-        double px = screenSpawnX;
-        double py = screenSpawnY;
-        double vy = velY;
-
-        for (int i = 0; i < steps; i++) {
-            px += velX;
-            py += vy;
-            if (preview.hasGravity()) vy += gravity;
-            g.fillOval((int) px, (int) py, 4, 4);
+            // Renderizar la capability
+            capability.render(g, player, camX, camY);
         }
-
-        g.setColor(prevColor);
-    }
-
-    private void recalcPosition(int virtualWidth, int virtualHeight) {
-        centerX = virtualWidth  / 2;
-        centerY = virtualHeight / 2;
     }
 }
+

@@ -1,10 +1,15 @@
 package Game.Items.Types.Weapons;
 
 import Game.Items.Creation.ItemRarity;
+import Game.Items.ItemDefinition;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 
 /**
  * Definición de datos de un arma — su "plantilla" estática por run.
+ *
+ * ── JERARQUÍA ────────────────────────────────────────────────────────────
+ * Extiende ItemDefinition para heredar la estructura común de metadata
+ * (id, displayName, description, defaultRarity).
  *
  * ── DISEÑO ───────────────────────────────────────────────────────────────
  * Separa los DATOS del arma (nombre, descripción, rareza) de su
@@ -24,20 +29,11 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
  *   WeaponDefinition def = WeaponRegistry.get(WeaponId.ETHEREAL_REVOLVER);
  *   WeaponComport comport = def.createComport();
  *   Weapon weapon = new Weapon(comport, player.getEquippedBulletType());
+ *
+ * @see Game.Items.ItemDefinition         clase base con metadata común
+ * @see Game.Items.Types.Weapons.WeaponRegistry sistema de loot de armas
  */
-public final class WeaponDefinition {
-
-    /** ID único del arma (referenciado por WeaponId). */
-    public final String id;
-
-    /** Nombre visible al jugador. */
-    public final String displayName;
-
-    /** Descripción del comportamiento para UI de selección. */
-    public final String description;
-
-    /** Rareza por defecto (configurable externamente). */
-    public final ItemRarity defaultRarity;
+public final class WeaponDefinition extends ItemDefinition {
 
     /** Factory que produce el WeaponComport para esta arma. */
     private final java.util.function.Supplier<WeaponComport> comportFactory;
@@ -47,11 +43,10 @@ public final class WeaponDefinition {
                             String description,
                             ItemRarity defaultRarity,
                             java.util.function.Supplier<WeaponComport> comportFactory) {
-        this.id              = id;
-        this.displayName     = displayName;
-        this.description     = description;
-        this.defaultRarity   = defaultRarity;
-        this.comportFactory  = comportFactory;
+        super(id, displayName, description, defaultRarity);
+        if (comportFactory == null)
+            throw new IllegalArgumentException("comportFactory no puede ser null");
+        this.comportFactory = comportFactory;
     }
 
     /**
@@ -60,10 +55,5 @@ public final class WeaponDefinition {
      */
     public WeaponComport createComport() {
         return comportFactory.get();
-    }
-
-    @Override
-    public String toString() {
-        return "WeaponDefinition{id='" + id + "', rarity=" + defaultRarity + "}";
     }
 }
