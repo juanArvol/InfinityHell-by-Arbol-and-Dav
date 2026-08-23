@@ -7,6 +7,7 @@ import Game.Items.Types.Bullets.ResettableMovement;
  * Movimiento sinusoidal — el proyectil ondula perpendicularmente a su dirección.
  *
  * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
+ * ── CORRECCIÓN HRFC-DT-007 — Temporal Velocity Semantics ─────────────────
  *
  * MIGRACIÓN TEMPORAL:
  *   Ahora usa tiempo acumulado en lugar de frameCount para independencia
@@ -19,6 +20,31 @@ import Game.Items.Types.Bullets.ResettableMovement;
  *   AHORA (time-based):
  *     frequency = 12.0 Hz → 12 ciclos/segundo independientemente del FPS
  *
+ * CORRECCIÓN CRÍTICA — BUG DE ACUMULACIÓN EXPONENCIAL:
+ *
+ *   PROBLEMA IDENTIFICADO:
+ *     La implementación anterior SUMABA la oscilación a velocity en cada frame:
+ *       ySpeed = ySpeed + osc₁  (frame 1)
+ *       ySpeed = ySpeed + osc₂  (frame 2)
+ *       ySpeed = ySpeed + osc₃  (frame 3)
+ *     
+ *     Esto producía acumulación exponencial de velocidad, haciendo que el
+ *     proyectil acelerara sin control en dirección Y.
+ *
+ *   SOLUCIÓN:
+ *     Capturar baseVelocity en el primer tick (velocidad inicial del proyectil)
+ *     y aplicar la oscilación como OFFSET desde esa base, no como incremento:
+ *       ySpeed = baseVelocity.y + amplitude × sin(...)
+ *     
+ *     Esto garantiza que la oscilación sea una modulación ALREDEDOR de la
+ *     velocidad base, no una acumulación progresiva.
+ *
+ * SEMÁNTICA CORREGIDA:
+ *   - amplitude en units/s: velocidad máxima de la oscilación
+ *   - frequency en Hz: ciclos por segundo
+ *   - baseVelocity: velocidad inicial del proyectil (capturada en primer frame)
+ *   - velocity resultante: baseVelocity + oscillation(t)
+ *
  * Añade un componente de velocidad oscilante en el eje Y. Produce el efecto
  * "snake" o "wave" visible en bullet-hells.
  *
@@ -30,7 +56,7 @@ import Game.Items.Types.Bullets.ResettableMovement;
  *
  * Uso:
  *   ProjectileMovement m = new SinusoidalMovement(40.0, 12.0);
- *   // amplitude=40: desplazamiento máximo en Y (u/s); frequency=12: 12 Hz
+ *   // amplitude=40: velocidad máxima de oscilación (u/s); frequency=12: 12 Hz
  *
  *   // Composición con homing:
  *   ProjectileMovement m = new HomingMovement(target, 60, 7).andThen(
@@ -39,15 +65,26 @@ import Game.Items.Types.Bullets.ResettableMovement;
  *
  * ── Pool ──────────────────────────────────────────────────────────────────
  *
- * Implementa ResettableMovement: elapsedTime puede resetearse a 0, lo que
- * permite al ProjectilePool reutilizar instancias de proyectiles sinusoidales.
- * El comportamiento post-reset es idéntico a una instancia recién creada.
+ * Implementa ResettableMovement: elapsedTime y baseVelocity pueden resetearse,
+ * lo que permite al ProjectilePool reutilizar instancias de proyectiles
+ * sinusoidales. El comportamiento post-reset es idéntico a una instancia
+ * recién creada.
  */
 public final class SinusoidalMovement implements ResettableMovement {
 
     private final double amplitude;  // magnitud máxima de la oscilación (unidades/s)
     private final double frequency;  // frecuencia de la onda en Hz (ciclos/segundo)
     private double elapsedTime = 0.0; // tiempo acumulado en segundos
+    
+    /**
+     * Velocidad base capturada en el primer tick.
+     * null = aún no capturado (estado inicial y post-reset).
+     * 
+     * La oscilación se aplica como offset desde esta base, garantizando que
+     * el proyectil ondule ALREDEDOR de su trayectoria inicial en lugar de
+     * acumular velocidad exponencialmente.
+     */
+    private Double baseVelocityY = null;
 
     /**
      * @param amplitude  magnitud máxima de la oscilación en Y (unidades/segundo)
@@ -60,14 +97,22 @@ public final class SinusoidalMovement implements ResettableMovement {
 
     @Override
     public void tick(Bullet bullet, double deltaTime) {
+        // Capturar velocidad base en el primer tick
+        if (baseVelocityY == null) {
+            baseVelocityY = bullet.getPhysics().getYspeed();
+        }
+        
         elapsedTime += deltaTime;
-        // Oscilación basada en tiempo real
+        
+        // Oscilación sinusoidal alrededor de la velocidad base
         double oscillation = amplitude * Math.sin(2 * Math.PI * frequency * elapsedTime);
-        bullet.getPhysics().setYspeed(bullet.getPhysics().getYspeed() + oscillation);
+        
+        // CORRECCIÓN: Aplicar como offset desde base, NO como incremento acumulativo
+        bullet.getPhysics().setYspeed(baseVelocityY + oscillation);
     }
 
     /**
-     * SinusoidalMovement tiene estado interno (elapsedTime).
+     * SinusoidalMovement tiene estado interno (elapsedTime, baseVelocityY).
      * No puede compartirse como singleton — cada proyectil necesita su propia instancia.
      * El pool puede reutilizar mediante reset().
      */
@@ -77,11 +122,12 @@ public final class SinusoidalMovement implements ResettableMovement {
     }
 
     /**
-     * Resetea el tiempo acumulado al estado inicial.
+     * Resetea el tiempo acumulado y la velocidad base al estado inicial.
      * Llamado por ProjectilePool antes de reutilizar el proyectil.
      */
     @Override
     public void reset() {
         elapsedTime = 0.0;
+        baseVelocityY = null;  // Se capturará en el primer tick del nuevo ciclo
     }
 }
