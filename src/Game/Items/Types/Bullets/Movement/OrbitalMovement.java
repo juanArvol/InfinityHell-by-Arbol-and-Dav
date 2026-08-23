@@ -145,10 +145,32 @@ public final class OrbitalMovement implements ResettableMovement {
         double targetX = centerPos.getX() + Math.cos(angle) * radius;
         double targetY = centerPos.getY() + Math.sin(angle) * radius;
 
-        // Velocidad calculada como diferencia de posición orbital
+        // ── CORRECCIÓN HRFC-DT-007 + Orbital Velocity Semantics ──────────
+        // PROBLEMA IDENTIFICADO:
+        //   OrbitalMovement calculaba velocity como desplazamiento objetivo
+        //   (targetX - pos.getX()), que es un desplazamiento en pixels/frame.
+        //   Cuando CollisionsSystem multiplica por deltaTime, el desplazamiento
+        //   resultante es mucho menor del esperado.
+        //
+        // SOLUCIÓN:
+        //   Calcular velocity como desplazamiento por frame × 30 para convertir
+        //   a units/s, coherente con el sistema temporal.
+        //
+        // INVARIANTE:
+        //   velocity [units/s] = desplazamiento [pixels/frame @ 30 FPS] × 30
+        //
+        // SEMÁNTICA DE ÓRBITA:
+        //   La bullet debe moverse desde su posición actual hasta targetX/Y
+        //   en UN frame @ 30 FPS. Entonces:
+        //     displacement_per_frame = targetX - pos.getX()
+        //     velocity = displacement_per_frame × 30
+        //
         Vector2D pos = bullet.getTransform().getPosition();
-        bullet.getPhysics().setXspeed(targetX - pos.getX());
-        bullet.getPhysics().setYspeed(targetY - pos.getY());
+        double displacementX = targetX - pos.getX();
+        double displacementY = targetY - pos.getY();
+        
+        bullet.getPhysics().setXspeed(displacementX * 30.0);
+        bullet.getPhysics().setYspeed(displacementY * 30.0);
     }
 
     /**

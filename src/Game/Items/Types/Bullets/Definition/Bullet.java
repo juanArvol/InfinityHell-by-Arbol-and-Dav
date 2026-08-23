@@ -533,8 +533,30 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                     PhysicalState newPhysicalState) {
 
         getTransform().setPosition(new Vector2D(x, y));
-        getPhysics().setXspeed(xSpeed);
-        getPhysics().setYspeed(ySpeed);
+        
+        // ── REGRESIÓN FIX — HRFC-DT-007 Velocity Conversion ──────────────
+        // PROBLEMA IDENTIFICADO:
+        //   resetState() recibe xSpeed/ySpeed en units/frame del sistema legacy
+        //   (igual que el constructor de Bullet), pero llamaba directamente a
+        //   setXspeed()/setYspeed() que NO aplican la conversión × 30.
+        //
+        // MANIFESTACIÓN DEL BUG:
+        //   - Bullet NUEVA (constructor) → BulletPhysics(xSpeed, ySpeed)
+        //     → velocity.setX(xSpeed × 30) ✓ CORRECTO
+        //   - Bullet REUTILIZADA (pool) → resetState(..., xSpeed, ySpeed, ...)
+        //     → setXspeed(xSpeed) → velocity.setX(xSpeed) ✗ SIN × 30
+        //     → Bullet viaja a 1/30 de la velocidad esperada
+        //
+        // SOLUCIÓN:
+        //   Aplicar la misma conversión × 30 que BulletPhysics constructor.
+        //   Garantiza paridad completa entre instancia nueva y reutilizada.
+        //
+        // INVARIANTE:
+        //   velocity [units/s] = speed [units/frame @ 30 FPS] × 30
+        //
+        BulletPhysics physics = getPhysics();
+        physics.setXspeed(xSpeed * 30.0);
+        physics.setYspeed(ySpeed * 30.0);
         bulletLife.resetTo(lifeTime);
         this.damage = damage;
         this.destroyEventFired = false;
@@ -557,6 +579,44 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         getPhysics().setMass(1.0);
         getPhysics().setEffectiveArea(0.3);
         getPhysics().setDragCoefficient(0.0001);
+        
+        // ── REGRESIÓN FIX — Limpiar estado de colisión residual ──────────────
+        // PROBLEMA IDENTIFICADO EN AUDITORÍA PROFUNDA:
+        //   Una bullet reutilizada del pool conservaba lastContactNormalX/Y de su
+        //   vida anterior. Si la nueva bullet colisionaba en el PRIMER frame (antes
+        //   de que CollisionsSystem FASE 0.5 ejecutara clearLastContactNormal()),
+        //   el BulletBehavior leía la normal RESIDUAL y reflejaba la velocidad en
+        //   dirección INCORRECTA.
+        //
+        // MANIFESTACIÓN DEL BUG:
+        //   Bullets spawneadas cerca del Player (ej: muzzle muy cercano al collider)
+        //   colisionaban en el primer frame con normal de vida anterior, produciendo
+        //   comportamiento físico extraño: ralentización, atravesamiento, "rebote"
+        //   hacia el Player, o quedaban atrapadas.
+        //
+        // SOLUCIÓN:
+        //   Limpiar explícitamente lastContactNormal en resetState() para garantizar
+        //   paridad con construcción nueva (donde son 0 por inicialización implícita).
+        //
+        // TIMING:
+        //   resetState() ocurre en acquire() ANTES de añadir al mundo, cerrando la
+        //   ventana de vulnerabilidad entre acquire() y el primer CollisionsSystem.update().
+        BulletPhysics bp = getPhysics();
+        if (bp != null) {
+            bp.clearLastContactNormal();
+        }
+        
+        // ── REGRESIÓN FIX — Limpiar estado físico acumulado ──────────────────
+        // PROBLEMAS ADICIONALES IDENTIFICADOS:
+        //   - accumulatedFx/Fy: Fuerzas de vida anterior que producen impulso
+        //     fantasma en el primer flushAccumulatedForces().
+        //   - statusStack/environmentStack: Modificadores de vida anterior que
+        //     alteran el movimiento con buffs/debuffs fantasma.
+        //
+        // SOLUCIÓN:
+        //   Llamar Physics2D.clearPooledState() para garantizar paridad completa
+        //   con instancia nueva.
+        physicsComponent.getPhysics().clearPooledState();
 
         // ── Mini-HRFC — Reset PhysicalState (declarativo) ─────────────────
         // Actualizar o remover el PhysicsComponent según el nuevo estado.
