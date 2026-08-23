@@ -109,45 +109,41 @@ public final class OrbitalMovement implements ResettableMovement {
         if (center == null) return;
 
         // Si el centro fue destruido, no orbitar alrededor de él.
-        // isDead() está en AbstractEntity vía HealthComponent.
-        // El proyectil mantiene su última velocidad y expirará por lifeTime.
         if (center.isDead()) return;
 
-        // ── HRFC + Mini-HRFC: Integración temporal ───────────────────────
-        // angle += angularSpeedRad × dt
-        // angularSpeedRad está en rad/s, dt en segundos
+        // Integración temporal del ángulo
         angle += angularSpeedRad * dt;
 
         Vector2D centerPos = center.getTransform().getPosition();
-        double targetX = centerPos.getX() + Math.cos(angle) * radius;
-        double targetY = centerPos.getY() + Math.sin(angle) * radius;
-
-        // ── Orbital Velocity Semantics ───────────────────────────────────
-        // OrbitalMovement calcula la velocity necesaria para alcanzar la
-        // posición orbital objetivo en el próximo frame @ 30 FPS.
-        //
-        // displacement_per_frame = targetPosition - currentPosition
-        // velocity [units/s] = displacement_per_frame [units] × FPS_BASE
-        //
-        // Donde FPS_BASE = 30 (el framerate de referencia del sistema).
-        //
-        // JUSTIFICACIÓN:
-        //   CollisionsSystem integra: displacement = velocity × deltaTime
-        //   A 30 FPS: displacement = velocity × (1/30)
-        //   Para que displacement = target - current:
-        //     velocity = (target - current) × 30
-        //
-        // NOTA: Esta conversión × 30 NO es una "conversión legacy". Es la
-        // semántica correcta de convertir un desplazamiento espacial (pixels)
-        // a una velocidad temporal (pixels/segundo). El factor 30 representa
-        // la frecuencia de actualización del sistema de movimiento orbital.
-        //
-        Vector2D pos = bullet.getTransform().getPosition();
-        double displacementX = targetX - pos.getX();
-        double displacementY = targetY - pos.getY();
         
-        bullet.getPhysics().setXspeed(displacementX * 30.0);
-        bullet.getPhysics().setYspeed(displacementY * 30.0);
+        // ── Velocity Orbital Directa (Frame-Independent) ─────────────────
+        // Calcular velocity tangencial directamente en units/s sin referencia
+        // a frames o FPS hardcodeado.
+        //
+        // FÍSICA ORBITAL:
+        //   velocity_tangencial = angular_speed × radius
+        //   donde angular_speed está en rad/s y radius en units
+        //
+        // La velocidad es perpendicular al radio (dirección tangente):
+        //   direction_tangent = (-sin(angle), cos(angle))
+        //
+        // FRAME-INDEPENDENCE GARANTIZADA:
+        //   - angularSpeedRad en rad/s (temporal puro)
+        //   - radius en units (espacial puro)
+        //   - velocity resultante en units/s (temporal × espacial)
+        //   - NO depende de FPS, frame time, ni constantes hardcodeadas
+        //
+        double tangentialSpeed = Math.abs(angularSpeedRad) * radius;
+        
+        // Dirección tangente (perpendicular al radio)
+        double tangentX = -Math.sin(angle);
+        double tangentY =  Math.cos(angle);
+        
+        // Aplicar sentido de rotación
+        double direction = (angularSpeedRad >= 0) ? 1.0 : -1.0;
+        
+        bullet.getPhysics().setXspeed(tangentX * tangentialSpeed * direction);
+        bullet.getPhysics().setYspeed(tangentY * tangentialSpeed * direction);
     }
 
     /**

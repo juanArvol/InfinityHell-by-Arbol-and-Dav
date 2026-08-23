@@ -5,29 +5,21 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 
 /**
- * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
- * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────────
+ * Arma: Pistola
  * 
- * MIGRACIÓN: cooldown ahora en segundos (no frames).
- * 
- * CORRECCIÓN CRÍTICA: El sistema legacy operaba a 30 FPS, no 60 FPS.
- * 
- * DERIVACIÓN:
- *   Legacy: 20 frames @ 30 FPS
- *   Conversión: 20 / 30 = 0.667 segundos
- *   
- * Verificación @ 30 FPS (dt=1/30):
- *   30 frames × 0.667s/frame-worth = 20 frames ✓
+ * MIGRACIÓN TEMPORAL COMPLETA:
+ *   - cooldown: 0.667 segundos (equivalente a 20 frames @ 30 FPS legacy)
+ *   - velocidad: 300 units/s (equivalente a 10 units/frame @ 30 FPS legacy)
  */
 public class WeaponPistola extends WeaponComport {
 
     public WeaponPistola() {
         super(new WeaponStats(
-            0.667, // cooldown en segundos (20 frames @ 30 FPS)
+            0.667, // cooldown en segundos
             1, // balas por disparo
             0, // spread
             15, // daño
-            10 // velocidad
+            300 // velocidad en units/s (10 × 30)
             ), 
         new AutoMode(), 
         10, 

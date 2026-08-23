@@ -5,29 +5,21 @@ import Game.Items.Types.Weapons.WeaponType.WeaponComport;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 
 /**
- * ── HRFC — Unified DeltaTime Migration ───────────────────────────────────
- * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────────
+ * Arma: Escopeta
  * 
- * MIGRACIÓN: cooldown ahora en segundos (no frames).
- * 
- * CORRECCIÓN CRÍTICA: El sistema legacy operaba a 30 FPS, no 60 FPS.
- * 
- * DERIVACIÓN:
- *   Legacy: 30 frames @ 30 FPS
- *   Conversión: 30 / 30 = 1.0 segundos
- *   
- * Verificación @ 30 FPS (dt=1/30):
- *   30 frames × 1.0s = 30 frames ✓
+ * MIGRACIÓN TEMPORAL COMPLETA:
+ *   - cooldown: 1.0 segundos (equivalente a 30 frames @ 30 FPS legacy)
+ *   - velocidad: 6000 units/s (equivalente a 200 units/frame @ 30 FPS legacy)
  */
 public class WeaponEscopeta extends WeaponComport {
 
     public WeaponEscopeta() {
         super(new WeaponStats(
-            1.0, // cooldown en segundos (30 frames @ 30 FPS)
+            1.0, // cooldown en segundos
             12, // balas por disparo
             35, // spread
             17, // daño
-            200 // velocidad
+            6000 // velocidad en units/s (200 × 30)
             ),
         new AutoMode(),
         12, 

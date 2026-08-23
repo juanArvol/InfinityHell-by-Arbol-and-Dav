@@ -3,28 +3,30 @@ package Game.Items.Types.Weapons.WeaponType;
 /**
  * Estadísticas base de un arma.
  *
- * ── HRFC — Unified DeltaTime Migration & Temporal Model Completion ────────
+ * ── MIGRACIÓN TEMPORAL COMPLETA ───────────────────────────────────────────
  *
- * MIGRACIÓN TEMPORAL:
- *   cooldown ahora se expresa en segundos en lugar de ticks para independencia
- *   del framerate.
+ * TODOS los parámetros temporales/cinemáticos están en unidades del sistema
+ * temporal puro:
  *
- *   ANTES: cooldown = 60 (ticks) → 1 segundo a 60 FPS
- *   AHORA: cooldown = 1.0 (segundos) → 1 segundo independiente del FPS
+ *   cooldown       → segundos (s)
+ *   bulletSpeedBase → unidades/segundo (units/s)
+ *   recoilForce    → unidades de fuerza
+ *
+ * NO hay referencias a frames, FPS, ni conversiones hardcodeadas.
+ * El sistema es independiente del framerate del juego.
  *
  * ── HRFC — Kinetic Physics: Forces, Impulses & Motion Intent ─────────────
  *
- * AÑADIDO: recoilForce
- *   - Magnitud del impulso de retroceso aplicado al shooter cuando dispara
- *   - Clasificado como IMPULSE (no Motion Intent) porque es reacción física directa
- *   - Se aplica en dirección opuesta al disparo
+ * recoilForce: Magnitud del impulso de retroceso aplicado al shooter cuando
+ * dispara. Clasificado como IMPULSE (no Motion Intent) porque es reacción
+ * física directa aplicada en dirección opuesta al disparo.
  */
 public class WeaponStats {
 
     private double cooldown;  // cooldown entre disparos en segundos
     private int bulletsPerShot;
     private double spread;
-    private double bulletSpeedBase;
+    private double bulletSpeedBase;  // velocidad del proyectil en units/s
     private double weaponDamageBulletBonus;
 
     /**
@@ -54,9 +56,11 @@ public class WeaponStats {
     /**
      * Constructor con recoilForce explícito.
      * 
-     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
-     * 
      * @param cooldown tiempo entre disparos en segundos (ej: 1.0 = 1 disparo/segundo)
+     * @param bulletsPerShot número de proyectiles por disparo
+     * @param spread ángulo de dispersión en grados
+     * @param weaponDamageBulletBonus daño bonus del arma
+     * @param bulletSpeedBase velocidad del proyectil en units/s
      * @param recoilForce magnitud del impulso de retroceso (0 = sin retroceso)
      */
     public WeaponStats(double cooldown,

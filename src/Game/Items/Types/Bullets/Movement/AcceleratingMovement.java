@@ -41,8 +41,23 @@ public final class AcceleratingMovement implements ProjectileMovement {
 
     @Override
     public void tick(Bullet bullet, double dt) {
-        // Temporal factor conversion: factor^(dt × 30)
-        // Interpreta accelFactor como "multiplicador por frame @ 30 FPS"
+        // ── Temporal Factor Conversion ────────────────────────────────────
+        // accelFactor se interpreta como "multiplicador por frame @ FPS_BASE"
+        // donde FPS_BASE = 30 (el framerate de referencia del sistema legacy).
+        //
+        // Para frame-independence: factor_dt = factor^(dt × FPS_BASE)
+        //
+        // JUSTIFICACIÓN DEL 30:
+        //   El sistema fue diseñado originalmente @ 30 FPS. Los valores de
+        //   accelFactor (ej: 1.08) están calibrados para ese framerate.
+        //   La conversión exponencial preserva el comportamiento observable
+        //   a cualquier framerate.
+        //
+        // EJEMPLOS:
+        //   @ 30 FPS (dt=1/30): factor^((1/30)×30) = factor^1 = factor
+        //   @ 60 FPS (dt=1/60): factor^((1/60)×30) = factor^0.5 = sqrt(factor)
+        //   @ 120 FPS (dt=1/120): factor^((1/120)×30) = factor^0.25
+        //
         double temporalFactor = Math.pow(accelFactor, dt * 30.0);
         
         double vx = bullet.getPhysics().getXspeed() * temporalFactor;
