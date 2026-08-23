@@ -84,9 +84,7 @@ public final class BoomerangMovement implements ResettableMovement {
     private Vector2D capturedOrigin = null;
 
     /**
-     * Constructor principal — recibe duración en segundos.
-     *
-     * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────
+     * Constructor principal.
      *
      * @param travelDuration segundos que el proyectil avanza antes de volver
      * @param returnSpeed velocidad de regreso en units/s
@@ -94,34 +92,6 @@ public final class BoomerangMovement implements ResettableMovement {
     public BoomerangMovement(double travelDuration, double returnSpeed) {
         this.travelDuration = travelDuration;
         this.returnSpeed = returnSpeed;
-    }
-
-    /**
-     * Constructor legacy que acepta travelTicks (frames @ 60 FPS).
-     *
-     * @param travelTicks frames de viaje @ 30 FPS (convertido a segundos)
-     * @param returnSpeed velocidad de regreso en units/s
-     *
-     * @deprecated Usar constructor con travelDuration en segundos directamente
-     */
-    @Deprecated
-    public BoomerangMovement(int travelTicks, double returnSpeed) {
-        this(travelTicks / 30.0, returnSpeed);
-    }
-
-    /**
-     * Constructor de compatibilidad que acepta origin explícito.
-     *
-     * @deprecated Pasar origin explícito está obsoleto. Usar {@link #BoomerangMovement(double, double)}
-     *             — el origin se captura automáticamente del bullet en el primer tick.
-     *             Este constructor sigue funcionando pero origin será ignorado al hacer reset().
-     */
-    @Deprecated
-    public BoomerangMovement(Vector2D origin, int travelTicks, double returnSpeed) {
-        this(travelTicks / 30.0, returnSpeed);
-        // Captura inmediata del origin provisto — compatible con código existente.
-        // En el primer tick el capturedOrigin ya está listo, no se sobreescribe.
-        this.capturedOrigin = new Vector2D(origin.getX(), origin.getY());
     }
 
     @Override

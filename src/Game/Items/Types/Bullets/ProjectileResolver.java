@@ -130,8 +130,20 @@ public final class ProjectileResolver {
         behavior = AmuletRegistry.applyAllFromDefinitions(amulets, effectiveStats, behavior);
 
         // 4. Cálculos finales con multiplicadores
-        double finalSpeed = effectiveStats.getBulletSpeedBase() * speedMult
-                           * behavior.getDefaultData().speedFactor();
+        // ── HRFC-DT-007 — Temporal Velocity Normalization ─────────────────
+        // CONVERSIÓN ÚNICA: Legacy units/frame @ 30 FPS → units/s
+        //
+        // bulletSpeedBase, speedMult y speedFactor están en el espacio legacy
+        // (units/frame @ 30 FPS). El ProjectileBlueprint debe almacenar velocity
+        // en units/s para coherencia con el sistema temporal.
+        //
+        // Esta es la ÚNICA conversión × 30 en todo el sistema. Todos los
+        // componentes downstream (BulletPhysics, ProjectileMovement, etc.)
+        // reciben directamente units/s sin necesidad de conversión adicional.
+        //
+        double finalSpeedFrames = effectiveStats.getBulletSpeedBase() * speedMult
+                                 * behavior.getDefaultData().speedFactor();
+        double finalSpeed = finalSpeedFrames * 30.0;  // units/frame @ 30 FPS → units/s
         
         double finalDamage = effectiveStats.getDamageBonusByWeapon() * damageMult
                             + behavior.getDefaultData().damage();

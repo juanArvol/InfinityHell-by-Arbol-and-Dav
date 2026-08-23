@@ -87,9 +87,6 @@ public final class OrbitalMovement implements ResettableMovement {
     private double angle;                   // ángulo actual en radianes — estado mutable
 
     /**
-     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
-     * ── Mini-HRFC — Final Temporal Normalization ──────────────────────────
-     *
      * @param center           la entidad alrededor de la cual orbitar. Puede ser null.
      * @param radius           radio de la órbita en unidades
      * @param angularSpeedDeg  velocidad angular en grados/segundo (deg/s)
@@ -104,26 +101,6 @@ public final class OrbitalMovement implements ResettableMovement {
         this.angularSpeedRad = Math.toRadians(angularSpeedDeg);
         this.initialAngleRad = Math.toRadians(initialAngleDeg);
         this.angle           = this.initialAngleRad;
-    }
-
-    /**
-     * Factory method para compatibilidad con código legacy que usaba deg/frame.
-     *
-     * @param center                la entidad alrededor de la cual orbitar
-     * @param radius                radio de la órbita en unidades
-     * @param angularSpeedDegFrame  velocidad angular en grados/frame @ 30 FPS
-     * @param initialAngleDeg       ángulo inicial en grados
-     * @return OrbitalMovement configurado con velocidad angular en deg/s
-     *
-     * @deprecated Usar constructor con deg/s directamente
-     */
-    @Deprecated
-    public static OrbitalMovement fromFrames(AbstractEntity center,
-                                             double radius,
-                                             double angularSpeedDegFrame,
-                                             double initialAngleDeg) {
-        // Convertir deg/frame @ 30 FPS → deg/s
-        return new OrbitalMovement(center, radius, angularSpeedDegFrame * 30.0, initialAngleDeg);
     }
 
     @Override
@@ -145,25 +122,25 @@ public final class OrbitalMovement implements ResettableMovement {
         double targetX = centerPos.getX() + Math.cos(angle) * radius;
         double targetY = centerPos.getY() + Math.sin(angle) * radius;
 
-        // ── CORRECCIÓN HRFC-DT-007 + Orbital Velocity Semantics ──────────
-        // PROBLEMA IDENTIFICADO:
-        //   OrbitalMovement calculaba velocity como desplazamiento objetivo
-        //   (targetX - pos.getX()), que es un desplazamiento en pixels/frame.
-        //   Cuando CollisionsSystem multiplica por deltaTime, el desplazamiento
-        //   resultante es mucho menor del esperado.
+        // ── Orbital Velocity Semantics ───────────────────────────────────
+        // OrbitalMovement calcula la velocity necesaria para alcanzar la
+        // posición orbital objetivo en el próximo frame @ 30 FPS.
         //
-        // SOLUCIÓN:
-        //   Calcular velocity como desplazamiento por frame × 30 para convertir
-        //   a units/s, coherente con el sistema temporal.
+        // displacement_per_frame = targetPosition - currentPosition
+        // velocity [units/s] = displacement_per_frame [units] × FPS_BASE
         //
-        // INVARIANTE:
-        //   velocity [units/s] = desplazamiento [pixels/frame @ 30 FPS] × 30
+        // Donde FPS_BASE = 30 (el framerate de referencia del sistema).
         //
-        // SEMÁNTICA DE ÓRBITA:
-        //   La bullet debe moverse desde su posición actual hasta targetX/Y
-        //   en UN frame @ 30 FPS. Entonces:
-        //     displacement_per_frame = targetX - pos.getX()
-        //     velocity = displacement_per_frame × 30
+        // JUSTIFICACIÓN:
+        //   CollisionsSystem integra: displacement = velocity × deltaTime
+        //   A 30 FPS: displacement = velocity × (1/30)
+        //   Para que displacement = target - current:
+        //     velocity = (target - current) × 30
+        //
+        // NOTA: Esta conversión × 30 NO es una "conversión legacy". Es la
+        // semántica correcta de convertir un desplazamiento espacial (pixels)
+        // a una velocidad temporal (pixels/segundo). El factor 30 representa
+        // la frecuencia de actualización del sistema de movimiento orbital.
         //
         Vector2D pos = bullet.getTransform().getPosition();
         double displacementX = targetX - pos.getX();

@@ -55,7 +55,7 @@ import Game.Items.Types.Bullets.Movement.LinearMovement;
  *
  *   behavior         — qué hace al impactar y cada frame.
  *   movement         — cómo se mueve cada frame (ya resuelto, incluyendo gravedad).
- *   speed            — velocidad escalar total (unidades/frame).
+ *   speed            — velocidad escalar total (units/s, coherente con sistema temporal).
  *   damage           — daño al impactar (ya calculado: base + weapon bonus).
  *   lifeTime         — ticks de vida máximos.
  *   width / height   — dimensiones del collider.

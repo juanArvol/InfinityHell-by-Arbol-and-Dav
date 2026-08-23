@@ -534,29 +534,17 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
         getTransform().setPosition(new Vector2D(x, y));
         
-        // ── REGRESIÓN FIX — HRFC-DT-007 Velocity Conversion ──────────────
-        // PROBLEMA IDENTIFICADO:
-        //   resetState() recibe xSpeed/ySpeed en units/frame del sistema legacy
-        //   (igual que el constructor de Bullet), pero llamaba directamente a
-        //   setXspeed()/setYspeed() que NO aplican la conversión × 30.
+        // ── HRFC-DT-007 — Temporal Velocity Coherence ────────────────────
+        // xSpeed y ySpeed reciben directamente units/s desde ProjectilePool.acquire(),
+        // que los obtiene del ProjectileBlueprint ya convertido.
         //
-        // MANIFESTACIÓN DEL BUG:
-        //   - Bullet NUEVA (constructor) → BulletPhysics(xSpeed, ySpeed)
-        //     → velocity.setX(xSpeed × 30) ✓ CORRECTO
-        //   - Bullet REUTILIZADA (pool) → resetState(..., xSpeed, ySpeed, ...)
-        //     → setXspeed(xSpeed) → velocity.setX(xSpeed) ✗ SIN × 30
-        //     → Bullet viaja a 1/30 de la velocidad esperada
-        //
-        // SOLUCIÓN:
-        //   Aplicar la misma conversión × 30 que BulletPhysics constructor.
-        //   Garantiza paridad completa entre instancia nueva y reutilizada.
-        //
-        // INVARIANTE:
-        //   velocity [units/s] = speed [units/frame @ 30 FPS] × 30
+        // La conversión desde legacy (units/frame @ 30 FPS → units/s) ocurre
+        // exclusivamente en ProjectileResolver. Aquí solo asignamos el valor
+        // ya en el espacio temporal correcto.
         //
         BulletPhysics physics = getPhysics();
-        physics.setXspeed(xSpeed * 30.0);
-        physics.setYspeed(ySpeed * 30.0);
+        physics.setXspeed(xSpeed);
+        physics.setYspeed(ySpeed);
         bulletLife.resetTo(lifeTime);
         this.damage = damage;
         this.destroyEventFired = false;

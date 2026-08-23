@@ -283,6 +283,51 @@ public class Physics2D {
     }
 
     public SurfaceMaterial getCurrentSurface() { return currentSurface; }
+    
+    /**
+     * Limpia todo el estado físico mutable que debe resetearse al reutilizar
+     * una instancia desde un pool.
+     * 
+     * ── REGRESIÓN FIX — ProjectilePool State Cleanup ──────────────────────
+     * 
+     * PROBLEMA IDENTIFICADO:
+     *   Instancias reutilizadas del ProjectilePool conservaban estado físico
+     *   de su vida anterior: fuerzas acumuladas y modifier stacks poblados.
+     *   
+     *   - accumulatedFx/Fy: Fuerzas de sistemas externos (viento, campos) que
+     *     no fueron flusheadas antes de morir. La nueva bullet recibía impulso
+     *     fantasma en el primer flushAccumulatedForces().
+     *   
+     *   - statusStack/environmentStack: Modificadores temporales (buffs, debuffs,
+     *     zonas) que persistían entre vidas, alterando el movimiento de la nueva
+     *     bullet con modificadores fantasma.
+     * 
+     * GARANTÍA:
+     *   Después de este método, la instancia tiene el mismo estado físico que
+     *   una instancia recién construida (new Physics2D(...)).
+     * 
+     * USO:
+     *   Llamar desde Bullet.resetState() después de configurar velocidad y
+     *   propiedades cinemáticas básicas.
+     * 
+     * ALCANCE:
+     *   - Limpia accumulatedFx/Fy → 0.0
+     *   - Limpia statusStack → vacío
+     *   - Limpia environmentStack → vacío
+     *   - NO toca velocity, mass, gravity (responsabilidad del caller)
+     *   - NO toca onGround/onWall/onCeiling (limpiados por CollisionsSystem)
+     *   - NO toca currentSurface (limpiado por CollisionsSystem)
+     */
+    public void clearPooledState() {
+        // Limpiar fuerzas acumuladas pendientes
+        accumulatedFx = 0.0;
+        accumulatedFy = 0.0;
+        
+        // Limpiar modifier stacks
+        // ModifierStack.clear() remueve todos los modificadores registrados
+        statusStack.clear();
+        environmentStack.clear();
+    }
 
     // ── Modificadores externos ────────────────────────────────────────────
 

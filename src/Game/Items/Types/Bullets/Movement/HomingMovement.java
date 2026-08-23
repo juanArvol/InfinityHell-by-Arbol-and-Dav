@@ -77,24 +77,18 @@ public final class HomingMovement implements ProjectileMovement {
 
     /** 
      * Velocidad de movimiento del proyectil en units/s.
-     * 
-     * CORRECCIÓN HRFC-DT-007:
-     *   Constructor recibe speed en units/frame @ 30 FPS (valor legacy).
-     *   Se convierte a units/s multiplicando × 30 en el constructor.
-     *   tick() escribe este valor directamente a velocity.
      */
     private final double speed;
 
     /**
      * @param target       la entidad objetivo a perseguir. Puede ser null (sin objetivo).
      * @param turnSpeedDeg velocidad de giro máxima en grados/frame (1–360)
-     * @param speedFrames  velocidad de avance en units/frame @ 30 FPS
+     * @param speed        velocidad de avance en units/s (coherente con sistema temporal)
      */
-    public HomingMovement(AbstractEntity target, double turnSpeedDeg, double speedFrames) {
+    public HomingMovement(AbstractEntity target, double turnSpeedDeg, double speed) {
         this.target       = target;
         this.turnSpeedRad = Math.toRadians(turnSpeedDeg);
-        // CORRECCIÓN HRFC-DT-007: Convertir units/frame @ 30 FPS → units/s
-        this.speed        = speedFrames * 30.0;
+        this.speed        = speed;  // Ya en units/s, escritura directa
     }
 
     /**

@@ -27,7 +27,7 @@ public class WeaponEscopeta extends WeaponComport {
             12, // balas por disparo
             35, // spread
             17, // daño
-            20 // velocidad
+            200 // velocidad
             ),
         new AutoMode(),
         12, 
