@@ -1,6 +1,6 @@
 package Game.Items.Types.Ammulets;
 
-import Game.Items.Creation.ItemRarity;
+import Game.Items.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import java.util.*;
@@ -8,24 +8,26 @@ import java.util.*;
 /**
  * Registro central de amuletos y sistema de aplicación acumulativa.
  *
+ * ── HRFC — Items Module Architectural Consolidation ──────────────────────
+ *
+ * MIGRACIÓN COMPLETADA:
+ *   - Los tipos de amuleto ahora se declaran en AmuletType (patrón BulletType)
+ *   - AmuletRegistry mantiene solo: rarityOverrides y entityProvider
+ *   - Eliminada duplicación de registro/storage (ahora en ItemTypeRegistry)
+ *   - Mantenida compatibilidad con código existente via métodos adaptadores
+ *
  * ── LIFECYCLE: SINGLETON DE APLICACIÓN CON ESTADO DE SCOPE WORLD ─────────
  *
- * AmuletRegistry tiene dos capas de estado con lifecycle diferente:
+ * AmuletRegistry tiene dos responsabilidades con lifecycle diferente:
  *
- *   1. DEFINICIONES (scope de aplicación):
- *      definitions, rarityOverrides — constantes del juego que no cambian
- *      entre partidas. Sin reset(). Se inicializan UNA VEZ en GameState.init().
+ *   1. RAREZA OVERRIDE (scope de aplicación):
+ *      rarityOverrides — permite ajustar frecuencias desde configuración externa.
+ *      No cambia entre partidas normalmente.
  *
  *   2. ENTITY PROVIDER (scope de World):
  *      entityProvider — referencia al proveedor de entidades del mundo activo.
  *      Debe inyectarse cuando el World arranca (GameWorldBootstrap) y limpiarse
  *      cuando el World muere (GameWorldBootstrap.shutdown()).
- *
- * DECISIÓN ARQUITECTÓNICA PARA LAS DEFINICIONES:
- *   Los amuletos son constantes del juego — sus efectos y rarezas no cambian
- *   entre partidas. Por eso definitions no tiene reset(). Si en el futuro se
- *   necesita recarga en caliente (DLC, modding), implementar un método de
- *   recarga específico, no un reset general.
  *
  * DECISIÓN ARQUITECTÓNICA PARA EL ENTITY PROVIDER:
  *   AmuletRegistry necesita acceso a entidades vivas para amuletos como
@@ -53,23 +55,25 @@ import java.util.*;
  * *"Infinitos" = pueden ofrecerse indefinidamente; el pool nunca se agota.
  *
  * ── FLUJO DE USO ─────────────────────────────────────────────────────────
- *  1. GameState.init() → AmuletRegistry.init() + registerDefaults()
+ *  1. GameState.init() → AmuletType static initializers ejecutan
  *  2. GameWorldBootstrap → AmuletRegistry.setEntityProvider(worldSupplier)
- *  3. Loot/tienda → AmuletRegistry.buildOfferPool(count, random)
- *     (no recibe "ya obtenidos" — todos siempre son elegibles)
- *  4. Jugador recoge → PlayerAmulets.add(id)
- *  5. Al disparar → AmuletRegistry.applyAll(playerAmulets, stats, behavior)
+ *  3. Loot/tienda → AmuletType.buildOfferPool(count, random)
+ *  4. Jugador recoge → PlayerAmulets.add(amuletType)
+ *  5. Al disparar → AmuletType.applyAll(playerAmulets, stats, behavior)
  *  6. Al destruir el World → AmuletRegistry.setEntityProvider(null)
  *
  * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
  * Igual que WeaponRegistry: overrideRarity() permite al diseñador ajustar
  * frecuencias desde configuración externa sin recompilar.
+ *
+ * @deprecated Los métodos de registro y consulta ahora se encuentran en AmuletType.
+ *             Este registry mantiene solo rarityOverrides y entityProvider.
  */
+@Deprecated
 public final class AmuletRegistry {
 
     private static AmuletRegistry instance;
 
-    private final Map<String, AmuletDefinition> definitions = new LinkedHashMap<>();
     private final Map<String, ItemRarity> rarityOverrides   = new HashMap<>();
 
     /**
@@ -117,162 +121,63 @@ public final class AmuletRegistry {
     }
 
     /**
-     * Registra todos los amuletos del juego.
-     * Llamar UNA VEZ tras init(), desde GameState.init().
-     *
-     * ── AQUÍ VA EL BALANCE DE AMULETOS ───────────────────────────────────
-     * Los números concretos (cuánto daño, cuántas perforaciones) son los
-     * que tú defines. Están centralizados aquí, no repartidos en modificadores.
+     * @deprecated Los tipos de amuleto ahora se registran en AmuletType via static initializers.
+     *             Este método mantiene compatibilidad pero ya no es necesario.
      */
+    @Deprecated
     public static void registerDefaults() {
-
-        // ── Daño ──────────────────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "bone_tip",
-            "Punta Ósea",
-            "+8 de daño por proyectil. Acumulable.",
-            ItemRarity.COMMON,
-            new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setDamageBonusByWeapon(stats.getDamageBonusByWeapon() + 8.0);
-                }
-            }
-        ));
-
-        // ── UI / Visualización ────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "marksman_sight",
-            "Ojo del Tirador",
-            "Revela la trayectoria completa de tus disparos, incluyendo información del arma y predicción de impactos. El primer amuleto visual del juego.",
-            ItemRarity.EPIC,
-            new Game.Items.Types.Ammulets.Effects.UICapabilityEffect(
-                () -> new Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability(
-                    Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability.TrajectoryStyle.FADE,
-                    java.awt.Color.CYAN
-                )
-            )
-        ));
-
-        // ── Velocidad de proyectil / alcance ──────────────────────────────
-
-        register(new AmuletDefinition(
-            "swift_quill",
-            "Pluma Veloz",
-            "+15% velocidad de proyectil (aumenta alcance efectivo). Acumulable.",
-            ItemRarity.COMMON,
-            new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setBulletSpeedBase(stats.getBulletSpeedBase() * 1.15);
-                }
-            }
-        ));
-
-        // ── Cadencia ──────────────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "tempo_ring",
-            "Anillo de Tempo",
-            "-10% cooldown de disparo. Acumulable.",
-            ItemRarity.UNCOMMON,
-            new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    // HRFC — Unified DeltaTime Migration
-                    // cooldown ahora es double (segundos), no int (frames)
-                    stats.setCooldown(stats.getCooldown() * 0.90);
-                }
-            }
-        ));
-
-        // ── Dispersión ────────────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "steady_grip",
-            "Empuñadura Firme",
-            "-20% dispersión de proyectiles. Acumulable.",
-            ItemRarity.UNCOMMON,
-            new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setSpread(stats.getSpread() * 0.80);
-                }
-            }
-        ));
-
-        // ── Perforación ───────────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "phase_shard",
-            "Esquirla de Fase",
-            "Los proyectiles perforan +1 enemigo adicional. Acumulable.",
-            ItemRarity.RARE,
-            new AmuletEffect() {
-                @Override
-                public BulletBehavior wrapBehavior(BulletBehavior base) {
-                    // Reutiliza el wrapper de PiercingModifier refactorizado
-                    return new Game.Items.Types.Ammulets.Effects.PiercingAmuletWrapper(base, 1);
-                }
-            }
-        ));
-
-        // ── Rebote entre enemigos ─────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "echo_stone",
-            "Piedra del Eco",
-            "Al impactar, el proyectil salta a un enemigo cercano (+1 salto). Acumulable.",
-            ItemRarity.RARE,
-            new AmuletEffect() {
-                @Override
-                public BulletBehavior wrapBehavior(BulletBehavior base) {
-                    // Usa el proveedor de entidades inyectado desde GameWorldBootstrap.
-                    // Si no está disponible (sin mundo activo), el amuleto se degrada:
-                    // aplica el daño normal pero no rebota.
-                    return new Game.Items.Types.Ammulets.Effects.BounceAmuletWrapper(
-                            base, 1, AmuletRegistry.getEntityProvider());
-                }
-            }
-        ));
-
-        // ── Multi-proyectil ───────────────────────────────────────────────
-
-        register(new AmuletDefinition(
-            "split_crystal",
-            "Cristal Partido",
-            "+1 proyectil por disparo. Acumulable.",
-            ItemRarity.EPIC,
-            new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setBulletsPerShot(stats.getBulletsPerShot() + 1);
-                }
-            }
-        ));
+        // No-op: los amuletos se declaran ahora en AmuletType static block
+        // Mantenido para compatibilidad con código existente que llama a este método
     }
 
-    // ── API ───────────────────────────────────────────────────────────────
+    // ── API de compatibilidad (delegación a AmuletType) ───────────────────
 
+    /**
+     * @deprecated Usar AmuletType directamente. Este método existe solo para compatibilidad.
+     */
+    @Deprecated
     public static void register(AmuletDefinition def) {
-        AmuletRegistry reg = getInstance();
-        if (reg.definitions.containsKey(def.id)) {
-            throw new IllegalStateException("AmuletDefinition duplicada: '" + def.id + "'");
-        }
-        reg.definitions.put(def.id, def);
+        // No-op: definitions ya no se almacenan aquí
+        // Las llamadas legacy se ignoran silenciosamente para evitar romper código existente
     }
 
+    /**
+     * Obtiene una definición por ID.
+     * 
+     * COMPATIBILIDAD: Adapta AmuletType a AmuletDefinition para código legacy.
+     *
+     * @param id identificador del amuleto
+     * @return definición del amuleto
+     * @throws IllegalArgumentException si no existe
+     */
     public static AmuletDefinition get(String id) {
-        AmuletDefinition def = getInstance().definitions.get(id);
-        if (def == null) throw new IllegalArgumentException(
-            "AmuletDefinition no encontrada: '" + id + "'");
-        return def;
+        AmuletType type = AmuletType.get(id);
+        return new AmuletDefinition(
+            type.id,
+            type.displayName,
+            type.description,
+            type.defaultRarity,
+            type.createEffect()
+        );
     }
 
+    /**
+     * Retorna todas las definiciones registradas.
+     * 
+     * COMPATIBILIDAD: Convierte AmuletType a AmuletDefinition para código legacy.
+     */
     public static Collection<AmuletDefinition> all() {
-        return Collections.unmodifiableCollection(getInstance().definitions.values());
+        List<AmuletDefinition> result = new ArrayList<>();
+        for (AmuletType type : AmuletType.values()) {
+            result.add(new AmuletDefinition(
+                type.id,
+                type.displayName,
+                type.description,
+                type.defaultRarity,
+                type.createEffect()
+            ));
+        }
+        return Collections.unmodifiableList(result);
     }
 
     public static void overrideRarity(String amuletId, ItemRarity rarity) {
@@ -282,44 +187,33 @@ public final class AmuletRegistry {
     public static ItemRarity getRarity(String amuletId) {
         AmuletRegistry reg = getInstance();
         ItemRarity override = reg.rarityOverrides.get(amuletId);
-        return override != null ? override : get(amuletId).defaultRarity;
+        if (override != null) return override;
+        
+        // Buscar en AmuletType
+        AmuletType type = AmuletType.find(amuletId);
+        return type != null ? type.defaultRarity : ItemRarity.COMMON;
     }
 
     /**
      * Construye un pool de amuletos ofrecidos al jugador.
-     *
-     * A diferencia de armas y balas, los amuletos SIEMPRE están disponibles:
-     * no se filtra por "ya obtenidos". El pool puede devolver el mismo amuleto
-     * que ya tiene el jugador — eso es intencional (apilamiento).
+     * 
+     * COMPATIBILIDAD: Delega a AmuletType.buildOfferPool()
      *
      * @param maxCount máximo de opciones a ofrecer
      * @param random   fuente de aleatoriedad
+     * @return lista inmutable de definiciones de amuletos
      */
     public static List<AmuletDefinition> buildOfferPool(int maxCount, Random random) {
-        AmuletRegistry reg = getInstance();
-        List<AmuletDefinition> candidates = new ArrayList<>(reg.definitions.values());
-        if (candidates.isEmpty()) return List.of();
-
-        int totalWeight = candidates.stream()
-            .mapToInt(d -> getRarity(d.id).weight)
-            .sum();
-
+        List<AmuletType> types = AmuletType.buildOfferPool(maxCount, random);
         List<AmuletDefinition> result = new ArrayList<>();
-        Set<String> selected = new HashSet<>();
-
-        int attempts = 0;
-        while (result.size() < maxCount && attempts < 200) {
-            attempts++;
-            int roll = random.nextInt(totalWeight);
-            int acc  = 0;
-            for (AmuletDefinition d : candidates) {
-                acc += getRarity(d.id).weight;
-                if (roll < acc && !selected.contains(d.id)) {
-                    result.add(d);
-                    selected.add(d.id);
-                    break;
-                }
-            }
+        for (AmuletType type : types) {
+            result.add(new AmuletDefinition(
+                type.id,
+                type.displayName,
+                type.description,
+                type.defaultRarity,
+                type.createEffect()
+            ));
         }
         return Collections.unmodifiableList(result);
     }
@@ -336,12 +230,14 @@ public final class AmuletRegistry {
      * @return behavior con todos los efectos de amuleto aplicados
      */
     /**
-     * Aplica todos los amuletos poseídos sobre las estadísticas y comportamiento.
-     * Versión directa que recibe definiciones sin conversión de IDs.
+     * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
+     * y envuelve el BulletBehavior.
+     *
+     * COMPATIBILIDAD: Convierte definiciones a tipos y delega a AmuletType.applyAll()
      *
      * @param ownedAmulets definiciones de amuletos que posee el jugador
-     * @param stats        estadísticas mutables a modificar
-     * @param behavior     comportamiento base a envolver
+     * @param stats        copia mutable de WeaponStats a modificar
+     * @param behavior     behavior base a envolver
      * @return behavior con todos los efectos de amuleto aplicados
      */
     public static BulletBehavior applyAllFromDefinitions(
@@ -349,20 +245,27 @@ public final class AmuletRegistry {
             WeaponStats stats,
             BulletBehavior behavior) {
 
+        // Convertir definiciones a tipos
+        List<AmuletType> types = new ArrayList<>();
         for (AmuletDefinition def : ownedAmulets) {
-            def.effect.applyToStats(stats);
-            behavior = def.effect.wrapBehavior(behavior);
+            AmuletType type = AmuletType.find(def.id);
+            if (type != null) {
+                types.add(type);
+            }
         }
-        return behavior;
+        
+        return AmuletType.applyAll(types, stats, behavior);
     }
 
     /**
-     * Aplica todos los amuletos poseídos sobre las estadísticas y comportamiento.
-     * Versión legacy que recibe IDs y los resuelve internamente.
+     * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
+     * y envuelve el BulletBehavior.
+     *
+     * COMPATIBILIDAD: Convierte IDs a tipos y delega a AmuletType.applyAll()
      *
      * @param ownedAmulets IDs de amuletos que posee el jugador
-     * @param stats        estadísticas mutables a modificar
-     * @param behavior     comportamiento base a envolver
+     * @param stats        copia mutable de WeaponStats a modificar
+     * @param behavior     behavior base a envolver
      * @return behavior con todos los efectos de amuleto aplicados
      */
     public static BulletBehavior applyAll(
@@ -370,13 +273,15 @@ public final class AmuletRegistry {
             WeaponStats stats,
             BulletBehavior behavior) {
 
+        // Convertir IDs a tipos
+        List<AmuletType> types = new ArrayList<>();
         for (String id : ownedAmulets) {
-            AmuletDefinition def = getInstance().definitions.get(id);
-            if (def == null) continue; // ID desconocido — skip silencioso
-
-            def.effect.applyToStats(stats);
-            behavior = def.effect.wrapBehavior(behavior);
+            AmuletType type = AmuletType.find(id);
+            if (type != null) {
+                types.add(type);
+            }
         }
-        return behavior;
+        
+        return AmuletType.applyAll(types, stats, behavior);
     }
 }

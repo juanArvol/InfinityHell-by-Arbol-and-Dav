@@ -1,148 +1,141 @@
 package Game.Items.Savement;
 
-import Game.Items.Creation.ItemType;
+import Game.Items.ItemDefinition;
+import Game.Items.ItemType;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Inventario de ítems — contenedor de ItemStacks.
+ * Inventario genérico — almacena ItemStacks (ItemDefinition + cantidad).
  *
- * DISEÑO SIMPLE (suficiente para empezar):
- *   - Lista de slots. Cada slot puede tener un ItemStack o estar vacío (null).
- *   - addItem() primero intenta apilar en stacks existentes del mismo tipo,
- *     luego busca un slot vacío.
- *   - Extensible: se puede subclasificar (PlayerInventory, ContainerInventory)
- *     sin cambiar esta clase base.
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * No implementa "drag & drop" ni lógica de UI — eso es responsabilidad
- * de la capa de presentación.
+ * Inventory trabaja con ItemDefinition ABSTRACTO como puente.
+ * Las definiciones concretas (WeaponDefinition, BulletDefinition, etc.)
+ * se almacenan polimórficamente.
+ *
+ * PATRÓN: Slots dinámicos — crece según se añaden items.
+ *
+ * Auto-stacking: si se añade un item ya existente, incrementa count
+ * en lugar de crear nuevo slot.
  *
  * Uso:
- *   Inventory inv = new Inventory(20); // 20 slots
- *   inv.addItem(new ItemStack(pistolDef));
- *   inv.addItem(new ItemStack(ammo9mmDef, 15));
- *   Optional<ItemStack> found = inv.findByType(ItemType.FIREARM);
+ *   Inventory inv = new Inventory();
+ *   inv.addItem(new ItemStack(weaponDef, 1));
+ *   inv.addItem(new ItemStack(bulletDef, 50));
+ *   Optional<ItemStack> weapon = inv.findByType(ItemType.WEAPON);
  */
 public class Inventory {
 
     private final List<ItemStack> slots;
-    private final int capacity;
+    private final int maxSlots;
 
-    public Inventory(int capacity) {
-        if (capacity <= 0) throw new IllegalArgumentException("capacity debe ser > 0");
-        this.capacity = capacity;
-        this.slots = new ArrayList<>(Collections.nCopies(capacity, null));
+    public Inventory() {
+        this(Integer.MAX_VALUE); // Sin límite por defecto
     }
 
-    // ── Añadir ────────────────────────────────────────────────────────────
+    public Inventory(int maxSlots) {
+        this.slots = new ArrayList<>();
+        this.maxSlots = maxSlots;
+    }
+
+    // ── Añadir items ──────────────────────────────────────────────────────
 
     /**
      * Añade un ItemStack al inventario.
-     * Primero intenta apilar en stacks existentes del mismo tipo.
-     * Luego busca slots vacíos.
+     * Si ya existe un stack de la misma definición, incrementa su count.
+     * Si no, crea un nuevo slot.
      *
-     * @param stack ítem a añadir
-     * @return true si se añadió todo, false si el inventario está lleno
-     *         y quedó overflow (el stack queda reducido con el sobrante)
+     * @return true si se añadió completamente, false si hubo overflow
      */
     public boolean addItem(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return true;
+        if (stack == null || stack.isEmpty()) return false;
 
-        // Paso 1: intentar apilar en stacks existentes del mismo tipo
+        // Buscar stack existente de la misma definición
         for (ItemStack existing : slots) {
-            if (existing != null
-                    && existing.getDefinition() == stack.getDefinition()
-                    && !existing.isFull()) {
-                existing.transferFrom(stack);
-                if (stack.isEmpty()) return true;
-            }
-        }
-
-        // Paso 2: buscar slot vacío
-        for (int i = 0; i < capacity; i++) {
-            if (slots.get(i) == null) {
-                slots.set(i, stack);
+            if (existing.getDefinition().equals(stack.getDefinition())) {
+                existing.add(stack.getCount());
                 return true;
             }
         }
 
-        // Inventario lleno — hay overflow
-        return false;
+        // No existe, crear nuevo slot
+        slots.add(new ItemStack(stack.getDefinition(), stack.getCount()));
+        return true;
     }
 
-    // ── Buscar ────────────────────────────────────────────────────────────
-
-    /** Primer stack de cierto tipo de ítem, o empty si no hay. */
-    public Optional<ItemStack> findByType(ItemType type) {
-        for (ItemStack s : slots) {
-            if (s != null && s.getDefinition().type == type) {
-                return Optional.of(s);
-            }
-        }
-        return Optional.empty();
-    }
-
-    /** Primer stack con cierto ID de definición, o empty si no hay. */
-    public Optional<ItemStack> findById(String id) {
-        for (ItemStack s : slots) {
-            if (s != null && s.getDefinition().id.equals(id)) {
-                return Optional.of(s);
-            }
-        }
-        return Optional.empty();
-    }
-
-    // ── Eliminar ──────────────────────────────────────────────────────────
+    // ── Búsqueda ──────────────────────────────────────────────────────────
 
     /**
-     * Elimina `amount` unidades de un ítem identificado por ID.
-     * Si el stack queda vacío, libera el slot.
-     * @return cuántas unidades se eliminaron.
+     * Encuentra el primer ItemStack del tipo especificado.
      */
-    public int removeItem(String id, int amount) {
-        int remaining = amount;
-        for (int i = 0; i < capacity && remaining > 0; i++) {
-            ItemStack s = slots.get(i);
-            if (s != null && s.getDefinition().id.equals(id)) {
-                remaining -= s.remove(remaining);
-                if (s.isEmpty()) slots.set(i, null);
-            }
-        }
-        return amount - remaining;
+    public Optional<ItemStack> findByType(ItemType type) {
+        return slots.stream()
+                .filter(stack -> stack.getDefinition() instanceof ItemDefinition)
+                .findFirst();
     }
 
-    // ── Estado ────────────────────────────────────────────────────────────
+    /**
+     * Encuentra un ItemStack por ID de definición.
+     */
+    public Optional<ItemStack> findById(String id) {
+        return slots.stream()
+                .filter(stack -> stack.getDefinition().getId().equals(id))
+                .findFirst();
+    }
 
-    public int getCapacity()    { return capacity; }
+    // ── Eliminación ───────────────────────────────────────────────────────
+
+    /**
+     * Elimina un ItemStack específico del inventario.
+     */
+    public boolean removeItem(ItemStack stack) {
+        return slots.remove(stack);
+    }
+
+    /**
+     * Elimina cantidad de un item por ID.
+     * @return true si se eliminó completamente, false si no había suficiente
+     */
+    public boolean removeById(String id, int amount) {
+        Optional<ItemStack> found = findById(id);
+        if (found.isEmpty()) return false;
+
+        ItemStack stack = found.get();
+        int removed = stack.remove(amount);
+        
+        if (stack.isEmpty()) {
+            slots.remove(stack);
+        }
+        
+        return removed == amount;
+    }
+
+    // ── Consulta ──────────────────────────────────────────────────────────
+
+    public int size() { return slots.size(); }
+    public boolean isEmpty() { return slots.isEmpty(); }
+    public void clear() { slots.clear(); }
+    
     public ItemStack getSlot(int i) { return slots.get(i); }
 
-    /** Slots ocupados actualmente. */
-    public int usedSlots() {
-        int used = 0;
-        for (ItemStack s : slots) if (s != null) used++;
-        return used;
+    /**
+     * Cuenta cuántos items de un tipo específico hay en total.
+     */
+    public int countByType(ItemType type) {
+        return slots.stream()
+                .filter(stack -> stack.getDefinition() instanceof ItemDefinition)
+                .mapToInt(ItemStack::getCount)
+                .sum();
     }
 
-    public boolean isFull()  { return usedSlots() >= capacity; }
-    public boolean isEmpty() { return usedSlots() == 0; }
-
-    /** Vista inmutable de los slots (para UI/render). */
     public List<ItemStack> getSlots() {
-        return Collections.unmodifiableList(slots);
+        return new ArrayList<>(slots);
     }
 
-    // ── Peso total ────────────────────────────────────────────────────────
-
-    /** Peso total del inventario en kg. */
-    public double getTotalWeight() {
-        double total = 0;
-        for (ItemStack s : slots) {
-            if (s != null) {
-                total += s.getDefinition().weight * s.getCount();
-            }
-        }
-        return total;
+    @Override
+    public String toString() {
+        return "Inventory{slots=" + slots.size() + "}";
     }
 }

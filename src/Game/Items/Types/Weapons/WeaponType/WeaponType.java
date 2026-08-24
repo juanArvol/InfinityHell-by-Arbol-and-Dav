@@ -1,6 +1,8 @@
 package Game.Items.Types.Weapons.WeaponType;
 
-import Game.Items.Creation.ItemRarity;
+import Game.Items.Core.ItemTypeRegistry;
+import Game.Items.Core.ObjectType;
+import Game.Items.ItemRarity;
 import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponEscopeta;
 import Game.Items.Types.Weapons.WeaponType.WeaponClass.WeaponPistola;
 import java.util.*;
@@ -9,18 +11,21 @@ import java.util.function.Supplier;
 /**
  * Tipos de arma — el paradigma declarativo equivalente a BulletType.
  *
- * ── REFACTOR — Extensibilidad sin romper contratos ───────────────────────
+ * ── HRFC — Items Module Architectural Consolidation ──────────────────────
  *
- * CAMBIO ARQUITECTÓNICO:
- *   - WeaponType ya NO es enum (conjunto cerrado)
- *   - WeaponType es ahora una class con registro estático
- *   - Permite añadir nuevos tipos sin modificar este archivo
+ * MIGRACIÓN COMPLETADA:
+ *   - WeaponType ahora extiende ItemTypeBase<WeaponComport>
+ *   - Usa ItemTypeRegistry para almacenamiento centralizado
+ *   - Elimina duplicación de infraestructura con BulletType
  *
  * CONTRATOS PRESERVADOS:
+ *   ✅ WeaponType.PISTOLA, WeaponType.ESCOPETA — static final accesibles
  *   ✅ weaponType.createComport() — sigue funcionando exactamente igual
  *   ✅ weaponType.defaultRarity — sigue siendo public final
  *   ✅ weaponType.displayName — sigue siendo public final
  *   ✅ weaponType.description — sigue siendo public final
+ *   ✅ WeaponType.values() — reemplaza enum.values()
+ *   ✅ WeaponType.get(id) — resolución por ID
  *
  * ── HRFC — Player Reengineering ───────────────────────────────────────────
  *
@@ -53,7 +58,7 @@ import java.util.function.Supplier;
  *   1. Modificar WeaponType.java
  *   2. Añadir entrada en el enum
  *
- * AHORA (class extensible):
+ * AHORA (class extensible con infraestructura unificada):
  *   1. Crear la clase WeaponComport en tu módulo (ej: WeaponShotgun.java)
  *   2. Registrar en tu módulo:
  *      WeaponType.register(new WeaponType("shotgun", WeaponShotgun::new, ...))
@@ -71,15 +76,14 @@ import java.util.function.Supplier;
  * WeaponType.createComport() produce el mismo WeaponComport que
  * WeaponRegistry.get(id).createComport() para los armas equivalentes.
  *
+ * @see Game.Items.Creation.ObjectType  clase base unificada
+ * @see Game.Items.Creation.ItemTypeRegistry  registro centralizado
  * @see Game.Items.Types.Bullets.Definition.BulletType  el patrón que este tipo replica
- * @see Game.Items.Types.Weapons.WeaponRegistry         registro de loot complementario
+ * @see Game.Items.Types.Weapons.WeaponRegistry  registro de loot complementario
  */
-public final class WeaponType {
+public final class WeaponType extends ObjectType<WeaponComport> {
 
-    // ── Registro estático ─────────────────────────────────────────────────
-
-    /** Registro de todos los tipos de arma (orden de registro preservado). */
-    private static final Map<String, WeaponType> REGISTRY = new LinkedHashMap<>();
+    // ── Tipos predefinidos ────────────────────────────────────────────────
 
     /** Tipos predefinidos — constantes para compatibilidad con código existente. */
     public static final WeaponType PISTOLA;
@@ -104,27 +108,6 @@ public final class WeaponType {
         ));
     }
 
-    // ── Identidad del tipo ────────────────────────────────────────────────
-
-    /** ID único del tipo (snake_case). Inmutable. */
-    public final String id;
-
-    // ── Comportamiento del tipo ───────────────────────────────────────────
-
-    /** Factory que crea WeaponComport. Inmutable. */
-    private final Supplier<WeaponComport> factory;
-
-    // ── Metadata del tipo ─────────────────────────────────────────────────
-
-    /** Rareza por defecto. Puede sobreescribirse desde configuración externa. */
-    public final ItemRarity defaultRarity;
-
-    /** Nombre visible al jugador en UI de recompensa/tienda. */
-    public final String displayName;
-
-    /** Descripción del comportamiento para la UI de selección. */
-    public final String description;
-
     // ── Constructor (público para extensibilidad) ─────────────────────────
 
     /**
@@ -141,18 +124,7 @@ public final class WeaponType {
                       ItemRarity defaultRarity,
                       String displayName,
                       String description) {
-        if (id == null || id.isBlank())
-            throw new IllegalArgumentException("id no puede estar vacío");
-        if (factory == null)
-            throw new IllegalArgumentException("factory no puede ser null");
-        if (defaultRarity == null)
-            throw new IllegalArgumentException("defaultRarity no puede ser null");
-
-        this.id            = id;
-        this.factory       = factory;
-        this.defaultRarity = defaultRarity;
-        this.displayName   = displayName != null ? displayName : id;
-        this.description   = description != null ? description : "";
+        super(id, factory, defaultRarity, displayName, description);
     }
 
     // ── API pública — CONTRATOS PRESERVADOS ───────────────────────────────
@@ -168,10 +140,10 @@ public final class WeaponType {
      * @return nueva instancia del WeaponComport. Nunca null.
      */
     public WeaponComport createComport() {
-        return factory.get();
+        return createInstance();
     }
 
-    // ── Registro y consulta ───────────────────────────────────────────────
+    // ── Registro y consulta (delegación a infraestructura unificada) ──────
 
     /**
      * Registra un nuevo tipo de arma.
@@ -190,13 +162,7 @@ public final class WeaponType {
      * @throws IllegalStateException si el ID ya está registrado
      */
     public static WeaponType register(WeaponType type) {
-        if (type == null)
-            throw new IllegalArgumentException("type no puede ser null");
-        if (REGISTRY.containsKey(type.id))
-            throw new IllegalStateException("WeaponType duplicado: '" + type.id + "'");
-        
-        REGISTRY.put(type.id, type);
-        return type;
+        return ItemTypeRegistry.register(WeaponType.class, type);
     }
 
     /**
@@ -207,10 +173,7 @@ public final class WeaponType {
      * @throws IllegalArgumentException si no existe
      */
     public static WeaponType get(String id) {
-        WeaponType type = REGISTRY.get(id);
-        if (type == null)
-            throw new IllegalArgumentException("WeaponType no encontrado: '" + id + "'");
-        return type;
+        return ItemTypeRegistry.get(WeaponType.class, id);
     }
 
     /**
@@ -220,14 +183,14 @@ public final class WeaponType {
      * @return el tipo correspondiente, o null si no existe
      */
     public static WeaponType find(String id) {
-        return REGISTRY.get(id);
+        return ItemTypeRegistry.find(WeaponType.class, id);
     }
 
     /**
      * Verifica si existe un tipo con el ID dado.
      */
     public static boolean has(String id) {
-        return REGISTRY.containsKey(id);
+        return ItemTypeRegistry.has(WeaponType.class, id);
     }
 
     /**
@@ -238,26 +201,6 @@ public final class WeaponType {
      * @return colección inmutable de todos los tipos
      */
     public static Collection<WeaponType> values() {
-        return Collections.unmodifiableCollection(REGISTRY.values());
-    }
-
-    // ── Object identity ───────────────────────────────────────────────────
-
-    @Override
-    public String toString() {
-        return "WeaponType{id='" + id + "', rarity=" + defaultRarity + "}";
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof WeaponType)) return false;
-        WeaponType that = (WeaponType) o;
-        return id.equals(that.id);
-    }
-
-    @Override
-    public int hashCode() {
-        return id.hashCode();
+        return ItemTypeRegistry.values(WeaponType.class);
     }
 }

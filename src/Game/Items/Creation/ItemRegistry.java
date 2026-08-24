@@ -1,5 +1,6 @@
 package Game.Items.Creation;
 
+import Game.Items.ItemDefinition;
 import Game.Items.Savement.ItemStack;
 import java.util.Collection;
 import java.util.Collections;
@@ -9,25 +10,26 @@ import java.util.Map;
 /**
  * Registro global de ItemDefinitions.
  *
- * PROPÓSITO: punto único donde se registran todos los tipos de ítem del juego.
- * Equivalente al sistema de data de Project Zomboid (items/*.txt parseados).
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * PATRÓN: Singleton de aplicación, inicializado explícitamente con init()
- * (mismo patrón que WorldManager).
+ * PROPÓSITO: Catálogo de TODAS las definiciones de items del juego.
+ * Trabaja con ItemDefinition ABSTRACTO como puente a las concretas:
+ *   - WeaponDefinition
+ *   - BulletDefinition
+ *   - AmuletDefinition
+ *   - Cualquier otra subclase futura
  *
- * Los ítems concretos (armas, munición, consumibles) se definen en clases
- * de datos separadas (ej. WeaponItems, AmmoItems) que llaman a register()
- * durante la inicialización.
+ * PATRÓN: Singleton de aplicación, inicializado explícitamente con init().
  *
  * Uso:
  *   // Al arrancar el juego:
  *   ItemRegistry.init();
- *   ItemRegistry.register(new ItemDefinition.Builder("pistol_9mm", ItemType.FIREARM)
- *       .displayName("Pistola 9mm").magazineSize(15).build());
+ *   ItemRegistry.register(weaponDef);
+ *   ItemRegistry.register(bulletDef);
  *
- *   // En cualquier parte del código:
+ *   // En código de loot:
  *   ItemDefinition def = ItemRegistry.get("pistol_9mm");
- *   ItemStack pistol = new ItemStack(def);
+ *   ItemStack stack = new ItemStack(def, 1);
  */
 public final class ItemRegistry {
 
@@ -55,10 +57,10 @@ public final class ItemRegistry {
     /** Registra una definición. Lanza si el ID ya existe. */
     public static void register(ItemDefinition def) {
         ItemRegistry reg = getInstance();
-        if (reg.definitions.containsKey(def.id)) {
-            throw new IllegalStateException("ItemDefinition duplicada: '" + def.id + "'");
+        if (reg.definitions.containsKey(def.getId())) {
+            throw new IllegalStateException("ItemDefinition duplicada: '" + def.getId() + "'");
         }
-        reg.definitions.put(def.id, def);
+        reg.definitions.put(def.getId(), def);
     }
 
     /**

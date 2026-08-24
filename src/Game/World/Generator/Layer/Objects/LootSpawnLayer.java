@@ -1,8 +1,8 @@
 package Game.World.Generator.Layer.Objects;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Items.Creation.ItemDefinition;
-import Game.Items.Creation.ItemRarity;
+import Game.Items.ItemDefinition;
+import Game.Items.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
 import Game.Items.Savement.ItemStack;
 import Game.World.Chunk.Chunk;

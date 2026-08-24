@@ -1,25 +1,28 @@
 package Game.Items.Savement;
 
-import Game.Items.Creation.ItemDefinition;
+import Game.Items.ItemDefinition;
 
 /**
  * Instancia de un ítem en un inventario: una definición + una cantidad.
  *
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
+ *
+ * ItemStack trabaja con ItemDefinition ABSTRACTO como puente a las
+ * definiciones concretas (WeaponDefinition, BulletDefinition, AmuletDefinition).
+ *
  * SEPARACIÓN DE RESPONSABILIDADES:
  *   ItemDefinition → "qué cosa es" (datos estáticos, compartidos)
- *   ItemStack       → "cuántos tengo" (estado por instancia de inventario)
+ *   ItemStack      → "cuántos tengo" (estado por instancia de inventario)
  *
- * Para ítems no apilables (armas, armadura), maxStack=1 garantiza que
- * count siempre sea 1.
- *
- * Para munición (ammo_9mm, maxStack=50), count puede ser 1..50.
+ * Para ítems no apilables (armas, armadura), usar count=1.
+ * Para munición/recursos, count puede ser mayor.
  *
  * Uso:
- *   ItemStack bullets = new ItemStack(ammo9mmDef, 30);
- *   ItemStack pistol  = new ItemStack(pistol9mmDef);  // count = 1
- *   bullets.add(10);    // bullets.count = 40
- *   bullets.remove(5);  // bullets.count = 35
- *   bullets.isEmpty();  // false
+ *   ItemStack potions = new ItemStack(potionDef, 3);
+ *   ItemStack sword   = new ItemStack(swordDef);  // count = 1
+ *   potions.add(2);    // potions.count = 5
+ *   potions.remove(1); // potions.count = 4
+ *   potions.isEmpty(); // false
  */
 public class ItemStack {
 
@@ -36,7 +39,7 @@ public class ItemStack {
         if (definition == null) throw new IllegalArgumentException("definition no puede ser null");
         if (count < 0) throw new IllegalArgumentException("count no puede ser negativo");
         this.definition = definition;
-        this.count = Math.min(count, definition.maxStack);
+        this.count = count;
     }
 
     // ── Acceso ────────────────────────────────────────────────────────────
@@ -44,20 +47,16 @@ public class ItemStack {
     public ItemDefinition getDefinition() { return definition; }
     public int getCount()                 { return count; }
     public boolean isEmpty()              { return count <= 0; }
-    public boolean isFull()              { return count >= definition.maxStack; }
-    public int spaceLeft()               { return definition.maxStack - count; }
-
+    
     // ── Operaciones ───────────────────────────────────────────────────────
 
     /**
-     * Añade hasta `amount` unidades respetando maxStack.
-     * @return cuántas unidades NO se pudieron añadir (overflow).
+     * Añade `amount` unidades.
+     * @return cuántas unidades NO se pudieron añadir (overflow si hay límite).
      */
     public int add(int amount) {
-        int space = spaceLeft();
-        int added = Math.min(amount, space);
-        count += added;
-        return amount - added;
+        count += amount;
+        return 0; // Sin límite por ahora
     }
 
     /**
@@ -75,17 +74,21 @@ public class ItemStack {
      * @return cuántas se transfirieron.
      */
     public int transferFrom(ItemStack other) {
-        if (other.definition != this.definition) {
+        if (!other.definition.equals(this.definition)) {
             throw new IllegalArgumentException("No se puede transferir entre distintas definiciones");
         }
-        int toMove = Math.min(other.count, spaceLeft());
+        int toMove = other.count;
         other.remove(toMove);
         add(toMove);
         return toMove;
     }
 
+    public void setCount(int count) {
+        this.count = Math.max(0, count);
+    }
+
     @Override
     public String toString() {
-        return definition.displayName + " x" + count;
+        return definition.getDisplayName() + " x" + count;
     }
 }

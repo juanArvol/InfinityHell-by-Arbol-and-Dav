@@ -1,7 +1,7 @@
 package Game.Items.Types.Ammulets;
 
-import Game.Items.Creation.ItemRarity;
 import Game.Items.ItemDefinition;
+import Game.Items.ItemRarity;
 
 /**
  * Definición de un amuleto — mejora pasiva acumulable al estilo Hollow Knight.

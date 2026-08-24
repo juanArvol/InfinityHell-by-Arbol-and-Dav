@@ -1,7 +1,8 @@
 package Game.Items.Types.Weapons;
 
-import Game.Items.Creation.ItemRarity;
 import java.util.*;
+
+import Game.Items.ItemRarity;
 
 /**
  * Registro central de todas las armas disponibles en el juego.

@@ -1,6 +1,9 @@
 package Game.Items.Types.Bullets.Definition;
 
-import Game.Items.Creation.ItemRarity;
+import Game.Items.Core.ItemTypeRegistry;
+import Game.Items.Core.ObjectType;
+import Game.Items.Core.OfferPoolBuilder;
+import Game.Items.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletClass.*;
 import java.util.*;
@@ -9,19 +12,23 @@ import java.util.function.Supplier;
 /**
  * Tipos de bala — efectos únicos que se obtienen una sola vez por run.
  *
- * ── REFACTOR — Extensibilidad sin romper contratos ───────────────────────
+ * ── HRFC — Items Module Architectural Consolidation ──────────────────────
  *
- * CAMBIO ARQUITECTÓNICO:
- *   - BulletType ya NO es enum (conjunto cerrado)
- *   - BulletType es ahora una class con registro estático
- *   - Permite añadir nuevos tipos sin modificar este archivo
+ * MIGRACIÓN COMPLETADA:
+ *   - BulletType ahora extiende ItemTypeBase<BulletBehavior>
+ *   - Usa ItemTypeRegistry para almacenamiento centralizado
+ *   - Usa OfferPoolBuilder para selección ponderada
+ *   - Elimina duplicación de infraestructura
  *
  * CONTRATOS PRESERVADOS:
+ *   ✅ BulletType.NORMALBULLET — sigue siendo static final accesible
  *   ✅ bulletType.create() — sigue funcionando exactamente igual
  *   ✅ bulletType.defaultRarity — sigue siendo public final
  *   ✅ bulletType.displayName — sigue siendo public final
  *   ✅ bulletType.description — sigue siendo public final
  *   ✅ BulletType.buildOfferPool() — sigue funcionando igual
+ *   ✅ BulletType.values() — reemplaza enum.values()
+ *   ✅ BulletType.get(id) — resolución por ID
  *
  * ── DISEÑO ───────────────────────────────────────────────────────────────
  * Cada BulletType representa un EFECTO FANTÁSTICO permanente, no munición
@@ -43,18 +50,18 @@ import java.util.function.Supplier;
  *   1. Modificar BulletType.java
  *   2. Añadir entrada en el enum
  *
- * AHORA (class extensible):
+ * AHORA (class extensible con infraestructura unificada):
  *   1. Crear la clase de behavior en tu módulo (ej: FrostBullet.java)
  *   2. Registrar en tu módulo:
  *      BulletType.register(new BulletType("frost_bolt", FrostBullet::new, ...))
  *   3. ¡Listo! — BulletType.java NO se modifica
+ *
+ * @see Game.Items.Core.ObjectType  clase base unificada
+ * @see Game.Items.Core.ItemTypeRegistry  registro centralizado
  */
-public final class BulletType {
+public final class BulletType extends ObjectType<BulletBehavior> {
 
-    // ── Registro estático ─────────────────────────────────────────────────
-
-    /** Registro de todos los tipos de bala (orden de registro preservado). */
-    private static final Map<String, BulletType> REGISTRY = new LinkedHashMap<>();
+    // ── Tipos predefinidos ────────────────────────────────────────────────
 
     /** Tipos predefinidos — constantes para compatibilidad con código existente. */
     public static final BulletType NORMALBULLET;
@@ -88,27 +95,6 @@ public final class BulletType {
         ));
     }
 
-    // ── Identidad del tipo ────────────────────────────────────────────────
-
-    /** ID único del tipo (snake_case). Inmutable. */
-    public final String id;
-
-    // ── Comportamiento del tipo ───────────────────────────────────────────
-
-    /** Factory que crea BulletBehavior. Inmutable. */
-    private final Supplier<BulletBehavior> factory;
-
-    // ── Metadata del tipo ─────────────────────────────────────────────────
-
-    /** Rareza por defecto. Puede sobreescribirse desde configuración externa. */
-    public final ItemRarity defaultRarity;
-
-    /** Nombre visible al jugador en UI de recompensa/tienda. */
-    public final String displayName;
-
-    /** Descripción del efecto para la UI de selección. */
-    public final String description;
-
     // ── Constructor (público para extensibilidad) ─────────────────────────
 
     /**
@@ -125,18 +111,7 @@ public final class BulletType {
                       ItemRarity defaultRarity,
                       String displayName,
                       String description) {
-        if (id == null || id.isBlank())
-            throw new IllegalArgumentException("id no puede estar vacío");
-        if (factory == null)
-            throw new IllegalArgumentException("factory no puede ser null");
-        if (defaultRarity == null)
-            throw new IllegalArgumentException("defaultRarity no puede ser null");
-
-        this.id            = id;
-        this.factory       = factory;
-        this.defaultRarity = defaultRarity;
-        this.displayName   = displayName != null ? displayName : id;
-        this.description   = description != null ? description : "";
+        super(id, factory, defaultRarity, displayName, description);
     }
 
     // ── API pública — CONTRATOS PRESERVADOS ───────────────────────────────
@@ -148,10 +123,10 @@ public final class BulletType {
      * ✅ CONTRATO PRESERVADO — este método funciona exactamente igual que antes.
      */
     public BulletBehavior create() {
-        return factory.get();
+        return createInstance();
     }
 
-    // ── Registro y consulta ───────────────────────────────────────────────
+    // ── Registro y consulta (delegación a infraestructura unificada) ──────
 
     /**
      * Registra un nuevo tipo de bala.
@@ -170,13 +145,7 @@ public final class BulletType {
      * @throws IllegalStateException si el ID ya está registrado
      */
     public static BulletType register(BulletType type) {
-        if (type == null)
-            throw new IllegalArgumentException("type no puede ser null");
-        if (REGISTRY.containsKey(type.id))
-            throw new IllegalStateException("BulletType duplicado: '" + type.id + "'");
-        
-        REGISTRY.put(type.id, type);
-        return type;
+        return ItemTypeRegistry.register(BulletType.class, type);
     }
 
     /**
@@ -187,10 +156,7 @@ public final class BulletType {
      * @throws IllegalArgumentException si no existe
      */
     public static BulletType get(String id) {
-        BulletType type = REGISTRY.get(id);
-        if (type == null)
-            throw new IllegalArgumentException("BulletType no encontrado: '" + id + "'");
-        return type;
+        return ItemTypeRegistry.get(BulletType.class, id);
     }
 
     /**
@@ -200,14 +166,14 @@ public final class BulletType {
      * @return el tipo correspondiente, o null si no existe
      */
     public static BulletType find(String id) {
-        return REGISTRY.get(id);
+        return ItemTypeRegistry.find(BulletType.class, id);
     }
 
     /**
      * Verifica si existe un tipo con el ID dado.
      */
     public static boolean has(String id) {
-        return REGISTRY.containsKey(id);
+        return ItemTypeRegistry.has(BulletType.class, id);
     }
 
     /**
@@ -218,10 +184,10 @@ public final class BulletType {
      * @return colección inmutable de todos los tipos
      */
     public static Collection<BulletType> values() {
-        return Collections.unmodifiableCollection(REGISTRY.values());
+        return ItemTypeRegistry.values(BulletType.class);
     }
 
-    // ── Pool de oferta ────────────────────────────────────────────────────
+    // ── Pool de oferta (delegación a infraestructura unificada) ───────────
 
     /**
      * Construye un pool de BulletTypes disponibles (no obtenidos aún),
@@ -243,6 +209,8 @@ public final class BulletType {
      *   3. Selecciona aleatoriamente según peso hasta llenar maxCount
      *   4. Evita duplicados en la misma oferta
      *
+     * Implementación delegada a OfferPoolBuilder (infraestructura unificada).
+     *
      * @param alreadyOwned tipos que el jugador ya posee en esta run
      * @param maxCount     máximo de opciones a ofrecer
      * @param random       fuente de aleatoriedad
@@ -251,57 +219,12 @@ public final class BulletType {
     public static List<BulletType> buildOfferPool(
             Set<BulletType> alreadyOwned, int maxCount, Random random) {
 
-        // Pool de candidatos: todos los tipos que el jugador aún no tiene
-        List<BulletType> candidates = new ArrayList<>();
-        for (BulletType bt : values()) {
-            if (!alreadyOwned.contains(bt)) {
-                candidates.add(bt);
-            }
-        }
-        if (candidates.isEmpty()) return List.of();
-
-        // Selección ponderada por rareza (ruleta)
-        int totalWeight = candidates.stream()
-            .mapToInt(bt -> bt.defaultRarity.weight)
-            .sum();
-
-        List<BulletType> result = new ArrayList<>();
-        Set<BulletType> selected = new HashSet<>();
-
-        int attempts = 0;
-        while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
-            attempts++;
-            int roll = random.nextInt(totalWeight);
-            int acc  = 0;
-            for (BulletType bt : candidates) {
-                acc += bt.defaultRarity.weight;
-                if (roll < acc && !selected.contains(bt)) {
-                    result.add(bt);
-                    selected.add(bt);
-                    break;
-                }
-            }
-        }
-        return Collections.unmodifiableList(result);
-    }
-
-    // ── Object identity ───────────────────────────────────────────────────
-
-    @Override
-    public String toString() {
-        return "BulletType{id='" + id + "', rarity=" + defaultRarity + "}";
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BulletType)) return false;
-        BulletType that = (BulletType) o;
-        return id.equals(that.id);
-    }
-
-    @Override
-    public int hashCode() {
-        return id.hashCode();
+        return OfferPoolBuilder.build(
+            values(),
+            type -> !alreadyOwned.contains(type),
+            type -> type.defaultRarity,
+            maxCount,
+            random
+        );
     }
 }

@@ -1,7 +1,7 @@
 package Game.Items.Types.Bullets;
 
-import Game.Items.Creation.ItemRarity;
 import Game.Items.ItemDefinition;
+import Game.Items.ItemRarity;
 import Game.Items.Types.Bullets.Definition.BulletType;
 
 /**

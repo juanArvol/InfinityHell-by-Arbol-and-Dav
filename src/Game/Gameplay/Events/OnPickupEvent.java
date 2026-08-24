@@ -1,6 +1,6 @@
 package Game.Gameplay.Events;
 
-import Game.Items.Creation.ItemDefinition;
+import Game.Items.ItemDefinition;
 import Game.Player.Player;
 
 /**

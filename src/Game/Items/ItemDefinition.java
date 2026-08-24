@@ -1,6 +1,6 @@
 package Game.Items;
 
-import Game.Items.Creation.ItemRarity;
+import java.awt.image.BufferedImage;
 
 /**
  * Clase base abstracta para todas las definiciones de Items del juego.
@@ -82,6 +82,9 @@ public abstract class ItemDefinition {
     /** Rareza por defecto (puede sobreescribirse desde configuración externa). Inmutable. */
     public final ItemRarity defaultRarity;
 
+    /** Icono para UI y world items. Puede ser null. */
+    public final BufferedImage icon;
+
     /**
      * Constructor protegido — solo subclases concretas pueden instanciar.
      *
@@ -89,12 +92,14 @@ public abstract class ItemDefinition {
      * @param displayName    nombre visible al jugador
      * @param description    descripción del comportamiento/efecto
      * @param defaultRarity  rareza por defecto
+     * @param icon           icono para UI (puede ser null)
      * @throws IllegalArgumentException si id o defaultRarity son null
      */
     protected ItemDefinition(String id,
                             String displayName,
                             String description,
-                            ItemRarity defaultRarity) {
+                            ItemRarity defaultRarity,
+                            BufferedImage icon) {
         if (id == null || id.isBlank())
             throw new IllegalArgumentException("id no puede estar vacío");
         if (defaultRarity == null)
@@ -104,6 +109,17 @@ public abstract class ItemDefinition {
         this.displayName   = displayName != null ? displayName : id;
         this.description   = description != null ? description : "";
         this.defaultRarity = defaultRarity;
+        this.icon          = icon;
+    }
+
+    /**
+     * Constructor protegido sin icono (para retrocompatibilidad).
+     */
+    protected ItemDefinition(String id,
+                            String displayName,
+                            String description,
+                            ItemRarity defaultRarity) {
+        this(id, displayName, description, defaultRarity, null);
     }
 
     // ── Getters ───────────────────────────────────────────────────────────

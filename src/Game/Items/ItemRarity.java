@@ -1,10 +1,18 @@
-package Game.Items.Creation;
+package Game.Items;
 
 /**
  * Rareza de un ítem — determina su probabilidad en loot tables
  * y puede afectar bonuses de stats.
  *
- * Los weights son relativos entre sí. LootSpawnLayer normaliza los totales.
+ * ── HRFC — Items Module Architectural Consolidation ──────────────────────
+ *
+ * ItemRarity es compartido por todas las familias de Items:
+ *   - BulletType
+ *   - WeaponType
+ *   - AmuletType
+ *   - Futuros tipos de Item
+ *
+ * Los weights son relativos entre sí. El sistema de loot normaliza los totales.
  *
  * Ejemplo de distribución con weights por defecto:
  *   COMMON:    50 / 100 = 50%
