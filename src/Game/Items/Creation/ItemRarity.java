@@ -1,4 +1,4 @@
-package Game.Items;
+package Game.Items.Creation;
 
 /**
  * Rareza de un ítem — determina su probabilidad en loot tables

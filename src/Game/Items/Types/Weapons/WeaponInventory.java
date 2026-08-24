@@ -2,58 +2,29 @@ package Game.Items.Types.Weapons;
 
 import Game.Engine.GameEventBus;
 import Game.Gameplay.Events.WeaponEvents;
+import Game.Items.Savement.Inventory;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Inventario de armas — autoridad del dominio Weapons.
  *
- * ── HRFC — Player Inventory & Domain Ownership Consolidation ──────────────
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * ── OWNERSHIP ─────────────────────────────────────────────────────────────
+ * HERENCIA:
+ *   WeaponInventory extends Inventory<ModifiedWeapon>
+ *   Añade cycling (next/prev/current) y eventos de cambio de arma.
  *
- * WeaponInventory pertenece al dominio Weapons y responde la pregunta:
- *   "¿Qué armas posee el portador?"
- *
- * PlayerRuntime responde: "¿Qué arma está equipada actualmente?"
- * PlayerCombat  responde: "¿Cómo se ejecuta el combate?"
- *
- * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
- *
+ * RESPONSABILIDADES:
  *   • Almacenar armas poseídas (ModifiedWeapon instances)
- *   • Gestionar adquisición y remoción de armas
+ *   • Gestionar adquisición y remoción con unicidad
  *   • Emitir OnWeaponSwitch cuando el arma activa cambia
- *   • Mantener el índice de arma activa
- *   • Exponer la API de consulta de armas
+ *   • Mantener el índice de arma activa y cycling
  *
- * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
- *
- *   WeaponInventory  → almacenamiento + selección activa
- *   PlayerRuntime    → coordina inventory y estado equipado
- *   PlayerCombat     → ejecución del pipeline de disparo
- *
- * ── UNICIDAD ──────────────────────────────────────────────────────────────
- *
- * Las armas se obtienen una sola vez por partida. WeaponInventory implementa
- * unicidad mediante verificación en addWeapon() para prevenir duplicados mientras
- * preserva el orden de adquisición en una única List.
- *
- * Una adquisición repetida de la misma arma resulta en no-op (idempotente).
- * El sistema de adquisición no necesita verificar previamente si ya se posee.
- *
- * ── CYCLING ───────────────────────────────────────────────────────────────
- *
- * El cycling (next/prev/current) es responsabilidad de este inventario.
- * PlayerRuntime puede mantener un índice propio o delegar directamente
- * en los métodos de ciclo de este inventario.
+ * UNICIDAD:
+ *   Las armas se obtienen una sola vez por partida. add() verifica duplicados.
  */
-public class WeaponInventory {
+public class WeaponInventory extends Inventory<ModifiedWeapon> {
 
-    /** Armas poseídas por el portador — unicidad garantizada por verificación en addWeapon(). */
-    private final List<ModifiedWeapon> weapons = new ArrayList<>();
-    
     private int currentIndex = 0;
 
     /** Bus de eventos para emitir OnWeaponSwitch. Puede ser null. */
@@ -71,7 +42,6 @@ public class WeaponInventory {
 
     /**
      * Constructor sin bus de eventos — sin notificaciones de cambio.
-     * Útil en testing o cuando no se requiere reactividad.
      */
     public WeaponInventory() {
         this.eventBus = null;
@@ -81,18 +51,20 @@ public class WeaponInventory {
 
     /**
      * Añade un arma al inventario.
-     * Si es la primera arma añadida, pasa a ser el arma activa automáticamente.
-     * Si ya se posee (misma referencia), la operación es idempotente (no-op).
+     * Implementa UNICIDAD: si ya se posee, la operación es no-op.
+     * Si es la primera arma, pasa a ser el arma activa automáticamente.
      *
      * @param weapon arma a añadir. No puede ser null.
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si weapon es null
      */
-    public boolean addWeapon(ModifiedWeapon weapon) {
-        if (weapon == null) throw new IllegalArgumentException("weapon no puede ser null");
+    @Override
+    public boolean add(ModifiedWeapon weapon) {
+        if (weapon == null)
+            throw new IllegalArgumentException("weapon no puede ser null");
         
-        if (!weapons.contains(weapon)) {
-            weapons.add(weapon);
+        if (!items.contains(weapon)) {
+            items.add(weapon);
             return true;
         }
         return false;
@@ -105,8 +77,9 @@ public class WeaponInventory {
      * @param weapon arma a eliminar
      * @return true si se eliminó, false si no se encontró
      */
-    public boolean removeWeapon(ModifiedWeapon weapon) {
-        boolean removed = weapons.remove(weapon);
+    @Override
+    public boolean remove(ModifiedWeapon weapon) {
+        boolean removed = items.remove(weapon);
         if (removed) {
             clampIndex();
         }
@@ -115,47 +88,46 @@ public class WeaponInventory {
 
     /**
      * Elimina el arma en el índice especificado.
-     *
-     * @param index índice del arma a eliminar (0-based)
-     * @return el arma eliminada
-     * @throws IndexOutOfBoundsException si el índice es inválido
      */
-    public ModifiedWeapon removeWeaponAt(int index) {
-        ModifiedWeapon removed = weapons.remove(index);
+    @Override
+    public ModifiedWeapon removeAt(int index) {
+        ModifiedWeapon removed = items.remove(index);
         clampIndex();
         return removed;
     }
 
     /**
      * True si el portador posee un arma del tipo indicado.
-     *
-     * ── HRFC — Weapon Type Runtime Identity ──────────────────────────────
-     *
-     * Implementado usando la identidad tipada de ModifiedWeapon.getWeaponType().
-     * No usa reflexión, IDs String, ni comparación de clases de WeaponComport.
-     *
-     * @param weaponType tipo de arma a verificar
-     * @return true si se posee al menos una arma de ese tipo
      */
     public boolean hasWeapon(WeaponType weaponType) {
         if (weaponType == null) return false;
         
-        for (ModifiedWeapon weapon : weapons) {
+        for (ModifiedWeapon weapon : items) {
             if (weapon.getWeaponType() == weaponType) {
                 return true;
             }
         }
         return false;
     }
+
     
-    /**
-     * True si el portador posee la arma específica (misma referencia).
-     *
-     * @param weapon arma a verificar
-     * @return true si se posee
-     */
-    public boolean hasWeapon(ModifiedWeapon weapon) {
-        return weapons.contains(weapon);
+    public boolean addWeapon(ModifiedWeapon weapon) {
+        return add(weapon);
+    }
+
+    
+    public boolean removeWeapon(ModifiedWeapon weapon) {
+        return remove(weapon);
+    }
+
+    
+    public ModifiedWeapon removeWeaponAt(int index) {
+        return removeAt(index);
+    }
+
+    
+    public ModifiedWeapon getWeapon(int index) {
+        return get(index);
     }
 
     // ── Cycling — selección activa ─────────────────────────────────────────
@@ -166,52 +138,38 @@ public class WeaponInventory {
      * @return arma activa, o null si el inventario está vacío
      */
     public ModifiedWeapon getCurrentWeapon() {
-        if (weapons.isEmpty()) return null;
-        return weapons.get(currentIndex);
-    }
-
-    /**
-     * Obtiene un arma por su índice en el inventario.
-     *
-     * @param index índice del arma (0-based)
-     * @return el arma en el índice especificado
-     * @throws IndexOutOfBoundsException si el índice es inválido
-     */
-    public ModifiedWeapon getWeapon(int index) {
-        return weapons.get(index);
+        if (items.isEmpty()) return null;
+        return items.get(currentIndex);
     }
 
     /**
      * Avanza al siguiente arma en el ciclo circular.
-     * Emite {@link WeaponEvents.OnWeaponSwitch} si el arma cambia.
+     * Emite OnWeaponSwitch si el arma cambia.
      */
     public void nextWeapon() {
-        if (weapons.size() <= 1) return;
+        if (items.size() <= 1) return;
         ModifiedWeapon previous = getCurrentWeapon();
-        currentIndex = (currentIndex + 1) % weapons.size();
+        currentIndex = (currentIndex + 1) % items.size();
         emitSwitch(previous, getCurrentWeapon());
     }
 
     /**
      * Retrocede al arma anterior en el ciclo circular.
-     * Emite {@link WeaponEvents.OnWeaponSwitch} si el arma cambia.
+     * Emite OnWeaponSwitch si el arma cambia.
      */
     public void previousWeapon() {
-        if (weapons.size() <= 1) return;
+        if (items.size() <= 1) return;
         ModifiedWeapon previous = getCurrentWeapon();
-        currentIndex = (currentIndex - 1 + weapons.size()) % weapons.size();
+        currentIndex = (currentIndex - 1 + items.size()) % items.size();
         emitSwitch(previous, getCurrentWeapon());
     }
 
     /**
      * Selecciona el arma en el índice indicado directamente.
-     * Emite {@link WeaponEvents.OnWeaponSwitch} si el arma cambia.
-     *
-     * @param index índice a seleccionar (0-based)
-     * @throws IndexOutOfBoundsException si el índice es inválido
+     * Emite OnWeaponSwitch si el arma cambia.
      */
     public void selectAt(int index) {
-        if (index < 0 || index >= weapons.size())
+        if (index < 0 || index >= items.size())
             throw new IndexOutOfBoundsException("índice fuera de rango: " + index);
         if (index == currentIndex) return;
         ModifiedWeapon previous = getCurrentWeapon();
@@ -226,44 +184,21 @@ public class WeaponInventory {
         return currentIndex;
     }
 
-    // ── Consultas ─────────────────────────────────────────────────────────
+    // ── Override clear ────────────────────────────────────────────────────
 
-    /**
-     * Lista inmutable de armas poseídas (en orden de adquisición).
-     *
-     * @return lista de armas. Nunca null, puede estar vacía.
-     */
-    public List<ModifiedWeapon> getAll() {
-        return Collections.unmodifiableList(weapons);
-    }
-
-    /** True si no se poseen armas. */
-    public boolean isEmpty() {
-        return weapons.isEmpty();
-    }
-
-    /** Número total de armas poseídas. */
-    public int size() {
-        return weapons.size();
-    }
-
-    // ── Limpieza ──────────────────────────────────────────────────────────
-
-    /**
-     * Limpia el inventario — útil para testing o reinicios de run.
-     */
+    @Override
     public void clear() {
-        weapons.clear();
+        super.clear();
         currentIndex = 0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private void clampIndex() {
-        if (weapons.isEmpty()) {
+        if (items.isEmpty()) {
             currentIndex = 0;
-        } else if (currentIndex >= weapons.size()) {
-            currentIndex = weapons.size() - 1;
+        } else if (currentIndex >= items.size()) {
+            currentIndex = items.size() - 1;
         }
     }
 

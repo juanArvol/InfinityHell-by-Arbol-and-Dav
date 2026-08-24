@@ -1,6 +1,5 @@
 package Game.Items.Creation;
 
-import Game.Items.ItemDefinition;
 import Game.Items.Savement.ItemStack;
 import java.util.Collection;
 import java.util.Collections;
@@ -57,10 +56,10 @@ public final class ItemRegistry {
     /** Registra una definición. Lanza si el ID ya existe. */
     public static void register(ItemDefinition def) {
         ItemRegistry reg = getInstance();
-        if (reg.definitions.containsKey(def.getId())) {
-            throw new IllegalStateException("ItemDefinition duplicada: '" + def.getId() + "'");
+        if (reg.definitions.containsKey(def.getItemId().asString())) {
+            throw new IllegalStateException("ItemDefinition duplicada: '" + def.getItemId() + "'");
         }
-        reg.definitions.put(def.getId(), def);
+        reg.definitions.put(def.getItemId().asString(), def);
     }
 
     /**

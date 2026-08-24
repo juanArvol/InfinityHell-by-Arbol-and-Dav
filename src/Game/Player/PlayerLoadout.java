@@ -57,7 +57,7 @@ import java.util.List;
  *
  *   PlayerLoadout
  *       .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
- *       .initialBullets(BulletType.NORMALBULLET, BulletType.BULLETJUMP)
+ *       .initialBullets(BulletType.NORMAL_BULLET, BulletType.SPRING_BULLET)
  *       .initialAmulets("bone_tip", "swift_quill")
  *       .build()
  *
@@ -65,7 +65,7 @@ import java.util.List;
  *
  *   PlayerLoadout
  *       .initialWeapons(WeaponType.PISTOLA)
- *       .initialBullets(BulletType.NORMALBULLET)
+ *       .initialBullets(BulletType.NORMAL_BULLET)
  *       .initialAmulets()  // Sin amuletos
  *       .build()
  *
@@ -165,7 +165,7 @@ public final class PlayerLoadout {
      * Permite la sintaxis ergonómica buscada por el Mini-HRFC:
      * 
      *   initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA);
-     *   initialBullets(BulletType.NORMALBULLET, BulletType.EXPLOSIVE);
+     *   initialBullets(BulletType.NORMAL_BULLET, BulletType.EXPLOSIVE);
      *   initialAmulets();
      *   return build();
      *
@@ -288,7 +288,7 @@ public final class PlayerLoadout {
          * 
          *   builder()
          *       .weapon(WeaponType.PISTOLA)
-         *       .initialBullets(BulletType.NORMALBULLET, BulletType.EXPLOSIVE)
+         *       .initialBullets(BulletType.NORMAL_BULLET, BulletType.EXPLOSIVE)
          *       .build();
          *
          * @param bulletTypes tipos de bala iniciales (varargs, puede ser vacío)
@@ -335,7 +335,7 @@ public final class PlayerLoadout {
          * 
          *   builder()
          *       .weapon(WeaponType.PISTOLA)
-         *       .initialBullets(BulletType.NORMALBULLET)
+         *       .initialBullets(BulletType.NORMAL_BULLET)
          *       .initialAmulets("bone_tip", "swift_quill")
          *       .build();
          *

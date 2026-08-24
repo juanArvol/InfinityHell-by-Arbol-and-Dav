@@ -1,6 +1,6 @@
 package Game.Items.Savement;
 
-import Game.Items.ItemDefinition;
+import Game.Items.Creation.ItemDefinition;
 
 /**
  * Instancia de un ítem en un inventario: una definición + una cantidad.

@@ -2,7 +2,7 @@ package Game.Items.Types.Weapons;
 
 import java.util.*;
 
-import Game.Items.ItemRarity;
+import Game.Items.Creation.ItemRarity;
 
 /**
  * Registro central de todas las armas disponibles en el juego.
@@ -177,7 +177,7 @@ public final class WeaponRegistry {
     public static ItemRarity getRarity(String weaponId) {
         WeaponRegistry reg = getInstance();
         ItemRarity override = reg.rarityOverrides.get(weaponId);
-        return override != null ? override : get(weaponId).defaultRarity;
+        return override != null ? override : get(weaponId).rarity;
     }
 
     /**

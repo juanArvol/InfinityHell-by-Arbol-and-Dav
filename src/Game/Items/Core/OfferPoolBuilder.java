@@ -1,6 +1,6 @@
 package Game.Items.Core;
 
-import Game.Items.ItemRarity;
+import Game.Items.Creation.ItemRarity;
 import java.util.*;
 import java.util.function.Predicate;
 

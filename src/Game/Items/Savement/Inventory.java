@@ -1,141 +1,185 @@
 package Game.Items.Savement;
 
-import Game.Items.ItemDefinition;
-import Game.Items.ItemType;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 /**
- * Inventario genérico — almacena ItemStacks (ItemDefinition + cantidad).
+ * Inventario genérico — clase base para inventarios de Items.
  *
  * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * Inventory trabaja con ItemDefinition ABSTRACTO como puente.
- * Las definiciones concretas (WeaponDefinition, BulletDefinition, etc.)
- * se almacenan polimórficamente.
+ * PROPÓSITO:
+ *   Clase base genérica que unifica el concepto de inventario para todos
+ *   los tipos de Items. También puede usarse directamente como inventario
+ *   genérico para ItemStack.
  *
- * PATRÓN: Slots dinámicos — crece según se añaden items.
+ * DISEÑO:
+ *   Inventory<T> permite a las subclases definir:
+ *     - El tipo de objeto que almacena (T)
+ *     - Lógica específica de adición/remoción
+ *     - Comportamiento de unicidad o acumulación
  *
- * Auto-stacking: si se añade un item ya existente, incrementa count
- * en lugar de crear nuevo slot.
+ * PATRÓN:
+ *   Las subclases concretas (WeaponInventory, AmuletInventory, etc.) heredan
+ *   de esta clase y especifican su tipo:
+ *     - WeaponInventory extends Inventory<ModifiedWeapon>
+ *     - AmuletInventory extends Inventory<AmuletDefinition>
+ *   
+ *   También puede usarse directamente:
+ *     - Inventory<ItemStack> para items stackeables genéricos
  *
- * Uso:
- *   Inventory inv = new Inventory();
- *   inv.addItem(new ItemStack(weaponDef, 1));
- *   inv.addItem(new ItemStack(bulletDef, 50));
- *   Optional<ItemStack> weapon = inv.findByType(ItemType.WEAPON);
+ * @param <T> tipo de objeto almacenado en el inventario
  */
-public class Inventory {
+public class Inventory<T> {
 
-    private final List<ItemStack> slots;
-    private final int maxSlots;
+    /** Items almacenados. Protected para que subclases accedan directamente. */
+    protected final List<T> items = new ArrayList<>();
+    
+    /** Máximo de items permitidos. */
+    protected final int maxSlots;
 
+    /**
+     * Constructor sin límite de slots.
+     */
     public Inventory() {
-        this(Integer.MAX_VALUE); // Sin límite por defecto
+        this(Integer.MAX_VALUE);
     }
 
+    /**
+     * Constructor con límite de slots.
+     *
+     * @param maxSlots máximo de items permitidos
+     */
     public Inventory(int maxSlots) {
-        this.slots = new ArrayList<>();
         this.maxSlots = maxSlots;
     }
 
-    // ── Añadir items ──────────────────────────────────────────────────────
+    // ── Operaciones básicas ───────────────────────────────────────────────
 
     /**
-     * Añade un ItemStack al inventario.
+     * Añade un item al inventario.
+     * Las subclases pueden sobrescribir para implementar unicidad o stacking.
+     *
+     * @param item item a añadir. No puede ser null.
+     * @return true si se añadió, false si no
+     * @throws IllegalArgumentException si item es null
+     */
+    public boolean add(T item) {
+        if (item == null)
+            throw new IllegalArgumentException("item no puede ser null");
+        return items.add(item);
+    }
+
+    /**
+     * Añade un ItemStack al inventario (para inventarios genéricos).
      * Si ya existe un stack de la misma definición, incrementa su count.
      * Si no, crea un nuevo slot.
      *
+     * @param stack stack a añadir
      * @return true si se añadió completamente, false si hubo overflow
      */
-    public boolean addItem(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return false;
+    @SuppressWarnings("unchecked")
+    public boolean addItem(Object stack) {
+        if (!(stack instanceof Game.Items.Savement.ItemStack)) return false;
+        Game.Items.Savement.ItemStack itemStack = (Game.Items.Savement.ItemStack) stack;
+        
+        if (itemStack.isEmpty()) return false;
 
         // Buscar stack existente de la misma definición
-        for (ItemStack existing : slots) {
-            if (existing.getDefinition().equals(stack.getDefinition())) {
-                existing.add(stack.getCount());
-                return true;
+        for (T existing : items) {
+            if (existing instanceof Game.Items.Savement.ItemStack) {
+                Game.Items.Savement.ItemStack existingStack = (Game.Items.Savement.ItemStack) existing;
+                if (existingStack.getDefinition().equals(itemStack.getDefinition())) {
+                    existingStack.add(itemStack.getCount());
+                    return true;
+                }
             }
         }
 
         // No existe, crear nuevo slot
-        slots.add(new ItemStack(stack.getDefinition(), stack.getCount()));
+        items.add((T) itemStack);
         return true;
     }
 
-    // ── Búsqueda ──────────────────────────────────────────────────────────
-
     /**
-     * Encuentra el primer ItemStack del tipo especificado.
+     * Elimina un item específico del inventario.
+     *
+     * @param item item a eliminar
+     * @return true si se eliminó, false si no se encontró
      */
-    public Optional<ItemStack> findByType(ItemType type) {
-        return slots.stream()
-                .filter(stack -> stack.getDefinition() instanceof ItemDefinition)
-                .findFirst();
-    }
-
-    /**
-     * Encuentra un ItemStack por ID de definición.
-     */
-    public Optional<ItemStack> findById(String id) {
-        return slots.stream()
-                .filter(stack -> stack.getDefinition().getId().equals(id))
-                .findFirst();
-    }
-
-    // ── Eliminación ───────────────────────────────────────────────────────
-
-    /**
-     * Elimina un ItemStack específico del inventario.
-     */
-    public boolean removeItem(ItemStack stack) {
-        return slots.remove(stack);
+    public boolean remove(T item) {
+        return items.remove(item);
     }
 
     /**
-     * Elimina cantidad de un item por ID.
-     * @return true si se eliminó completamente, false si no había suficiente
+     * Elimina el item en el índice especificado.
+     *
+     * @param index índice del item a eliminar (0-based)
+     * @return el item eliminado
+     * @throws IndexOutOfBoundsException si el índice es inválido
      */
-    public boolean removeById(String id, int amount) {
-        Optional<ItemStack> found = findById(id);
-        if (found.isEmpty()) return false;
-
-        ItemStack stack = found.get();
-        int removed = stack.remove(amount);
-        
-        if (stack.isEmpty()) {
-            slots.remove(stack);
-        }
-        
-        return removed == amount;
+    public T removeAt(int index) {
+        return items.remove(index);
     }
-
-    // ── Consulta ──────────────────────────────────────────────────────────
-
-    public int size() { return slots.size(); }
-    public boolean isEmpty() { return slots.isEmpty(); }
-    public void clear() { slots.clear(); }
-    
-    public ItemStack getSlot(int i) { return slots.get(i); }
 
     /**
-     * Cuenta cuántos items de un tipo específico hay en total.
+     * Verifica si el inventario contiene un item específico.
+     *
+     * @param item item a verificar
+     * @return true si se posee
      */
-    public int countByType(ItemType type) {
-        return slots.stream()
-                .filter(stack -> stack.getDefinition() instanceof ItemDefinition)
-                .mapToInt(ItemStack::getCount)
-                .sum();
+    public boolean contains(T item) {
+        return items.contains(item);
     }
 
-    public List<ItemStack> getSlots() {
-        return new ArrayList<>(slots);
+    // ── Acceso ────────────────────────────────────────────────────────────
+
+    /**
+     * Obtiene un item por su índice.
+     *
+     * @param index índice del item (0-based)
+     * @return el item en el índice especificado
+     * @throws IndexOutOfBoundsException si el índice es inválido
+     */
+    public T get(int index) {
+        return items.get(index);
     }
+
+    /**
+     * Lista inmutable de todos los items.
+     *
+     * @return lista de items. Nunca null, puede estar vacía.
+     */
+    public List<T> getAll() {
+        return Collections.unmodifiableList(items);
+    }
+
+    // ── Consultas ─────────────────────────────────────────────────────────
+
+    /** Número total de items almacenados. */
+    public int size() {
+        return items.size();
+    }
+
+    /** True si no hay items. */
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
+
+    // ── Limpieza ──────────────────────────────────────────────────────────
+
+    /**
+     * Limpia todos los items — útil para testing o reinicios de run.
+     */
+    public void clear() {
+        items.clear();
+    }
+
+    // ── Object identity ───────────────────────────────────────────────────
 
     @Override
     public String toString() {
-        return "Inventory{slots=" + slots.size() + "}";
+        return getClass().getSimpleName() + "{items=" + items.size() + "}";
     }
 }

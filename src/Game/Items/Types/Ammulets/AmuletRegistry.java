@@ -1,6 +1,7 @@
 package Game.Items.Types.Ammulets;
 
-import Game.Items.ItemRarity;
+import Game.Items.Core.ObjectTypeFactory;
+import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
 import java.util.*;
@@ -13,7 +14,7 @@ import java.util.*;
  * MIGRACIÓN COMPLETADA:
  *   - Los tipos de amuleto ahora se declaran en AmuletType (patrón BulletType)
  *   - AmuletRegistry mantiene solo: rarityOverrides y entityProvider
- *   - Eliminada duplicación de registro/storage (ahora en ItemTypeRegistry)
+ *   - Eliminada duplicación de registro/storage (ahora en ObjectTypeFactory)
  *   - Mantenida compatibilidad con código existente via métodos adaptadores
  *
  * ── LIFECYCLE: SINGLETON DE APLICACIÓN CON ESTADO DE SCOPE WORLD ─────────
@@ -59,7 +60,7 @@ import java.util.*;
  *  2. GameWorldBootstrap → AmuletRegistry.setEntityProvider(worldSupplier)
  *  3. Loot/tienda → AmuletType.buildOfferPool(count, random)
  *  4. Jugador recoge → PlayerAmulets.add(amuletType)
- *  5. Al disparar → AmuletType.applyAll(playerAmulets, stats, behavior)
+ *  5. Al disparar → AmuletEffectApplicator.applyAll(playerAmulets, stats, behavior)
  *  6. Al destruir el World → AmuletRegistry.setEntityProvider(null)
  *
  * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
@@ -151,12 +152,12 @@ public final class AmuletRegistry {
      * @throws IllegalArgumentException si no existe
      */
     public static AmuletDefinition get(String id) {
-        AmuletType type = AmuletType.get(id);
+        AmuletType type = ObjectTypeFactory.get(AmuletType.class, id);
         return new AmuletDefinition(
-            type.id,
-            type.displayName,
-            type.description,
-            type.defaultRarity,
+            type.getDefinition().getIdAsString(),
+            type.getDisplayName(),
+            type.getDescription(),
+            type.getRarity(),
             type.createEffect()
         );
     }
@@ -166,19 +167,19 @@ public final class AmuletRegistry {
      * 
      * COMPATIBILIDAD: Convierte AmuletType a AmuletDefinition para código legacy.
      */
-    public static Collection<AmuletDefinition> all() {
+    /* public static Collection<AmuletDefinition> all() {
         List<AmuletDefinition> result = new ArrayList<>();
-        for (AmuletType type : AmuletType.values()) {
+        for (AmuletType type : ObjectTypeFactory.values(AmuletType.class)) {
             result.add(new AmuletDefinition(
-                type.id,
-                type.displayName,
-                type.description,
-                type.defaultRarity,
+                type.getId(),
+                type.getDisplayName(),
+                type.getDescription(),
+                type.getRarity(),
                 type.createEffect()
             ));
         }
         return Collections.unmodifiableList(result);
-    }
+    } */
 
     public static void overrideRarity(String amuletId, ItemRarity rarity) {
         getInstance().rarityOverrides.put(amuletId, rarity);
@@ -189,34 +190,39 @@ public final class AmuletRegistry {
         ItemRarity override = reg.rarityOverrides.get(amuletId);
         if (override != null) return override;
         
-        // Buscar en AmuletType
-        AmuletType type = AmuletType.find(amuletId);
-        return type != null ? type.defaultRarity : ItemRarity.COMMON;
+        // Buscar en ObjectTypeFactory
+        AmuletType type = ObjectTypeFactory.find(AmuletType.class, amuletId);
+        return type != null ? type.getRarity() : ItemRarity.COMMON;
     }
 
     /**
      * Construye un pool de amuletos ofrecidos al jugador.
      * 
-     * COMPATIBILIDAD: Delega a AmuletType.buildOfferPool()
+     * COMPATIBILIDAD: Delega a ObjectTypeFactory.buildOfferPool()
      *
      * @param maxCount máximo de opciones a ofrecer
      * @param random   fuente de aleatoriedad
      * @return lista inmutable de definiciones de amuletos
      */
-    public static List<AmuletDefinition> buildOfferPool(int maxCount, Random random) {
-        List<AmuletType> types = AmuletType.buildOfferPool(maxCount, random);
+    /* public static List<AmuletDefinition> buildOfferPool(int maxCount, Random random) {
+        List<AmuletType> types = ObjectTypeFactory.buildOfferPool(
+            AmuletType.class,
+            type -> true,  // todos son candidatos
+            maxCount,
+            random
+        );
         List<AmuletDefinition> result = new ArrayList<>();
         for (AmuletType type : types) {
             result.add(new AmuletDefinition(
-                type.id,
-                type.displayName,
-                type.description,
-                type.defaultRarity,
+                type.getId(),
+                type.getDisplayName(),
+                type.getDescription(),
+                type.getRarity(),
                 type.createEffect()
             ));
         }
         return Collections.unmodifiableList(result);
-    }
+    } */
 
     /**
      * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
@@ -233,14 +239,14 @@ public final class AmuletRegistry {
      * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
      * y envuelve el BulletBehavior.
      *
-     * COMPATIBILIDAD: Convierte definiciones a tipos y delega a AmuletType.applyAll()
+     * COMPATIBILIDAD: Convierte definiciones a tipos y delega a AmuletEffectApplicator
      *
      * @param ownedAmulets definiciones de amuletos que posee el jugador
      * @param stats        copia mutable de WeaponStats a modificar
      * @param behavior     behavior base a envolver
      * @return behavior con todos los efectos de amuleto aplicados
      */
-    public static BulletBehavior applyAllFromDefinitions(
+    /* public static BulletBehavior applyAllFromDefinitions(
             List<AmuletDefinition> ownedAmulets,
             WeaponStats stats,
             BulletBehavior behavior) {
@@ -248,20 +254,20 @@ public final class AmuletRegistry {
         // Convertir definiciones a tipos
         List<AmuletType> types = new ArrayList<>();
         for (AmuletDefinition def : ownedAmulets) {
-            AmuletType type = AmuletType.find(def.id);
+            AmuletType type = ObjectTypeFactory.find(AmuletType.class, def.getId());
             if (type != null) {
                 types.add(type);
             }
         }
         
-        return AmuletType.applyAll(types, stats, behavior);
-    }
+        return AmuletEffectApplicator.applyAll(types, stats, behavior);
+    } */
 
     /**
      * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
      * y envuelve el BulletBehavior.
      *
-     * COMPATIBILIDAD: Convierte IDs a tipos y delega a AmuletType.applyAll()
+     * COMPATIBILIDAD: Convierte IDs a tipos y delega a AmuletEffectApplicator
      *
      * @param ownedAmulets IDs de amuletos que posee el jugador
      * @param stats        copia mutable de WeaponStats a modificar
@@ -276,12 +282,12 @@ public final class AmuletRegistry {
         // Convertir IDs a tipos
         List<AmuletType> types = new ArrayList<>();
         for (String id : ownedAmulets) {
-            AmuletType type = AmuletType.find(id);
+            AmuletType type = ObjectTypeFactory.find(AmuletType.class, id);
             if (type != null) {
                 types.add(type);
             }
         }
         
-        return AmuletType.applyAll(types, stats, behavior);
+        return AmuletEffectApplicator.applyAll(types, stats, behavior);
     }
 }

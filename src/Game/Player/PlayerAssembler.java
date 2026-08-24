@@ -75,7 +75,7 @@ import java.util.function.Consumer;
  *   // Loadout custom usando API declarativa:
  *   PlayerLoadout loadout = PlayerLoadout
  *       .initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
- *       .initialBullets(BulletType.NORMALBULLET, BulletType.BULLETJUMP)
+ *       .initialBullets(BulletType.NORMAL_BULLET, BulletType.SPRING_BULLET)
  *       .initialAmulets()
  *       .build();
  *   Player player = PlayerAssembler.assemble(

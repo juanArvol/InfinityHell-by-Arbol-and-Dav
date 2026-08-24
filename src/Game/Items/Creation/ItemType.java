@@ -1,4 +1,4 @@
-package Game.Items;
+package Game.Items.Creation;
 
 /**
  * Clasificación general de Items — categoría para lógica de inventario y UI.
@@ -43,7 +43,7 @@ package Game.Items;
  * RESOURCE representa materiales y recursos genéricos.
  * AMULET representa mejoras pasivas acumulables.
  *
- * @see Game.Items.Core.ObjectType  infraestructura para tipos concretos
+ * @see Game.Items.Creation.ObjectType  infraestructura para tipos concretos
  * @see Game.Items.Types.Weapons.WeaponType.WeaponType  tipo concreto de armas
  * @see Game.Items.Types.Bullets.Definition.BulletType  tipo concreto de balas
  */

@@ -1,59 +1,54 @@
 package Game.Items.Types.Weapons;
 
-import Game.Items.ItemDefinition;
-import Game.Items.ItemRarity;
 import Game.Items.Types.Weapons.WeaponType.WeaponComport;
+import Game.Items.VisualDefinition;
+import Game.Items.Creation.ItemDefinition;
+import Game.Items.Creation.ItemID;
+import Game.Items.Creation.ItemRarity;
 
 /**
- * Definición de datos de un arma — su "plantilla" estática por run.
+ * Definición de datos de un arma — sistema legacy WeaponRegistry.
  *
- * ── JERARQUÍA ────────────────────────────────────────────────────────────
- * Extiende ItemDefinition para heredar la estructura común de metadata
- * (id, displayName, description, defaultRarity).
- *
- * ── DISEÑO ───────────────────────────────────────────────────────────────
- * Separa los DATOS del arma (nombre, descripción, rareza) de su
- * COMPORTAMIENTO (WeaponComport). Esto permite que el sistema de loot
- * y la UI accedan a la metadata sin necesitar instanciar el arma.
- *
- * ── UNICIDAD POR RUN ─────────────────────────────────────────────────────
- * Igual que BulletType, un arma solo puede obtenerse una vez por run.
- * El WeaponRegistry filtra las ya obtenidas antes de ofrecerlas.
- *
- * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
- * La rareza por defecto está en el enum WeaponId. Puede sobreescribirse
- * externamente (desde un archivo de configuración de balance) sin tocar
- * el código fuente.
- *
- * Uso:
- *   WeaponDefinition def = WeaponRegistry.get(WeaponId.ETHEREAL_REVOLVER);
- *   WeaponComport comport = def.createComport();
- *   Weapon weapon = new Weapon(comport, player.getEquippedBulletType());
- *
- * @see Game.Items.ItemDefinition         clase base con metadata común
- * @see Game.Items.Types.Weapons.WeaponRegistry sistema de loot de armas
+ * @see Game.Items.Creation.ItemDefinition
+ * @see Game.Items.Types.Weapons.WeaponRegistry
  */
 public final class WeaponDefinition extends ItemDefinition {
 
     /** Factory que produce el WeaponComport para esta arma. */
     private final java.util.function.Supplier<WeaponComport> comportFactory;
 
+    /**
+     * Constructor legacy para WeaponRegistry.
+     */
     public WeaponDefinition(String id,
                             String displayName,
                             String description,
-                            ItemRarity defaultRarity,
+                            ItemRarity rarity,
                             java.util.function.Supplier<WeaponComport> comportFactory) {
-        super(id, displayName, description, defaultRarity);
+        super(
+            createLegacyID(id),
+            new VisualDefinition(displayName, description, rarity)
+        );
+        
         if (comportFactory == null)
             throw new IllegalArgumentException("comportFactory no puede ser null");
         this.comportFactory = comportFactory;
     }
 
     /**
-     * Crea una nueva instancia del WeaponComport para esta definición.
-     * Cada arma equipada por el jugador tiene su propia instancia (con cooldown, etc.).
+     * Crea una nueva instancia del WeaponComport.
      */
     public WeaponComport createComport() {
         return comportFactory.get();
+    }
+
+    /**
+     * Crea un ItemID legacy desde un string.
+     */
+    private static ItemID createLegacyID(final String id) {
+        return new ItemID() {
+            @Override
+            public String asString() { return id; }
+        };
     }
 }

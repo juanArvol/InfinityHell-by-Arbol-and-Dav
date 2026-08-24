@@ -4,67 +4,41 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Registro unificado de todos los tipos de Item del sistema.
+ * Factory y registro para ObjectTypes — lógica de creación y gestión.
  *
- * ── HRFC — Items Module Architectural Consolidation ──────────────────────
+ * ── ARQUITECTURA FINAL — Items Module ────────────────────────────────────
+ *
+ * SEPARACIÓN:
+ *   ObjectType        → Contenedor (almacena ItemDefinition + factory)
+ *   ObjectTypeFactory → Lógica de creación y registro
  *
  * RESPONSABILIDAD:
- *   ItemTypeRegistry es la infraestructura central que permite a cada familia
- *   de Items (BulletType, WeaponType, AmuletType) declarar sus tipos mediante
- *   el patrón:
+ *   - Registro de tipos por familia (thread-safe)
+ *   - Consulta de tipos registrados
+ *   - Construcción de pools de oferta ponderados por rareza
  *
- *     NORMALBULLET = register(new BulletType(...));
+ * PATRÓN DE USO:
  *
- *   sin tener que reimplementar su propio sistema de registro.
- *
- * DISEÑO:
- *   - Registro por familia: cada familia (BulletType.class) tiene su propio
- *     namespace aislado para evitar colisiones de IDs entre familias.
- *
- *   - Thread-safe: usa ConcurrentHashMap para permitir registro desde
- *     múltiples bloques static en orden arbitrario.
- *
- *   - Validación estricta: previene registros duplicados y IDs inválidos.
- *
- * ARQUITECTURA:
- *
- *   ItemTypeRegistry (infraestructura común)
- *         │
- *         ├── BulletType.register()  → ItemTypeRegistry.register(BulletType.class, ...)
- *         ├── WeaponType.register()  → ItemTypeRegistry.register(WeaponType.class, ...)
- *         └── AmuletType.register()  → ItemTypeRegistry.register(AmuletType.class, ...)
- *
- * USO DESDE SUBCLASES:
- *
- *   public final class BulletType extends ItemTypeBase<BulletBehavior> {
- *       private static BulletType register(BulletType type) {
- *           return ItemTypeRegistry.register(BulletType.class, type);
- *       }
- *
- *       static {
- *           NORMALBULLET = register(new BulletType(...));
- *       }
+ *   // Desde BulletType:
+ *   private static BulletType register(BulletType type) {
+ *       return ObjectTypeFactory.register(BulletType.class, type);
  *   }
  *
- * PRINCIPIO CLAVE:
- *   "Items proporciona la arquitectura. Los Type especializados declaran los tipos."
- *
- * @see ObjectType  clase base para tipos de Item
+ * EXTENSIBILIDAD:
+ *   Centraliza la lógica de registro para todas las familias de Items.
+ *   Nuevas familias solo necesitan llamar register() con su Class token.
  */
-public final class ItemTypeRegistry {
+public final class ObjectTypeFactory {
 
     /**
      * Almacenamiento por familia.
-     * Estructura: Map<Class<? extends ItemTypeBase>, Map<String, ItemTypeBase>>
-     *
-     * Ejemplo:
-     *   familyRegistries.get(BulletType.class).get("normal_bullet") → BulletType instance
+     * Estructura: Map<Class<? extends ObjectType>, Map<String, ObjectType>>
      */
     private static final Map<Class<? extends ObjectType<?>>, Map<String, ObjectType<?>>>
             familyRegistries = new ConcurrentHashMap<>();
 
     // Constructor privado — clase de utilidad estática
-    private ItemTypeRegistry() {}
+    private ObjectTypeFactory() {}
 
     // ── Registro ──────────────────────────────────────────────────────────
 
@@ -73,31 +47,29 @@ public final class ItemTypeRegistry {
      *
      * VALIDACIÓN:
      *   - Lanza si el ID ya está registrado en la misma familia
-     *   - Lanza si el ID está vacío
      *   - Lanza si el type es null
      *
-     * @param <T>    tipo concreto del ItemTypeBase
+     * @param <T>    tipo concreto del ObjectType
      * @param family clase de la familia (ej: BulletType.class)
      * @param type   instancia del tipo a registrar
      * @return el mismo tipo (para asignación en constantes static)
-     * @throws IllegalArgumentException si type es null o ID es inválido
+     * @throws IllegalArgumentException si type es null
      * @throws IllegalStateException si el ID ya está registrado
      */
     public static <T extends ObjectType<?>> T register(Class<T> family, T type) {
         if (type == null)
             throw new IllegalArgumentException("type no puede ser null");
-        if (type.id == null || type.id.isBlank())
-            throw new IllegalArgumentException("ID no puede estar vacío");
 
+        String id = type.getId().asString();
         Map<String, ObjectType<?>> familyRegistry =
                 familyRegistries.computeIfAbsent(family, k -> new LinkedHashMap<>());
 
-        if (familyRegistry.containsKey(type.id)) {
+        if (familyRegistry.containsKey(id)) {
             throw new IllegalStateException(
-                    family.getSimpleName() + " duplicado: '" + type.id + "'");
+                    family.getSimpleName() + " duplicado: '" + id + "'");
         }
 
-        familyRegistry.put(type.id, type);
+        familyRegistry.put(id, type);
         return type;
     }
 
@@ -106,7 +78,7 @@ public final class ItemTypeRegistry {
     /**
      * Obtiene un tipo por su ID dentro de una familia específica.
      *
-     * @param <T>    tipo concreto del ItemTypeBase
+     * @param <T>    tipo concreto del ObjectType
      * @param family clase de la familia (ej: BulletType.class)
      * @param id     identificador del tipo
      * @return el tipo correspondiente
@@ -125,7 +97,7 @@ public final class ItemTypeRegistry {
     /**
      * Busca un tipo por su ID sin lanzar excepción.
      *
-     * @param <T>    tipo concreto del ItemTypeBase
+     * @param <T>    tipo concreto del ObjectType
      * @param family clase de la familia
      * @param id     identificador del tipo
      * @return el tipo correspondiente, o null si no existe
@@ -139,10 +111,6 @@ public final class ItemTypeRegistry {
 
     /**
      * Verifica si existe un tipo con el ID dado en una familia.
-     *
-     * @param family clase de la familia
-     * @param id     identificador del tipo
-     * @return true si existe, false en caso contrario
      */
     public static boolean has(Class<? extends ObjectType<?>> family, String id) {
         Map<String, ObjectType<?>> familyRegistry = familyRegistries.get(family);
@@ -154,7 +122,7 @@ public final class ItemTypeRegistry {
      *
      * ORDEN: los tipos se retornan en orden de registro (LinkedHashMap).
      *
-     * @param <T>    tipo concreto del ItemTypeBase
+     * @param <T>    tipo concreto del ObjectType
      * @param family clase de la familia
      * @return colección inmutable de todos los tipos registrados
      */
@@ -170,46 +138,69 @@ public final class ItemTypeRegistry {
         return Collections.unmodifiableList(result);
     }
 
-    /**
-     * Retorna el número de tipos registrados en una familia.
-     *
-     * @param family clase de la familia
-     * @return cantidad de tipos registrados
-     */
-    public static int count(Class<? extends ObjectType<?>> family) {
-        Map<String, ObjectType<?>> familyRegistry = familyRegistries.get(family);
-        return familyRegistry != null ? familyRegistry.size() : 0;
-    }
-
-    // ── Introspección (para debugging/testing) ────────────────────────────
-
-    /**
-     * Retorna todas las familias registradas.
-     * Útil para debugging y herramientas de desarrollo.
-     *
-     * @return conjunto inmutable de clases de familia
-     */
-    public static Set<Class<? extends ObjectType<?>>> registeredFamilies() {
-        return Collections.unmodifiableSet(familyRegistries.keySet());
-    }
+    // ── Limpieza (solo para testing) ──────────────────────────────────────
 
     /**
      * Limpia todos los registros.
      *
      * ⚠️ SOLO PARA TESTING — NO usar en código de producción.
-     * Los bloques static se ejecutan una sola vez; limpiar el registry
-     * sin reiniciar la JVM dejará el sistema en estado inconsistente.
      */
     public static void clearAll() {
         familyRegistries.clear();
     }
 
+    // ── Pool de oferta (lógica común) ─────────────────────────────────────
+
     /**
-     * Limpia el registro de una familia específica.
+     * Construye un pool de oferta con selección ponderada por rareza.
      *
-     * ⚠️ SOLO PARA TESTING — NO usar en código de producción.
+     * ALGORITMO:
+     *   1. Filtra según el predicado (ej: no ya obtenidos)
+     *   2. Selección ponderada por ruleta según rareza
+     *   3. Evita duplicados en la misma oferta
+     *
+     * @param <T>      tipo concreto del ObjectType
+     * @param family   clase de la familia
+     * @param filter   predicado para filtrar candidatos
+     * @param maxCount máximo de opciones a ofrecer
+     * @param random   fuente de aleatoriedad
+     * @return lista inmutable de tipos seleccionados
      */
-    public static void clearFamily(Class<? extends ObjectType<?>> family) {
-        familyRegistries.remove(family);
+    public static <T extends ObjectType<?>> java.util.List<T> buildOfferPool(
+            Class<T> family,
+            java.util.function.Predicate<T> filter,
+            int maxCount,
+            java.util.Random random) {
+
+        java.util.Collection<T> all = values(family);
+        java.util.List<T> candidates = all.stream()
+                .filter(filter)
+                .collect(java.util.stream.Collectors.toList());
+
+        if (candidates.isEmpty()) return java.util.List.of();
+
+        // Selección ponderada por rareza
+        int totalWeight = candidates.stream()
+                .mapToInt(type -> type.getRarity().weight)
+                .sum();
+
+        java.util.List<T> result = new java.util.ArrayList<>();
+        java.util.Set<String> selected = new java.util.HashSet<>();
+
+        int attempts = 0;
+        while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
+            attempts++;
+            int roll = random.nextInt(totalWeight);
+            int acc = 0;
+            for (T type : candidates) {
+                acc += type.getRarity().weight;
+                if (roll < acc && !selected.contains(type.getId())) {
+                    result.add(type);
+                    selected.add(type.getId().asString());
+                    break;
+                }
+            }
+        }
+        return java.util.Collections.unmodifiableList(result);
     }
 }

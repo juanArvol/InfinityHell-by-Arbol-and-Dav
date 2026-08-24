@@ -257,7 +257,7 @@ public final class WorldObjectFactory {
      * @param icon      sprite visible (puede ser null — usa el icon de ItemDefinition)
      */
     public static WorldItem worldItem(Vector2D position, ItemStack stack, BufferedImage icon) {
-        BufferedImage sprite = (icon != null) ? icon : stack.getDefinition().icon;
+        BufferedImage sprite = (icon != null) ? icon : stack.getDefinition().getIcon();
         return new WorldItem(position, stack, sprite);
     }
 

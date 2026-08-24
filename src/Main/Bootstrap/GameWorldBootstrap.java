@@ -147,9 +147,9 @@ public final class GameWorldBootstrap {
         //
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
-            .initialWeapons(WeaponType.ESCOPETA)
-            .initialBullets(BulletType.SPRINGBULLET)
-            .initialAmulets()
+            .initialWeapons(WeaponType.PISTOLA)
+            .initialBullets(BulletType.SPRING_BULLET)
+            .initialAmulets("split_crystal")
             .build();
         
         // ── EJEMPLO DE CONFIGURACIÓN DECLARATIVA ─────────────────────────
@@ -233,7 +233,7 @@ public final class GameWorldBootstrap {
      * Este método muestra la sintaxis ergonómica conseguida por el Mini-HRFC:
      * 
      *   PlayerLoadout.initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
-     *       .initialBullets(BulletType.NORMALBULLET, BulletType.SPRINGBULLET)
+     *       .initialBullets(BulletType.NORMAL_BULLET, BulletType.SPRING_BULLET)
      *       .initialAmulets()
      *       .build();
      * 
@@ -256,8 +256,8 @@ public final class GameWorldBootstrap {
                 WeaponType.ESCOPETA
             )
             .initialBullets(
-                BulletType.NORMALBULLET,
-                BulletType.SPRINGBULLET
+                BulletType.NORMAL_BULLET,
+                BulletType.SPRING_BULLET
             )
             .initialAmulets(
                 // Descomentar cuando se necesite testing de amuletos:

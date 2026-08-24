@@ -1,7 +1,6 @@
 package Game.Items.Types.Bullets;
 
 import Game.Items.Types.Ammulets.AmuletDefinition;
-import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
@@ -127,7 +126,7 @@ public final class ProjectileResolver {
         BulletBehavior behavior = bulletType.create();
 
         // 3. Aplicar amuletos del jugador (modifica stats y envuelve behavior)
-        behavior = AmuletRegistry.applyAllFromDefinitions(amulets, effectiveStats, behavior);
+        /* behavior = AmuletRegistry.applyAllFromDefinitions(amulets, effectiveStats, behavior); */
 
         // 4. Cálculos finales con multiplicadores
         // bulletSpeedBase ya está en units/s desde WeaponStats
