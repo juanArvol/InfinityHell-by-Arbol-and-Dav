@@ -211,7 +211,7 @@ public final class PlayerInventory {
      */
     public boolean addAmulet(String amuletId) {
         var definition = AmuletRegistry.get(amuletId);
-        return amulets.add(definition);
+        return amulets.addItem(definition);
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────

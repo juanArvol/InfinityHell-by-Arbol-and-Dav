@@ -68,7 +68,7 @@ public abstract class ObjectType<T> {
         return definition;
     }
 
-    public ItemID getId() {
+    public ItemID getItemId() {
         return definition.getItemId();
     }
 
@@ -113,6 +113,6 @@ public abstract class ObjectType<T> {
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "{id='" + getId() + "', name='" + getDisplayName() + "'}";
+        return getClass().getSimpleName() + "{id='" + getItemId() + "', name='" + getDisplayName() + "'}";
     }
 }

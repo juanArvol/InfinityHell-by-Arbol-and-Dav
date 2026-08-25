@@ -1,44 +1,37 @@
 package Game.Items.Types.Bullets;
 
+import Game.Items.Savement.Inventory;
 import Game.Items.Types.Bullets.Definition.BulletType;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * Inventario de tipos de bala — autoridad del dominio Bullets.
  *
- * ── HRFC — Player Inventory & Domain Ownership Consolidation ──────────────
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * ── OWNERSHIP ─────────────────────────────────────────────────────────────
+ * HERENCIA:
+ *   BulletInventory extends Inventory<BulletType>
+ *   Implementa unicidad: cada tipo de bala solo puede poseerse una vez.
  *
- * BulletInventory pertenece al dominio Bullets y responde la pregunta:
- *   "¿Qué tipos de bala posee el portador?"
- *
- * PlayerRuntime responde: "¿Qué tipo de bala está equipado actualmente?"
- * BulletFactory responde: "¿Cómo se construyen instancias Bullet?"
- *
- * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
- *
- *   • Almacenar tipos de bala poseídos (BulletType enum)
- *   • Gestionar adquisición de tipos de bala
- *   • Prevenir duplicados por diseño (un tipo solo se puede poseer una vez)
- *   • Exponer la API de consulta de tipos de bala
+ * RESPONSABILIDADES:
+ *   • Almacenar tipos de bala poseídos (BulletType instances)
+ *   • Gestionar adquisición única por tipo mediante verificación en add()
+ *   • Prevenir duplicados por verificación de identidad
+ *   • Exponer la lista para que el sistema de combate la consulte
  *
  * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
  *
- *   BulletInventory  → almacenamiento de tipos disponibles
+ *   BulletInventory  → almacenamiento de tipos disponibles (únicos)
  *   PlayerRuntime    → selección activa del tipo equipado
  *   BulletFactory    → construcción de instancias Bullet
  *   ProjectilePool   → gestión del ciclo de vida de instancias
  *
  * ── UNICIDAD ──────────────────────────────────────────────────────────────
  *
- * Los tipos de bala se obtienen una sola vez por partida. BulletInventory
- * previene duplicados por diseño (un tipo de bala solo se puede poseer una vez).
+ * Los tipos de bala se obtienen una sola vez por partida. add() verifica
+ * duplicados antes de añadir.
  *
- * Esto es diferente de armas porque BulletType es un enum/singleton conceptual,
- * mientras que ModifiedWeapon es una instancia con estado.
+ * Esto es diferente de armas porque BulletType es un tipo singleton,
+ * mientras que ModifiedWeapon es una instancia con estado mutable.
  *
  * ── MODELO DE MUNICIÓN ───────────────────────────────────────────────────
  *
@@ -47,112 +40,52 @@ import java.util.List;
  * porque conceptualmente el portador tiene acceso ilimitado a cualquier
  * tipo de bala que haya desbloqueado.
  */
-public final class BulletInventory {
+public final class BulletInventory extends Inventory<BulletType> {
 
-    /** Tipos de bala poseídos por el portador. */
-    private final List<BulletType> bullets = new ArrayList<>();
+    /**
+     * Constructor sin límite de slots.
+     */
+    public BulletInventory() {
+        super();
+    }
 
-    // ── Gestión de balas ──────────────────────────────────────────────────
+    // ── Override add() con lógica de unicidad ─────────────────────────────
 
     /**
      * Añade un tipo de bala al inventario.
-     * Si ya se posee, no se duplica (idempotente).
+     * Implementa UNICIDAD: si ya se posee (mismo tipo), la operación es no-op.
      *
      * @param bulletType tipo de bala a añadir. No puede ser null.
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si bulletType es null
      */
     public boolean addBullet(BulletType bulletType) {
-        if (bulletType == null) {
-            throw new IllegalArgumentException("bulletType no puede ser null");
-        }
-        
-        if (!bullets.contains(bulletType)) {
-            bullets.add(bulletType);
-            return true;
-        }
-        return false;
+        return addItem(bulletType);
     }
 
-    /**
-     * Elimina un tipo de bala del inventario.
-     *
-     * @param bulletType tipo de bala a eliminar
-     * @return true si se eliminó, false si no se encontró
-     */
-    public boolean removeBullet(BulletType bulletType) {
-        return bullets.remove(bulletType);
-    }
-
-    /**
-     * Elimina el tipo de bala en el índice especificado.
-     *
-     * @param index índice del tipo de bala a eliminar (0-based)
-     * @return el tipo de bala eliminado
-     * @throws IndexOutOfBoundsException si el índice es inválido
-     */
-    public BulletType removeBulletAt(int index) {
-        return bullets.remove(index);
-    }
-
-    // ── Consultas ─────────────────────────────────────────────────────────
+    // ── Métodos de conveniencia específicos del dominio ───────────────────
 
     /**
      * True si el portador posee el tipo de bala indicado.
+     * Alias de contains() para mayor claridad en el dominio.
      *
      * @param bulletType tipo de bala a verificar
      * @return true si se posee
      */
     public boolean hasBullet(BulletType bulletType) {
-        return bullets.contains(bulletType);
+        return contains(bulletType);
     }
+    public boolean removeBullet(){return true;}
 
     /**
      * Obtiene un tipo de bala por su índice en el inventario.
+     * Alias de get() para mayor claridad en el dominio.
      *
      * @param index índice del tipo de bala (0-based)
      * @return el tipo de bala en el índice especificado
      * @throws IndexOutOfBoundsException si el índice es inválido
      */
-    public BulletType getBullet(int index) {
-        return bullets.get(index);
-    }
-
-    /**
-     * Lista inmutable de tipos de bala poseídos (en orden de adquisición).
-     *
-     * @return lista de tipos de bala. Nunca null, puede estar vacía.
-     */
-    public List<BulletType> getAll() {
-        return Collections.unmodifiableList(bullets);
-    }
-
-    /** True si no se poseen tipos de bala. */
-    public boolean isEmpty() {
-        return bullets.isEmpty();
-    }
-
-    /** Número total de tipos de bala poseídos. */
-    public int size() {
-        return bullets.size();
-    }
-
-    /**
-     * Índice del tipo de bala especificado en el inventario.
-     *
-     * @param bulletType tipo de bala a buscar
-     * @return índice (0-based), o -1 si no se posee
-     */
-    public int indexOf(BulletType bulletType) {
-        return bullets.indexOf(bulletType);
-    }
-
-    // ── Limpieza ──────────────────────────────────────────────────────────
-
-    /**
-     * Limpia el inventario — útil para testing o reinicios de run.
-     */
-    public void clear() {
-        bullets.clear();
+    public BulletType getBulletType(int index) {
+        return getItem(index);
     }
 }

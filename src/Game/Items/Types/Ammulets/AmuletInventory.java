@@ -1,5 +1,6 @@
 package Game.Items.Types.Ammulets;
 
+import Game.Items.Creation.ItemDefinition;
 import Game.Items.Savement.Inventory;
 
 /**
@@ -8,7 +9,7 @@ import Game.Items.Savement.Inventory;
  * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
  * HERENCIA:
- *   AmuletInventory extends Inventory<AmuletDefinition>
+ *   AmuletInventory extends Inventory<ItemDefinition>
  *   Implementa unicidad: cada amuleto solo puede poseerse una vez.
  *
  * RESPONSABILIDADES:
@@ -19,9 +20,23 @@ import Game.Items.Savement.Inventory;
  *
  * SEPARACIÓN:
  *   AmuletInventory → qué amuletos posee el portador (únicos)
- *   AmuletRegistry  → cómo se resuelven definiciones y comportamientos
+ *   AmuletType      → cómo se resuelven definiciones y comportamientos
+ *
+ * NOTA:
+ *   Almacena ItemDefinition (no AmuletType) porque los amuletos son
+ *   efectos pasivos que se aplican automáticamente. No necesitamos
+ *   el factory de AmuletType en el inventario.
  */
-public final class AmuletInventory extends Inventory<AmuletDefinition> {
+public final class AmuletInventory extends Inventory<ItemDefinition> {
+
+    /**
+     * Constructor sin límite de slots.
+     */
+    public AmuletInventory() {
+        super();
+    }
+
+    // ── Override add() con lógica de unicidad ─────────────────────────────
 
     /**
      * Añade un amuleto al inventario.
@@ -31,20 +46,9 @@ public final class AmuletInventory extends Inventory<AmuletDefinition> {
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si amulet es null
      */
-    @Override
-    public boolean add(AmuletDefinition amulet) {
-        if (amulet == null)
-            throw new IllegalArgumentException("amulet no puede ser null");
+    public boolean addAmulet(ItemDefinition amulet) {
         
-        // Verificar duplicidad por ID
-        for (AmuletDefinition existing : items) {
-            if (existing.getItemId().equals(amulet.getItemId())) {
-                return false; // Ya se posee
-            }
-        }
-        
-        items.add(amulet);
-        return true;
+        return addItem(amulet);
     }
 
     /**
@@ -53,14 +57,14 @@ public final class AmuletInventory extends Inventory<AmuletDefinition> {
      * @param amulet definición del amuleto
      * @return true si se posee
      */
-    public boolean has(AmuletDefinition amulet) {
+    public boolean hasAmulet(ItemDefinition amulet) {
         if (amulet == null) return false;
         
-        for (AmuletDefinition existing : items) {
+        for (ItemDefinition existing : inventoryItem) {
             if (existing.getItemId().equals(amulet.getItemId())) {
                 return true;
             }
         }
-        return false;
+        return contains(amulet);
     }
 }

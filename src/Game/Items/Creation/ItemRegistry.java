@@ -12,10 +12,10 @@ import java.util.Map;
  * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
  * PROPÓSITO: Catálogo de TODAS las definiciones de items del juego.
- * Trabaja con ItemDefinition ABSTRACTO como puente a las concretas:
- *   - WeaponDefinition
- *   - BulletDefinition
- *   - AmuletDefinition
+ * Trabaja con ItemDefinition como base universal para todas las familias:
+ *   - Weapons
+ *   - Bullets
+ *   - Ammulets
  *   - Cualquier otra subclase futura
  *
  * PATRÓN: Singleton de aplicación, inicializado explícitamente con init().
@@ -32,23 +32,35 @@ import java.util.Map;
  */
 public final class ItemRegistry {
 
-    private static ItemRegistry instance;
-
     private final Map<String, ItemDefinition> definitions = new HashMap<>();
 
     private ItemRegistry() {}
 
-    public static void init() {
-        if (instance == null) {
-            instance = new ItemRegistry();
-        }
+    /**
+     * Holder pattern para inicialización lazy thread-safe.
+     * Se inicializa solo cuando se accede por primera vez.
+     */
+
+    /**
+     * Holder pattern para inicialización lazy thread-safe.
+     * Se inicializa solo cuando se accede por primera vez.
+     */
+    private static class Holder {
+        static final ItemRegistry INSTANCE = new ItemRegistry();
     }
 
     public static ItemRegistry getInstance() {
-        if (instance == null) {
-            throw new IllegalStateException("ItemRegistry no fue inicializado. Llamá ItemRegistry.init() primero.");
-        }
-        return instance;
+        return Holder.INSTANCE;
+    }
+
+    /**
+     * @deprecated Usar getInstance() directamente. La inicialización es automática y thread-safe.
+     */
+    @Deprecated
+    public static void init() {
+        // No-op: la inicialización ocurre automáticamente vía Holder
+        // Mantenido por compatibilidad con código existente
+        getInstance();
     }
 
     // ── API estática de conveniencia ──────────────────────────────────────

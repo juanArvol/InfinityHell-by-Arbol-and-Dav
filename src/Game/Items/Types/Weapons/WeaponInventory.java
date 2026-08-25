@@ -58,16 +58,8 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si weapon es null
      */
-    @Override
-    public boolean add(ModifiedWeapon weapon) {
-        if (weapon == null)
-            throw new IllegalArgumentException("weapon no puede ser null");
-        
-        if (!items.contains(weapon)) {
-            items.add(weapon);
-            return true;
-        }
-        return false;
+    public boolean addWeapon(ModifiedWeapon weapon) {
+        return addItem(weapon);
     }
 
     /**
@@ -77,9 +69,8 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * @param weapon arma a eliminar
      * @return true si se eliminó, false si no se encontró
      */
-    @Override
-    public boolean remove(ModifiedWeapon weapon) {
-        boolean removed = items.remove(weapon);
+    public boolean removeWeapon(ModifiedWeapon weapon) {
+        boolean removed = inventoryItem.remove(weapon);
         if (removed) {
             clampIndex();
         }
@@ -89,9 +80,8 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
     /**
      * Elimina el arma en el índice especificado.
      */
-    @Override
     public ModifiedWeapon removeAt(int index) {
-        ModifiedWeapon removed = items.remove(index);
+        ModifiedWeapon removed = inventoryItem.remove(index);
         clampIndex();
         return removed;
     }
@@ -102,32 +92,12 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
     public boolean hasWeapon(WeaponType weaponType) {
         if (weaponType == null) return false;
         
-        for (ModifiedWeapon weapon : items) {
+        for (ModifiedWeapon weapon : inventoryItem) {
             if (weapon.getWeaponType() == weaponType) {
                 return true;
             }
         }
         return false;
-    }
-
-    
-    public boolean addWeapon(ModifiedWeapon weapon) {
-        return add(weapon);
-    }
-
-    
-    public boolean removeWeapon(ModifiedWeapon weapon) {
-        return remove(weapon);
-    }
-
-    
-    public ModifiedWeapon removeWeaponAt(int index) {
-        return removeAt(index);
-    }
-
-    
-    public ModifiedWeapon getWeapon(int index) {
-        return get(index);
     }
 
     // ── Cycling — selección activa ─────────────────────────────────────────
@@ -138,8 +108,8 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * @return arma activa, o null si el inventario está vacío
      */
     public ModifiedWeapon getCurrentWeapon() {
-        if (items.isEmpty()) return null;
-        return items.get(currentIndex);
+        if (inventoryItem.isEmpty()) return null;
+        return inventoryItem.get(currentIndex);
     }
 
     /**
@@ -147,9 +117,9 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * Emite OnWeaponSwitch si el arma cambia.
      */
     public void nextWeapon() {
-        if (items.size() <= 1) return;
+        if (inventoryItem.size() <= 1) return;
         ModifiedWeapon previous = getCurrentWeapon();
-        currentIndex = (currentIndex + 1) % items.size();
+        currentIndex = (currentIndex + 1) % inventoryItem.size();
         emitSwitch(previous, getCurrentWeapon());
     }
 
@@ -158,9 +128,9 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * Emite OnWeaponSwitch si el arma cambia.
      */
     public void previousWeapon() {
-        if (items.size() <= 1) return;
+        if (inventoryItem.size() <= 1) return;
         ModifiedWeapon previous = getCurrentWeapon();
-        currentIndex = (currentIndex - 1 + items.size()) % items.size();
+        currentIndex = (currentIndex - 1 + inventoryItem.size()) % inventoryItem.size();
         emitSwitch(previous, getCurrentWeapon());
     }
 
@@ -169,7 +139,7 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
      * Emite OnWeaponSwitch si el arma cambia.
      */
     public void selectAt(int index) {
-        if (index < 0 || index >= items.size())
+        if (index < 0 || index >= inventoryItem.size())
             throw new IndexOutOfBoundsException("índice fuera de rango: " + index);
         if (index == currentIndex) return;
         ModifiedWeapon previous = getCurrentWeapon();
@@ -186,19 +156,18 @@ public class WeaponInventory extends Inventory<ModifiedWeapon> {
 
     // ── Override clear ────────────────────────────────────────────────────
 
-    @Override
-    public void clear() {
-        super.clear();
+    public void clearWeaponsInventory() {
+        clear();
         currentIndex = 0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private void clampIndex() {
-        if (items.isEmpty()) {
+        if (inventoryItem.isEmpty()) {
             currentIndex = 0;
-        } else if (currentIndex >= items.size()) {
-            currentIndex = items.size() - 1;
+        } else if (currentIndex >= inventoryItem.size()) {
+            currentIndex = inventoryItem.size() - 1;
         }
     }
 

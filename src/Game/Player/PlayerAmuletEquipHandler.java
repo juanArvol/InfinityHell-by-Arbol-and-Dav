@@ -1,8 +1,10 @@
 package Game.Player;
 
 import Game.Gameplay.UI.Aim.AimCapabilityManager;
-import Game.Items.Types.Ammulets.AmuletDefinition;
+import Game.Items.Core.ObjectTypeFactory;
+import Game.Items.Creation.ItemDefinition;
 import Game.Items.Types.Ammulets.AmuletInventory;
+import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Ammulets.Effects.UICapabilityEffect;
 
 /**
@@ -40,7 +42,7 @@ import Game.Items.Types.Ammulets.Effects.UICapabilityEffect;
  * ── USO ───────────────────────────────────────────────────────────────────
  *
  *   // Al obtener amuleto (desde loot, tienda, etc.):
- *   AmuletDefinition amulet = AmuletRegistry.get("marksman_sight");
+ *   ItemDefinition amulet = AmuletRegistry.get("marksman_sight");
  *   if (player.getInventory().amulets().add(amulet)) {
  *       PlayerAmuletEquipHandler.onAmuletEquipped(amulet, player);
  *   }
@@ -63,11 +65,22 @@ public final class PlayerAmuletEquipHandler {
      * @param amulet amuleto que se acaba de equipar
      * @param player jugador que equipa el amuleto
      */
-    public static void onAmuletEquipped(AmuletDefinition amulet, Player player) {
+    public static void onAmuletEquipped(ItemDefinition amulet, Player player) {
         if (amulet == null || player == null) return;
 
+        // Resolver el AmuletType desde la definición
+        AmuletType amuletType = ObjectTypeFactory.find(
+            AmuletType.class, 
+            amulet.getItemId().asString()
+        );
+        
+        if (amuletType == null) return;
+        
+        // Crear una instancia del efecto
+        var effect = amuletType.createEffect();
+
         // Detectar si el efecto concede capabilities de UI
-        if (amulet.effect instanceof UICapabilityEffect uiEffect) {
+        if (effect instanceof UICapabilityEffect uiEffect) {
             AimCapabilityManager aimCapabilities = player.getAimCapabilities();
             if (aimCapabilities != null) {
                 // Crear y añadir la capability
@@ -87,11 +100,22 @@ public final class PlayerAmuletEquipHandler {
      * @param amulet amuleto que se acaba de desequipar
      * @param player jugador que desequipa el amuleto
      */
-    public static void onAmuletUnequipped(AmuletDefinition amulet, Player player) {
+    public static void onAmuletUnequipped(ItemDefinition amulet, Player player) {
         if (amulet == null || player == null) return;
 
+        // Resolver el AmuletType desde la definición
+        AmuletType amuletType = ObjectTypeFactory.find(
+            AmuletType.class, 
+            amulet.getItemId().asString()
+        );
+        
+        if (amuletType == null) return;
+        
+        // Crear una instancia del efecto
+        var effect = amuletType.createEffect();
+
         // Detectar si el efecto concede capabilities de UI
-        if (amulet.effect instanceof UICapabilityEffect uiEffect) {
+        if (effect instanceof UICapabilityEffect uiEffect) {
             AimCapabilityManager aimCapabilities = player.getAimCapabilities();
             if (aimCapabilities != null) {
                 // Obtener la clase de capability y removerla
@@ -122,8 +146,19 @@ public final class PlayerAmuletEquipHandler {
         aimCapabilities.clear();
 
         // Re-aplicar todas las capabilities desde el inventario
-        for (AmuletDefinition amulet : amulets.getAll()) {
-            if (amulet.effect instanceof UICapabilityEffect uiEffect) {
+        for (ItemDefinition amulet : amulets.getAll()) {
+            // Resolver el AmuletType desde la definición
+            AmuletType amuletType = ObjectTypeFactory.find(
+                AmuletType.class, 
+                amulet.getItemId().asString()
+            );
+            
+            if (amuletType == null) continue;
+            
+            // Crear una instancia del efecto
+            var effect = amuletType.createEffect();
+            
+            if (effect instanceof UICapabilityEffect uiEffect) {
                 aimCapabilities.add(uiEffect.createCapability());
             }
         }

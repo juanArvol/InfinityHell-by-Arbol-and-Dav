@@ -303,9 +303,9 @@ public final class PlayerAssembler {
 
         // ── MINI-HRFC — BOOTSTRAP DECLARATIVO ─────────────────────────────
         // Añadir todos los amuletos del loadout al inventario.
-        // Los amuletos del loadout ya son AmuletDefinition (no IDs).
+        // Los amuletos del loadout ya son ItemDefinition (no IDs).
         // Se añaden directamente al AmuletInventory sin resolución adicional.
-        for (Game.Items.Types.Ammulets.AmuletDefinition amulet : loadout.getAmulets()) {
+        for (Game.Items.Creation.ItemDefinition amulet : loadout.getAmulets()) {
             amulets.add(amulet);
         }
 

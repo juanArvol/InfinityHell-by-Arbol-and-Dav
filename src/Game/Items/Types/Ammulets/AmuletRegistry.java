@@ -134,10 +134,11 @@ public final class AmuletRegistry {
     // ── API de compatibilidad (delegación a AmuletType) ───────────────────
 
     /**
-     * @deprecated Usar AmuletType directamente. Este método existe solo para compatibilidad.
+     * @deprecated Los tipos de amuleto ahora se registran en AmuletType via static initializers.
+     *             Este método mantiene compatibilidad pero ya no es necesario.
      */
     @Deprecated
-    public static void register(AmuletDefinition def) {
+    public static void register(Game.Items.Creation.ItemDefinition def) {
         // No-op: definitions ya no se almacenan aquí
         // Las llamadas legacy se ignoran silenciosamente para evitar romper código existente
     }
@@ -145,21 +146,15 @@ public final class AmuletRegistry {
     /**
      * Obtiene una definición por ID.
      * 
-     * COMPATIBILIDAD: Adapta AmuletType a AmuletDefinition para código legacy.
+     * COMPATIBILIDAD: Retorna la ItemDefinition del AmuletType especificado.
      *
      * @param id identificador del amuleto
      * @return definición del amuleto
      * @throws IllegalArgumentException si no existe
      */
-    public static AmuletDefinition get(String id) {
+    public static Game.Items.Creation.ItemDefinition get(String id) {
         AmuletType type = ObjectTypeFactory.get(AmuletType.class, id);
-        return new AmuletDefinition(
-            type.getDefinition().getIdAsString(),
-            type.getDisplayName(),
-            type.getDescription(),
-            type.getRarity(),
-            type.createEffect()
-        );
+        return type.getDefinition();
     }
 
     /**

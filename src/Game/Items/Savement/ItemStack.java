@@ -8,16 +8,32 @@ import Game.Items.Creation.ItemDefinition;
  * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
  * ItemStack trabaja con ItemDefinition ABSTRACTO como puente a las
- * definiciones concretas (WeaponDefinition, BulletDefinition, AmuletDefinition).
+ * definiciones concretas (compartidas entre familias de Items).
  *
  * SEPARACIÓN DE RESPONSABILIDADES:
  *   ItemDefinition → "qué cosa es" (datos estáticos, compartidos)
  *   ItemStack      → "cuántos tengo" (estado por instancia de inventario)
  *
- * Para ítems no apilables (armas, armadura), usar count=1.
- * Para munición/recursos, count puede ser mayor.
+ * ── STACKING LIMITS ──────────────────────────────────────────────────────
  *
- * Uso:
+ * DISEÑO ACTUAL:
+ *   ItemStack NO tiene límite máximo de apilamiento por diseño.
+ *   Cada ItemStack puede tener count desde 0 hasta Integer.MAX_VALUE.
+ *
+ * RAZONES:
+ *   1. Simplicidad: no todas las definiciones necesitan límites
+ *   2. Flexibilidad: el límite puede aplicarse a nivel de inventario
+ *   3. Performance: sin checks adicionales en operaciones básicas
+ *
+ * PARA ITEMS NO APILABLES:
+ *   Usar count=1 y manejar unicidad en la capa de inventario.
+ *   Ejemplo: WeaponInventory previene duplicados en add()
+ *
+ * PARA ITEMS APILABLES CON LÍMITE:
+ *   Si en el futuro se necesitan límites por definición (ej: "max 99 por stack"),
+ *   agregar un campo maxStackSize a ItemDefinition y validar en add().
+ *
+ * USO:
  *   ItemStack potions = new ItemStack(potionDef, 3);
  *   ItemStack sword   = new ItemStack(swordDef);  // count = 1
  *   potions.add(2);    // potions.count = 5

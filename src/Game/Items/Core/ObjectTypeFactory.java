@@ -60,7 +60,7 @@ public final class ObjectTypeFactory {
         if (type == null)
             throw new IllegalArgumentException("type no puede ser null");
 
-        String id = type.getId().asString();
+        String id = type.getItemId().asString();
         Map<String, ObjectType<?>> familyRegistry =
                 familyRegistries.computeIfAbsent(family, k -> new LinkedHashMap<>());
 
@@ -84,7 +84,6 @@ public final class ObjectTypeFactory {
      * @return el tipo correspondiente
      * @throws IllegalArgumentException si el tipo no existe
      */
-    @SuppressWarnings("unchecked")
     public static <T extends ObjectType<?>> T get(Class<T> family, String id) {
         T type = find(family, id);
         if (type == null) {
@@ -102,7 +101,7 @@ public final class ObjectTypeFactory {
      * @param id     identificador del tipo
      * @return el tipo correspondiente, o null si no existe
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings("unchecked") // Cast seguro debido al uso de class token
     public static <T extends ObjectType<?>> T find(Class<T> family, String id) {
         Map<String, ObjectType<?>> familyRegistry = familyRegistries.get(family);
         if (familyRegistry == null) return null;
@@ -126,7 +125,7 @@ public final class ObjectTypeFactory {
      * @param family clase de la familia
      * @return colección inmutable de todos los tipos registrados
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings("unchecked") // Cast seguro debido al uso de class token
     public static <T extends ObjectType<?>> Collection<T> values(Class<T> family) {
         Map<String, ObjectType<?>> familyRegistry = familyRegistries.get(family);
         if (familyRegistry == null) return Collections.emptyList();
@@ -194,9 +193,9 @@ public final class ObjectTypeFactory {
             int acc = 0;
             for (T type : candidates) {
                 acc += type.getRarity().weight;
-                if (roll < acc && !selected.contains(type.getId())) {
+                if (roll < acc && !selected.contains(type.getItemId().asString())) {
                     result.add(type);
-                    selected.add(type.getId().asString());
+                    selected.add(type.getItemId().asString());
                     break;
                 }
             }

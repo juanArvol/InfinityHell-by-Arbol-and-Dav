@@ -57,7 +57,7 @@ public final class WeaponRegistry {
 
     private static WeaponRegistry instance;
 
-    private final Map<String, WeaponDefinition> definitions = new LinkedHashMap<>();
+    private final Map<String, Game.Items.Creation.ItemDefinition> definitions = new LinkedHashMap<>();
 
     // Permite al diseñador sobreescribir rarezas desde configuración externa
     private final Map<String, ItemRarity> rarityOverrides = new HashMap<>();
@@ -79,74 +79,29 @@ public final class WeaponRegistry {
     }
 
     /**
-     * Registra todas las armas del juego.
-     * Llamar UNA VEZ tras init(), desde GameState.init().
-     *
-     * ── AQUÍ VA EL BALANCE ───────────────────────────────────────────────
-     * Añade nuevas armas aquí. La rareza es el DEFAULT; puede cambiarse
-     * externamente con overrideRarity().
+     * Método deprecated — las armas ahora se registran en WeaponType.
+     * 
+     * @deprecated Las armas se declaran en WeaponType static block.
+     *             Este método no hace nada y existe solo para compatibilidad.
      */
+    @Deprecated
     public static void registerDefaults() {
-        WeaponRegistry reg = getInstance();
-
-        // Importar las clases de WeaponComport concretas aquí:
-        // import Game.Weapons.WeaponType.WeaponClass.*;
-
-        reg.register(new WeaponDefinition(
-            "ethereal_revolver",
-            "Revólver Etéreo",
-            "Un revólver forjado con materia del vacío. Disparo único, preciso.",
-            ItemRarity.COMMON,
-            // () -> new WeaponRevolver()   ← reemplaza con tu clase real
-            () -> { throw new UnsupportedOperationException("Implementar WeaponRevolver"); }
-        ));
-
-        reg.register(new WeaponDefinition(
-            "soul_caster",
-            "Lanzador de Almas",
-            "Dispara ráfagas de energía espectral. Alta cadencia, bajo daño por proyectil.",
-            ItemRarity.UNCOMMON,
-            () -> { throw new UnsupportedOperationException("Implementar WeaponSoulCaster"); }
-        ));
-
-        reg.register(new WeaponDefinition(
-            "void_scatter",
-            "Dispersor del Vacío",
-            "Dispara múltiples esquirlas en cono. Devastador a corta distancia.",
-            ItemRarity.UNCOMMON,
-            // () -> new WeaponEscopeta()   ← tu clase existente
-            () -> { throw new UnsupportedOperationException("Implementar WeaponVoidScatter"); }
-        ));
-
-        reg.register(new WeaponDefinition(
-            "rift_cannon",
-            "Cañón de Fisura",
-            "Proyectil lento pero con área de impacto. Modo carga disponible.",
-            ItemRarity.RARE,
-            () -> { throw new UnsupportedOperationException("Implementar WeaponRiftCannon"); }
-        ));
-
-        reg.register(new WeaponDefinition(
-            "phase_lance",
-            "Lanza de Fase",
-            "Disparo único que atraviesa todo. Cooldown muy alto.",
-            ItemRarity.EPIC,
-            () -> { throw new UnsupportedOperationException("Implementar WeaponPhaseLance"); }
-        ));
+        // No-op: las armas se declaran ahora en WeaponType static block
+        // Mantenido solo para evitar romper código que llama a este método
     }
 
     // ── API ───────────────────────────────────────────────────────────────
 
-    public static void register(WeaponDefinition def) {
+    public static void register(Game.Items.Creation.ItemDefinition def) {
         WeaponRegistry reg = getInstance();
-        if (reg.definitions.containsKey(def.id)) {
-            throw new IllegalStateException("WeaponDefinition duplicada: '" + def.id + "'");
+        if (reg.definitions.containsKey(def.getIdAsString())) {
+            throw new IllegalStateException("WeaponDefinition duplicada: '" + def.getIdAsString() + "'");
         }
-        reg.definitions.put(def.id, def);
+        reg.definitions.put(def.getIdAsString(), def);
     }
 
-    public static WeaponDefinition get(String id) {
-        WeaponDefinition def = getInstance().definitions.get(id);
+    public static Game.Items.Creation.ItemDefinition get(String id) {
+        Game.Items.Creation.ItemDefinition def = getInstance().definitions.get(id);
         if (def == null) throw new IllegalArgumentException(
             "WeaponDefinition no encontrada: '" + id + "'");
         return def;
@@ -156,7 +111,7 @@ public final class WeaponRegistry {
         return getInstance().definitions.containsKey(id);
     }
 
-    public static Collection<WeaponDefinition> all() {
+    public static Collection<Game.Items.Creation.ItemDefinition> all() {
         return Collections.unmodifiableCollection(getInstance().definitions.values());
     }
 
@@ -177,7 +132,7 @@ public final class WeaponRegistry {
     public static ItemRarity getRarity(String weaponId) {
         WeaponRegistry reg = getInstance();
         ItemRarity override = reg.rarityOverrides.get(weaponId);
-        return override != null ? override : get(weaponId).rarity;
+        return override != null ? override : get(weaponId).getRarity();
     }
 
     /**
@@ -190,17 +145,17 @@ public final class WeaponRegistry {
      * @param alreadyOwned IDs de armas que el jugador ya tiene
      * @param maxCount     máximo de opciones a ofrecer
      * @param random       fuente de aleatoriedad
-     * @return lista de WeaponDefinitions disponibles (ya filtradas y seleccionadas)
+     * @return lista de ItemDefinitions disponibles (ya filtradas y seleccionadas)
      */
-    public static List<WeaponDefinition> buildOfferPool(
+    public static List<Game.Items.Creation.ItemDefinition> buildOfferPool(
             Set<String> alreadyOwned, int maxCount, Random random) {
 
         WeaponRegistry reg = getInstance();
 
         // Pool de candidatos: todas las armas que el jugador aún no tiene
-        List<WeaponDefinition> candidates = new ArrayList<>();
-        for (WeaponDefinition def : reg.definitions.values()) {
-            if (!alreadyOwned.contains(def.id)) {
+        List<Game.Items.Creation.ItemDefinition> candidates = new ArrayList<>();
+        for (Game.Items.Creation.ItemDefinition def : reg.definitions.values()) {
+            if (!alreadyOwned.contains(def.getIdAsString())) {
                 candidates.add(def);
             }
         }
@@ -208,10 +163,10 @@ public final class WeaponRegistry {
 
         // Selección ponderada por rareza (ruleta)
         int totalWeight = candidates.stream()
-            .mapToInt(d -> getRarity(d.id).weight)
+            .mapToInt(d -> getRarity(d.getDescription()).weight)
             .sum();
 
-        List<WeaponDefinition> result = new ArrayList<>();
+        List<Game.Items.Creation.ItemDefinition> result = new ArrayList<>();
         Set<String> selected = new HashSet<>();
 
         int attempts = 0;
@@ -219,11 +174,11 @@ public final class WeaponRegistry {
             attempts++;
             int roll = random.nextInt(totalWeight);
             int acc  = 0;
-            for (WeaponDefinition d : candidates) {
-                acc += getRarity(d.id).weight;
-                if (roll < acc && !selected.contains(d.id)) {
+            for (Game.Items.Creation.ItemDefinition d : candidates) {
+                acc += getRarity(d.getIdAsString()).weight;
+                if (roll < acc && !selected.contains(d.getIdAsString())) {
                     result.add(d);
-                    selected.add(d.id);
+                    selected.add(d.getIdAsString());
                     break;
                 }
             }

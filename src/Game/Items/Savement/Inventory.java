@@ -20,21 +20,39 @@ import java.util.List;
  *     - Lógica específica de adición/remoción
  *     - Comportamiento de unicidad o acumulación
  *
+ * ── LÍMITE DE SLOTS ──────────────────────────────────────────────────────
+ *
+ * maxSlots controla el número máximo de SLOTS (posiciones) en el inventario,
+ * NO la cantidad total de items.
+ *
+ * EJEMPLO:
+ *   Inventory<ItemStack> inv = new Inventory<>(3);  // 3 slots
+ *   inv.add(new ItemStack(potion, 50));  // Slot 1: 50 pociones
+ *   inv.add(new ItemStack(sword, 1));    // Slot 2: 1 espada
+ *   inv.add(new ItemStack(arrow, 999));  // Slot 3: 999 flechas
+ *   inv.add(new ItemStack(shield, 1));   // ❌ RECHAZADO: no hay slots
+ *
+ * NOTA: La implementación base NO verifica maxSlots en add().
+ *       Las subclases deben implementar esta validación si la necesitan.
+ *
  * PATRÓN:
  *   Las subclases concretas (WeaponInventory, AmuletInventory, etc.) heredan
  *   de esta clase y especifican su tipo:
  *     - WeaponInventory extends Inventory<ModifiedWeapon>
- *     - AmuletInventory extends Inventory<AmuletDefinition>
+ *     - AmuletInventory extends Inventory<ItemDefinition>
+ *     - BulletInventory extends Inventory<BulletType>
  *   
  *   También puede usarse directamente:
  *     - Inventory<ItemStack> para items stackeables genéricos
+ *     - ItemStackInventory para stacking automático
  *
  * @param <T> tipo de objeto almacenado en el inventario
+ * @see ItemStackInventory para inventario con stacking automático
  */
 public class Inventory<T> {
 
     /** Items almacenados. Protected para que subclases accedan directamente. */
-    protected final List<T> items = new ArrayList<>();
+    protected final List<T> inventoryItem = new ArrayList<>();
     
     /** Máximo de items permitidos. */
     protected final int maxSlots;
@@ -65,41 +83,19 @@ public class Inventory<T> {
      * @return true si se añadió, false si no
      * @throws IllegalArgumentException si item es null
      */
-    public boolean add(T item) {
+    public boolean addItem(T item) {
         if (item == null)
-            throw new IllegalArgumentException("item no puede ser null");
-        return items.add(item);
-    }
-
-    /**
-     * Añade un ItemStack al inventario (para inventarios genéricos).
-     * Si ya existe un stack de la misma definición, incrementa su count.
-     * Si no, crea un nuevo slot.
-     *
-     * @param stack stack a añadir
-     * @return true si se añadió completamente, false si hubo overflow
-     */
-    @SuppressWarnings("unchecked")
-    public boolean addItem(Object stack) {
-        if (!(stack instanceof Game.Items.Savement.ItemStack)) return false;
-        Game.Items.Savement.ItemStack itemStack = (Game.Items.Savement.ItemStack) stack;
+            throw new IllegalArgumentException(item + "no puede ser null");
         
-        if (itemStack.isEmpty()) return false;
+        // Si el inventario está lleno, rechazar
+        if (inventoryItem.size() >= maxSlots)
+            return false;
 
-        // Buscar stack existente de la misma definición
-        for (T existing : items) {
-            if (existing instanceof Game.Items.Savement.ItemStack) {
-                Game.Items.Savement.ItemStack existingStack = (Game.Items.Savement.ItemStack) existing;
-                if (existingStack.getDefinition().equals(itemStack.getDefinition())) {
-                    existingStack.add(itemStack.getCount());
-                    return true;
-                }
-            }
-        }
-
-        // No existe, crear nuevo slot
-        items.add((T) itemStack);
-        return true;
+        // Verificar duplicidad por identidad
+        if (inventoryItem.contains(item))
+            return false;
+        
+        return inventoryItem.add(item);
     }
 
     /**
@@ -109,7 +105,7 @@ public class Inventory<T> {
      * @return true si se eliminó, false si no se encontró
      */
     public boolean remove(T item) {
-        return items.remove(item);
+        return inventoryItem.remove(item);
     }
 
     /**
@@ -120,7 +116,7 @@ public class Inventory<T> {
      * @throws IndexOutOfBoundsException si el índice es inválido
      */
     public T removeAt(int index) {
-        return items.remove(index);
+        return inventoryItem.remove(index);
     }
 
     /**
@@ -130,7 +126,7 @@ public class Inventory<T> {
      * @return true si se posee
      */
     public boolean contains(T item) {
-        return items.contains(item);
+        return inventoryItem.contains(item);
     }
 
     // ── Acceso ────────────────────────────────────────────────────────────
@@ -142,8 +138,8 @@ public class Inventory<T> {
      * @return el item en el índice especificado
      * @throws IndexOutOfBoundsException si el índice es inválido
      */
-    public T get(int index) {
-        return items.get(index);
+    public T getItem(int index) {
+        return inventoryItem.get(index);
     }
 
     /**
@@ -152,34 +148,41 @@ public class Inventory<T> {
      * @return lista de items. Nunca null, puede estar vacía.
      */
     public List<T> getAll() {
-        return Collections.unmodifiableList(items);
+        return Collections.unmodifiableList(inventoryItem);
     }
 
     // ── Consultas ─────────────────────────────────────────────────────────
 
     /** Número total de items almacenados. */
     public int size() {
-        return items.size();
+        return inventoryItem.size();
     }
 
     /** True si no hay items. */
     public boolean isEmpty() {
-        return items.isEmpty();
+        return inventoryItem.isEmpty();
     }
 
+    /* private void clampIndex() {
+        if (inventoryItem.isEmpty()) {
+            currentIndex = 0;
+        } else if (currentIndex >= inventoryItem.size()) {
+            currentIndex = inventoryItem.size() - 1;
+        }
+    } */
     // ── Limpieza ──────────────────────────────────────────────────────────
 
     /**
      * Limpia todos los items — útil para testing o reinicios de run.
      */
     public void clear() {
-        items.clear();
+        inventoryItem.clear();
     }
 
     // ── Object identity ───────────────────────────────────────────────────
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + "{items=" + items.size() + "}";
+        return getClass().getSimpleName() + "{items=" + inventoryItem.size() + "}";
     }
 }

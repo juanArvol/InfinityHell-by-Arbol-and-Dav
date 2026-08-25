@@ -22,7 +22,7 @@ import Game.Items.VisualDefinition;
  * JERARQUÍA:
  *   ItemDefinition (concreta, puede instanciarse directamente)
  *     ├─ Se usa directamente en BulletDefinition, WeaponDefinitions, AmuletDefinitions
- *     └─ Legacy: AmuletDefinition/WeaponDefinition extienden (compatibilidad)
+ *     └─ Las familias de Types usan ItemDefinition directamente sin herencia
  *
  * RESPONSABILIDAD:
  *   Representa los DATOS del Item — su plantilla estática.
@@ -30,8 +30,6 @@ import Game.Items.VisualDefinition;
  *   BulletBehavior, WeaponComport, AmuletEffect).
  *
  * @see Game.Items.VisualDefinition
- * @see Game.Items.Types.Weapons.WeaponDefinition
- * @see Game.Items.Types.Ammulets.AmuletDefinition
  */
 public class ItemDefinition {
 
