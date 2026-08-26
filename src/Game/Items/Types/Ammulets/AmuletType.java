@@ -114,7 +114,8 @@ public final class AmuletType extends ObjectType<AmuletEffect> {
             () -> new AmuletEffect() {
                 @Override
                 public void applyToStats(WeaponStats stats) {
-                    stats.setBulletsPerShot(stats.getBulletsPerShot() + 100);
+                    stats.setBulletsPerShot(stats.getBulletsPerShot() + 1);
+                    System.out.println("me dividi por mil baby");
                 }
             }
         ));

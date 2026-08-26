@@ -2,6 +2,7 @@ package Game.Player;
 
 import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Ammulets.AmuletRegistry;
+import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.BulletInventory;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.ModifiedWeapon;
@@ -209,9 +210,8 @@ public final class PlayerInventory {
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si amuletId es null o no existe
      */
-    public boolean addAmulet(String amuletId) {
-        var definition = AmuletRegistry.get(amuletId);
-        return amulets.addItem(definition);
+    public boolean addAmulet(AmuletType amuletType) {
+        return amulets.addAmulet(amuletType);
     }
 
     // ── Consultas de estado ───────────────────────────────────────────────

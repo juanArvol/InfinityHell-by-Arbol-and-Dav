@@ -1,8 +1,8 @@
 package Game.Items.Types.Weapons;
 
-import Game.Items.VisualDefinition;
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
+import Game.Items.Creation.VisualDefinition;
 
 /**
  * Definiciones estáticas de tipos de arma.

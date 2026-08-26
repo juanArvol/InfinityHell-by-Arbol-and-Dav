@@ -53,16 +53,6 @@ public final class ItemRegistry {
         return Holder.INSTANCE;
     }
 
-    /**
-     * @deprecated Usar getInstance() directamente. La inicialización es automática y thread-safe.
-     */
-    @Deprecated
-    public static void init() {
-        // No-op: la inicialización ocurre automáticamente vía Holder
-        // Mantenido por compatibilidad con código existente
-        getInstance();
-    }
-
     // ── API estática de conveniencia ──────────────────────────────────────
 
     /** Registra una definición. Lanza si el ID ya existe. */

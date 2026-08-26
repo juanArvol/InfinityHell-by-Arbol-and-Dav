@@ -1,8 +1,7 @@
 package Game.Items.Types.Weapons;
 
-import java.util.*;
-
 import Game.Items.Creation.ItemRarity;
+import java.util.*;
 
 /**
  * Registro central de todas las armas disponibles en el juego.
@@ -78,18 +77,6 @@ public final class WeaponRegistry {
         return instance;
     }
 
-    /**
-     * Método deprecated — las armas ahora se registran en WeaponType.
-     * 
-     * @deprecated Las armas se declaran en WeaponType static block.
-     *             Este método no hace nada y existe solo para compatibilidad.
-     */
-    @Deprecated
-    public static void registerDefaults() {
-        // No-op: las armas se declaran ahora en WeaponType static block
-        // Mantenido solo para evitar romper código que llama a este método
-    }
-
     // ── API ───────────────────────────────────────────────────────────────
 
     public static void register(Game.Items.Creation.ItemDefinition def) {
@@ -163,7 +150,7 @@ public final class WeaponRegistry {
 
         // Selección ponderada por rareza (ruleta)
         int totalWeight = candidates.stream()
-            .mapToInt(d -> getRarity(d.getDescription()).weight)
+            .mapToInt(d -> getRarity(d.getIdAsString()).weight)
             .sum();
 
         List<Game.Items.Creation.ItemDefinition> result = new ArrayList<>();

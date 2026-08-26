@@ -11,7 +11,7 @@ import Game.Engine.MovingObjects;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Game.Gameplay.Aimm.AimSelection;
 import Game.Items.Savement.EquippedItems;
-import Game.Items.Savement.Inventory;
+import Game.Items.Savement.Types.Inventory;
 import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Sprites.Entity.Player.PlayerAssets;

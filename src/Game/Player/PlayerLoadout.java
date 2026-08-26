@@ -1,6 +1,6 @@
 package Game.Player;
 
-import Game.Items.Creation.ItemDefinition;
+import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
 import java.util.ArrayList;
@@ -110,11 +110,11 @@ public final class PlayerLoadout {
     private final List<BulletType> bullets;
 
     /** Definiciones de amuletos que el jugador comienza equipados. */
-    private final List<ItemDefinition> amulets;
+    private final List<AmuletType> amulets;
 
     private PlayerLoadout(List<WeaponType> weapons, 
                           List<BulletType> bullets,
-                          List<ItemDefinition> amulets) {
+                          List<AmuletType> amulets) {
         this.weapons = Collections.unmodifiableList(new ArrayList<>(weapons));
         this.bullets = Collections.unmodifiableList(new ArrayList<>(bullets));
         this.amulets = Collections.unmodifiableList(new ArrayList<>(amulets));
@@ -143,7 +143,7 @@ public final class PlayerLoadout {
      *
      * @return lista de ItemDefinition (puede estar vacía). Nunca null.
      */
-    public List<ItemDefinition> getAmulets() { return amulets; }
+    public List<AmuletType> getAmulets() { return amulets; }
 
     // ── HRFC — Consolidación y Limpieza de Legacy ────────────────────────
     // getBulletType() fue eliminado. PlayerLoadout ahora maneja listas completas.
@@ -208,13 +208,10 @@ public final class PlayerLoadout {
      * @return builder configurado con los amuletos especificados
      * @throws IllegalArgumentException si algún ID no está registrado
      */
-    public static Builder initialAmulets(String... amuletIds) {
+    public static Builder initialAmulets(AmuletType... amulets) {
         Builder builder = new Builder();
-        for (String amuletId : amuletIds) {
-            // Resolver ID a ItemDefinition
-            // AmuletRegistry.get() lanza IllegalArgumentException si el ID no existe
-            ItemDefinition definition = Game.Items.Types.Ammulets.AmuletRegistry.get(amuletId);
-            builder.amulet(definition);
+        for (AmuletType amulet : amulets) {
+            builder.amulet(amulet);
         }
         return builder;
     }
@@ -239,7 +236,7 @@ public final class PlayerLoadout {
 
         private final List<WeaponType> weapons = new ArrayList<>();
         private final List<BulletType> bullets = new ArrayList<>();
-        private final List<ItemDefinition> amulets = new ArrayList<>();
+        private final List<AmuletType> amulets = new ArrayList<>();
 
         private Builder() {}
 
@@ -280,6 +277,31 @@ public final class PlayerLoadout {
         }
 
         /**
+         * Añade un amuleto al loadout.
+         *
+         * ── MINI-HRFC — BOOTSTRAP DECLARATIVO ────────────────────────────
+         *
+         * Los amuletos utilizan las abstracciones reales del sistema:
+         * ItemDefinition desde AmuletRegistry, no IDs String directamente.
+         *
+         * ── API INTERNA ───────────────────────────────────────────────────
+         * Este método es interno y solo se usa desde los métodos estáticos
+         * de configuración declarativa.
+         *
+         * Uso:
+         *   builder.amulet(AmuletRegistry.get("bone_tip"))
+         *
+         * @param amulet definición del amuleto a equipar. No puede ser null.
+         * @return this.
+         */
+        private Builder amulet(AmuletType amulet) {
+            if (amulet == null)
+                throw new IllegalArgumentException("amulet no puede ser null");
+            amulets.add(amulet);
+            return this;
+        }
+
+        /**
          * Configura las balas iniciales del loadout.
          * 
          * ── API DECLARATIVA FLUIDA ────────────────────────────────────────
@@ -302,31 +324,6 @@ public final class PlayerLoadout {
         }
 
         /**
-         * Añade un amuleto al loadout.
-         *
-         * ── MINI-HRFC — BOOTSTRAP DECLARATIVO ────────────────────────────
-         *
-         * Los amuletos utilizan las abstracciones reales del sistema:
-         * ItemDefinition desde AmuletRegistry, no IDs String directamente.
-         *
-         * ── API INTERNA ───────────────────────────────────────────────────
-         * Este método es interno y solo se usa desde los métodos estáticos
-         * de configuración declarativa.
-         *
-         * Uso:
-         *   builder.amulet(AmuletRegistry.get("bone_tip"))
-         *
-         * @param amulet definición del amuleto a equipar. No puede ser null.
-         * @return this.
-         */
-        private Builder amulet(ItemDefinition amulet) {
-            if (amulet == null)
-                throw new IllegalArgumentException("amulet no puede ser null");
-            amulets.add(amulet);
-            return this;
-        }
-
-        /**
          * Configura los amuletos iniciales del loadout.
          * 
          * ── API DECLARATIVA FLUIDA ────────────────────────────────────────
@@ -343,11 +340,9 @@ public final class PlayerLoadout {
          * @return this.
          * @throws IllegalArgumentException si algún ID no está registrado
          */
-        public Builder initialAmulets(String... amuletIds) {
-            for (String amuletId : amuletIds) {
-                // Resolver ID a ItemDefinition
-                ItemDefinition definition = Game.Items.Types.Ammulets.AmuletRegistry.get(amuletId);
-                amulet(definition);
+        public Builder initialAmulets(AmuletType... amulets) {
+            for (AmuletType amulet : amulets) {
+                amulet(amulet);
             }
             return this;
         }

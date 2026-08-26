@@ -1,7 +1,5 @@
 package Game.Items.Creation;
 
-import Game.Items.VisualDefinition;
-
 /**
  * Clase base para todas las definiciones de Items del juego.
  *
@@ -29,7 +27,7 @@ import Game.Items.VisualDefinition;
  *   NO representa el comportamiento en runtime (eso es responsabilidad de
  *   BulletBehavior, WeaponComport, AmuletEffect).
  *
- * @see Game.Items.VisualDefinition
+ * @see Game.Items.Creation.VisualDefinition
  */
 public class ItemDefinition {
 

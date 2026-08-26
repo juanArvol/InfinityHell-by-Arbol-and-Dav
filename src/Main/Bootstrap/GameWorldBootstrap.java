@@ -4,6 +4,7 @@ import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemRegistry;
+import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
 import Game.Items.Types.Bullets.Capability.ProjectileSpawningCapability;
 import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
@@ -78,7 +79,7 @@ public final class GameWorldBootstrap {
         eventBus = worldManager.getEventBus();
 
         // ── Registros globales de ítems ──────────────────────────────────
-        ItemRegistry.init();
+        ItemRegistry.getInstance();
 
         // ── ProjectileContext — ANTES de crear el Player ─────────────────
         // 
@@ -149,7 +150,7 @@ public final class GameWorldBootstrap {
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
             .initialBullets(BulletType.SPRING_BULLET)
-            .initialAmulets("split_crystal")
+            .initialAmulets(AmuletType.SPLIT_CRYSTAL)
             .build();
         
         // ── EJEMPLO DE CONFIGURACIÓN DECLARATIVA ─────────────────────────

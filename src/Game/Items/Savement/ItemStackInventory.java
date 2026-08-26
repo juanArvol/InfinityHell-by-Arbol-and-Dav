@@ -1,5 +1,7 @@
 package Game.Items.Savement;
 
+import Game.Items.Savement.Types.Inventory;
+
 /**
  * Inventario especializado para ItemStack con lógica de apilamiento automático.
  *

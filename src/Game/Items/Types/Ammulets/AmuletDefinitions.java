@@ -2,7 +2,7 @@ package Game.Items.Types.Ammulets;
 
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
-import Game.Items.VisualDefinition;
+import Game.Items.Creation.VisualDefinition;
 
 /**
  * Definiciones estáticas de tipos de amuleto.

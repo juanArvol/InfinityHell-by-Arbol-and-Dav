@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets;
 
-import Game.Items.Creation.ItemDefinition;
+import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
@@ -105,7 +105,7 @@ public final class ProjectileResolver {
     public static ResolvedProjectile resolveComplete(
             WeaponStats baseStats,
             BulletType bulletType,
-            List<ItemDefinition> amulets,
+            List<AmuletType> amulets,
             double damageMult,
             double speedMult) {
 
@@ -169,7 +169,7 @@ public final class ProjectileResolver {
     public static ProjectileBlueprint resolve(
             WeaponStats baseStats,
             BulletType bulletType,
-            List<ItemDefinition> amulets,
+            List<AmuletType> amulets,
             double damageMult,
             double speedMult) {
 

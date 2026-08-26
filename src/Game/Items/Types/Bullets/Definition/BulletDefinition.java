@@ -2,8 +2,8 @@ package Game.Items.Types.Bullets.Definition;
 
 import Game.Items.Creation.ItemDefinition;
 import Game.Items.Creation.ItemRarity;
+import Game.Items.Creation.VisualDefinition;
 import Game.Items.Types.Bullets.BulletID;
-import Game.Items.VisualDefinition;
 
 /**
  * Definiciones estáticas de tipos de bala.

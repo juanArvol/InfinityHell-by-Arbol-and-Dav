@@ -1,7 +1,6 @@
 package Game.Items.Types.Ammulets;
 
-import Game.Items.Creation.ItemDefinition;
-import Game.Items.Savement.Inventory;
+import Game.Items.Savement.Types.Inventory;
 
 /**
  * Inventario de amuletos — autoridad del dominio Ammulets.
@@ -27,7 +26,7 @@ import Game.Items.Savement.Inventory;
  *   efectos pasivos que se aplican automáticamente. No necesitamos
  *   el factory de AmuletType en el inventario.
  */
-public final class AmuletInventory extends Inventory<ItemDefinition> {
+public final class AmuletInventory extends Inventory<AmuletType> {
 
     /**
      * Constructor sin límite de slots.
@@ -46,8 +45,7 @@ public final class AmuletInventory extends Inventory<ItemDefinition> {
      * @return true si se añadió (nueva adquisición), false si ya se poseía
      * @throws IllegalArgumentException si amulet es null
      */
-    public boolean addAmulet(ItemDefinition amulet) {
-        
+    public boolean addAmulet(AmuletType amulet) {
         return addItem(amulet);
     }
 
@@ -57,14 +55,14 @@ public final class AmuletInventory extends Inventory<ItemDefinition> {
      * @param amulet definición del amuleto
      * @return true si se posee
      */
-    public boolean hasAmulet(ItemDefinition amulet) {
+    public boolean hasAmulet(AmuletType amulet) {
         if (amulet == null) return false;
         
-        for (ItemDefinition existing : inventoryItem) {
+        for (AmuletType existing : inventoryItem) {
             if (existing.getItemId().equals(amulet.getItemId())) {
                 return true;
             }
         }
-        return contains(amulet);
+        return containsItem(amulet);
     }
 }

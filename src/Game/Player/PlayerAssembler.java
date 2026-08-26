@@ -21,7 +21,7 @@ import Game.Engine.Physics.Fluid.FluidProperties;
 import Game.Engine.Physics.Mechanical.MechanicalProperties;
 import Game.Engine.Physics.Thermal.ThermalProperties;
 import Game.Items.Savement.EquippedItems;
-import Game.Items.Savement.Inventory;
+import Game.Items.Savement.Types.Inventory;
 import Game.Items.Types.Ammulets.AmuletInventory;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.BulletType;
@@ -305,8 +305,8 @@ public final class PlayerAssembler {
         // Añadir todos los amuletos del loadout al inventario.
         // Los amuletos del loadout ya son ItemDefinition (no IDs).
         // Se añaden directamente al AmuletInventory sin resolución adicional.
-        for (Game.Items.Creation.ItemDefinition amulet : loadout.getAmulets()) {
-            amulets.add(amulet);
+        for (Game.Items.Types.Ammulets.AmuletType amulet : loadout.getAmulets()) {
+            amulets.addAmulet(amulet);
         }
 
         // ── 9. Collision y Rendering ──────────────────────────────────────

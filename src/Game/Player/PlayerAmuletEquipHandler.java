@@ -146,7 +146,7 @@ public final class PlayerAmuletEquipHandler {
         aimCapabilities.clear();
 
         // Re-aplicar todas las capabilities desde el inventario
-        for (ItemDefinition amulet : amulets.getAll()) {
+        for (AmuletType amulet : amulets.getAll()) {
             // Resolver el AmuletType desde la definición
             AmuletType amuletType = ObjectTypeFactory.find(
                 AmuletType.class, 

@@ -57,7 +57,7 @@ public final class SansAssembler extends EnemyAssembler {
     // VALOR ACTUAL: 10.0 segundos
     // ASUMIENDO: El legacy era 300 frames, no 600.
     // 
-    // TODO: Verificar con comportamiento de juego real si la fase dura
+    // TODO Verificar con comportamiento de juego real si la fase dura
     // el tiempo esperado. Si la fase se siente "muy corta", aumentar a 20.0s.
     
     /** Duración de la Fase 1 en segundos. */

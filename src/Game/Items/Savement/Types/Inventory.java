@@ -1,5 +1,6 @@
-package Game.Items.Savement;
+package Game.Items.Savement.Types;
 
+import Game.Items.Savement.ItemStackInventory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -104,7 +105,7 @@ public class Inventory<T> {
      * @param item item a eliminar
      * @return true si se eliminó, false si no se encontró
      */
-    public boolean remove(T item) {
+    public boolean removeItem(T item) {
         return inventoryItem.remove(item);
     }
 
@@ -115,7 +116,7 @@ public class Inventory<T> {
      * @return el item eliminado
      * @throws IndexOutOfBoundsException si el índice es inválido
      */
-    public T removeAt(int index) {
+    public T removeItemAt(int index) {
         return inventoryItem.remove(index);
     }
 
@@ -125,7 +126,7 @@ public class Inventory<T> {
      * @param item item a verificar
      * @return true si se posee
      */
-    public boolean contains(T item) {
+    public boolean containsItem(T item) {
         return inventoryItem.contains(item);
     }
 
@@ -163,13 +164,10 @@ public class Inventory<T> {
         return inventoryItem.isEmpty();
     }
 
-    /* private void clampIndex() {
-        if (inventoryItem.isEmpty()) {
-            currentIndex = 0;
-        } else if (currentIndex >= inventoryItem.size()) {
-            currentIndex = inventoryItem.size() - 1;
-        }
-    } */
+    public int indexOf(T item){
+        return inventoryItem.indexOf(item);
+    }
+
     // ── Limpieza ──────────────────────────────────────────────────────────
 
     /**

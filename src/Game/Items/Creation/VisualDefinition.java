@@ -1,6 +1,5 @@
-package Game.Items;
+package Game.Items.Creation;
 
-import Game.Items.Creation.ItemRarity;
 import java.awt.image.BufferedImage;
 
 /**
