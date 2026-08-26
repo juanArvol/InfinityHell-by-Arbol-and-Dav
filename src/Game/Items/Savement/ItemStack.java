@@ -45,15 +45,10 @@ public class ItemStack {
     private final ItemDefinition definition;
     private int count;
 
-    /** Constructor con count = 1. */
-    public ItemStack(ItemDefinition definition) {
-        this(definition, 1);
-    }
-
     /** Constructor con count explícito. */
     public ItemStack(ItemDefinition definition, int count) {
         if (definition == null) throw new IllegalArgumentException("definition no puede ser null");
-        if (count < 0) throw new IllegalArgumentException("count no puede ser negativo");
+        if (count < 0){this.count = 1;} 
         this.definition = definition;
         this.count = count;
     }
@@ -70,9 +65,37 @@ public class ItemStack {
      * Añade `amount` unidades.
      * @return cuántas unidades NO se pudieron añadir (overflow si hay límite).
      */
+    /**
+     * Añade unidades.
+     *
+     * Actualmente no existe límite de stack.
+     *
+     * @return unidades que no pudieron añadirse.
+     */
     public int add(int amount) {
-        count += amount;
-        return 0; // Sin límite por ahora
+
+        if (amount < 0) {
+            throw new IllegalArgumentException(
+                    "amount no puede ser negativo"
+            );
+        }
+
+        int newCount =
+                count + amount;
+
+        if (newCount > Integer.MAX_VALUE) {
+
+            int added =
+                    Integer.MAX_VALUE - count;
+
+            count = Integer.MAX_VALUE;
+
+            return amount - added;
+        }
+
+        count = (int) newCount;
+
+        return 0;
     }
 
     /**
@@ -86,17 +109,49 @@ public class ItemStack {
     }
 
     /**
-     * Transfiere unidades desde otro stack compatible (misma definición).
-     * @return cuántas se transfirieron.
+     * Transfiere todas las unidades desde otro stack
+     * compatible.
+     *
+     * @return cantidad realmente transferida.
      */
-    public int transferFrom(ItemStack other) {
-        if (!other.definition.equals(this.definition)) {
-            throw new IllegalArgumentException("No se puede transferir entre distintas definiciones");
+    public int transferFrom(
+            ItemStack other
+    ) {
+
+        if (other == null) {
+            throw new IllegalArgumentException(
+                    "other no puede ser null"
+            );
         }
-        int toMove = other.count;
-        other.remove(toMove);
-        add(toMove);
-        return toMove;
+
+        if (other == this) {
+            return 0;
+        }
+
+        if (!definition.equals(
+                other.definition
+        )) {
+
+            throw new IllegalArgumentException(
+                    "No se puede transferir entre " +
+                    "distintas definiciones"
+            );
+        }
+
+        int available =
+                other.count;
+
+        int overflow =
+                add(available);
+
+        int transferred =
+                available - overflow;
+
+        other.remove(
+                transferred
+        );
+
+        return transferred;
     }
 
     public void setCount(int count) {

@@ -31,8 +31,8 @@ public final class AmuletInventory extends Inventory<AmuletType> {
     /**
      * Constructor sin límite de slots.
      */
-    public AmuletInventory() {
-        super();
+    public AmuletInventory(int maxSlots) {
+        super(maxSlots);
     }
 
     // ── Override add() con lógica de unicidad ─────────────────────────────

@@ -47,7 +47,7 @@ package Game.Items.Creation;
  * @see Game.Items.Types.Weapons.WeaponType.WeaponType  tipo concreto de armas
  * @see Game.Items.Types.Bullets.Definition.BulletType  tipo concreto de balas
  */
-public enum ItemType {
+public enum ItemCategory {
     /** Armas cuerpo a cuerpo: bates, cuchillos, hachas. */
     WEAPON,
     

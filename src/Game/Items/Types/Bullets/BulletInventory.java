@@ -56,20 +56,14 @@ import Game.Items.Types.Bullets.Definition.BulletType;
 public final class BulletInventory
         extends SelectableInventory<BulletType> {
 
-    /**
-     * Constructor sin límite de slots ni bus de eventos.
-     */
-    public BulletInventory() {
-        super();
-    }
 
     /**
      * Constructor con bus de eventos.
      *
      * Permite emitir InventoryEvents.OnSelectionChange<BulletType>.
      */
-    public BulletInventory(GameEventBus eventBus) {
-        super(eventBus);
+    public BulletInventory(int maxSlots, GameEventBus eventBus) {
+        super(maxSlots, eventBus);
     }
 
     // ── Gestión de balas ──────────────────────────────────────────────────

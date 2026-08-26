@@ -13,12 +13,8 @@ import Game.Items.Types.Weapons.WeaponType.WeaponType;
 public class WeaponInventory
         extends SelectableInventory<ModifiedWeapon> {
 
-    public WeaponInventory(GameEventBus eventBus) {
-        super(eventBus);
-    }
-
-    public WeaponInventory() {
-        super();
+    public WeaponInventory(int maxSlots, GameEventBus eventBus) {
+        super(maxSlots, eventBus);
     }
 
     // ── Gestión de armas ─────────────────────────────────────────────────

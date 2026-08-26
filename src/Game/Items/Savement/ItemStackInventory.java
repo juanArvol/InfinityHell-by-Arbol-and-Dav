@@ -1,5 +1,6 @@
 package Game.Items.Savement;
 
+import Game.Items.Creation.ItemDefinition;
 import Game.Items.Savement.Types.Inventory;
 
 /**
@@ -26,13 +27,6 @@ import Game.Items.Savement.Types.Inventory;
  * @see ItemStack item apilable
  */
 public class ItemStackInventory extends Inventory<ItemStack> {
-
-    /**
-     * Constructor sin límite de slots.
-     */
-    public ItemStackInventory() {
-        super();
-    }
 
     /**
      * Constructor con límite de slots.
@@ -71,7 +65,23 @@ public class ItemStackInventory extends Inventory<ItemStack> {
         for (ItemStack existing : inventoryItem) {
             if (existing.getDefinition().equals(stack.getDefinition())) {
                 // Stacking: añadir cantidad al stack existente
-                existing.add(stack.getCount());
+                int overflow =
+                        existing.add(
+                                stack.getCount()
+                        );
+                /*
+                 * Si existe overflow, el stack entrante
+                 * conserva las unidades restantes.
+                 */
+                if (overflow > 0) {
+                    stack.setCount(
+                            overflow
+                    );
+                    return false;
+                }
+
+                stack.setCount(0);
+
                 return true;
             }
         }
@@ -106,20 +116,29 @@ public class ItemStackInventory extends Inventory<ItemStack> {
      * @param count cantidad a eliminar
      * @return cantidad realmente eliminada
      */
-    public int removeByDefinition(Game.Items.Creation.ItemDefinition definition, int count) {
-        for (ItemStack stack : inventoryItem) {
+    public int removeByDefinition(ItemDefinition definition, int count) {
+        if (definition == null) {
+            return 0;
+        }
+
+        if (count < 0) {
+            throw new IllegalArgumentException("count no puede ser negativo");
+        }
+
+        for (int i = 0; i < inventoryItem.size(); i++) {
+            ItemStack stack = inventoryItem.get(i);
+
             if (stack.getDefinition().equals(definition)) {
                 int removed = stack.remove(count);
-                
-                // Si el stack quedó vacío, eliminarlo del inventario
+
                 if (stack.isEmpty()) {
-                    inventoryItem.remove(stack);
+                    inventoryItem.remove(i);
                 }
-                
-                return removed;
+
+            return removed;
             }
         }
-        return 0; // No se encontró
+        return 0;
     }
 
     /**
@@ -129,14 +148,28 @@ public class ItemStackInventory extends Inventory<ItemStack> {
      * @param definition definición del item
      * @return cantidad total
      */
-    public int getCountOf(Game.Items.Creation.ItemDefinition definition) {
-        int total = 0;
-        for (ItemStack stack : inventoryItem) {
-            if (stack.getDefinition().equals(definition)) {
-                total += stack.getCount();
+    public int getCountOf(ItemDefinition definition) {
+
+        if (definition == null) {
+            return 0;
+        }
+
+        long total = 0;
+
+        for (ItemStack stack :
+                inventoryItem) {
+
+            if (stack.getDefinition()
+                    .equals(definition)) {
+
+                total +=
+                        stack.getCount();
             }
         }
-        return total;
+
+        return total > Integer.MAX_VALUE
+                ? Integer.MAX_VALUE
+                : (int) total;
     }
 
     /**
@@ -146,8 +179,18 @@ public class ItemStackInventory extends Inventory<ItemStack> {
      * @param minCount cantidad mínima requerida
      * @return true si se posee al menos minCount unidades
      */
-    public boolean hasAtLeast(Game.Items.Creation.ItemDefinition definition, int minCount) {
-        return getCountOf(definition) >= minCount;
+    public boolean hasAtLeast(
+            ItemDefinition definition,
+            int minCount
+    ) {
+
+        if (minCount < 0) {
+            return true;
+        }
+
+        return getCountOf(
+                definition
+        ) >= minCount;
     }
 
     @Override

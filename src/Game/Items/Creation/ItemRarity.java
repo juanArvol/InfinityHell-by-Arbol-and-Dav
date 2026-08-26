@@ -39,8 +39,33 @@ public enum ItemRarity {
     public final int color;
 
     ItemRarity(int weight, String displayName, int color) {
+
+        if (weight < 0) {
+            throw new IllegalArgumentException(
+                    "weight no puede ser negativo"
+            );
+        }
+
+        if (displayName == null || displayName.isBlank()) {
+            throw new IllegalArgumentException(
+                    "displayName no puede estar vacío"
+            );
+        }
+        
         this.weight      = weight;
         this.displayName = displayName;
         this.color       = color;
+    }
+
+    public int getWeight() {
+        return weight;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public int getColor() {
+        return color;
     }
 }

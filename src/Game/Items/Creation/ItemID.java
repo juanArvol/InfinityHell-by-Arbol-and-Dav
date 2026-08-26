@@ -1,20 +1,26 @@
 package Game.Items.Creation;
 
 /**
- * Interfaz base para identificadores tipados de Items.
+ * Identificador tipado de un Item.
  *
- * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
+ * ── ARCHITECTURE — Items Module ──────────────────────────────────────────
  *
- * PROPÓSITO:
- *   Reemplazar String IDs con tipos fuertemente tipados (enums).
- *   Cada familia de Items (Bullet, Weapon, Amulet) define su propio enum
- *   que implementa esta interfaz.
+ * ItemID representa la identidad lógica de un Item.
  *
- * VENTAJAS:
- *   - Seguridad en tiempo de compilación (no más typos en strings)
- *   - Autocomplete del IDE
- *   - Refactoring seguro
- *   - Lista explícita de todos los IDs disponibles
+ * Cada familia concreta define su propio identificador:
+ *
+ *   BulletID implements ItemID
+ *   WeaponID implements ItemID
+ *   AmuletID implements ItemID
+ *
+ * El ID tipado es la identidad interna.
+ * asString() proporciona su representación canónica externa.
+ *
+ * La representación externa debe ser:
+ *
+ *   - lowercase
+ *   - snake_case
+ *   - estable
  *
  * EJEMPLO:
  *   public enum BulletID implements ItemID {
@@ -27,19 +33,13 @@ package Game.Items.Creation;
  *           return name().toLowerCase();
  *       }
  *   }
- *
  * NOTA:
- *   name() ya pertenece a Enum, no necesita declararse en ItemID.
- *
- * USO:
- *   BulletID id = BulletID.NORMAL_BULLET;
- *   String stringId = id.asString(); // "normal_bullet"
+ * name() ya pertenece a Enum, no necesita declararse en ItemID.
  */
 public interface ItemID {
-    
+
     /**
-     * Identificador externo/canónico del Item.
-     * Por convención: snake_case lowercase.
+     * Retorna la representación canónica externa del ID.
      */
     String asString();
 }

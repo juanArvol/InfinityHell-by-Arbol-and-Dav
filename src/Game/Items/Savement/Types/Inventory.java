@@ -59,19 +59,17 @@ public class Inventory<T> {
     protected final int maxSlots;
 
     /**
-     * Constructor sin límite de slots.
-     */
-    public Inventory() {
-        this(Integer.MAX_VALUE);
-    }
-
-    /**
-     * Constructor con límite de slots.
+     * Constructor con y sin límite de slots.
+     * para definirlo sin limites maxSlots debera ser 0 o <
      *
      * @param maxSlots máximo de items permitidos
      */
     public Inventory(int maxSlots) {
-        this.maxSlots = maxSlots;
+        if (maxSlots <= 0) {
+                this.maxSlots = Integer.MAX_VALUE;
+        } else {
+            this.maxSlots = maxSlots;
+        }
     }
 
     // ── Operaciones básicas ───────────────────────────────────────────────
@@ -118,6 +116,13 @@ public class Inventory<T> {
      */
     public T removeItemAt(int index) {
         return inventoryItem.remove(index);
+    }
+
+    /**
+     * Limpia todos los items — útil para testing o reinicios de run.
+     */
+    public void clear() {
+        inventoryItem.clear();
     }
 
     /**
@@ -168,15 +173,9 @@ public class Inventory<T> {
         return inventoryItem.indexOf(item);
     }
 
-    // ── Limpieza ──────────────────────────────────────────────────────────
-
-    /**
-     * Limpia todos los items — útil para testing o reinicios de run.
-     */
-    public void clear() {
-        inventoryItem.clear();
+    public int getMaxSlots() {
+        return maxSlots;
     }
-
     // ── Object identity ───────────────────────────────────────────────────
 
     @Override

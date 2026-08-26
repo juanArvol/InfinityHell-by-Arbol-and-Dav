@@ -1,186 +1,238 @@
 package Game.Items.Core;
 
 import Game.Items.Creation.ItemRarity;
-import java.util.*;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Random;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
- * Constructor unificado de pools de oferta con selección ponderada por rareza.
+ * Constructor genérico de pools de oferta.
  *
- * ── HRFC — Items Module Architectural Consolidation ──────────────────────
+ * ── ARCHITECTURE — Items Module ──────────────────────────────────────────
  *
- * RESPONSABILIDAD:
- *   Proporciona el algoritmo común de selección ponderada (weighted roulette)
- *   que antes estaba duplicado en BulletType.buildOfferPool() y cada familia
- *   de Items.
+ * Infraestructura transversal para selección ponderada.
  *
- * ALGORITMO:
- *   1. Filtra candidatos según criterio (ej: no obtenidos por jugador)
- *   2. Calcula peso total (suma de rarities)
- *   3. Selecciona aleatoriamente según peso hasta llenar maxCount
- *   4. Evita duplicados en la misma oferta
+ * NO conoce:
  *
- * CONFIGURABILIDAD:
- *   - Admite filtro custom vía Predicate
- *   - Admite override de rareza vía función de lookup
- *   - Admite límite de intentos para evitar loops infinitos
+ *   - Bullets
+ *   - Weapons
+ *   - Amulets
  *
- * EJEMPLO DE USO:
+ * Trabaja únicamente con:
  *
- *   // Balas (únicas por run — filtrar obtenidas)
- *   List<BulletType> offer = OfferPoolBuilder.build(
- *       BulletType.values(),
- *       type -> !alreadyOwned.contains(type),
- *       type -> type.defaultRarity,
- *       3,
- *       random
- *   );
+ *   Collection<T>
+ *   Predicate<T>
+ *   Function<T, ItemRarity>
  *
- *   // Amuletos (apilables — todos siempre disponibles)
- *   List<AmuletDefinition> offer = OfferPoolBuilder.build(
- *       AmuletRegistry.all(),
- *       def -> true,  // sin filtro
- *       def -> AmuletRegistry.getRarity(def.id),  // con override posible
- *       3,
- *       random
- *   );
- *
- * PRINCIPIO:
- *   Consolidar infraestructura común sin forzar a todas las familias a usar
- *   exactamente la misma API pública. Cada familia puede exponer su propio
- *   buildOfferPool() adaptado a sus necesidades, delegando en esta clase.
+ * Por ello puede utilizarse con cualquier familia.
  */
 public final class OfferPoolBuilder {
 
-    // Constructor privado — clase de utilidad estática
-    private OfferPoolBuilder() {}
-
-    /**
-     * Construye un pool de oferta con selección ponderada por rareza.
-     *
-     * @param <T>           tipo de elemento del pool
-     * @param candidates    colección de candidatos potenciales
-     * @param filter        filtro para determinar elegibilidad (ej: no obtenidos)
-     * @param rarityMapper  función que obtiene la rareza de cada candidato
-     * @param maxCount      máximo de elementos a incluir en el pool
-     * @param random        fuente de aleatoriedad
-     * @return lista inmutable de elementos seleccionados
-     */
-    public static <T> List<T> build(
-            Collection<T> candidates,
-            Predicate<T> filter,
-            java.util.function.Function<T, ItemRarity> rarityMapper,
-            int maxCount,
-            Random random) {
-
-        return build(candidates, filter, rarityMapper, maxCount, random, 200);
+    private OfferPoolBuilder() {
     }
 
     /**
-     * Construye un pool de oferta con selección ponderada por rareza.
-     *
-     * @param <T>           tipo de elemento del pool
-     * @param candidates    colección de candidatos potenciales
-     * @param filter        filtro para determinar elegibilidad
-     * @param rarityMapper  función que obtiene la rareza de cada candidato
-     * @param maxCount      máximo de elementos a incluir en el pool
-     * @param random        fuente de aleatoriedad
-     * @param maxAttempts   máximo de intentos para evitar loops infinitos
-     * @return lista inmutable de elementos seleccionados
+     * Construye una oferta ponderada.
      */
     public static <T> List<T> build(
             Collection<T> candidates,
             Predicate<T> filter,
-            java.util.function.Function<T, ItemRarity> rarityMapper,
+            Function<T, ItemRarity> rarityMapper,
+            int maxCount,
+            Random random
+    ) {
+
+        return build(
+                candidates,
+                filter,
+                rarityMapper,
+                maxCount,
+                random,
+                200
+        );
+    }
+
+    /**
+     * Construye una oferta ponderada con límite de intentos.
+     */
+    public static <T> List<T> build(
+            Collection<T> candidates,
+            Predicate<T> filter,
+            Function<T, ItemRarity> rarityMapper,
             int maxCount,
             Random random,
-            int maxAttempts) {
+            int maxAttempts
+    ) {
 
-        if (candidates == null || candidates.isEmpty())
-            return Collections.emptyList();
-        if (maxCount <= 0)
-            return Collections.emptyList();
+        if (candidates == null ||
+                candidates.isEmpty()) {
 
-        // Fase 1: filtrar candidatos elegibles
-        List<T> eligible = new ArrayList<>();
+            return Collections.emptyList();
+        }
+
+        if (filter == null) {
+            throw new IllegalArgumentException(
+                    "filter no puede ser null"
+            );
+        }
+
+        if (rarityMapper == null) {
+            throw new IllegalArgumentException(
+                    "rarityMapper no puede ser null"
+            );
+        }
+
+        if (random == null) {
+            throw new IllegalArgumentException(
+                    "random no puede ser null"
+            );
+        }
+
+        if (maxCount <= 0 ||
+                maxAttempts <= 0) {
+
+            return Collections.emptyList();
+        }
+
+        // ── Filtrado ───────────────────────────────────────────────────────
+
+        List<T> eligible =
+                new ArrayList<>();
+
         for (T candidate : candidates) {
-            if (filter.test(candidate)) {
-                eligible.add(candidate);
+
+            if (candidate != null &&
+                    filter.test(candidate)) {
+
+                ItemRarity rarity =
+                        rarityMapper.apply(candidate);
+
+                if (rarity != null &&
+                        rarity.getWeight() > 0) {
+
+                    eligible.add(candidate);
+                }
             }
         }
 
-        if (eligible.isEmpty())
+        if (eligible.isEmpty()) {
             return Collections.emptyList();
+        }
 
-        // Fase 2: calcular peso total
-        int totalWeight = 0;
+        // ── Peso total ─────────────────────────────────────────────────────
+
+        long totalWeight = 0;
+
         for (T candidate : eligible) {
-            ItemRarity rarity = rarityMapper.apply(candidate);
-            if (rarity != null) {
-                totalWeight += rarity.weight;
-            }
+
+            ItemRarity rarity =
+                    rarityMapper.apply(candidate);
+
+            totalWeight +=
+                    rarity.getWeight();
         }
 
-        if (totalWeight <= 0)
+        if (totalWeight <= 0) {
             return Collections.emptyList();
+        }
 
-        // Fase 3: selección ponderada (ruleta)
-        List<T> result = new ArrayList<>();
-        Set<T> selected = new HashSet<>();
+        // ── Selección ──────────────────────────────────────────────────────
+
+        List<T> result =
+                new ArrayList<>();
+
+        Set<T> selected =
+                new HashSet<>();
 
         int attempts = 0;
-        while (result.size() < maxCount &&
-               result.size() < eligible.size() &&
-               attempts < maxAttempts) {
+
+        while (
+                result.size() < maxCount &&
+                result.size() < eligible.size() &&
+                attempts < maxAttempts
+        ) {
 
             attempts++;
 
-            // Tirar dado ponderado
-            int roll = random.nextInt(totalWeight);
-            int acc = 0;
+            /*
+             * Random.nextInt(int) limita el peso máximo a Integer.MAX_VALUE.
+             *
+             * Para el sistema actual de ItemRarity no representa un problema,
+             * pero mantenemos el total como long para evitar overflow.
+             */
+            int roll;
+
+            if (totalWeight <= Integer.MAX_VALUE) {
+
+                roll = random.nextInt(
+                        (int) totalWeight
+                );
+
+            } else {
+
+                roll = (int) Math.floorMod(
+                        random.nextLong(),
+                        totalWeight
+                );
+            }
+
+            long accumulated = 0;
 
             for (T candidate : eligible) {
-                ItemRarity rarity = rarityMapper.apply(candidate);
-                if (rarity == null) continue;
 
-                acc += rarity.weight;
-                if (roll < acc && !selected.contains(candidate)) {
+                ItemRarity rarity =
+                        rarityMapper.apply(candidate);
+
+                accumulated +=
+                        rarity.getWeight();
+
+                if (roll < accumulated &&
+                        !selected.contains(candidate)) {
+
                     result.add(candidate);
                     selected.add(candidate);
+
                     break;
                 }
             }
         }
 
-        return Collections.unmodifiableList(result);
+        return Collections.unmodifiableList(
+                result
+        );
     }
 
     /**
-     * Variante simplificada cuando la rareza está en el mismo objeto.
-     *
-     * Útil para tipos que implementan una interfaz común de rareza.
-     *
-     * @param <T>        tipo de elemento que tiene rareza
-     * @param candidates colección de candidatos
-     * @param filter     filtro de elegibilidad
-     * @param maxCount   máximo de elementos
-     * @param random     fuente de aleatoriedad
-     * @return lista inmutable de elementos seleccionados
+     * Variante simplificada para elementos que poseen rareza.
      */
     public static <T extends HasRarity> List<T> buildSimple(
             Collection<T> candidates,
             Predicate<T> filter,
             int maxCount,
-            Random random) {
+            Random random
+    ) {
 
-        return build(candidates, filter, HasRarity::getRarity, maxCount, random);
+        return build(
+                candidates,
+                filter,
+                HasRarity::getRarity,
+                maxCount,
+                random
+        );
     }
 
     /**
-     * Interfaz marcador para tipos que exponen su rareza directamente.
-     * Permite usar buildSimple() sin lambda.
+     * Contrato mínimo para objetos con rareza.
      */
     public interface HasRarity {
+
         ItemRarity getRarity();
     }
 }

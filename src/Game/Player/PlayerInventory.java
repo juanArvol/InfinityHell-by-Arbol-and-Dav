@@ -79,9 +79,9 @@ public final class PlayerInventory {
      * Los inventarios se instancian desde sus dominios correspondientes.
      */
     public PlayerInventory() {
-        this.weapons = new WeaponInventory();    // Items.Types.Weapons
-        this.bullets = new BulletInventory();    // Items.Types.Bullets  
-        this.amulets = new AmuletInventory();    // Items.Types.Ammulets
+        this.weapons = new WeaponInventory(0,null);    // Items.Types.Weapons
+        this.bullets = new BulletInventory(0,null);    // Items.Types.Bullets  
+        this.amulets = new AmuletInventory(0);    // Items.Types.Ammulets
     }
 
     // ── Acceso a inventarios especializados ───────────────────────────────

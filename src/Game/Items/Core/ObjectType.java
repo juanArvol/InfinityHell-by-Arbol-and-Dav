@@ -92,18 +92,29 @@ public abstract class ObjectType<T> {
      *
      * @return nueva instancia de T. Nunca null.
      */
-    public T createInstance() {
-        return factory.get();
+    public final T createInstance() {
+        T instance = factory.get();
+
+        if (instance == null) {
+            throw new IllegalStateException(
+                    "La factory de '" +
+                    getItemId().asString() +
+                    "' retornó null"
+            );
+        }
+
+        return instance;
     }
 
     // ── Object identity ───────────────────────────────────────────────────
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ObjectType<?> that = (ObjectType<?>) o;
-        return definition.equals(that.definition);
+    public boolean equals(Object object) {
+        if (this == object) return true;
+        
+        if (!(object instanceof ObjectType<?> other)) return false;
+
+        return definition.equals(other.definition);
     }
 
     @Override

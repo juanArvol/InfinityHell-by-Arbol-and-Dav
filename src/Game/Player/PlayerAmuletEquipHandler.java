@@ -71,7 +71,7 @@ public final class PlayerAmuletEquipHandler {
         // Resolver el AmuletType desde la definición
         AmuletType amuletType = ObjectTypeFactory.find(
             AmuletType.class, 
-            amulet.getItemId().asString()
+            amulet.getItemId()
         );
         
         if (amuletType == null) return;
@@ -106,7 +106,7 @@ public final class PlayerAmuletEquipHandler {
         // Resolver el AmuletType desde la definición
         AmuletType amuletType = ObjectTypeFactory.find(
             AmuletType.class, 
-            amulet.getItemId().asString()
+            amulet.getItemId()
         );
         
         if (amuletType == null) return;
@@ -150,7 +150,7 @@ public final class PlayerAmuletEquipHandler {
             // Resolver el AmuletType desde la definición
             AmuletType amuletType = ObjectTypeFactory.find(
                 AmuletType.class, 
-                amulet.getItemId().asString()
+                amulet.getItemId()
             );
             
             if (amuletType == null) continue;

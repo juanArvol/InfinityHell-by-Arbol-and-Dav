@@ -20,25 +20,16 @@ public class SelectableInventory<T> extends Inventory<T> {
      */
     private final GameEventBus eventBus;
 
-    public SelectableInventory() {
-        this(null);
-    }
-
-    public SelectableInventory(GameEventBus eventBus) {
-        super();
-        this.eventBus = eventBus;
-    }
-
-    public SelectableInventory(int maxSlots) {
-        this(maxSlots, null);
-    }
-
     public SelectableInventory(
             int maxSlots,
             GameEventBus eventBus
     ) {
         super(maxSlots);
-        this.eventBus = eventBus;
+        if(eventBus== null){
+            this.eventBus = null;    
+        } else{
+            this.eventBus = eventBus;
+        }
     }
 
     /**

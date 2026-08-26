@@ -29,7 +29,7 @@ package Game.Items.Creation;
  *
  * @see Game.Items.Creation.VisualDefinition
  */
-public class ItemDefinition {
+public abstract class ItemDefinition {
 
     /** ID tipado fuerte del Item. */
     private final ItemID itemId;
@@ -57,59 +57,60 @@ public class ItemDefinition {
     // ── Getters ───────────────────────────────────────────────────────────
 
     /** Retorna el ItemID tipado. */
-    public ItemID getItemId() {
+    public final ItemID getItemId() {
         return itemId;
     }
 
     /** Retorna el ID como string. */
-    public String getIdAsString() {
+    public final String getIdAsString() {
         return itemId.asString();
     }
 
     
 
     /** Retorna el nombre visible al jugador. */
-    public String getDisplayName() {
+    public final String getDisplayName() {
         return visual.displayName;
     }
 
     /** Retorna la descripción del comportamiento/efecto. */
-    public String getDescription() {
+    public final String getDescription() {
         return visual.description;
     }
 
     /** Retorna la rareza del ítem. */
-    public ItemRarity getRarity() {
+    public final ItemRarity getRarity() {
         return visual.rarity;
     }
 
     /** Retorna el icono para UI (puede ser null). */
-    public java.awt.image.BufferedImage getIcon() {
+    public final java.awt.image.BufferedImage getIcon() {
         return visual.icon;
     }
 
     /** Retorna la definición visual completa. */
-    public VisualDefinition getVisual() {
+    public final VisualDefinition getVisual() {
         return visual;
     }
 
     // ── Object identity ───────────────────────────────────────────────────
 
     @Override
-    public String toString() {
-        return getClass().getSimpleName() + "{id='" + getIdAsString() + "', rarity=" + getRarity() + "}";
+    public final boolean equals(Object object) {
+        if (this == object) return true;
+
+        if (!(object instanceof ItemDefinition other)) return false;
+
+        return itemId.equals(other.itemId);
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        ItemDefinition that = (ItemDefinition) o;
-        return itemId.equals(that.itemId);
-    }
-
-    @Override
-    public int hashCode() {
+    public final int hashCode() {
         return itemId.hashCode();
+    }
+
+    @Override
+    public final String toString() {
+        return getClass().getSimpleName() + "{id='" + getIdAsString() + "', rarity=" + getRarity() + "}";
     }
 }
