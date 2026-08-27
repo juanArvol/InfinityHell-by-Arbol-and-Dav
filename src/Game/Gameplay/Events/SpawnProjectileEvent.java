@@ -1,6 +1,7 @@
 package Game.Gameplay.Events;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Items.Types.Bullets.Definition.BulletType;
 
 /**
  * Evento genérico de disparo de proyectil.
@@ -53,7 +54,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
  *   });
  */
 public record SpawnProjectileEvent(
-    String   projectileTypeId,
+    BulletType   projectileTypeId,
     Vector2D origin,
     Vector2D target,
     Object   sourceEntity,
@@ -63,7 +64,7 @@ public record SpawnProjectileEvent(
      * Constructor de conveniencia sin velocidad explícita.
      * El sistema usará el valor por defecto del tipo de proyectil.
      */
-    public SpawnProjectileEvent(String projectileTypeId, Vector2D origin,
+    public SpawnProjectileEvent(BulletType projectileTypeId, Vector2D origin,
                                  Vector2D target, Object sourceEntity) {
         this(projectileTypeId, origin, target, sourceEntity, 0.0);
     }
@@ -72,7 +73,7 @@ public record SpawnProjectileEvent(
      * Constructor de conveniencia mínimo — solo tipo y emisor.
      * Útil cuando origen y destino se infieren del contexto en el listener.
      */
-    public SpawnProjectileEvent(String projectileTypeId, Object sourceEntity) {
+    public SpawnProjectileEvent(BulletType projectileTypeId, Object sourceEntity) {
         this(projectileTypeId, null, null, sourceEntity, 0.0);
     }
 }

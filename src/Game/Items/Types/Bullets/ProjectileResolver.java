@@ -123,7 +123,7 @@ public final class ProjectileResolver {
         WeaponStats effectiveStats = copyStats(baseStats);
 
         // 2. Behavior base del tipo de bala
-        BulletBehavior behavior = bulletType.create();
+        BulletBehavior behavior = bulletType.createBehavior();
 
         // 3. Aplicar amuletos del jugador (modifica stats y envuelve behavior)
         /* behavior = AmuletRegistry.applyAllFromDefinitions(amulets, effectiveStats, behavior); */

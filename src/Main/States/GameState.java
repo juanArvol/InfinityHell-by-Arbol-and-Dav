@@ -60,10 +60,13 @@ public class GameState implements State {
      * GameWorldBootstrap instala listeners y referencias de scope World en el bus
      * del WorldManager y en AmuletRegistry:
      *   - ProjectileRegistry.listener (SpawnProjectileEvent en el bus del mundo)
-     *   - AmuletRegistry.entityProvider (referencia al WorldManager)
+     *   - AmuletRegistry.entityProvider (referencia al WorldManager via lazy injection)
      *
      * bootstrap.shutdown() libera ambas referencias, evitando que el bus
      * y AmuletRegistry retengan objetos del World destruido.
+     *
+     * NOTA: AmuletRegistry ya no requiere init() manual. El entityProvider se
+     * inyecta lazy desde GameWorldBootstrap después de que el World existe.
      */
     private final GameWorldBootstrap   worldBootstrap;
 
@@ -80,24 +83,15 @@ public class GameState implements State {
     private MouseInput mouseInput;
 
     private int fpsPorSegundo = 0;
-    private int upsPorSegundo = 0;  // Updates Per Second (simulation rate)
-    private int virtualWidth;
-    private int virtualHeight;
-
     public GameState(int virtualWidth, int virtualHeight) {
-        this.virtualWidth  = virtualWidth;
-        this.virtualHeight = virtualHeight;
-
         // ── Settings ─────────────────────────────────────────────────────────
         this.settings = DebugGameSettings.getInstance();
         settings.setFpsEnabled(true);
 
         // ── Registros globales de gameplay ────────────────────────────────────
-        // AmuletRegistry debe inicializarse ANTES de que GameWorldBootstrap
-        // construya el Player y antes de que se inyecte el entityProvider.
-        // WeaponType y BulletType se inicializan automáticamente via static blocks.
-        Game.Items.Types.Ammulets.AmuletRegistry.init();
-        Game.Items.Types.Ammulets.AmuletRegistry.registerDefaults();
+        // Todos los registros (WeaponType, BulletType, AmuletType) se inicializan
+        // automáticamente via static blocks cuando se cargan sus clases.
+        // No se necesita inicialización manual.
 
         // ── World (instancia directa, sin singleton) ──────────────────────────
         this.worldManager = new WorldManager(virtualWidth, virtualHeight, settings);
@@ -135,8 +129,6 @@ public class GameState implements State {
      */
     @Override
     public void onVirtualDimensionsChanged(int newVirtualWidth, int newVirtualHeight) {
-        this.virtualWidth  = newVirtualWidth;
-        this.virtualHeight = newVirtualHeight;
         worldManager.onVirtualResize(newVirtualWidth, newVirtualHeight);
         uiManager.onResize(newVirtualWidth, newVirtualHeight);
     }
@@ -264,7 +256,6 @@ public class GameState implements State {
      * diferir de FPS (render rate) especialmente durante lag spikes.
      */
     public void setUps(int ups) {
-        this.upsPorSegundo = ups;
     }
 
     /** Libera recursos al cerrar la aplicación o destruir este GameState.
@@ -275,8 +266,10 @@ public class GameState implements State {
      *      Debe hacerse ANTES de que worldManager sea liberado.
      *   2. worldManager.shutdown() — libera ExecutorService y recursos del mundo.
      *
-     * WeaponRegistry y AmuletRegistry.definitions son singletons de aplicación
-     * y NO se destruyen aquí — viven hasta que termina el proceso.
+     * AmuletRegistry, WeaponType y BulletType son singletons de aplicación que se
+     * inicializan automáticamente via static blocks. Sus definiciones NO se destruyen
+     * aquí — viven hasta que termina el proceso. Solo se limpia el entityProvider de
+     * AmuletRegistry para evitar retener referencias al World destruido.
      *
      * ── HRFC-DT-003: implementa State.shutdown() ─────────────────────────
      */

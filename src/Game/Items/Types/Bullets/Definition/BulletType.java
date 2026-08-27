@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.Definition;
 import Game.Items.Core.ObjectType;
 import Game.Items.Core.ObjectTypeFactory;
 import Game.Items.Creation.ItemDefinition;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletClass.*;
 import java.util.function.Supplier;
@@ -49,7 +50,7 @@ public final class BulletType extends ObjectType<BulletBehavior> {
 
     // ── Constructor privado ───────────────────────────────────────────────
 
-    private BulletType(ItemDefinition definition, Supplier<BulletBehavior> factory) {
+    private BulletType(BulletDefinition definition, Supplier<BulletBehavior> factory) {
         super(definition, factory);
     }
 
@@ -59,7 +60,7 @@ public final class BulletType extends ObjectType<BulletBehavior> {
      * Crea una nueva instancia del BulletBehavior asociado.
      * Alias de createInstance() para mayor claridad en el dominio.
      */
-    public BulletBehavior create() {
+    public BulletBehavior createBehavior() {
         return createInstance();
     }
 

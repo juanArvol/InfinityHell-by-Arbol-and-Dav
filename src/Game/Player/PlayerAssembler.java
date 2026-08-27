@@ -197,7 +197,7 @@ public final class PlayerAssembler {
         PlayerPhysics physics = new PlayerPhysics(BASE_GRAVITY);
         PlayerState state = new PlayerState();
         PlayerStats playerStats = new PlayerStats();
-        AmuletInventory amulets = new AmuletInventory();
+        AmuletInventory amulets = new AmuletInventory(0);
 
         // ── 3. Inventory y Runtime — independientes de Player ─────────────
         PlayerInventory playerInventory = new PlayerInventory();

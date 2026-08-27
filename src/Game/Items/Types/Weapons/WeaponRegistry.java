@@ -1,175 +1,203 @@
 package Game.Items.Types.Weapons;
 
 import Game.Items.Creation.ItemRarity;
-import java.util.*;
+import Game.Items.Creation.ItemRegistry;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 
 /**
- * Registro central de todas las armas disponibles en el juego.
+ * Registro central de definiciones de armas.
  *
- * ── LIFECYCLE: SINGLETON DE APLICACIÓN ───────────────────────────────────
+ * ── ARQUITECTURA — Items Module ──────────────────────────────────────────
  *
- * WeaponRegistry es un singleton de APLICACIÓN, no de partida ni de World.
- * Vive desde la primera llamada a init() hasta que termina el proceso.
+ * WeaponRegistry especializa ItemRegistry para WeaponDefinition.
  *
- * DECISIÓN ARQUITECTÓNICA:
- *   Las definiciones de armas (nombre, rareza, factory) son constantes del
- *   juego — no cambian entre partidas, entre scenes ni entre Worlds.
- *   Destruir y recrear el registry entre partidas sería un reset sin valor:
- *   los mismos datos serían registrados nuevamente en el siguiente init().
+ * ItemRegistry proporciona toda la infraestructura genérica:
+ * - register()
+ * - get()
+ * - find()
+ * - has()
+ * - getAll()
  *
- *   Por eso WeaponRegistry NO tiene reset(). Si en el futuro se necesita
- *   reconfiguración en caliente (ej: DLC, modding), implementar un método
- *   de recarga específico, no un reset general.
+ * WeaponRegistry solamente contiene responsabilidades específicas
+ * del dominio Weapon.
  *
- * OWNERSHIP DE INICIALIZACIÓN:
- *   GameState.init() llama WeaponRegistry.init() + registerDefaults() UNA VEZ.
- *   Llamadas adicionales a init() son no-op (if instance == null guard).
- *   Llamadas adicionales a registerDefaults() lanzarán IllegalStateException
- *   porque register() detecta IDs duplicados — correcto: falla rápido.
+ * ── LIFECYCLE ────────────────────────────────────────────────────────────
  *
- * SIN LIFECYCLE DE WORLD:
- *   WeaponRegistry no instala listeners en GameEventBus. No retiene referencias
- *   a WorldManager, Player ni entidades del mundo. No necesita limpiarse
- *   cuando un World se destruye.
+ * Singleton de aplicación.
  *
- * ── DISEÑO ───────────────────────────────────────────────────────────────
- * Equivalente al ItemRegistry pero para armas. Cada arma es única por run:
- * el jugador la obtiene y la tiene permanentemente hasta que termina la run.
+ * Las definiciones de armas son datos estáticos del juego y no pertenecen
+ * al lifecycle de World ni de una partida.
  *
- * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
- * Las rarezas por defecto están definidas en el registro, pero pueden
- * sobreescribirse con overrideRarity() desde un archivo de configuración
- * de balance sin recompilar. Así el diseñador puede ajustar droprates
- * editando un JSON/properties, no el código.
+ * ── RESPONSABILIDADES ESPECÍFICAS ────────────────────────────────────────
  *
- * ── FLUJO DE USO ─────────────────────────────────────────────────────────
- *  1. GameState.init() → WeaponRegistry.init() + WeaponRegistry.registerDefaults()
- *  2. Sistema de loot/tienda → WeaponRegistry.buildOfferPool(alreadyOwned) → lista filtrada
- *  3. Jugador elige → WeaponRegistry.instantiate(id) → Weapon lista para usar
+ * - Overrides de rareza para balance.
+ * - Construcción de pools de oferta de armas.
  *
- * ── CÓMO AÑADIR UN ARMA ──────────────────────────────────────────────────
- *  1. Crear la clase WeaponComport en WeaponType/WeaponClass/.
- *  2. Añadir una entrada en registerDefaults() con su factory.
- *  3. Nada más.
+ * La creación del comportamiento runtime NO pertenece aquí.
+ * WeaponType + ObjectTypeFactory se encargan de ello.
  */
-public final class WeaponRegistry {
+public final class WeaponRegistry
+        extends ItemRegistry<WeaponDefinition> {
 
     private static WeaponRegistry instance;
 
-    private final Map<String, Game.Items.Creation.ItemDefinition> definitions = new LinkedHashMap<>();
+    /**
+     * Rarezas modificadas externamente para balance.
+     *
+     * La rareza base continúa perteneciendo a WeaponDefinition.
+     */
+    private final Map<WeaponID, ItemRarity> rarityOverrides =
+            new HashMap<>();
 
-    // Permite al diseñador sobreescribir rarezas desde configuración externa
-    private final Map<String, ItemRarity> rarityOverrides = new HashMap<>();
+    // ── Constructor ──────────────────────────────────────────────────────
 
-    private WeaponRegistry() {}
+    private WeaponRegistry() {
+    }
 
-    // ── Ciclo de vida ─────────────────────────────────────────────────────
+    // ── Lifecycle ────────────────────────────────────────────────────────
 
     public static void init() {
+
         if (instance == null) {
             instance = new WeaponRegistry();
         }
     }
 
     public static WeaponRegistry getInstance() {
-        if (instance == null) throw new IllegalStateException(
-            "WeaponRegistry no inicializado. Llamá WeaponRegistry.init() primero.");
+
+        if (instance == null) {
+            throw new IllegalStateException("WeaponRegistry no inicializado. " + "Llamá WeaponRegistry.init() primero.");
+        }
+
         return instance;
     }
 
-    // ── API ───────────────────────────────────────────────────────────────
+    // ── Rareza ───────────────────────────────────────────────────────────
 
-    public static void register(Game.Items.Creation.ItemDefinition def) {
-        WeaponRegistry reg = getInstance();
-        if (reg.definitions.containsKey(def.getIdAsString())) {
-            throw new IllegalStateException("WeaponDefinition duplicada: '" + def.getIdAsString() + "'");
+    /**
+     * Sobreescribe la rareza efectiva de un arma.
+     *
+     * No modifica la WeaponDefinition original.
+     */
+    public static void overrideRarity(WeaponID weaponId, ItemRarity rarity) {
+        if (weaponId == null) {
+            throw new IllegalArgumentException("weaponId no puede ser null");
         }
-        reg.definitions.put(def.getIdAsString(), def);
-    }
 
-    public static Game.Items.Creation.ItemDefinition get(String id) {
-        Game.Items.Creation.ItemDefinition def = getInstance().definitions.get(id);
-        if (def == null) throw new IllegalArgumentException(
-            "WeaponDefinition no encontrada: '" + id + "'");
-        return def;
-    }
+        if (rarity == null) {
+            throw new IllegalArgumentException("rarity no puede ser null");
+        }
 
-    public static boolean has(String id) {
-        return getInstance().definitions.containsKey(id);
-    }
-
-    public static Collection<Game.Items.Creation.ItemDefinition> all() {
-        return Collections.unmodifiableCollection(getInstance().definitions.values());
+        getInstance()
+                .rarityOverrides
+                .put(weaponId, rarity);
     }
 
     /**
-     * Sobreescribe la rareza de un arma desde configuración externa.
-     * Llamar antes de buildOfferPool(). No modifica el código fuente.
+     * Obtiene la rareza efectiva de un arma.
      *
-     * Ejemplo desde un archivo de balance:
-     *   WeaponRegistry.overrideRarity("rift_cannon", ItemRarity.UNCOMMON);
+     * Utiliza el override si existe; de lo contrario,
+     * utiliza la rareza definida en WeaponDefinition.
      */
-    public static void overrideRarity(String weaponId, ItemRarity rarity) {
-        getInstance().rarityOverrides.put(weaponId, rarity);
+    public static ItemRarity getRarity(WeaponID weaponId) {
+
+        if (weaponId == null) {
+            throw new IllegalArgumentException("weaponId no puede ser null");
+        }
+
+        WeaponRegistry registry = getInstance();
+
+        ItemRarity override = registry.rarityOverrides.get(weaponId);
+
+        if (override != null) {
+            return override;
+        }
+
+        return registry.get(weaponId).getRarity();
     }
 
-    /**
-     * Rareza efectiva de un arma (override externo si existe, default si no).
-     */
-    public static ItemRarity getRarity(String weaponId) {
-        WeaponRegistry reg = getInstance();
-        ItemRarity override = reg.rarityOverrides.get(weaponId);
-        return override != null ? override : get(weaponId).getRarity();
-    }
+    // ── Offer Pool ───────────────────────────────────────────────────────
 
     /**
-     * Construye un pool de oferta filtrado por rareza y excluyendo
-     * las armas que el jugador ya posee en esta run.
+     * Construye un pool de oferta de armas.
      *
-     * El sistema de loot/tienda llama esto para generar las opciones
-     * que se presentan al jugador.
+     * Excluye las armas que ya posee el jugador y selecciona
+     * las restantes mediante ponderación por rareza.
      *
-     * @param alreadyOwned IDs de armas que el jugador ya tiene
-     * @param maxCount     máximo de opciones a ofrecer
-     * @param random       fuente de aleatoriedad
-     * @return lista de ItemDefinitions disponibles (ya filtradas y seleccionadas)
+     * @param alreadyOwned IDs de armas que el jugador ya posee
+     * @param maxCount máximo de ofertas
+     * @param random fuente de aleatoriedad
+     * @return lista inmutable de definiciones disponibles
      */
-    public static List<Game.Items.Creation.ItemDefinition> buildOfferPool(
-            Set<String> alreadyOwned, int maxCount, Random random) {
+    public static List<WeaponDefinition> buildOfferPool(
+            Set<WeaponID> alreadyOwned,
+            int maxCount,
+            Random random
+    ) {
 
-        WeaponRegistry reg = getInstance();
+        if (alreadyOwned == null) {
+            throw new IllegalArgumentException("alreadyOwned no puede ser null");
+        }
 
-        // Pool de candidatos: todas las armas que el jugador aún no tiene
-        List<Game.Items.Creation.ItemDefinition> candidates = new ArrayList<>();
-        for (Game.Items.Creation.ItemDefinition def : reg.definitions.values()) {
-            if (!alreadyOwned.contains(def.getIdAsString())) {
-                candidates.add(def);
+        if (maxCount < 0) {
+            throw new IllegalArgumentException("maxCount no puede ser negativo");
+        }
+
+        if (random == null) {
+            throw new IllegalArgumentException("random no puede ser null");
+        }
+
+        WeaponRegistry registry = getInstance();
+
+        List<WeaponDefinition> candidates = new ArrayList<>();
+
+        for (WeaponDefinition definition : registry.getAll()) {
+
+            WeaponID weaponId =
+                    (WeaponID) definition.getItemId();
+
+            if (!alreadyOwned.contains(weaponId)) {
+                candidates.add(definition);
             }
         }
-        if (candidates.isEmpty()) return List.of();
 
-        // Selección ponderada por rareza (ruleta)
-        int totalWeight = candidates.stream()
-            .mapToInt(d -> getRarity(d.getIdAsString()).weight)
-            .sum();
+        if (candidates.isEmpty() || maxCount == 0) {
+            return List.of();
+        }
 
-        List<Game.Items.Creation.ItemDefinition> result = new ArrayList<>();
-        Set<String> selected = new HashSet<>();
+        List<WeaponDefinition> result = new ArrayList<>();
 
-        int attempts = 0;
-        while (result.size() < maxCount && result.size() < candidates.size() && attempts < 100) {
-            attempts++;
+        List<WeaponDefinition> remaining = new ArrayList<>(candidates);
+
+        while (result.size() < maxCount && !remaining.isEmpty()) {
+            int totalWeight = remaining.stream().mapToInt(definition -> getRarity((WeaponID)definition.getItemId()).weight).sum();
+
             int roll = random.nextInt(totalWeight);
-            int acc  = 0;
-            for (Game.Items.Creation.ItemDefinition d : candidates) {
-                acc += getRarity(d.getIdAsString()).weight;
-                if (roll < acc && !selected.contains(d.getIdAsString())) {
-                    result.add(d);
-                    selected.add(d.getIdAsString());
+
+            int accumulated = 0;
+
+            for (int i = 0; i < remaining.size(); i++) {
+
+                WeaponDefinition definition =
+                        remaining.get(i);
+
+                accumulated += getRarity((WeaponID)definition.getItemId()).weight;
+
+                if (roll < accumulated) {
+                    result.add(definition);
+                    remaining.remove(i);
                     break;
                 }
             }
         }
+
         return Collections.unmodifiableList(result);
     }
 }

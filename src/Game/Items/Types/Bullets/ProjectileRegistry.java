@@ -6,6 +6,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.SpawnProjectileEvent;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.Definition.ProjectilePool;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -14,14 +15,22 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Registro central de tipos de proyectil identificados por ID string.
+ * Sistema de spawning de proyectiles mediante BulletType.
  *
- * ── HRFC — Projectile Construction & Transformation Pipeline ─────────────
+ * ── ACLARACIÓN ARQUITECTÓNICA ─────────────────────────────────────────────
  *
- * ProjectileRegistry conecta un string ID ("sans.bone", "fireball") con una
- * factory concreta y escucha SpawnProjectileEvent para que cualquier emisor
- * (Enemy, Boss, Turret, Trap) pueda spawnear proyectiles sin conocer
- * BulletFactory ni BulletBehavior.
+ * ProjectileRegistry NO ES un registry de items como BulletRegistry o WeaponRegistry.
+ *
+ * RESPONSABILIDADES:
+ *   ✓ Escuchar SpawnProjectileEvent en el bus del mundo
+ *   ✓ Convertir BulletType → ProjectileBlueprint → Bullet
+ *   ✓ Gestionar ProjectilePool interno para reutilización
+ *   ✓ Resolver dirección origin→target automáticamente
+ *
+ * NO HACE:
+ *   ✗ Registrar BulletDefinition (eso es BulletRegistry)
+ *   ✗ Gestionar rareza o loot pools (eso es BulletRegistry)
+ *   ✗ Crear BulletBehavior directamente (eso es BulletType)
  *
  * ── LIFECYCLE DE LISTENER ─────────────────────────────────────────────────
  *
@@ -48,10 +57,11 @@ import java.util.function.Supplier;
  * ── PIPELINE ──────────────────────────────────────────────────────────────
  *
  *   Emisor (Enemy, Boss):
- *     bus.post(new SpawnProjectileEvent("sans.bone", origin, target, enemy));
+ *     bus.post(new SpawnProjectileEvent(BulletType.NORMAL_BULLET, origin, target, enemy));
  *
  *   ProjectileRegistry escucha SpawnProjectileEvent:
- *     → busca la factory por "sans.bone"
+ *     → extrae BulletType del evento
+ *     → busca la factory por BulletType
  *     → resuelve dirección origin→target
  *     → factory produce ProjectileBlueprint
  *     → pool.acquire(blueprint, origin, direction)  ← vía pool si es posible
@@ -61,14 +71,14 @@ import java.util.function.Supplier;
  *
  * Tres variantes de registro:
  *
- *   registerSimple(id, behaviorSupplier)
+ *   registerSimple(type, behaviorSupplier)
  *     Para proyectiles que solo necesitan behavior, con dirección origin→target.
  *     Usa CollisionProfile.ENEMY_BULLET por defecto (proyectiles de enemigos).
  *
- *   registerSimple(id, behaviorSupplier, baseSpeed)
+ *   registerSimple(type, behaviorSupplier, baseSpeed)
  *     Igual, con velocidad base explícita.
  *
- *   register(id, factory)
+ *   register(type, factory)
  *     Para proyectiles con lógica compleja: factory recibe (origin, target)
  *     y retorna el Blueprint final. Permite HomingMovement, modifiers custom, etc.
  */
@@ -85,7 +95,7 @@ public final class ProjectileRegistry {
         ProjectileBlueprint create(Vector2D origin, Vector2D target);
     }
 
-    private final Map<String, BlueprintFactory> factories = new LinkedHashMap<>();
+    private final Map<BulletType, BlueprintFactory> factories = new LinkedHashMap<>();
 
     /**
      * Pool de proyectiles interno.
@@ -136,14 +146,17 @@ public final class ProjectileRegistry {
      * Retorna un ProjectileBlueprint listo para pasar a ProjectilePool.acquire()
      * o BulletFactory.build().
      *
-     * @param id      identificador único del tipo ("sans.bone", "fireball", etc.)
+     * @param type    BulletType que identifica el tipo de proyectil
      * @param factory factory que construye el Blueprint
      */
-    public ProjectileRegistry register(String id, BlueprintFactory factory) {
-        if (factories.containsKey(id)) {
-            throw new IllegalStateException("ProjectileType duplicado: '" + id + "'");
+    public ProjectileRegistry register(BulletType type, BlueprintFactory factory) {
+        if (type == null) {
+            throw new IllegalArgumentException("BulletType no puede ser null");
         }
-        factories.put(id, factory);
+        if (factories.containsKey(type)) {
+            throw new IllegalStateException("BulletType duplicado: " + type);
+        }
+        factories.put(type, factory);
         return this;
     }
 
@@ -154,12 +167,12 @@ public final class ProjectileRegistry {
      * La dirección se calcula de origin→target.
      * CollisionProfile: ENEMY_BULLET (proyectiles de enemigos por defecto).
      *
-     * @param id              identificador único del tipo
+     * @param type            BulletType que identifica el tipo de proyectil
      * @param behaviorFactory factory que produce el BulletBehavior
      */
-    public ProjectileRegistry registerSimple(String id,
+    public ProjectileRegistry registerSimple(BulletType type,
                                              Supplier<BulletBehavior> behaviorFactory) {
-        return register(id, (origin, target) -> {
+        return register(type, (origin, target) -> {
             BulletBehavior behavior = behaviorFactory.get();
             double speed  = behavior.getDefaultData().speedFactor() * 8.0;
             double damage = behavior.getDefaultData().damage();
@@ -173,14 +186,14 @@ public final class ProjectileRegistry {
     /**
      * Registra un tipo de proyectil con velocidad base explícita.
      *
-     * @param id              identificador único del tipo
+     * @param type            BulletType que identifica el tipo de proyectil
      * @param behaviorFactory factory del BulletBehavior
      * @param baseSpeed       velocidad del proyectil en unidades/frame
      */
-    public ProjectileRegistry registerSimple(String id,
+    public ProjectileRegistry registerSimple(BulletType type,
                                              Supplier<BulletBehavior> behaviorFactory,
                                              double baseSpeed) {
-        return register(id, (origin, target) -> {
+        return register(type, (origin, target) -> {
             BulletBehavior behavior = behaviorFactory.get();
             double speed  = baseSpeed * behavior.getDefaultData().speedFactor();
             double damage = behavior.getDefaultData().damage();
@@ -194,7 +207,7 @@ public final class ProjectileRegistry {
     // ── Resolución ────────────────────────────────────────────────────────
 
     /**
-     * Crea un proyectil dado un ID, origen/target y propietario del disparo.
+     * Crea un proyectil dado un BulletType, origen/target y propietario del disparo.
      *
      * ── RUTA ÚNICA DE CREACIÓN ────────────────────────────────────────────
      *
@@ -208,16 +221,21 @@ public final class ProjectileRegistry {
      *
      * El owner se propaga al evento OnProjectileSpawn para tracking externo.
      *
-     * @param id     tipo de proyectil registrado
+     * @param type   BulletType que identifica el tipo de proyectil
      * @param origin posición de spawn
      * @param target posición objetivo (puede ser null)
      * @param owner  el objeto que disparó el proyectil (puede ser null)
-     * @return Bullet listo para añadir al mundo, o null si el ID no está registrado
+     * @return Bullet listo para añadir al mundo, o null si el tipo no está registrado
      */
-    public Bullet resolve(String id, Vector2D origin, Vector2D target, Object owner) {
-        BlueprintFactory factory = factories.get(id);
+    public Bullet resolve(BulletType type, Vector2D origin, Vector2D target, Object owner) {
+        if (type == null) {
+            System.err.println("[ProjectileRegistry] BulletType no puede ser null");
+            return null;
+        }
+        
+        BlueprintFactory factory = factories.get(type);
         if (factory == null) {
-            System.err.println("[ProjectileRegistry] Tipo desconocido: '" + id + "'");
+            System.err.println("[ProjectileRegistry] BulletType no registrado: " + type);
             return null;
         }
 
@@ -234,22 +252,22 @@ public final class ProjectileRegistry {
     /**
      * Crea un proyectil sin propietario conocido.
      *
-     * @param id     tipo de proyectil registrado
+     * @param type   BulletType que identifica el tipo de proyectil
      * @param origin posición de spawn
      * @param target posición objetivo (puede ser null)
-     * @return Bullet listo para añadir al mundo, o null si el ID no está registrado
+     * @return Bullet listo para añadir al mundo, o null si el tipo no está registrado
      */
-    public Bullet resolve(String id, Vector2D origin, Vector2D target) {
-        return resolve(id, origin, target, null);
+    public Bullet resolve(BulletType type, Vector2D origin, Vector2D target) {
+        return resolve(type, origin, target, null);
     }
 
-    /** @return true si el ID está registrado */
-    public boolean has(String id) {
-        return factories.containsKey(id);
+    /** @return true si el BulletType está registrado */
+    public boolean has(BulletType type) {
+        return type != null && factories.containsKey(type);
     }
 
-    /** Vista de solo lectura de los IDs registrados. */
-    public Map<String, BlueprintFactory> getAll() {
+    /** Vista de solo lectura de los tipos registrados. */
+    public Map<BulletType, BlueprintFactory> getAll() {
         return Collections.unmodifiableMap(factories);
     }
 
@@ -288,12 +306,14 @@ public final class ProjectileRegistry {
         listenerSubscription = bus.subscribe(
             SpawnProjectileEvent.class,
             event -> {
+                BulletType type = event.projectileTypeId();
                 Vector2D origin = event.origin();
-                if (origin == null) return;
+                
+                if (type == null || origin == null) return;
 
                 // Propagar sourceEntity como owner del proyectil
                 Bullet bullet = resolve(
-                    event.projectileTypeId(),
+                    type,
                     origin,
                     event.target(),
                     event.sourceEntity()

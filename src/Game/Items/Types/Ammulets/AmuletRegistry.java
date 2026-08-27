@@ -1,288 +1,251 @@
 package Game.Items.Types.Ammulets;
 
+import Game.Engine.AbstractEntity;
 import Game.Items.Core.ObjectTypeFactory;
 import Game.Items.Creation.ItemRarity;
+import Game.Items.Creation.ItemRegistry;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Weapons.WeaponType.WeaponStats;
-import java.util.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
- * Registro central de amuletos y sistema de aplicación acumulativa.
+ * Registry especializado de amuletos.
  *
- * ── HRFC — Items Module Architectural Consolidation ──────────────────────
+ * ── ARQUITECTURA FINAL — Items Module ────────────────────────────────────
  *
- * MIGRACIÓN COMPLETADA:
- *   - Los tipos de amuleto ahora se declaran en AmuletType (patrón BulletType)
- *   - AmuletRegistry mantiene solo: rarityOverrides y entityProvider
- *   - Eliminada duplicación de registro/storage (ahora en ObjectTypeFactory)
- *   - Mantenida compatibilidad con código existente via métodos adaptadores
+ * AmuletRegistry especializa ItemRegistry para AmuletDefinition.
  *
- * ── LIFECYCLE: SINGLETON DE APLICACIÓN CON ESTADO DE SCOPE WORLD ─────────
+ * ItemRegistry proporciona la infraestructura común de:
  *
- * AmuletRegistry tiene dos responsabilidades con lifecycle diferente:
+ *     register()
+ *     get()
+ *     find()
+ *     has()
+ *     getAll()
  *
- *   1. RAREZA OVERRIDE (scope de aplicación):
- *      rarityOverrides — permite ajustar frecuencias desde configuración externa.
- *      No cambia entre partidas normalmente.
+ * AmuletRegistry solamente contiene comportamiento específico de la familia
+ * Amulet que no pertenece a ItemRegistry ni ObjectTypeFactory.
  *
- *   2. ENTITY PROVIDER (scope de World):
- *      entityProvider — referencia al proveedor de entidades del mundo activo.
- *      Debe inyectarse cuando el World arranca (GameWorldBootstrap) y limpiarse
- *      cuando el World muere (GameWorldBootstrap.shutdown()).
+ * RESPONSABILIDADES:
  *
- * DECISIÓN ARQUITECTÓNICA PARA EL ENTITY PROVIDER:
- *   AmuletRegistry necesita acceso a entidades vivas para amuletos como
- *   BounceAmuletWrapper (busca enemigos cercanos al impactar). Este acceso
- *   se hace via Supplier para no acoplar el registry a WorldManager.
+ *     - Overrides de rareza.
+ *     - Entity provider del World activo (lazy resolution).
+ *     - Coordinación de aplicación de efectos.
  *
- *   El Supplier tiene lifecycle de World: si el World se destruye y el Supplier
- *   no se limpia, AmuletRegistry retiene una referencia a un WorldManager
- *   destruido. Por eso GameWorldBootstrap.shutdown() llama:
- *     AmuletRegistry.setEntityProvider(null);
- *   Esto restaura el provider a un Supplier vacío seguro (List::of).
+ * NO RESPONSABILIDADES:
  *
- * SIN LISTENERS EN GAMEVENTBUS:
- *   AmuletRegistry no instala listeners en GameEventBus. No necesita
- *   Subscription ni cleanup del bus. Su única dependencia de scope World
- *   es el entityProvider, gestionado explícitamente via setter.
+ *     - Registrar AmuletType.
+ *     - Almacenar AmuletType.
+ *     - Crear AmuletEffect.
+ *     - Crear BulletBehavior directamente.
+ *     - Registrar definiciones manualmente.
+ *     - Resolver IDs String.
  *
- * ── AMULETOS vs ARMAS/BALAS ───────────────────────────────────────────────
- * | Categoría      | Únicos por run | Apilables | Infinitos |
- * |----------------|---------------|-----------|-----------|
- * | Armas          | Sí            | No        | No        |
- * | Tipos de bala  | Sí            | No        | No        |
- * | Amuletos       | No            | Sí        | Sí*       |
+ * AmuletType y ObjectTypeFactory son responsables del sistema de tipos.
  *
- * *"Infinitos" = pueden ofrecerse indefinidamente; el pool nunca se agota.
+ * ── INICIALIZACIÓN AUTOMÁTICA ────────────────────────────────────────────
  *
- * ── FLUJO DE USO ─────────────────────────────────────────────────────────
- *  1. GameState.init() → AmuletType static initializers ejecutan
- *  2. GameWorldBootstrap → AmuletRegistry.setEntityProvider(worldSupplier)
- *  3. Loot/tienda → AmuletType.buildOfferPool(count, random)
- *  4. Jugador recoge → PlayerAmulets.add(amuletType)
- *  5. Al disparar → AmuletEffectApplicator.applyAll(playerAmulets, stats, behavior)
- *  6. Al destruir el World → AmuletRegistry.setEntityProvider(null)
+ * AmuletRegistry ahora usa singleton eager (static final) igual que
+ * WeaponType y BulletType, eliminando la necesidad de init() manual.
  *
- * ── RAREZA CONFIGURABLE ──────────────────────────────────────────────────
- * Igual que WeaponRegistry: overrideRarity() permite al diseñador ajustar
- * frecuencias desde configuración externa sin recompilar.
+ * ── ENTITY PROVIDER PATTERN ──────────────────────────────────────────────
  *
- * @deprecated Los métodos de registro y consulta ahora se encuentran en AmuletType.
- *             Este registry mantiene solo rarityOverrides y entityProvider.
+ * Algunos efectos de amuleto (como BounceAmuletWrapper) necesitan acceso
+ * a las entidades del World activo. En lugar de inyectar el entityProvider
+ * en el static block (cuando NO HAY World activo), usamos lazy resolution:
+ *
+ *   1. AmuletType.ECHO_STONE se define con entityProvider = null
+ *   2. GameWorldBootstrap.setEntityProvider() lo configura cuando el World existe
+ *   3. BounceAmuletWrapper lo obtiene vía AmuletRegistry.getEntityProvider()
+ *
+ * Esto resuelve el problema de inicialización circular: AmuletType puede
+ * definirse sin World, y el proveedor se inyecta después.
  */
-@Deprecated
-public final class AmuletRegistry {
+public final class AmuletRegistry
+        extends ItemRegistry<AmuletDefinition> {
 
-    private static AmuletRegistry instance;
-
-    private final Map<String, ItemRarity> rarityOverrides   = new HashMap<>();
+    private static final AmuletRegistry INSTANCE = new AmuletRegistry();
 
     /**
-     * Proveedor de entidades del mundo activo.
-     * Inyectado desde GameWorldBootstrap cuando el mundo está disponible.
-     * Usado por amuletos como BounceAmuletWrapper que necesitan buscar objetivos.
-     * Null hasta que se llame setEntityProvider().
+     * Overrides de rareza específicos de amuletos.
+     *
+     * La rareza base continúa perteneciendo a AmuletDefinition.
      */
-    private java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>> entityProvider = java.util.List::of;
+    private final Map<AmuletID, ItemRarity> rarityOverrides =
+            new HashMap<>();
 
-    private AmuletRegistry() {}
+    /**
+     * Proveedor de entidades del World activo.
+     *
+     * Los efectos que necesiten consultar entidades vivas pueden obtener
+     * el proveedor desde este registry sin acoplarse a WorldManager.
+     *
+     * Se inicializa con List::of (proveedor vacío seguro) y se actualiza
+     * desde GameWorldBootstrap cuando el World está activo.
+     */
+    private Supplier<List<? extends AbstractEntity>> entityProvider =
+            List::of;
 
-    // ── Ciclo de vida ─────────────────────────────────────────────────────
+    // ── Constructor ───────────────────────────────────────────────────────
 
-    public static void init() {
-        if (instance == null) instance = new AmuletRegistry();
+    private AmuletRegistry() {
     }
+
+    // ── Singleton ─────────────────────────────────────────────────────────
 
     public static AmuletRegistry getInstance() {
-        if (instance == null) throw new IllegalStateException(
-            "AmuletRegistry no inicializado. Llamá AmuletRegistry.init() primero.");
-        return instance;
+        return INSTANCE;
     }
 
+    // ── Entity Provider ───────────────────────────────────────────────────
+
     /**
-     * Inyecta el proveedor de entidades del mundo activo.
+     * Inyecta el proveedor de entidades del World activo.
      *
-     * Necesario para amuletos que buscan entidades cercanas (BounceAmuletWrapper).
-     * Llamar desde GameWorldBootstrap después de crear el mundo y el player.
-     *
-     * @param provider proveedor que retorna la lista de AbstractEntity del mundo actual
+     * null restaura un proveedor vacío seguro.
      */
     public static void setEntityProvider(
-            java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>> provider) {
-        getInstance().entityProvider = (provider != null) ? provider : java.util.List::of;
+            Supplier<List<? extends AbstractEntity>> provider
+    ) {
+
+        getInstance().entityProvider =
+                provider != null
+                        ? provider
+                        : List::of;
     }
 
     /**
-     * Proveedor de entidades activo.
-     * Los amuletos que lo necesitan lo leen desde aquí.
+     * Obtiene el proveedor de entidades del World activo.
      */
-    public static java.util.function.Supplier<java.util.List<? extends Game.Engine.AbstractEntity>>
-            getEntityProvider() {
+    public static Supplier<List<? extends AbstractEntity>>
+    getEntityProvider() {
+
         return getInstance().entityProvider;
     }
 
-    /**
-     * @deprecated Los tipos de amuleto ahora se registran en AmuletType via static initializers.
-     *             Este método mantiene compatibilidad pero ya no es necesario.
-     */
-    @Deprecated
-    public static void registerDefaults() {
-        // No-op: los amuletos se declaran ahora en AmuletType static block
-        // Mantenido para compatibilidad con código existente que llama a este método
-    }
-
-    // ── API de compatibilidad (delegación a AmuletType) ───────────────────
+    // ── Rareza ─────────────────────────────────────────────────────────────
 
     /**
-     * @deprecated Los tipos de amuleto ahora se registran en AmuletType via static initializers.
-     *             Este método mantiene compatibilidad pero ya no es necesario.
-     */
-    @Deprecated
-    public static void register(Game.Items.Creation.ItemDefinition def) {
-        // No-op: definitions ya no se almacenan aquí
-        // Las llamadas legacy se ignoran silenciosamente para evitar romper código existente
-    }
-
-    /**
-     * Obtiene una definición por ID.
-     * 
-     * COMPATIBILIDAD: Retorna la ItemDefinition del AmuletType especificado.
+     * Sobrescribe la rareza efectiva de un amuleto.
      *
-     * @param id identificador del amuleto
-     * @return definición del amuleto
-     * @throws IllegalArgumentException si no existe
+     * No modifica la AmuletDefinition original.
      */
-    public static Game.Items.Creation.ItemDefinition get(String id) {
-        AmuletType type = ObjectTypeFactory.get(AmuletType.class, id);
-        return type.getDefinition();
-    }
+    public static void overrideRarity(
+            AmuletID amuletId,
+            ItemRarity rarity
+    ) {
 
-    /**
-     * Retorna todas las definiciones registradas.
-     * 
-     * COMPATIBILIDAD: Convierte AmuletType a AmuletDefinition para código legacy.
-     */
-    /* public static Collection<AmuletDefinition> all() {
-        List<AmuletDefinition> result = new ArrayList<>();
-        for (AmuletType type : ObjectTypeFactory.values(AmuletType.class)) {
-            result.add(new AmuletDefinition(
-                type.getId(),
-                type.getDisplayName(),
-                type.getDescription(),
-                type.getRarity(),
-                type.createEffect()
-            ));
+        if (amuletId == null) {
+            throw new IllegalArgumentException(
+                    "amuletId no puede ser null"
+            );
         }
-        return Collections.unmodifiableList(result);
-    } */
 
-    public static void overrideRarity(String amuletId, ItemRarity rarity) {
-        getInstance().rarityOverrides.put(amuletId, rarity);
-    }
+        if (rarity == null) {
+            throw new IllegalArgumentException(
+                    "rarity no puede ser null"
+            );
+        }
 
-    public static ItemRarity getRarity(String amuletId) {
-        AmuletRegistry reg = getInstance();
-        ItemRarity override = reg.rarityOverrides.get(amuletId);
-        if (override != null) return override;
-        
-        // Buscar en ObjectTypeFactory
-        AmuletType type = ObjectTypeFactory.find(AmuletType.class, amuletId);
-        return type != null ? type.getRarity() : ItemRarity.COMMON;
+        getInstance()
+                .rarityOverrides
+                .put(amuletId, rarity);
     }
 
     /**
-     * Construye un pool de amuletos ofrecidos al jugador.
-     * 
-     * COMPATIBILIDAD: Delega a ObjectTypeFactory.buildOfferPool()
+     * Obtiene la rareza efectiva del amuleto.
      *
-     * @param maxCount máximo de opciones a ofrecer
-     * @param random   fuente de aleatoriedad
-     * @return lista inmutable de definiciones de amuletos
+     * Primero consulta un posible override.
+     * Si no existe, utiliza la rareza de AmuletDefinition.
      */
-    /* public static List<AmuletDefinition> buildOfferPool(int maxCount, Random random) {
-        List<AmuletType> types = ObjectTypeFactory.buildOfferPool(
-            AmuletType.class,
-            type -> true,  // todos son candidatos
-            maxCount,
-            random
-        );
-        List<AmuletDefinition> result = new ArrayList<>();
-        for (AmuletType type : types) {
-            result.add(new AmuletDefinition(
-                type.getId(),
-                type.getDisplayName(),
-                type.getDescription(),
-                type.getRarity(),
-                type.createEffect()
-            ));
+    public static ItemRarity getRarity(
+            AmuletID amuletId
+    ) {
+
+        if (amuletId == null) {
+            throw new IllegalArgumentException(
+                    "amuletId no puede ser null"
+            );
         }
-        return Collections.unmodifiableList(result);
-    } */
 
-    /**
-     * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
-     * y envuelve el BulletBehavior.
-     *
-     * Llamar desde ModifiedWeapon.tryShoot() en lugar de iterar WeaponModifiers.
-     *
-     * @param ownedAmulets lista de IDs de amuletos del jugador (puede repetirse)
-     * @param stats        copia mutable de WeaponStats a modificar
-     * @param behavior     behavior base a envolver
-     * @return behavior con todos los efectos de amuleto aplicados
-     */
-    /**
-     * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
-     * y envuelve el BulletBehavior.
-     *
-     * COMPATIBILIDAD: Convierte definiciones a tipos y delega a AmuletEffectApplicator
-     *
-     * @param ownedAmulets definiciones de amuletos que posee el jugador
-     * @param stats        copia mutable de WeaponStats a modificar
-     * @param behavior     behavior base a envolver
-     * @return behavior con todos los efectos de amuleto aplicados
-     */
-    /* public static BulletBehavior applyAllFromDefinitions(
-            List<AmuletDefinition> ownedAmulets,
-            WeaponStats stats,
-            BulletBehavior behavior) {
+        AmuletRegistry registry = getInstance();
 
-        // Convertir definiciones a tipos
-        List<AmuletType> types = new ArrayList<>();
-        for (AmuletDefinition def : ownedAmulets) {
-            AmuletType type = ObjectTypeFactory.find(AmuletType.class, def.getId());
-            if (type != null) {
-                types.add(type);
-            }
+        ItemRarity override =
+                registry.rarityOverrides.get(amuletId);
+
+        if (override != null) {
+            return override;
         }
-        
-        return AmuletEffectApplicator.applyAll(types, stats, behavior);
-    } */
+
+        return registry
+                .get(amuletId)
+                .getRarity();
+    }
+
+    // ── Effect Application ────────────────────────────────────────────────
 
     /**
-     * Aplica todos los amuletos del jugador (con apilamiento) a un WeaponStats
-     * y envuelve el BulletBehavior.
+     * Aplica todos los amuletos poseídos al WeaponStats y al
+     * BulletBehavior.
      *
-     * COMPATIBILIDAD: Convierte IDs a tipos y delega a AmuletEffectApplicator
+     * Los amuletos son acumulables, por lo que un mismo AmuletID puede
+     * aparecer múltiples veces.
      *
-     * @param ownedAmulets IDs de amuletos que posee el jugador
-     * @param stats        copia mutable de WeaponStats a modificar
-     * @param behavior     behavior base a envolver
-     * @return behavior con todos los efectos de amuleto aplicados
+     * Flujo:
+     *
+     *     AmuletID
+     *        ↓
+     *     ObjectTypeFactory
+     *        ↓
+     *     AmuletType
+     *        ↓
+     *     AmuletEffect
+     *        ↓
+     *     AmuletEffectApplicator
      */
     public static BulletBehavior applyAll(
-            List<String> ownedAmulets,
+            List<AmuletID> ownedAmulets,
             WeaponStats stats,
-            BulletBehavior behavior) {
+            BulletBehavior behavior
+    ) {
 
-        // Convertir IDs a tipos
-        List<AmuletType> types = new ArrayList<>();
-        for (String id : ownedAmulets) {
-            AmuletType type = ObjectTypeFactory.find(AmuletType.class, id);
-            if (type != null) {
-                types.add(type);
-            }
+        if (ownedAmulets == null) {
+            throw new IllegalArgumentException(
+                    "ownedAmulets no puede ser null"
+            );
         }
-        
-        return AmuletEffectApplicator.applyAll(types, stats, behavior);
+
+        if (stats == null) {
+            throw new IllegalArgumentException(
+                    "stats no puede ser null"
+            );
+        }
+
+        if (behavior == null) {
+            throw new IllegalArgumentException(
+                    "behavior no puede ser null"
+            );
+        }
+
+        List<AmuletType> types =
+                ownedAmulets.stream()
+                        .map(id ->
+                                ObjectTypeFactory.find(
+                                        AmuletType.class,
+                                        id
+                                )
+                        )
+                        .filter(type -> type != null)
+                        .toList();
+
+        return AmuletEffectApplicator.applyAll(
+                types,
+                stats,
+                behavior
+        );
     }
 }

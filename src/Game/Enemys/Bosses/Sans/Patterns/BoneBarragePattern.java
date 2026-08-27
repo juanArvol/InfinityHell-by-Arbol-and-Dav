@@ -84,7 +84,7 @@ public final class BoneBarragePattern implements AttackPattern {
         // "sans.bone" identifica el tipo de proyectil a instanciar.
         // origin: centro del enemy / target: centro del jugador.
         eventBus.post(new SpawnProjectileEvent(
-            "sans.bone",
+            null,
             enemy.getTransform().getPosition(),
             ctx.getPosition(),
             enemy

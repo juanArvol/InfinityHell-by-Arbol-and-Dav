@@ -121,7 +121,7 @@ public class TrajectoryVisualizationCapability implements AimVisualizationCapabi
 
         // ── Consultar TrajectoryProvider del BulletBehavior ──────────────
         // La UI NO implementa física — delega al dominio de proyectiles
-        BulletBehavior behavior = bulletType.create();
+        BulletBehavior behavior = bulletType.createBehavior();
         TrajectoryProvider provider = behavior.getTrajectoryProvider();
 
         // ── Calcular spawn position en coordenadas de mundo ──────────────

@@ -79,7 +79,6 @@ public final class GameWorldBootstrap {
         eventBus = worldManager.getEventBus();
 
         // ── Registros globales de ítems ──────────────────────────────────
-        ItemRegistry.getInstance();
 
         // ── ProjectileContext — ANTES de crear el Player ─────────────────
         // 

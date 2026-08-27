@@ -2,10 +2,7 @@ package Game.Items.Types.Ammulets;
 
 import Game.Items.Core.ObjectType;
 import Game.Items.Core.ObjectTypeFactory;
-import Game.Items.Creation.ItemDefinition;
-import Game.Items.Types.Ammulets.Effects.*;
-import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Items.Types.Weapons.WeaponType.WeaponStats;
+import Game.Items.Types.Ammulets.Types.*;
 import java.util.function.Supplier;
 
 /**
@@ -38,92 +35,49 @@ public final class AmuletType extends ObjectType<AmuletEffect> {
 
     static {
         BONE_TIP = register(new AmuletType(
-            AmuletDefinitions.BONE_TIP,
-            () -> new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setDamageBonusByWeapon(stats.getDamageBonusByWeapon() + 8.0);
-                }
-            }
+            AmuletDefinition.BONE_TIP,
+            BoneTipEffect::new
         ));
 
         MARKSMAN_SIGHT = register(new AmuletType(
-            AmuletDefinitions.MARKSMAN_SIGHT,
-            () -> new UICapabilityEffect(
-                () -> new Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability(
-                    Game.Gameplay.UI.Aim.TrajectoryVisualizationCapability.TrajectoryStyle.FADE,
-                    java.awt.Color.CYAN
-                )
-            )
+            AmuletDefinition.MARKSMAN_SIGHT,
+            MarksmanSightEffect::new
         ));
 
         SWIFT_QUILL = register(new AmuletType(
-            AmuletDefinitions.SWIFT_QUILL,
-            () -> new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setBulletSpeedBase(stats.getBulletSpeedBase() * 1.15);
-                }
-            }
+            AmuletDefinition.SWIFT_QUILL,
+            SwiftQuillEffect::new
         ));
 
         TEMPO_RING = register(new AmuletType(
-            AmuletDefinitions.TEMPO_RING,
-            () -> new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setCooldown(stats.getCooldown() * 0.90);
-                }
-            }
+            AmuletDefinition.TEMPO_RING,
+            TempoRingEffect::new
         ));
 
         STEADY_GRIP = register(new AmuletType(
-            AmuletDefinitions.STEADY_GRIP,
-            () -> new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setSpread(stats.getSpread() * 0.80);
-                }
-            }
+            AmuletDefinition.STEADY_GRIP,
+            SteadyGripEffect::new
         ));
 
         PHASE_SHARD = register(new AmuletType(
-            AmuletDefinitions.PHASE_SHARD,
-            () -> new AmuletEffect() {
-                @Override
-                public BulletBehavior wrapBehavior(BulletBehavior base) {
-                    return new PiercingAmuletWrapper(base, 1);
-                }
-            }
+            AmuletDefinition.PHASE_SHARD,
+            PhaseShardEffect::new
         ));
 
         ECHO_STONE = register(new AmuletType(
-            AmuletDefinitions.ECHO_STONE,
-            () -> new AmuletEffect() {
-                @Override
-                public BulletBehavior wrapBehavior(BulletBehavior base) {
-                    return new BounceAmuletWrapper(
-                        base, 1, AmuletRegistry.getEntityProvider()
-                    );
-                }
-            }
+            AmuletDefinition.ECHO_STONE,
+            EchoStoneEffect::new
         ));
 
         SPLIT_CRYSTAL = register(new AmuletType(
-            AmuletDefinitions.SPLIT_CRYSTAL,
-            () -> new AmuletEffect() {
-                @Override
-                public void applyToStats(WeaponStats stats) {
-                    stats.setBulletsPerShot(stats.getBulletsPerShot() + 1);
-                    System.out.println("me dividi por mil baby");
-                }
-            }
+            AmuletDefinition.SPLIT_CRYSTAL,
+            SplitCrystalEffect::new
         ));
     }
 
     // ── Constructor privado ───────────────────────────────────────────────
 
-    private AmuletType(ItemDefinition definition, Supplier<AmuletEffect> factory) {
+    private AmuletType(AmuletDefinition definition, Supplier<AmuletEffect> factory) {
         super(definition, factory);
     }
 

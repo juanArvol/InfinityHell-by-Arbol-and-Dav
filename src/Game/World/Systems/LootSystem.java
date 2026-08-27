@@ -4,6 +4,7 @@ import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.OnEnemyDeathEvent;
 import Game.Items.Creation.ItemDefinition;
+import Game.Items.Creation.ItemID;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
 import Game.Items.Savement.ItemStack;
@@ -67,7 +68,7 @@ public class LootSystem {
 
     // ── Configuración ─────────────────────────────────────────────────────
 
-    public LootSystem addEntry(String itemId, ItemRarity rarity,
+    public LootSystem addEntry(ItemID itemId, ItemRarity rarity,
                                float dropChance, int minAmount, int maxAmount) {
         entries.add(new LootEntry(itemId, rarity, dropChance, minAmount, maxAmount));
         return this;
@@ -93,8 +94,8 @@ public class LootSystem {
 
         for (LootEntry entry : entries) {
             if (random.nextFloat() > entry.dropChance) continue;
-
-            ItemDefinition def = ItemRegistry.find(entry.itemId);
+            ItemRegistry reg = new ItemRegistry<ItemDefinition>() {};
+            ItemDefinition def = reg.find(entry.itemId);
             if (def == null) continue;
 
             int amount = entry.minAmount;
@@ -114,7 +115,7 @@ public class LootSystem {
     // ── Entrada de loot ───────────────────────────────────────────────────
 
     private record LootEntry(
-        String     itemId,
+        ItemID     itemId,
         ItemRarity rarity,
         float      dropChance,
         int        minAmount,

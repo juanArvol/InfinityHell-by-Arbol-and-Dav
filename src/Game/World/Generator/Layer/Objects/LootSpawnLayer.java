@@ -2,9 +2,11 @@ package Game.World.Generator.Layer.Objects;
 
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Items.Creation.ItemDefinition;
+import Game.Items.Creation.ItemID;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Creation.ItemRegistry;
 import Game.Items.Savement.ItemStack;
+import Game.Items.Types.Weapons.WeaponType.FireMode.iFireMode;
 import Game.World.Chunk.Chunk;
 import Game.World.Generator.Layer.WorldLayer;
 import Game.World.WorldObjects.WorldItem;
@@ -69,8 +71,8 @@ public class LootSpawnLayer implements WorldLayer {
         for (int i = 0; i < count; i++) {
             LootEntry entry = rollEntry(random, totalWeight);
             if (entry == null) continue;
-
-            ItemDefinition def = ItemRegistry.find(entry.itemId);
+            ItemRegistry reg = new ItemRegistry<ItemDefinition>() {};
+            ItemDefinition def = reg.find(entry.id);
             if (def == null) continue;
 
             int amount = entry.minAmount + (entry.maxAmount > entry.minAmount
@@ -108,7 +110,7 @@ public class LootSpawnLayer implements WorldLayer {
     // ── Entrada de loot table ─────────────────────────────────────────────
 
     public record LootEntry(
-        String itemId,
+        ItemID id,
         ItemRarity rarity,
         int minAmount,
         int maxAmount
@@ -133,13 +135,13 @@ public class LootSpawnLayer implements WorldLayer {
             return this;
         }
 
-        public Builder addEntry(String itemId, ItemRarity rarity, int minAmount, int maxAmount) {
-            entries.add(new LootEntry(itemId, rarity, minAmount, maxAmount));
+        public Builder addEntry(ItemID id, ItemRarity rarity, int minAmount, int maxAmount) {
+            entries.add(new LootEntry(id, rarity, minAmount, maxAmount));
             return this;
         }
 
-        public Builder addEntry(String itemId, ItemRarity rarity) {
-            return addEntry(itemId, rarity, 1, 1);
+        public Builder addEntry(ItemID id, ItemRarity rarity) {
+            return addEntry(id, rarity, 1, 1);
         }
 
         public LootSpawnLayer build() {
