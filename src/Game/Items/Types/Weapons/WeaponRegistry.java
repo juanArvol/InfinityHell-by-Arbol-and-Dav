@@ -46,7 +46,7 @@ import java.util.Set;
 public final class WeaponRegistry
         extends ItemRegistry<WeaponDefinition> {
 
-    private static WeaponRegistry instance;
+    private static final WeaponRegistry INSTANCE = new WeaponRegistry();
 
     /**
      * Rarezas modificadas externamente para balance.
@@ -61,22 +61,10 @@ public final class WeaponRegistry
     private WeaponRegistry() {
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────────────
-
-    public static void init() {
-
-        if (instance == null) {
-            instance = new WeaponRegistry();
-        }
-    }
+    // ── Singleton ────────────────────────────────────────────────────────
 
     public static WeaponRegistry getInstance() {
-
-        if (instance == null) {
-            throw new IllegalStateException("WeaponRegistry no inicializado. " + "Llamá WeaponRegistry.init() primero.");
-        }
-
-        return instance;
+        return INSTANCE;
     }
 
     // ── Rareza ───────────────────────────────────────────────────────────

@@ -43,7 +43,7 @@ public class WorldProjectileSpawningProvider implements CapabilityProvider<Proje
             public void spawnProjectile(ProjectileBlueprint blueprint, Vector2D position, Vector2D direction) {
                 // Acquire bullet from pool (will resolve context and inject owner/spawnOrigin from blueprint)
                 // Owner MUST be set in blueprint by the behavior before calling this
-                Bullet bullet = projectilePool.acquire(blueprint, position, direction);
+                Bullet bullet = projectilePool.acquire(blueprint, position.getX(), position.getY(), direction.getX(), direction.getY());
                 
                 // Add to world
                 worldManager.addDynamic(bullet);

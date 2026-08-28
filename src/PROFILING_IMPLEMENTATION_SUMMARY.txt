@@ -1,0 +1,119 @@
+═══════════════════════════════════════════════════════════════════════════
+  HRFC — BOTTLENECK DIAGNOSIS INFRASTRUCTURE
+═══════════════════════════════════════════════════════════════════════════
+
+ARCHIVOS CREADOS:
+─────────────────
+1. Game/Engine/Profiling/FrameProfile.java
+   - Estructura de datos para capturar tiempos de subsistemas por frame
+   - Campos: activeProjectiles, fps, simulation, physics, collision, rendering
+
+2. Game/Engine/Profiling/SubsystemTimer.java
+   - Timer de alta resolución con System.nanoTime()
+   - API: start(), stop(), getElapsedMs(), getElapsedNanos()
+
+3. Game/Engine/Profiling/ProfileCollector.java
+   - Acumula FrameProfiles de múltiples frames
+   - Ring buffer configurable (evita memory leak)
+   - Genera estadísticas: promedio, min, max
+   - Export a CSV para análisis externo
+   - Detección automática de cuellos de botella
+
+4. Game/Engine/Profiling/ProfilingConfig.java
+   - Singleton de configuración global
+   - Modos de aislamiento (rendering, simulation, collision)
+   - Auto-export al shutdown
+
+5. Main/Debug/ProfilingCommand.java
+   - Comandos de usuario: startStressTest(), stopProfiling(), etc.
+   - Configuraciones rápidas para pruebas de diagnóstico
+
+ARCHIVOS MODIFICADOS:
+─────────────────────
+1. Game/Engine/Systems/CollisionsSystem.java
+   - Agregados: collisionTimer, broadPhaseTimer, narrowPhaseTimer, dispatchTimer
+   - Métodos públicos para acceder a tiempos medidos
+   - Timer.start() al inicio de update()
+   - Timer.stop() al final de update()
+
+2. Game/World/Core/WorldManager.java
+   - Agregados: updateTimer, simulationTimer, renderTimer, frameCounter
+   - Método getActiveProjectileCount() para contar bullets
+   - Genera FrameProfile y lo registra en ProfilingConfig
+   - Mide simulation en update() y rendering en draw()
+
+3. Game/Engine/Profiling/ProfileCollector.java
+   - Agregado: updateLastFrameRenderTime() para actualizar rendering time
+
+4. Main/Bootstrap/GameWorldBootstrap.java
+   - Línea comentada para activar profiling: ProfilingCommand.startStressTest()
+
+CÓMO USAR:
+──────────
+OPCIÓN 1 — Descomentar en GameWorldBootstrap:
+   // Main.Debug.ProfilingCommand.startStressTest();
+
+OPCIÓN 2 — Desde código:
+   Main.Debug.ProfilingCommand.startStressTest();
+   // ... jugar disparando con WeaponPistola (360 bullets/shot) ...
+   Main.Debug.ProfilingCommand.stopProfiling();
+   // Resultado: profiling_results.csv
+
+OPCIÓN 3 — ProfilingConfig directo:
+   ProfilingConfig config = ProfilingConfig.getInstance();
+   config.setEnabled(true);
+   config.setMaxFrames(5000);
+   // ... jugar ...
+   config.printSummary();
+   config.exportCSV("profiling_results.csv");
+
+RESULTADO:
+──────────
+1. Consola imprime resumen con:
+   - Promedios de cada subsistema (ms y %)
+   - Peor caso (max frame time, max collision, max render)
+   - PRIMARY BOTTLENECK detectado automáticamente
+   - SCALING (O(n), O(n²), etc.)
+
+2. CSV exportado con todos los frames:
+   - frame,activeProjectiles,fps,frameTimeMs,simulationMs,...
+   - Importar en Excel/Python para análisis detallado
+
+PRUEBAS SUGERIDAS:
+──────────────────
+1. Stress Test con WeaponPistola (360 bullets/shot, cooldown=0)
+   - Disparar continuamente hasta tener 2000-3000 proyectiles activos
+   - Observar FPS: 60 → 3-5 FPS
+   - Detener profiling y revisar resultados
+
+2. Escalamiento por cantidad:
+   - 100, 250, 500, 1000, 2000, 3000 proyectiles
+   - Verificar si tiempo crece linealmente (O(n)) o cuadrático (O(n²))
+
+3. Aislamiento de rendering:
+   - ProfilingCommand.startRenderingIsolation()
+   - Los bullets se actualizan pero NO se renderizan
+   - Si FPS recupera: rendering es el cuello de botella
+
+4. Aislamiento de simulation:
+   - ProfilingCommand.startSimulationIsolation()
+   - Reducir lógica de behavior/movement/physics
+   - Determinar coste de simulation vs rendering
+
+LIMITACIONES:
+─────────────
+- NO instrumenta behavior individual (solo suma total)
+- NO instrumenta movement individual (solo suma total)
+- NO instrumenta rendering de bullets específicamente (TODO)
+- Ring buffer de 5000-10000 frames (configurar con setMaxFrames)
+
+PRÓXIMOS PASOS:
+───────────────
+1. Ejecutar stress test con WeaponPistola
+2. Identificar PRIMARY BOTTLENECK con evidencia
+3. Si rendering: auditar BufferedImage, drawImage(), transformaciones
+4. Si collision: auditar broad/narrow phase, dispatch
+5. Si simulation: auditar behavior.onUpdate(), movement.tick()
+6. Proponer HRFC específico con la optimización a implementar
+
+═══════════════════════════════════════════════════════════════════════════

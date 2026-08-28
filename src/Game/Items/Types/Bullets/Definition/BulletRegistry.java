@@ -45,7 +45,7 @@ import java.util.Set;
 public final class BulletRegistry
         extends ItemRegistry<BulletDefinition> {
 
-    private static BulletRegistry instance;
+    private static final BulletRegistry INSTANCE = new BulletRegistry();
 
     /**
      * Overrides de rareza específicos de bullets.
@@ -60,18 +60,10 @@ public final class BulletRegistry
     private BulletRegistry() {
     }
 
-    // ── Lifecycle ────────────────────────────────────────────────────────
+    // ── Singleton ────────────────────────────────────────────────────────
 
     public static BulletRegistry getInstance() {
-
-        if (instance == null) {
-            throw new IllegalStateException(
-                    "BulletRegistry no inicializado. " +
-                    "Llamá BulletRegistry.init() primero."
-            );
-        }
-
-        return instance;
+        return INSTANCE;
     }
 
     // ── Rareza ───────────────────────────────────────────────────────────

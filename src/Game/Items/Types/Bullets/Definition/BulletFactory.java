@@ -95,7 +95,10 @@ public final class BulletFactory {
                                Vector2D position,
                                Vector2D direction,
                                Object owner) {
-        Bullet bullet = construct(blueprint, position, direction);
+        // FASE 4 — Delegar a la versión optimizada con primitivos
+        Bullet bullet = construct(blueprint, 
+            position.getX(), position.getY(),
+            direction.getX(), direction.getY());
         emitSpawn(bus, bullet, owner);
         return bullet;
     }
@@ -104,6 +107,8 @@ public final class BulletFactory {
 
     /**
      * Construye un Bullet SIN emitir OnProjectileSpawn.
+     *
+     * FASE 4 — Optimización: firma con primitivos para reducir allocations.
      *
      * Usar exclusivamente desde ProjectilePool.acquire() cuando no hay
      * instancia compatible disponible. El pool emite el evento después de
@@ -114,14 +119,16 @@ public final class BulletFactory {
      * el evento. No llamar desde código que no sea ProjectilePool.
      *
      * @param blueprint definición completa y resuelta del proyectil
-     * @param position  posición de spawn en coordenadas del mundo
-     * @param direction dirección normalizada de vuelo
+     * @param posX      posición de spawn (coordenada X)
+     * @param posY      posición de spawn (coordenada Y)
+     * @param dirX      dirección normalizada de vuelo (componente X)
+     * @param dirY      dirección normalizada de vuelo (componente Y)
      * @return Bullet nueva, sin evento emitido, sin ownerPool asignado
      */
     public static Bullet buildForPool(ProjectileBlueprint blueprint,
-                                      Vector2D position,
-                                      Vector2D direction) {
-        return construct(blueprint, position, direction);
+                                      double posX, double posY,
+                                      double dirX, double dirY) {
+        return construct(blueprint, posX, posY, dirX, dirY);
     }
 
     // ── Stats para UI (sin instanciar Bullet) ────────────────────────────
@@ -150,6 +157,9 @@ public final class BulletFactory {
     /**
      * Núcleo de construcción compartido entre build() y buildForPool().
      *
+     * FASE 4 — Optimización: firma con primitivos para reducir allocations.
+     * Los componentes x/y se pasan directamente sin crear Vector2D temporales.
+     *
      * Resuelve el Flyweight, calcula la velocidad vectorial y construye
      * la instancia Bullet. No emite eventos — eso es responsabilidad del
      * caller según si usa la ruta pública o la ruta del pool.
@@ -157,15 +167,15 @@ public final class BulletFactory {
      * Mini-HRFC — pasa el PhysicalState del blueprint a Bullet.
      */
     private static Bullet construct(ProjectileBlueprint blueprint,
-                                    Vector2D position,
-                                    Vector2D direction) {
+                                    double posX, double posY,
+                                    double dirX, double dirY) {
         BulletFlyweight flyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
 
-        double xSpeed = direction.getX() * blueprint.speed();
-        double ySpeed = direction.getY() * blueprint.speed();
+        double xSpeed = dirX * blueprint.speed();
+        double ySpeed = dirY * blueprint.speed();
 
         return new Bullet(
-                position,
+                posX, posY,
                 flyweight,
                 blueprint.behavior(),
                 blueprint.movement(),

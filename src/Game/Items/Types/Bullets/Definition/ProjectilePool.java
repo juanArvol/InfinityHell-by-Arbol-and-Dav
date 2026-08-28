@@ -1,7 +1,6 @@
 package Game.Items.Types.Bullets.Definition;
 
 import Game.Engine.GameEventBus;
-import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Pooling.AbstractObjectPool;
 import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
@@ -122,6 +121,24 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
      */
     private ProjectileBlueprint currentBlueprint = null;
 
+    // ── Instrumentación adicional ─────────────────────────────────────────
+
+    /**
+     * Número total de instancias Bullet creadas por este pool desde su inicio.
+     * Incrementa solo cuando BulletFactory.buildForPool() es llamado.
+     */
+    private int instancesCreated = 0;
+
+    /**
+     * Número de instancias actualmente activas (adquiridas pero no liberadas).
+     */
+    private int activeInstances = 0;
+
+    /**
+     * Máximo número de instancias activas simultáneamente durante la vida del pool.
+     */
+    private int peakActiveInstances = 0;
+
     // ── Context ───────────────────────────────────────────────────────────
 
     /**
@@ -146,15 +163,21 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
     /**
      * Obtiene un proyectil listo para usar. Emite OnProjectileSpawn con owner = null.
+     * 
+     * FASE 4 — Optimización: firma con primitivos para reducir allocations.
      */
     public Bullet acquire(ProjectileBlueprint blueprint,
-                          Vector2D position,
-                          Vector2D direction) {
-        return acquire(blueprint, position, direction, null);
+                          double posX, double posY,
+                          double dirX, double dirY) {
+        return acquire(blueprint, posX, posY, dirX, dirY, null);
     }
 
     /**
      * Obtiene un proyectil listo para usar, propagando el owner al evento de spawn.
+     *
+     * FASE 4 — Optimización: firma con primitivos para reducir allocations.
+     * Los componentes x/y de position y direction se pasan directamente sin
+     * crear objetos Vector2D temporales en el hot path de disparo.
      *
      * Lógica de adquisición:
      *   1. Buscar instancia compatible (mismo tipo de behavior + movement).
@@ -163,19 +186,21 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
      *   4. Emitir OnProjectileSpawn en ambos casos (un único punto).
      *
      * @param blueprint definición del proyectil
-     * @param position  posición de spawn
-     * @param direction dirección normalizada de vuelo
+     * @param posX      posición de spawn (coordenada X)
+     * @param posY      posición de spawn (coordenada Y)
+     * @param dirX      dirección normalizada de vuelo (componente X)
+     * @param dirY      dirección normalizada de vuelo (componente Y)
      * @param owner     el objeto que originó el disparo (puede ser null)
      * @return Bullet lista para añadir al mundo
      * @throws IllegalStateException si el blueprint requiere capacidades pero no hay resolver configurado
      */
     public Bullet acquire(ProjectileBlueprint blueprint,
-                          Vector2D position,
-                          Vector2D direction,
+                          double posX, double posY,
+                          double dirX, double dirY,
                           Object owner) {
 
-        double xSpeed = direction.getX() * blueprint.speed();
-        double ySpeed = direction.getY() * blueprint.speed();
+        double xSpeed = dirX * blueprint.speed();
+        double ySpeed = dirY * blueprint.speed();
 
         // Exponer blueprint para createInstance() y canReuse() del base
         this.currentBlueprint = blueprint;
@@ -190,13 +215,9 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
 
                 BulletFlyweight newFlyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
 
-                // Reset completo: posición, velocidad, vida, damage, behavior,
-                // movement (con reset si ResettableMovement), flyweight y flags.
-                // PRE: onRelease() ya fue invocado por emitDestroy() antes de
-                // que isPendingDestruction() llamara release().
-                // Mini-HRFC: pasa el PhysicalState del blueprint.
+                // Reset completo con primitivos (FASE 4)
                 bullet.resetState(
-                        position.getX(), position.getY(),
+                        posX, posY,
                         xSpeed, ySpeed,
                         blueprint.lifeTime(),
                         blueprint.damage(),
@@ -213,7 +234,8 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
                 // el pool lo emitirá a continuación con el owner correcto,
                 // en el mismo punto que las instancias reutilizadas.
                 recordAcquireMiss();
-                bullet = BulletFactory.buildForPool(blueprint, position, direction);
+                bullet = BulletFactory.buildForPool(blueprint, posX, posY, dirX, dirY);
+                instancesCreated++; // FASE 2 — Instrumentación
             }
 
             // Inyectar referencia al pool — mecanismo de auto-devolución.
@@ -226,12 +248,18 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
             bullet.setProjectileContext(resolvedContext);
 
             // ── Configurar spawn origin ───────────────────────────────────────
-            bullet.setSpawnOrigin(position);
+            bullet.setSpawnOrigin(posX, posY); // FASE 4 — primitivos
 
             // ── Único punto de emisión de OnProjectileSpawn ───────────────────
             // emitSpawn() establece el eventBus Y el owner en el bullet antes
             // de emitir el evento — única fuente de verdad para ownership.
             BulletFactory.emitSpawn(eventBus, bullet, owner);
+
+            // FASE 2 — Actualizar contadores de instancias activas
+            activeInstances++;
+            if (activeInstances > peakActiveInstances) {
+                peakActiveInstances = activeInstances;
+            }
 
             return bullet;
             
@@ -318,6 +346,12 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
     @Override
     public void release(Bullet bullet) {
         super.release(bullet);
+        
+        // FASE 2 — Decrementar contador de instancias activas
+        // Proteger contra doble release (aunque Bullet ya lo previene)
+        if (activeInstances > 0) {
+            activeInstances--;
+        }
     }
 
     // ── AbstractObjectPool<Bullet> — hooks requeridos ────────────────────
@@ -410,5 +444,32 @@ public final class ProjectilePool extends AbstractObjectPool<Bullet> {
     @Override
     public void clear() {
         super.clear();
+        // FASE 2 — Resetear contadores adicionales
+        instancesCreated = 0;
+        activeInstances = 0;
+        peakActiveInstances = 0;
+    }
+
+    // ── FASE 2 — Getters de instrumentación adicional ────────────────────
+
+    /**
+     * @return número total de instancias Bullet creadas por este pool desde su inicio
+     */
+    public int getInstancesCreated() {
+        return instancesCreated;
+    }
+
+    /**
+     * @return número de instancias actualmente activas (adquiridas pero no liberadas)
+     */
+    public int getActiveInstances() {
+        return activeInstances;
+    }
+
+    /**
+     * @return máximo número de instancias activas simultáneamente durante la vida del pool
+     */
+    public int getPeakActiveInstances() {
+        return peakActiveInstances;
     }
 }

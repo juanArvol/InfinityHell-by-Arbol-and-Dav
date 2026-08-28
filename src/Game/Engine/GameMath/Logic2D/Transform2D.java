@@ -5,6 +5,12 @@ public class Transform2D {
     private double rotation = 0;
     public Vector2D getPosition() { return position; }
     public void setPosition(Vector2D pos){ this.position = pos; }
+    
+    /** FASE 4 — Sobrecarga con primitivos para reducir allocations */
+    public void setPosition(double x, double y) {
+        position.setX(x);
+        position.setY(y);
+    }
 
     public void setX(double x) { position.setX(x); }
     public void setY(double y) { position.setY(y); }

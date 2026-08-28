@@ -61,8 +61,6 @@ import Game.World.Core.WorldManager;
  */
 public final class GameWorldBootstrap {
 
-
-
     private final Player player;
     private final ProjectileRegistry projectileRegistry;
 
@@ -148,7 +146,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.SPRING_BULLET)
+            .initialBullets(BulletType.NORMAL_BULLET)
             .initialAmulets(AmuletType.SPLIT_CRYSTAL)
             .build();
         
@@ -192,6 +190,26 @@ public final class GameWorldBootstrap {
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
         new EnemySpawner().spawn(worldManager.getCurrentWorld(), 10, eventBus);
+
+        // ── HRFC — Profiling Infrastructure ───────────────────────────────
+        // ACTIVADO AUTOMÁTICAMENTE para stress test.
+        // Ejecutar el juego y disparar continuamente con WeaponPistola (360 bullets/shot).
+        // El profiling recolectará datos hasta detener manualmente o alcanzar maxFrames.
+        Main.Debug.ProfilingCommand.startStressTest();
+        System.out.println("═══════════════════════════════════════════════════════════════");
+        System.out.println("  HRFC PROFILING ACTIVO — STRESS TEST MODE");
+        System.out.println("═══════════════════════════════════════════════════════════════");
+        System.out.println();
+        System.out.println("INSTRUCCIONES:");
+        System.out.println("1. Equipar WeaponPistola (360 bullets/shot, cooldown=0)");
+        System.out.println("2. Disparar CONTINUAMENTE durante 60-90 segundos");
+        System.out.println("3. Observar FPS: 60 → degradación progresiva → 3-5 FPS");
+        System.out.println("4. Permitir que proyectiles mueran y FPS recupere");
+        System.out.println("5. Cerrar el juego (profiling exportará automáticamente)");
+        System.out.println();
+        System.out.println("RESULTADO: profiling_results.csv + resumen en consola");
+        System.out.println("═══════════════════════════════════════════════════════════════");
+        System.out.println();
     }
 
     /** El Player creado durante el bootstrap. */
@@ -222,48 +240,4 @@ public final class GameWorldBootstrap {
         ProjectileRegistry.shutdown();
         Game.Items.Types.Ammulets.AmuletRegistry.setEntityProvider(null);
     }
-
-    // ── MINI-HRFC — Ejemplo de API Declarativa ───────────────────────────
-
-    /**
-     * Ejemplo de configuración de loadout usando la nueva API declarativa.
-     * 
-     * ── DEMOSTRACIÓN DE SINTAXIS ──────────────────────────────────────────
-     * 
-     * Este método muestra la sintaxis ergonómica conseguida por el Mini-HRFC:
-     * 
-     *   PlayerLoadout.initialWeapons(WeaponType.PISTOLA, WeaponType.ESCOPETA)
-     *       .initialBullets(BulletType.NORMAL_BULLET, BulletType.SPRING_BULLET)
-     *       .initialAmulets()
-     *       .build();
-     * 
-     * La capacidad de construcción pertenece al contexto (este bootstrap),
-     * no a PlayerLoadout como catálogo de presets.
-     * 
-     * ── USO ───────────────────────────────────────────────────────────────
-     * 
-     * Para activar esta configuración durante desarrollo/testing:
-     * 1. Descomentar la llamada en el constructor: createDevelopmentLoadout()
-     * 2. Modificar este método según las necesidades de testing
-     * 3. Para producción, revertir al loadout estándar en el constructor
-     * 
-     * @return loadout configurado para desarrollo/testing
-     */
-    /* private static PlayerLoadout createDevelopmentLoadout() {
-        return PlayerLoadout
-            .initialWeapons(
-                WeaponType.PISTOLA,
-                WeaponType.ESCOPETA
-            )
-            .initialBullets(
-                BulletType.NORMAL_BULLET,
-                BulletType.SPRING_BULLET
-            )
-            .initialAmulets(
-                // Descomentar cuando se necesite testing de amuletos:
-                // "bone_tip",
-                // "swift_quill"
-            )
-            .build();
-    } */
 }

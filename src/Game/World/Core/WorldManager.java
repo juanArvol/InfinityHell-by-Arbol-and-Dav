@@ -97,6 +97,16 @@ public class WorldManager {
     private final StatusEffectSystem       statusEffectSystem;
     private final ChunkAffiliationSystem   affiliationSystem;
 
+    // ── HRFC — Profiling Infrastructure ───────────────────────────────────
+
+    private final Game.Engine.Profiling.SubsystemTimer updateTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private final Game.Engine.Profiling.SubsystemTimer simulationTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private final Game.Engine.Profiling.SubsystemTimer renderTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private long frameCounter = 0;
+
     /**
      * Registro global de entidades dinámicas del universo.
      *
@@ -284,11 +294,20 @@ public class WorldManager {
      *   - Fase 2 (futuro): Sistemas críticos reciben TemporalContext directamente
      *   - Fase 3 (ideal): Todos los sistemas temporales usan TemporalContext
      *
+     * ── HRFC — Bottleneck Diagnosis ──────────────────────────────────────
+     *
+     * Instrumentado para capturar tiempos de subsistemas en cada frame.
+     * Los tiempos se registran en ProfilingConfig si está habilitado.
+     *
      * @param temporalContext contexto temporal del simulation step (autoridad única)
      */
     public void update(Main.TemporalContext temporalContext) {
+        updateTimer.start();
+        simulationTimer.start();
+
         // Extraer deltaTime del contexto temporal canónico
         double deltaTime = temporalContext.getDeltaTime();
+        frameCounter++;
 
         // El World activo provee el externalRegistry para interoperabilidad legacy.
         World world = getCurrentWorld();
@@ -372,6 +391,23 @@ public class WorldManager {
             currentCoord = nextCoord;
             collisionsSystem.clearContactHistory();
         }
+
+        // ── HRFC — Profiling Infrastructure ───────────────────────────────
+        simulationTimer.stop();
+        updateTimer.stop();
+
+        // Registrar profile del frame si profiling está activo
+        Game.Engine.Profiling.ProfilingConfig profilingConfig = 
+            Game.Engine.Profiling.ProfilingConfig.getInstance();
+        if (profilingConfig.isEnabled()) {
+            Game.Engine.Profiling.FrameProfile profile = new Game.Engine.Profiling.FrameProfile();
+            profile.frameNumber = frameCounter;
+            profile.activeProjectiles = getActiveProjectileCount();
+            profile.simulationMs = simulationTimer.getElapsedMs();
+            profile.collisionMs = collisionsSystem.getLastCollisionTimeMs();
+            // frameTimeMs se calculará sumando simulation + rendering después del draw()
+            profilingConfig.recordFrame(profile);
+        }
     }
 
     // ── Render ────────────────────────────────────────────────────────────
@@ -382,8 +418,14 @@ public class WorldManager {
      * Construye un ChunkStorage compuesto con todos los chunks disponibles
      * en el WorldCache para que RenderRegion pueda mostrar chunks vecinos
      * cuando la cámara está cerca del borde.
+     *
+     * ── HRFC — Bottleneck Diagnosis ──────────────────────────────────────
+     *
+     * Instrumentado para medir tiempo de rendering en el frame profile.
      */
     public void draw(Graphics2D g) {
+        renderTimer.start();
+
         GameCamera camera = cameraSystem.getCamera();
 
         // Construir ChunkStorage compuesto con todos los chunks del cache
@@ -397,6 +439,19 @@ public class WorldManager {
             camera.getVirtualWidth(),
             camera.getVirtualHeight()
         );
+
+        renderTimer.stop();
+
+        // ── HRFC — Profiling Infrastructure ───────────────────────────────
+        // Actualizar frameTimeMs en el profile más reciente
+        Game.Engine.Profiling.ProfilingConfig profilingConfig = 
+            Game.Engine.Profiling.ProfilingConfig.getInstance();
+        if (profilingConfig.isEnabled()) {
+            Game.Engine.Profiling.ProfileCollector collector = profilingConfig.getCollector();
+            if (collector != null) {
+                collector.updateLastFrameRenderTime(renderTimer.getElapsedMs());
+            }
+        }
     }
 
     /**
@@ -459,6 +514,36 @@ public class WorldManager {
      * sin necesidad de un bus global estático.
      */
     public Game.Engine.GameEventBus getEventBus() { return eventBus; }
+
+    // ── HRFC — Profiling Infrastructure ───────────────────────────────────
+
+    /**
+     * Retorna el número de proyectiles activos actualmente en el mundo.
+     * Para diagnóstico de cuellos de botella.
+     */
+    private int getActiveProjectileCount() {
+        int count = 0;
+        for (GameObjects obj : globalDynamicRegistry.getAll()) {
+            if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Retorna el tiempo de rendering del último frame en milisegundos.
+     */
+    public double getLastRenderTimeMs() {
+        return renderTimer.getElapsedMs();
+    }
+
+    /**
+     * Retorna el tiempo de simulation del último frame en milisegundos.
+     */
+    public double getLastSimulationTimeMs() {
+        return simulationTimer.getElapsedMs();
+    }
 
     public void setCameraController(CameraController controller) {
         cameraSystem.setCameraController(controller);

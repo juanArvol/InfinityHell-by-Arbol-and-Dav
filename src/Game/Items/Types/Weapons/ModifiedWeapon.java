@@ -241,20 +241,44 @@ public class ModifiedWeapon {
 
         // ── Construir proyectiles usando el blueprint resuelto ───────────
         List<Bullet> bullets = new ArrayList<>(resolved.stats().getBulletsPerShot());
+        
+        // FASE 4 — Optimización: precalcular componentes para reducir allocations
+        double spread = resolved.stats().getSpread();
+        double baseDirX = direction.getX();
+        double baseDirY = direction.getY();
 
         for (int i = 0; i < resolved.stats().getBulletsPerShot(); i++) {
 
-            Vector2D spreadDir = direction
-                    .applySpread(direction, resolved.stats().getSpread())
-                    .normalize();
+            // FASE 4 — Calcular spread con primitivos, sin crear Vector2D temporales
+            double randomAngle = (Math.random() - 0.5) * spread;
+            double radians = Math.toRadians(randomAngle);
+            double cos = Math.cos(radians);
+            double sin = Math.sin(radians);
+            
+            // Aplicar rotación directamente a los componentes
+            double spreadDirX = baseDirX * cos - baseDirY * sin;
+            double spreadDirY = baseDirX * sin + baseDirY * cos;
+            
+            // Normalizar in-place
+            double len = Math.sqrt(spreadDirX * spreadDirX + spreadDirY * spreadDirY);
+            if (len > 1e-9) {
+                spreadDirX /= len;
+                spreadDirY /= len;
+            }
 
             // ── Adquisición unificada ─────────────────────────────────────
+            // FASE 4 — Pasar primitivos directamente, sin allocations
             // Owner se pasa como parámetro runtime, no como parte del blueprint
             //
             // ── HRFC — ProjectilePool Integration Consolidation ──────────
             // Pool es ahora obligatorio (validado en constructor).
             // Ruta única: pool.acquire() que resuelve ProjectileContext correctamente.
-            Bullet bullet = pool.acquire(resolved.blueprint(), new Vector2D(x, y), spreadDir, owner);
+            Bullet bullet = pool.acquire(
+                resolved.blueprint(), 
+                x, y,                    // posición como primitivos
+                spreadDirX, spreadDirY,  // dirección como primitivos
+                owner
+            );
             bullets.add(bullet);
         }
 

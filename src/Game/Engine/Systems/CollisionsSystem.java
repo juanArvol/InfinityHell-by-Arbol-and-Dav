@@ -149,6 +149,16 @@ public class CollisionsSystem {
     private final CollisionDetector detector = new CollisionDetector();
 
 
+    // ── HRFC — Profiling Infrastructure ───────────────────────────────────
+    private final Game.Engine.Profiling.SubsystemTimer collisionTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private final Game.Engine.Profiling.SubsystemTimer broadPhaseTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private final Game.Engine.Profiling.SubsystemTimer narrowPhaseTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+    private final Game.Engine.Profiling.SubsystemTimer dispatchTimer = 
+        new Game.Engine.Profiling.SubsystemTimer();
+
     /**
      * Ejecuta el pipeline completo de física y colisiones.
      *
@@ -160,10 +170,16 @@ public class CollisionsSystem {
      *
      * deltaTime debe expresarse en segundos (ej: 0.01667s para 60 FPS).
      *
+     * ── HRFC — Bottleneck Diagnosis ──────────────────────────────────────
+     *
+     * Instrumentado para medir tiempo de colisiones en el frame profile.
+     * collisionTimer se resetea en WorldManager después de cada frame.
+     *
      * @param objects lista de objetos activos en el mundo
      * @param deltaTime tiempo del simulation step en segundos
      */
     public void update(List<GameObjects> objects, double deltaTime) {
+        collisionTimer.start();
 
         // ── FASE 0: Aplicar gravedad y fuerzas acumuladas ────────────────
         // Usa el onGround del frame ANTERIOR (todavía válido aquí).
@@ -612,6 +628,9 @@ public class CollisionsSystem {
         // Rotar contactos: actual → anterior para el siguiente frame
         previousContacts.clear();
         previousContacts.putAll(currentContacts);
+
+        // ── HRFC — Profiling Infrastructure ───────────────────────────────
+        collisionTimer.stop();
     }
 
 
@@ -622,6 +641,37 @@ public class CollisionsSystem {
     public void clearContactHistory() {
         previousContacts.clear();
         detector.clear();
+    }
+
+    // ── HRFC — Profiling Infrastructure ───────────────────────────────────
+
+    /**
+     * Retorna el tiempo de colisiones del último frame en milisegundos.
+     * Para diagnóstico de cuellos de botella.
+     */
+    public double getLastCollisionTimeMs() {
+        return collisionTimer.getElapsedMs();
+    }
+
+    /**
+     * Retorna el tiempo de broad phase del último frame en milisegundos.
+     */
+    public double getLastBroadPhaseTimeMs() {
+        return broadPhaseTimer.getElapsedMs();
+    }
+
+    /**
+     * Retorna el tiempo de narrow phase del último frame en milisegundos.
+     */
+    public double getLastNarrowPhaseTimeMs() {
+        return narrowPhaseTimer.getElapsedMs();
+    }
+
+    /**
+     * Retorna el tiempo de dispatch del último frame en milisegundos.
+     */
+    public double getLastDispatchTimeMs() {
+        return dispatchTimer.getElapsedMs();
     }
 
     // ── Helpers de resolución de velocidad (política sólida) ──────────────

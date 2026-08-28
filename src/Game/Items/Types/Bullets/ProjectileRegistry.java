@@ -246,7 +246,7 @@ public final class ProjectileRegistry {
 
         // Usar pool interno — ruta única de creación para proyectiles del registry.
         // El pool emite OnProjectileSpawn con el owner correcto.
-        return pool.acquire(blueprint, origin, direction, owner);
+        return pool.acquire(blueprint, origin.getX(), origin.getY(), direction.getX(),direction.getY(), owner);
     }
 
     /**

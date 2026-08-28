@@ -201,6 +201,9 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     /**
      * Constructor con Flyweight — única ruta de construcción desde BulletFactory.
      *
+     * FASE 4 — Optimización: constructor con primitivos de posición para reducir
+     * allocations en el hot path de disparo.
+     *
      * Los recursos inmutables (texture, profile, dimensiones) vienen ya
      * resueltos en el Flyweight — no se recalculan por instancia.
      *
@@ -210,7 +213,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * el estado físico es del tipo concreto (BulletBehavior o Blueprint),
      * no de Bullet.
      *
-     * @param position      posición inicial de spawn
+     * @param posX          posición inicial de spawn (coordenada X)
+     * @param posY          posición inicial de spawn (coordenada Y)
      * @param flyweight     recursos compartidos del tipo de proyectil
      * @param behavior      comportamiento de impacto y update
      * @param movement      estrategia de movimiento por frame
@@ -221,7 +225,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * @param physicalState estado físico declarado (null = sin física)
      */
     public Bullet(
-            Vector2D           position,
+            double             posX,
+            double             posY,
             BulletFlyweight    flyweight,
             BulletBehavior     behavior,
             ProjectileMovement movement,
@@ -231,7 +236,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             double             damage,
             PhysicalState      physicalState
     ) {
-        getTransform().setPosition(position);
+        getTransform().setPosition(posX, posY); // FASE 4 — primitivos
 
         this.flyweight  = flyweight;
         this.behavior   = behavior;
@@ -532,7 +537,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                     BulletFlyweight newFlyweight,
                     PhysicalState newPhysicalState) {
 
-        getTransform().setPosition(new Vector2D(x, y));
+        // FASE 4 — Reutilizar Transform.setPosition con primitivos
+        getTransform().setPosition(x, y);
         
         // ── HRFC-DT-007 — Temporal Velocity Coherence ────────────────────
         // xSpeed y ySpeed reciben directamente units/s desde ProjectilePool.acquire(),
@@ -738,10 +744,16 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     
     /**
      * Configura el origen de spawn de este proyectil.
+     * FASE 4 — Optimización: firma con primitivos para reducir allocations.
      * Package-private: llamado por ProjectilePool/BulletFactory durante construcción.
      */
-    void setSpawnOrigin(Vector2D origin) {
-        this.spawnOrigin = origin;
+    void setSpawnOrigin(double originX, double originY) {
+        if (this.spawnOrigin == null) {
+            this.spawnOrigin = new Vector2D(originX, originY);
+        } else {
+            this.spawnOrigin.setX(originX);
+            this.spawnOrigin.setY(originY);
+        }
     }
     
     /**

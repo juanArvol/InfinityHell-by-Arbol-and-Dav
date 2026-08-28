@@ -30,8 +30,8 @@ import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 public final class FlyingEnemyAssembler extends EnemyAssembler {
 
     private static final int    MAX_HEALTH     = 80;
-    private static final double MAX_SPEED      = 190;
-    private static final double STEERING_FORCE = 0.2;
+    private static final double MAX_SPEED      = 380;
+    private static final double STEERING_FORCE = 0.9;
 
     @Override
     protected EnemyDefinition definition() {
