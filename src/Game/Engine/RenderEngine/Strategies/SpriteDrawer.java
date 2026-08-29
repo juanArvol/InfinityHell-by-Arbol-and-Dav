@@ -119,6 +119,9 @@ public final class SpriteDrawer {
 
         // DrawContext compartido por todas las estrategias del pipeline.
         // offsetX/Y del TransformData incorporado en screenX/Y del contexto.
+        // HRFC: Reusing DrawContext between calls would require mutation,
+        // but record is immutable by design. The allocation cost is minimal
+        // (6 fields on stack/young-gen). The real cost is Graphics2D state management.
         RenderStrategy.DrawContext ctx = new RenderStrategy.DrawContext(
             screenX + transform.offsetX,
             screenY + transform.offsetY,
@@ -126,9 +129,14 @@ public final class SpriteDrawer {
             frame, transform
         );
 
-        // ── PASO 4: SAVE STATE ────────────────────────────────────────────────
-        AffineTransform savedTransform = g.getTransform();
-        Composite       savedComposite = g.getComposite();
+        // ── PASO 4: SAVE STATE (only if we'll modify it) ──────────────────
+        // HRFC Performance: Only save Graphics2D state if we're actually going
+        // to modify it. This avoids AffineTransform.clone() cost when possible.
+        boolean willModifyComposite  = (transform.blendMode != BlendMode.NORMAL || transform.alpha < 1.0f);
+        boolean willModifyTransform  = transform.hasGeometricTransform();
+        
+        AffineTransform savedTransform = willModifyTransform ? g.getTransform() : null;
+        Composite       savedComposite = willModifyComposite ? g.getComposite() : null;
 
         // ── PASO 5: BLEND / ALPHA ─────────────────────────────────────────────
         if (transform.blendMode != BlendMode.NORMAL) {
@@ -169,9 +177,9 @@ public final class SpriteDrawer {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, prevHint);
         }
 
-        // ── PASO 8: RESTORE STATE ─────────────────────────────────────────────
-        g.setTransform(savedTransform);
-        g.setComposite(savedComposite);
+        // ── PASO 8: RESTORE STATE (only if we modified it) ────────────────────
+        if (savedTransform != null) g.setTransform(savedTransform);
+        if (savedComposite != null) g.setComposite(savedComposite);
 
         // ── PASO 9: POST-TINT ─────────────────────────────────────────────────
         if (transform.hasTint()) {

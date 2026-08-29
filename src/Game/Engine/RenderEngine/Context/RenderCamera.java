@@ -87,6 +87,13 @@ public class RenderCamera {
 
     private final double x;
     private final double y;
+    
+    // ── HRFC: Reference to source GameCamera for optimized renderers ─────
+    /**
+     * Referencia a la GameCamera original (puede ser null si se construyó sin ella).
+     * Expuesta para optimized renderers que necesitan acceso a la cámara completa.
+     */
+    private final GameCamera sourceCamera;
 
     // ── Constructor desde GameCamera (flujo normal) ───────────────────────────
 
@@ -99,6 +106,7 @@ public class RenderCamera {
     public RenderCamera(GameCamera source) {
         this.x = source.getX();
         this.y = source.getY();
+        this.sourceCamera = source;
     }
 
     // ── Constructor en el origen ──────────────────────────────────────────────
@@ -110,6 +118,7 @@ public class RenderCamera {
     public RenderCamera() {
         this.x = 0;
         this.y = 0;
+        this.sourceCamera = null;
     }
 
     // ── Constructor directo por valores (package-private) ─────────────────────
@@ -121,6 +130,7 @@ public class RenderCamera {
     RenderCamera(double x, double y) {
         this.x = x;
         this.y = y;
+        this.sourceCamera = null;
     }
 
     // ── API de render (solo lectura) ──────────────────────────────────────────
@@ -143,5 +153,18 @@ public class RenderCamera {
      */
     public Vector2D getPosition() {
         return new Vector2D(x, y);
+    }
+    
+    /**
+     * Retorna la GameCamera original si está disponible.
+     * 
+     * ── HRFC: Optimized Renderers ─────────────────────────────────────────
+     * Agregado para permitir que optimized renderers (BulletBatchRenderer)
+     * accedan a la GameCamera completa cuando necesitan más que solo (x,y).
+     * 
+     * @return GameCamera original, o null si se construyó sin ella
+     */
+    public GameCamera getGameCamera() {
+        return sourceCamera;
     }
 }

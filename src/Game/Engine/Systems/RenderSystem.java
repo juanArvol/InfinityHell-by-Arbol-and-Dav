@@ -8,6 +8,9 @@ import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
 import Game.Engine.RenderEngine.Contracts.Renderable;
 import Game.Engine.RenderEngine.Culling.RenderBounds;
+import Game.Engine.RenderEngine.Optimized.BulletBatchRenderer;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -49,16 +52,81 @@ public class RenderSystem {
         this.virtualHeight = vh;
     }
 
+    // ── HRFC: Optimized Bullet Rendering ──────────────────────────────────
+    
+    /**
+     * Flag para activar/desactivar el optimized bullet renderer.
+     * true = usar BulletBatchRenderer (más rápido para muchos bullets)
+     * false = usar el pipeline estándar
+     */
+    private boolean useOptimizedBulletRenderer = true;
+    
+    /**
+     * Renderer optimizado para bullets (usa render data cache).
+     */
+    private final BulletBatchRenderer bulletRenderer = new BulletBatchRenderer();
+    
+    /**
+     * Listas temporales para separar bullets de otros objetos.
+     * Reutilizadas entre frames para evitar allocations.
+     */
+    private final List<Bullet> bullets = new ArrayList<>(2000);
+    private final List<GameObjects> nonBullets = new ArrayList<>(500);
+
+    public void setUseOptimizedBulletRenderer(boolean enabled) {
+        this.useOptimizedBulletRenderer = enabled;
+    }
+
     public void render(List<GameObjects> objects, RenderContext ctx, RenderCamera camera) {
-        for (GameObjects obj : objects) {
-            for (Component c : obj.getComponents()) {
-                if (c instanceof SpriteRendererComponent sr) {
-                    sr.setVirtualSize(virtualWidth, virtualHeight);
-                } else if (c instanceof SpriteSkeletonComponent sc) {
-                    sc.setVirtualSize(virtualWidth, virtualHeight);
+        // ── HRFC: Separate bullets from other objects ─────────────────────
+        if (useOptimizedBulletRenderer) {
+            bullets.clear();
+            nonBullets.clear();
+            
+            for (GameObjects obj : objects) {
+                if (obj instanceof Bullet) {
+                    bullets.add((Bullet) obj);
+                } else {
+                    nonBullets.add(obj);
                 }
-                if (c instanceof Renderable r) {
-                    r.render(ctx, camera);
+            }
+            
+            // Render bullets using optimized renderer
+            if (!bullets.isEmpty()) {
+                bulletRenderer.renderBullets(
+                    bullets,
+                    camera.getGameCamera(),
+                    ctx.getGraphics2D(),
+                    virtualWidth,
+                    virtualHeight
+                );
+            }
+            
+            // Render non-bullets using standard pipeline
+            for (GameObjects obj : nonBullets) {
+                for (Component c : obj.getComponents()) {
+                    if (c instanceof SpriteRendererComponent sr) {
+                        sr.setVirtualSize(virtualWidth, virtualHeight);
+                    } else if (c instanceof SpriteSkeletonComponent sc) {
+                        sc.setVirtualSize(virtualWidth, virtualHeight);
+                    }
+                    if (c instanceof Renderable r) {
+                        r.render(ctx, camera);
+                    }
+                }
+            }
+        } else {
+            // Standard pipeline (original behavior)
+            for (GameObjects obj : objects) {
+                for (Component c : obj.getComponents()) {
+                    if (c instanceof SpriteRendererComponent sr) {
+                        sr.setVirtualSize(virtualWidth, virtualHeight);
+                    } else if (c instanceof SpriteSkeletonComponent sc) {
+                        sc.setVirtualSize(virtualWidth, virtualHeight);
+                    }
+                    if (c instanceof Renderable r) {
+                        r.render(ctx, camera);
+                    }
                 }
             }
         }

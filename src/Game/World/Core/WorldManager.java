@@ -364,9 +364,26 @@ public class WorldManager {
         );
         activeObjects = simulationRegion.getActiveObjects();
 
+        // ── 6.5. HRFC — Off-Screen Tracking & Collision Culling Preparation ──
+        // Actualizar off-screen trackers y marcar bullets para destrucción si
+        // exceden su tiempo máximo fuera de cámara. Esto ocurre ANTES de
+        // CollisionsSystem para que los bullets marcados como dead no generen
+        // colisiones innecesarias.
+        //
+        // Esta fase es extremadamente rápida: solo itera bullets con tracker
+        // configurado y hace un simple check de visibilidad.
+        GameCamera activeCamera = cameraSystem.getCamera();
+        for (GameObjects obj : activeObjects) {
+            if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                // Actualizar off-screen tracking si está configurado
+                bullet.updateOffScreenTracking(activeCamera, deltaTime);
+            }
+        }
+
         // ── 7. CollisionsSystem ────────────────────────────────────────────
         // Mini-HRFC: Pasar deltaTime para integración temporal correcta
-        collisionsSystem.update(activeObjects, deltaTime);
+        // HRFC: Pasar camera para collision culling
+        collisionsSystem.update(activeObjects, deltaTime, activeCamera);
 
         // ── 8. ChunkAffiliationSystem ──────────────────────────────────────
         affiliationSystem.update(globalDynamicRegistry.getAll(), world.getSpatialIndex());

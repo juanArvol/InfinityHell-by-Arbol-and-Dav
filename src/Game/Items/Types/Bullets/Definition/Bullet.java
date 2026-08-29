@@ -19,6 +19,7 @@ import Game.Items.Types.Bullets.BulletComport.BulletLife;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
+import Game.Items.Types.Bullets.OffScreenTracker;
 import Game.Items.Types.Bullets.ProjectileMovement;
 import Game.Items.Types.Bullets.ProjectileTransformer;
 import Game.Items.Types.Bullets.ResettableMovement;
@@ -195,6 +196,15 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Metadata intrínseca del proyectil, NO forma parte del ProjectileContext.
      */
     private Vector2D spawnOrigin = null;
+
+    // ── HRFC — Off-Screen Lifetime Tracking ───────────────────────────────
+
+    /**
+     * Rastreador de tiempo fuera de cámara.
+     * Configurable por tipo de bullet via ProjectileBlueprint.
+     * NULL = no hay tracking (never destroy off-screen).
+     */
+    private OffScreenTracker offScreenTracker = null;
 
     // ── Constructor principal ─────────────────────────────────────────────
 
@@ -424,6 +434,51 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         return (BulletPhysics) physicsComponent.getPhysics();
     }
 
+    // ── HRFC — Off-Screen Lifetime Tracking ───────────────────────────────
+
+    /**
+     * Configura el off-screen tracker para este bullet.
+     * Debe llamarse con el tamaño del sprite configurado.
+     *
+     * @param maxOffScreenTime segundos máximos fuera de cámara (OffScreenTracker.NEVER_DESTROY para infinito)
+     */
+    public void setOffScreenTracking(double maxOffScreenTime) {
+        if (maxOffScreenTime == OffScreenTracker.NEVER_DESTROY) {
+            this.offScreenTracker = null;  // No tracking
+            return;
+        }
+        
+        this.offScreenTracker = new OffScreenTracker(maxOffScreenTime);
+        
+        // Configurar tamaño del sprite desde el flyweight
+        if (flyweight != null) {
+            offScreenTracker.setSpriteSize(flyweight.width(), flyweight.height());
+        }
+    }
+
+    /**
+     * Retorna el off-screen tracker activo, o null si no hay tracking configurado.
+     */
+    public OffScreenTracker getOffScreenTracker() {
+        return offScreenTracker;
+    }
+
+    /**
+     * Actualiza el off-screen tracking con la cámara actual.
+     * Este método debería ser llamado por WorldManager después del update regular.
+     *
+     * @param camera cámara activa del juego
+     * @param deltaTime tiempo transcurrido en segundos
+     */
+    public void updateOffScreenTracking(Game.Engine.Camera.GameCamera camera, double deltaTime) {
+        if (offScreenTracker != null) {
+            offScreenTracker.update(getTransform().getPosition(), camera, deltaTime);
+            if (offScreenTracker.shouldDestroy()) {
+                bulletLife.kill();  // Marcar para destrucción
+            }
+        }
+    }
+
     // ── Engine.Lifecycle — SimulationLifecycle ─────────────────────────────
 
     /**
@@ -560,6 +615,10 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         // owner y spawnOrigin se limpian aquí; el pool los reinyecta justo después
         this.owner = null;
         this.spawnOrigin = null;
+        // Reset off-screen tracker if present
+        if (this.offScreenTracker != null) {
+            this.offScreenTracker.reset();
+        }
 
         // ── HRFC — Reset Physical Properties (cinemático) ────────────────
         // Resetear masa, área efectiva y coeficiente de drag a valores por

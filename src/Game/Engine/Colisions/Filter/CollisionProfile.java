@@ -23,6 +23,12 @@ package Game.Engine.Colisions.Filter;
  *   BULLET (legacy) se mantiene por compatibilidad pero queda deprecated.
  *   Todo código nuevo debe usar PLAYER_BULLET o ENEMY_BULLET.
  *
+ * ── HRFC — Deep Optimization: CollisionMatrix Integration ─────────────────
+ *
+ * EXTENSIÓN:
+ *   Cada CollisionProfile ahora tiene una categoría de CollisionMatrix.
+ *   Esto permite filtrado rápido de pares de colisión antes del broadphase.
+ *
  * ── EXTENSIÓN FUTURA ──────────────────────────────────────────────────────
  *   Si se añaden facciones adicionales (aliados NPC, torretas del jugador, etc.)
  *   añadir nuevos perfiles aquí. No modificar los existentes.
@@ -35,10 +41,20 @@ public final class CollisionProfile {
 
     public final int layer;
     public final int mask;
+    
+    // HRFC — Deep Optimization: CollisionMatrix category
+    public final CollisionMatrix.Category category;
 
-    public CollisionProfile(int layer, int mask) {
+    public CollisionProfile(int layer, int mask, CollisionMatrix.Category category) {
         this.layer = layer;
         this.mask  = mask;
+        this.category = category;
+    }
+    
+    // Constructor legacy sin categoría (default a TRIGGER)
+    @Deprecated
+    public CollisionProfile(int layer, int mask) {
+        this(layer, mask, CollisionMatrix.Category.TRIGGER);
     }
 
     // ── Perfiles predefinidos ──────────────────────────────────────────────
@@ -46,19 +62,22 @@ public final class CollisionProfile {
     /** Suelo, paredes, obstáculos. Choca con todo. */
     public static final CollisionProfile WORLD = new CollisionProfile(
             Layer.WORLD,
-            Layer.PLAYER | Layer.ENEMY | Layer.BULLET
+            Layer.PLAYER | Layer.ENEMY | Layer.BULLET,
+            CollisionMatrix.Category.SOLID
     );
 
     /** El jugador. Choca con mundo, balas enemigas y enemigos. */
     public static final CollisionProfile PLAYER = new CollisionProfile(
             Layer.PLAYER,
-            Layer.WORLD | Layer.ENEMY | Layer.BULLET
+            Layer.WORLD | Layer.ENEMY | Layer.BULLET,
+            CollisionMatrix.Category.PLAYER
     );
 
     /** Enemigo normal. Choca con mundo, jugador y balas del jugador. */
     public static final CollisionProfile ENEMY = new CollisionProfile(
             Layer.ENEMY,
-            Layer.WORLD | Layer.PLAYER | Layer.BULLET
+            Layer.WORLD | Layer.PLAYER | Layer.BULLET,
+            CollisionMatrix.Category.ENEMY
     );
 
     /**
@@ -69,7 +88,8 @@ public final class CollisionProfile {
      */
     public static final CollisionProfile PLAYER_BULLET = new CollisionProfile(
             Layer.BULLET,
-            Layer.WORLD | Layer.ENEMY
+            Layer.WORLD | Layer.ENEMY,
+            CollisionMatrix.Category.BULLET
     );
 
     /**
@@ -80,7 +100,8 @@ public final class CollisionProfile {
      */
     public static final CollisionProfile ENEMY_BULLET = new CollisionProfile(
             Layer.BULLET,
-            Layer.WORLD | Layer.PLAYER
+            Layer.WORLD | Layer.PLAYER,
+            CollisionMatrix.Category.BULLET
     );
 
     /**
@@ -91,12 +112,14 @@ public final class CollisionProfile {
     @Deprecated
     public static final CollisionProfile BULLET = new CollisionProfile(
             Layer.BULLET,
-            Layer.WORLD | Layer.ENEMY | Layer.PLAYER
+            Layer.WORLD | Layer.ENEMY | Layer.PLAYER,
+            CollisionMatrix.Category.BULLET
     );
 
     public static final CollisionProfile WORLD_ITEM = new CollisionProfile(
             Layer.ITEM,
-            Layer.WORLD | Layer.PLAYER
+            Layer.WORLD | Layer.PLAYER,
+            CollisionMatrix.Category.ITEM
     );
 
     /**
@@ -122,7 +145,8 @@ public final class CollisionProfile {
      */
     public static final CollisionProfile WORLD_DYNAMIC = new CollisionProfile(
             Layer.WORLD_DYNAMIC,
-            Layer.WORLD | Layer.PLAYER | Layer.ENEMY | Layer.BULLET | Layer.WORLD_DYNAMIC
+            Layer.WORLD | Layer.PLAYER | Layer.ENEMY | Layer.BULLET | Layer.WORLD_DYNAMIC,
+            CollisionMatrix.Category.SOLID
     );
 
     // ── Utilidad ──────────────────────────────────────────────────────────

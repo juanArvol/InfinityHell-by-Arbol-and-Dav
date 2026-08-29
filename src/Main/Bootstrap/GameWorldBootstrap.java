@@ -3,7 +3,6 @@ package Main.Bootstrap;
 import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Items.Creation.ItemRegistry;
 import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
 import Game.Items.Types.Bullets.Capability.ProjectileSpawningCapability;
@@ -146,7 +145,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.NORMAL_BULLET)
+            .initialBullets(BulletType.SPRING_BULLET)
             .initialAmulets(AmuletType.SPLIT_CRYSTAL)
             .build();
         
@@ -190,26 +189,6 @@ public final class GameWorldBootstrap {
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
         new EnemySpawner().spawn(worldManager.getCurrentWorld(), 10, eventBus);
-
-        // ── HRFC — Profiling Infrastructure ───────────────────────────────
-        // ACTIVADO AUTOMÁTICAMENTE para stress test.
-        // Ejecutar el juego y disparar continuamente con WeaponPistola (360 bullets/shot).
-        // El profiling recolectará datos hasta detener manualmente o alcanzar maxFrames.
-        Main.Debug.ProfilingCommand.startStressTest();
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println("  HRFC PROFILING ACTIVO — STRESS TEST MODE");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
-        System.out.println("INSTRUCCIONES:");
-        System.out.println("1. Equipar WeaponPistola (360 bullets/shot, cooldown=0)");
-        System.out.println("2. Disparar CONTINUAMENTE durante 60-90 segundos");
-        System.out.println("3. Observar FPS: 60 → degradación progresiva → 3-5 FPS");
-        System.out.println("4. Permitir que proyectiles mueran y FPS recupere");
-        System.out.println("5. Cerrar el juego (profiling exportará automáticamente)");
-        System.out.println();
-        System.out.println("RESULTADO: profiling_results.csv + resumen en consola");
-        System.out.println("═══════════════════════════════════════════════════════════════");
-        System.out.println();
     }
 
     /** El Player creado durante el bootstrap. */

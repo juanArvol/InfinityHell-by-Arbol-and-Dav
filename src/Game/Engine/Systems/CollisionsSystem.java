@@ -148,6 +148,19 @@ public class CollisionsSystem {
      */
     private final CollisionDetector detector = new CollisionDetector();
 
+    // ── HRFC: Performance — Reusable broadphase rectangles ────────────────
+    /**
+     * Rectangle reutilizable para broadphase X.
+     * Evita allocations en hot path — solo válido durante una iteración.
+     */
+    private final Rectangle reusableBroadX = new Rectangle();
+
+    /**
+     * Rectangle reutilizable para broadphase Y.
+     * Evita allocations en hot path — solo válido durante una iteración.
+     */
+    private final Rectangle reusableBroadY = new Rectangle();
+
 
     // ── HRFC — Profiling Infrastructure ───────────────────────────────────
     private final Game.Engine.Profiling.SubsystemTimer collisionTimer = 
@@ -175,10 +188,17 @@ public class CollisionsSystem {
      * Instrumentado para medir tiempo de colisiones en el frame profile.
      * collisionTimer se resetea en WorldManager después de cada frame.
      *
+     * ── HRFC — Collision Culling ──────────────────────────────────────────
+     *
+     * Si se proporciona una cámara, se aplicará collision culling para omitir
+     * triggers (bullets) que están completamente fuera del área relevante.
+     * Esto reduce drásticamente el trabajo cuando hay muchos bullets off-screen.
+     *
      * @param objects lista de objetos activos en el mundo
      * @param deltaTime tiempo del simulation step en segundos
+     * @param camera cámara activa del juego (null = sin culling)
      */
-    public void update(List<GameObjects> objects, double deltaTime) {
+    public void update(List<GameObjects> objects, double deltaTime, Game.Engine.Camera.GameCamera camera) {
         collisionTimer.start();
 
         // ── FASE 0: Aplicar gravedad y fuerzas acumuladas ────────────────
@@ -251,7 +271,8 @@ public class CollisionsSystem {
             // ── Eje X ──────────────────────────────────────────────────
             if (vx != 0.0) {
                 Rectangle bounds = colA.getBounds();
-                Rectangle broadX = new Rectangle(
+                // HRFC Performance: Reutilizar Rectangle en lugar de alocar
+                reusableBroadX.setBounds(
                         (int)(vx < 0 ? bounds.x + vx : bounds.x + bounds.width),
                         bounds.y + 1,
                         (int)(Math.abs(vx) + 1),
@@ -273,7 +294,7 @@ public class CollisionsSystem {
                     Rectangle ob = colB.getBounds();
                     if (ob.y >= bounds.y + bounds.height) continue;
                     if (ob.y + ob.height <= bounds.y) continue;
-                    if (!broadX.intersects(ob)) continue;
+                    if (!reusableBroadX.intersects(ob)) continue;
 
                     SweptAABB.Result r = SweptAABB.calculate(bounds, ob, vx, 0.0);
                     if (!r.hasCollision() || r.time >= nearestTimeX) continue;
@@ -308,7 +329,8 @@ public class CollisionsSystem {
             // ── Eje Y ──────────────────────────────────────────────────
             if (vy != 0.0) {
                 Rectangle bounds = colA.getBounds();
-                Rectangle broadY = new Rectangle(
+                // HRFC Performance: Reutilizar Rectangle en lugar de alocar
+                reusableBroadY.setBounds(
                         bounds.x,
                         (int)(vy < 0 ? bounds.y + vy : bounds.y),
                         bounds.width,
@@ -327,7 +349,7 @@ public class CollisionsSystem {
                     if (!colA.canCollideWith(colB)) continue;
 
                     Rectangle ob = colB.getBounds();
-                    if (!broadY.intersects(ob)) continue;
+                    if (!reusableBroadY.intersects(ob)) continue;
 
                     SweptAABB.Result r = SweptAABB.calculate(bounds, ob, 0.0, vy);
                     if (!r.hasCollision() || r.time >= nearestTimeY) continue;
@@ -422,6 +444,23 @@ public class CollisionsSystem {
             ColliderComponent colA = obj.getComponent(ColliderComponent.class);
             if (colA == null || !colA.isTrigger()) continue;
             if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
+            
+            // ── HRFC — Collision Culling ──────────────────────────────────
+            // Omitir triggers que están completamente fuera del área relevante.
+            // Esto reduce drásticamente el trabajo cuando hay muchos bullets off-screen.
+            if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera)) {
+                // Trigger fuera del área relevante — skip collision pero seguir simulando
+                // El trigger sigue vivo y se mueve, pero no genera colisiones.
+                // Integrar el movimiento completo sin colisiones.
+                Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+                if (physComp != null) {
+                    Physics2D physics = physComp.getPhysics();
+                    double vx = physics.getVelocity().getX() * deltaTime;
+                    double vy = physics.getVelocity().getY() * deltaTime;
+                    PhysicsStepper.moveWith(obj, vx, vy);
+                }
+                continue;
+            }
 
             Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
             if (physComp == null) continue;
@@ -455,6 +494,18 @@ public class CollisionsSystem {
                 ColliderComponent colB = other.getComponent(ColliderComponent.class);
                 if (colB == null || colB.isTrigger()) continue;  // trigger vs solo sólidos aquí
                 if (!colA.canCollideWith(colB)) continue;
+                
+                // ── HRFC — CollisionMatrix Filtering ──────────────────────
+                // Skip este par si la matriz indica que no deben colisionar.
+                // BULLET ↔ BULLET típicamente está filtrado aquí.
+                if (Game.Engine.Colisions.Filter.CollisionMatrix.isEnabled()) {
+                    if (!Game.Engine.Colisions.Filter.CollisionMatrix.canCollide(
+                        colA.getProfile().category,
+                        colB.getProfile().category
+                    )) {
+                        continue;  // Matrix says no collision needed
+                    }
+                }
 
                 Rectangle ob = colB.getBounds();
 

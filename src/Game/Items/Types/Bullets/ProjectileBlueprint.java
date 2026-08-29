@@ -80,6 +80,14 @@ public final class ProjectileBlueprint {
     // ── Metadata del proyectil ────────────────────────────────────────────
     private final Vector2D                   spawnOrigin;       // Posición de spawn
     private final java.util.Set<Class<?>>    requiredCapabilities; // Capacidades requeridas
+    
+    // ── HRFC — Off-Screen Lifetime Tracking ───────────────────────────────
+    /**
+     * Tiempo máximo (segundos) que un proyectil puede permanecer fuera de
+     * cámara antes de autodestruirse.
+     * OffScreenTracker.NEVER_DESTROY (-1.0) = nunca destruir por off-screen.
+     */
+    private final double offScreenLifetime;
 
     // ── Constructor privado ───────────────────────────────────────────────
 
@@ -95,7 +103,8 @@ public final class ProjectileBlueprint {
             CollisionProfile collisionProfile,
             PhysicalState    physicalState,
             Vector2D         spawnOrigin,
-            java.util.Set<Class<?>> requiredCapabilities
+            java.util.Set<Class<?>> requiredCapabilities,
+            double           offScreenLifetime
     ) {
         // Defensivo — los withers no deben producir nulls en comportamiento obligatorio
         this.behavior         = (behavior != null) ? behavior : new DefaultBehavior();
@@ -112,6 +121,7 @@ public final class ProjectileBlueprint {
         this.requiredCapabilities = (requiredCapabilities != null) 
             ? java.util.Set.copyOf(requiredCapabilities) 
             : java.util.Set.of();  // Inmutable y defensivo
+        this.offScreenLifetime = offScreenLifetime; // HRFC — default handled in factory
     }
 
     // ── Factory estático principal ────────────────────────────────────────
@@ -156,6 +166,11 @@ public final class ProjectileBlueprint {
 
         // Derivar requirements del behavior — única fuente de verdad
         java.util.Set<Class<?>> requirements = behavior.getRequiredCapabilities();
+        
+        // HRFC — Default off-screen lifetime: NEVER_DESTROY
+        // Los blueprints no destruyen por off-screen por defecto.
+        // Usar withOffScreenLifetime() para configurar destrucción off-screen.
+        double defaultOffScreenLifetime = OffScreenTracker.NEVER_DESTROY;
 
         return new ProjectileBlueprint(
                 behavior,
@@ -169,7 +184,8 @@ public final class ProjectileBlueprint {
                 null,    // collisionProfile: default PLAYER_BULLET — Bullet lo aplica
                 physics, // Mini-HRFC — null si el behavior no declara física
                 null,    // spawnOrigin: debe configurarse via wither
-                requirements // Derivado del behavior
+                requirements, // Derivado del behavior
+                defaultOffScreenLifetime  // HRFC — default: nunca destruir
         );
     }
 
@@ -195,56 +211,56 @@ public final class ProjectileBlueprint {
     public ProjectileBlueprint withBehavior(BulletBehavior newBehavior) {
         return new ProjectileBlueprint(newBehavior, movement, speed, damage,
                 lifeTime, width, height, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con un movement diferente. */
     public ProjectileBlueprint withMovement(ProjectileMovement newMovement) {
         return new ProjectileBlueprint(behavior, newMovement, speed, damage,
                 lifeTime, width, height, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con una speed diferente. */
     public ProjectileBlueprint withSpeed(double newSpeed) {
         return new ProjectileBlueprint(behavior, movement, newSpeed, damage,
                 lifeTime, width, height, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con un damage diferente. */
     public ProjectileBlueprint withDamage(double newDamage) {
         return new ProjectileBlueprint(behavior, movement, speed, newDamage,
                 lifeTime, width, height, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con un lifeTime diferente. */
     public ProjectileBlueprint withLifeTime(int newLifeTime) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 newLifeTime, width, height, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con dimensiones de collider diferentes. */
     public ProjectileBlueprint withSize(int newWidth, int newHeight) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 lifeTime, newWidth, newHeight, assetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con un assetKey diferente. */
     public ProjectileBlueprint withAssetKey(String newAssetKey) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 lifeTime, width, height, newAssetKey, collisionProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /** Retorna una copia con un CollisionProfile diferente. */
     public ProjectileBlueprint withCollisionProfile(CollisionProfile newProfile) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 lifeTime, width, height, assetKey, newProfile, physicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
 
     /**
@@ -254,14 +270,27 @@ public final class ProjectileBlueprint {
     public ProjectileBlueprint withPhysicalState(PhysicalState newPhysicalState) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 lifeTime, width, height, assetKey, collisionProfile, newPhysicalState,
-                spawnOrigin, requiredCapabilities);
+                spawnOrigin, requiredCapabilities, offScreenLifetime);
     }
     
     /** Retorna una copia con un spawnOrigin diferente. */
     public ProjectileBlueprint withSpawnOrigin(Vector2D newSpawnOrigin) {
         return new ProjectileBlueprint(behavior, movement, speed, damage,
                 lifeTime, width, height, assetKey, collisionProfile, physicalState,
-                newSpawnOrigin, requiredCapabilities);
+                newSpawnOrigin, requiredCapabilities, offScreenLifetime);
+    }
+    
+    /**
+     * Retorna una copia con un offScreenLifetime diferente.
+     * 
+     * ── HRFC — Off-Screen Lifetime Tracking ───────────────────────────────
+     * 
+     * @param seconds segundos máximos fuera de cámara (OffScreenTracker.NEVER_DESTROY para infinito)
+     */
+    public ProjectileBlueprint withOffScreenLifetime(double seconds) {
+        return new ProjectileBlueprint(behavior, movement, speed, damage,
+                lifeTime, width, height, assetKey, collisionProfile, physicalState,
+                spawnOrigin, requiredCapabilities, seconds);
     }
 
     /** Retorna una copia con movement compuesto (this.movement.andThen(extra)). */
@@ -287,6 +316,9 @@ public final class ProjectileBlueprint {
     
     /** Retorna las capacidades contextuales requeridas (nunca null, puede estar vacío). */
     public java.util.Set<Class<?>> getRequiredCapabilities() { return requiredCapabilities; }
+    
+    /** Retorna el tiempo máximo off-screen (NEVER_DESTROY = -1.0 para infinito). */
+    public double offScreenLifetime() { return offScreenLifetime; }
 
 
 
