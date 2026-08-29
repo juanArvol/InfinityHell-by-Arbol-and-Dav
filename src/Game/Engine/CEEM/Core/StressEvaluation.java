@@ -1,8 +1,10 @@
 package Game.Engine.CEEM.Core;
 
 import Game.Engine.CEEM.Stress.StressReport;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * Immutable snapshot of stress evaluation results across all contributors.
@@ -12,14 +14,21 @@ import java.util.Collections;
  * 
  * This is a value object that flows out of CEEM.evaluate(), providing
  * a complete picture of system stress for analysis and decision-making.
+ * 
+ * IMMUTABILITY:
+ * This class is designed to be a true immutable snapshot. The collection
+ * is defensively copied during construction to prevent external mutation
+ * of the backing collection from affecting this snapshot.
  */
 public final class StressEvaluation {
     
-    private final Collection<StressReport> reports;
+    private final List<StressReport> reports;
     private final long frameNumber;
     
     StressEvaluation(Collection<StressReport> reports, long frameNumber) {
-        this.reports = Collections.unmodifiableCollection(reports);
+        // Defensive copy: create new ArrayList from provided collection
+        // Then wrap in unmodifiable list for true immutability
+        this.reports = Collections.unmodifiableList(new ArrayList<>(reports));
         this.frameNumber = frameNumber;
     }
     

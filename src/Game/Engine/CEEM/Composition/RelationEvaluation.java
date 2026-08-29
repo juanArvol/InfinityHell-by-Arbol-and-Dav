@@ -15,12 +15,25 @@ import Game.Engine.CEEM.Identity.StressSourceID;
  * Relations produce evaluations that inform CEEM's coordination logic
  * without embedding relationship-specific knowledge in CEEM itself.
  * 
+ * PURPOSE:
+ * RelationEvaluations are CONTEXT for coordination decisions, not direct
+ * inputs to automatic optimization. They answer questions like:
+ * 
+ * - "Are projectiles and rendering competing for resources?"
+ * - "Does optimizing module A help or hurt module B?"
+ * - "Which modules should be optimized together vs separately?"
+ * 
+ * The automatic optimization cycle (evaluateAndOptimize) operates solely
+ * on individual StressReports to maintain simplicity. RelationEvaluations
+ * are available for external coordination logic when needed.
+ * 
  * FUTURE EVOLUTION:
  * This class may be extended to support:
  * - Weighted influence factors
  * - Directional stress propagation
  * - Recommended optimization priorities
  * - Multi-module correlation data
+ * - Integration into automatic coordination strategies
  */
 public final class RelationEvaluation {
     

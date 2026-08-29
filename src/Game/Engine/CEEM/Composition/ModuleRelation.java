@@ -128,20 +128,27 @@ public interface ModuleRelation {
      * context from the modules. This might involve:
      * - Accessing module-specific metrics
      * - Querying shared state
-     * - Examining recent stress reports
+     * - Examining recent stress reports through the provided context
      * 
      * PERFORMANCE CONSIDERATION:
      * Like StressContributor.evaluate(), this should be lightweight.
      * Relations are evaluated each frame when both modules are active.
      * 
-     * NULL SAFETY:
-     * This method may return null to indicate:
-     * - The relationship is not currently relevant
-     * - Insufficient context is available for evaluation
-     * - The relationship is temporarily inactive
+     * INACTIVE RELATIONSHIPS:
+     * If the relationship is temporarily inactive or cannot be evaluated
+     * (e.g., insufficient context, one module in dormant state), return
+     * a RelationEvaluation with influence = 0.0 rather than null.
+     * 
+     * This preserves the principle: "registered relation always returns evaluation".
+     * Absence of influence is not absence of relation.
+     * 
+     * ARCHITECTURAL PRINCIPLE:
+     * A registered relation always produces an evaluation.
+     * If temporarily inactive: influence = 0.0
+     * If permanently irrelevant: should not be registered
      * 
      * @param context the evaluation context provided by CEEM
-     * @return evaluation result, or null if relationship is inactive
+     * @return evaluation result describing current relationship state (never null)
      */
     RelationEvaluation evaluate(RelationContext context);
     

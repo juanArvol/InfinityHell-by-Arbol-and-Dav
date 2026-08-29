@@ -208,8 +208,28 @@ import java.util.concurrent.ConcurrentHashMap;
  * THREAD SAFETY
  * ═══════════════════════════════════════════════════════════════════════════════
  * 
- * This implementation uses concurrent collections to allow registration
- * from different initialization contexts. Evaluation is single-threaded.
+ * CEEM is designed for single-threaded evaluation from the game loop.
+ * 
+ * SAFE FOR CONCURRENT ACCESS:
+ * - Registration methods (registerContributor, registerPolicy, registerRelation)
+ *   Use ConcurrentHashMap to allow registration during initialization from
+ *   different contexts (e.g., module initialization, resource loading)
+ * 
+ * NOT THREAD-SAFE (must be called from game loop thread):
+ * - updateTiming()
+ * - evaluate()
+ * - evaluateAndOptimize()
+ * - evaluateRelations()
+ * - All query methods (getStabilityInfo, getSmoothedMagnitude, etc.)
+ * 
+ * RATIONALE:
+ * Evaluation is synchronous and sequential by design. The game loop orchestrates
+ * all stress evaluation in a predictable order each frame. Multi-threaded
+ * evaluation would add complexity without benefit for the current architecture.
+ * 
+ * If future requirements demand parallel stress evaluation, significant
+ * architectural changes would be needed (immutable snapshots, synchronization,
+ * or concurrent data structures for mutable state).
  */
 public final class CEEM { //Calculator of Especific Estres for Module
     
@@ -302,34 +322,57 @@ public final class CEEM { //Calculator of Especific Estres for Module
      * The module will no longer be evaluated for stress.
      * This is useful for modules that are dynamically enabled/disabled.
      * 
+     * NULL CONTRACT:
+     * Source must not be null. Use of null indicates a programming error
+     * and should fail fast rather than silently ignore.
+     * 
      * @param source the source to unregister
+     * @throws IllegalArgumentException if source is null
      */
     public void unregisterContributor(StressSourceID source) {
-        if (source != null) {
-            contributors.remove(source);
+        if (source == null) {
+            throw new IllegalArgumentException("Source cannot be null");
         }
+        contributors.remove(source);
     }
     
     /**
      * Unregisters an optimization policy.
      * 
+     * NULL CONTRACT:
+     * Source must not be null. Use of null indicates a programming error
+     * and should fail fast rather than silently ignore.
+     * 
      * @param source the source whose policy should be removed
+     * @throws IllegalArgumentException if source is null
      */
     public void unregisterPolicy(StressSourceID source) {
-        if (source != null) {
-            policies.remove(source);
+        if (source == null) {
+            throw new IllegalArgumentException("Source cannot be null");
         }
+        policies.remove(source);
     }
     
     /**
      * Updates frame timing information.
      * 
-     * This should be called each frame before evaluate() to ensure
+     * This MUST be called each frame before evaluate() to ensure
      * contributors receive current timing context.
      * 
-     * @param deltaTime time elapsed since last frame in seconds
+     * TEMPORAL COHERENCE:
+     * CEEM uses frame-based temporal tracking. Each updateTiming() call
+     * represents one evaluation cycle advancing the temporal state.
+     * 
+     * @param deltaTime time elapsed since last frame in seconds (must be positive and finite)
+     * @throws IllegalArgumentException if deltaTime is invalid (negative, NaN, infinite, zero)
      */
     public void updateTiming(double deltaTime) {
+        if (deltaTime <= 0.0 || !Double.isFinite(deltaTime)) {
+            throw new IllegalArgumentException(
+                "deltaTime must be positive and finite, got: " + deltaTime
+            );
+        }
+        
         this.lastDeltaTime = deltaTime;
         this.frameCounter++;
     }
@@ -345,6 +388,12 @@ public final class CEEM { //Calculator of Especific Estres for Module
      * 5. Updates relation registry with active modules and reports
      * 6. Returns a StressEvaluation snapshot
      * 
+     * INVOCATION ORDER:
+     * updateTiming(deltaTime) must be called before evaluate() each frame.
+     * If frameCounter is 0, it indicates updateTiming() was never called,
+     * which is logged as a warning but allows evaluation to proceed with
+     * default timing (to avoid hard failure during initialization/testing).
+     * 
      * PERFORMANCE:
      * Evaluation is currently synchronous and sequential.
      * Future optimization could parallelize contributor evaluation.
@@ -356,6 +405,14 @@ public final class CEEM { //Calculator of Especific Estres for Module
      * @return complete stress evaluation
      */
     public StressEvaluation evaluate() {
+        // Detect potential invocation order issue
+        if (frameCounter == 0) {
+            CEEMDiagnostics.warning(
+                "CEEM.evaluate() called without prior updateTiming(). " +
+                "Using default timing. Call updateTiming(deltaTime) before evaluate() each frame."
+            );
+        }
+        
         StressContext context = new CEEMContext(lastDeltaTime, frameCounter);
         
         List<StressReport> reports = new ArrayList<>(contributors.size());
@@ -370,8 +427,10 @@ public final class CEEM { //Calculator of Especific Estres for Module
                 }
             } catch (Exception e) {
                 // Log but don't fail entire evaluation
-                System.err.println("Error evaluating contributor " + 
-                    contributor.source().name() + ": " + e.getMessage());
+                CEEMDiagnostics.error(
+                    "Error evaluating contributor " + contributor.source().name(),
+                    e
+                );
             }
         }
         
@@ -401,6 +460,18 @@ public final class CEEM { //Calculator of Especific Estres for Module
      *    - Policies only activate when stress has persisted
      *    - Transient spikes don't trigger optimization
      *    - Prevents frame-to-frame toggling
+     * 
+     * ARCHITECTURAL DECISION:
+     * This method operates ONLY on individual module stress (StressReports).
+     * It does NOT consider module relations (RelationEvaluations).
+     * 
+     * Rationale:
+     * - Individual stress → automatic optimization (simple, predictable)
+     * - Relations → manual coordination context (complex, situational)
+     * 
+     * This separation maintains simplicity while allowing future extension.
+     * External logic can query evaluateRelations() for coordination decisions
+     * if needed.
      * 
      * OPTIMIZATION LIFECYCLE:
      * 
@@ -438,6 +509,11 @@ public final class CEEM { //Calculator of Especific Estres for Module
                     // Restore when stable stress is NOMINAL
                     // MODERATE is neutral - maintain current state
                     
+                    // REDUNDANCY PREVENTION:
+                    // isActive() checks prevent redundant apply()/restore() calls.
+                    // NOTE: isActive() reports OPTIMIZATION state, not module state.
+                    // See OptimizationPolicy.isActive() contract documentation.
+                    
                     switch (level) {
                         case HIGH, CRITICAL, EMERGENCY -> {
                             // Activate optimization if not already active
@@ -452,10 +528,10 @@ public final class CEEM { //Calculator of Especific Estres for Module
                             }
                         }
                         case MODERATE -> {
+                            // Neutral zone - maintain current policy state
+                            // This prevents oscillation between HIGH and MODERATE
                         }
                     }
-                    // Neutral zone - maintain current policy state
-                    // This prevents oscillation between HIGH and MODERATE
                                     } else {
                     // No stable history yet, use raw level with conservative approach
                     // Only activate on CRITICAL or above to avoid premature optimization
@@ -562,8 +638,33 @@ public final class CEEM { //Calculator of Especific Estres for Module
      * Relations are evaluated after stress contributors have been evaluated
      * and provide additional context about module interactions.
      * 
-     * This method is typically called after evaluate() to obtain
-     * relational stress information.
+     * ARCHITECTURAL DECISION:
+     * Relation evaluation is SEPARATE from the automatic optimization cycle
+     * (evaluateAndOptimize). This separation exists because:
+     * 
+     * 1. StressReports measure individual module stress → drive automatic optimization
+     * 2. RelationEvaluations measure module interactions → inform coordination decisions
+     * 
+     * Relations provide context for:
+     * - Manual coordination between optimization policies
+     * - Understanding why multiple modules are stressed simultaneously
+     * - Future advanced coordination strategies
+     * 
+     * The automatic optimization cycle intentionally operates on individual module
+     * stress to maintain simplicity and predictability. Relation data is available
+     * for external coordination logic when needed.
+     * 
+     * USAGE PATTERN:
+     * <pre>
+     * // Automatic optimization based on individual stress
+     * evaluation = ceem.evaluateAndOptimize();
+     * 
+     * // Optional: query relations for coordination decisions
+     * relations = ceem.evaluateRelations();
+     * if (relationShowsConflict(relations)) {
+     *     coordinatePolicies(...);
+     * }
+     * </pre>
      * 
      * @return collection of relation evaluations
      */
@@ -577,8 +678,13 @@ public final class CEEM { //Calculator of Especific Estres for Module
      * This provides access to temporal filtering and persistence data
      * that informs optimization decisions.
      * 
+     * NULL CONTRACT:
+     * Returns null if the source has no recorded history. This is distinct
+     * from a source with zero stress (which would return a valid StableStressLevel
+     * with magnitude 0.0). Callers must null-check the result.
+     * 
      * @param source the module to query
-     * @return stable stress level information, or null if no history
+     * @return stable stress level information, or null if no history exists
      */
     public StableStressLevel getStabilityInfo(StressSourceID source) {
         return stressHistory.getStableInfo(source);

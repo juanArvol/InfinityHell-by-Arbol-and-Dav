@@ -1,8 +1,8 @@
 package Game.Engine.CEEM.Composition;
 
+import Game.Engine.CEEM.Core.CEEMDiagnostics;
 import Game.Engine.CEEM.Identity.StressSourceID;
 import Game.Engine.CEEM.Stress.StressReport;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -56,10 +56,48 @@ import java.util.stream.Collectors;
  * 
  * Uses concurrent collections to allow registration from
  * different initialization contexts.
+ * 
+ * IDENTITY PRINCIPLE:
+ * 
+ * Relations are identified by their typed StressSourceID pair,
+ * not by string concatenation. This maintains type safety and
+ * consistency with CEEM's architectural principle:
+ * "Identity is typed, never string-based."
  */
 public final class RelationRegistry {
     
-    private final Map<String, ModuleRelation> relations;
+    /**
+     * Typed key for relation identity based on source pair.
+     * 
+     * This ensures relation identity is based on typed StressSourceID
+     * instances, not on string concatenation.
+     * 
+     * Relations are directional: (A → B) is distinct from (B → A).
+     */
+    private static final class RelationKey {
+        private final StressSourceID primary;
+        private final StressSourceID secondary;
+        
+        RelationKey(StressSourceID primary, StressSourceID secondary) {
+            this.primary = primary;
+            this.secondary = secondary;
+        }
+        
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof RelationKey)) return false;
+            RelationKey other = (RelationKey) obj;
+            return primary.equals(other.primary) && secondary.equals(other.secondary);
+        }
+        
+        @Override
+        public int hashCode() {
+            return 31 * primary.hashCode() + secondary.hashCode();
+        }
+    }
+    
+    private final Map<RelationKey, ModuleRelation> relations;
     private final Set<StressSourceID> activeModules;
     private final Map<StressSourceID, StressReport> cachedReports;
     
@@ -80,7 +118,11 @@ public final class RelationRegistry {
      * 
      * IDEMPOTENCY:
      * Registering the same relation multiple times replaces the previous instance.
-     * Relations are keyed by a combination of their sources to prevent duplicates.
+     * Relations are keyed by their typed source pair to prevent duplicates.
+     * 
+     * NULL CONTRACT:
+     * Relation must not be null. This indicates a programming error and will
+     * fail fast with IllegalArgumentException.
      * 
      * @param relation the module relationship to register
      * @throws IllegalArgumentException if relation is null
@@ -90,19 +132,24 @@ public final class RelationRegistry {
             throw new IllegalArgumentException("Relation cannot be null");
         }
         
-        String key = makeRelationKey(relation.primarySource(), relation.secondarySource());
+        RelationKey key = new RelationKey(relation.primarySource(), relation.secondarySource());
         relations.put(key, relation);
     }
     
     /**
      * Unregisters a module relationship.
      * 
+     * NULL CONTRACT:
+     * Both source IDs must be non-null. If either is null, the operation
+     * silently skips without error. This is a permissive design for cleanup
+     * scenarios.
+     * 
      * @param primarySource the primary source of the relation
      * @param secondarySource the secondary source of the relation
      */
     public void unregister(StressSourceID primarySource, StressSourceID secondarySource) {
         if (primarySource != null && secondarySource != null) {
-            String key = makeRelationKey(primarySource, secondarySource);
+            RelationKey key = new RelationKey(primarySource, secondarySource);
             relations.remove(key);
         }
     }
@@ -147,6 +194,10 @@ public final class RelationRegistry {
      * A relation is applicable if both its primary and secondary sources
      * are currently active modules.
      * 
+     * ARCHITECTURAL NOTE:
+     * Relations always return an evaluation (never null).
+     * Inactive or irrelevant relationships return influence = 0.0
+     * 
      * @param frameNumber current frame number
      * @param deltaTime frame delta time in seconds
      * @return collection of relation evaluations
@@ -163,13 +214,23 @@ public final class RelationRegistry {
                 
                 try {
                     RelationEvaluation evaluation = relation.evaluate(context);
-                    if (evaluation != null) {
-                        evaluations.add(evaluation);
+                    
+                    // Validate contract: evaluate() must never return null
+                    if (evaluation == null) {
+                        CEEMDiagnostics.critical(
+                            "ModuleRelation.evaluate() returned null for " + relation.description() + ". " +
+                            "This violates the contract. Relations must return evaluation with influence=0.0 if inactive."
+                        );
+                        continue;
                     }
+                    
+                    evaluations.add(evaluation);
                 } catch (Exception e) {
                     // Log but don't fail entire evaluation
-                    System.err.println("Error evaluating relation " + 
-                        relation.description() + ": " + e.getMessage());
+                    CEEMDiagnostics.error(
+                        "Error evaluating relation " + relation.description(),
+                        e
+                    );
                 }
             }
         }
@@ -180,10 +241,14 @@ public final class RelationRegistry {
     /**
      * Returns all registered relations.
      * 
-     * @return unmodifiable collection of relations
+     * This creates a defensive copy to ensure the returned collection
+     * is a true snapshot, unaffected by subsequent registrations or
+     * unregistrations.
+     * 
+     * @return unmodifiable snapshot of relations
      */
     public Collection<ModuleRelation> getRelations() {
-        return Collections.unmodifiableCollection(relations.values());
+        return Collections.unmodifiableList(new ArrayList<>(relations.values()));
     }
     
     /**
@@ -221,21 +286,15 @@ public final class RelationRegistry {
      * @return true if relation exists
      */
     public boolean hasRelation(StressSourceID primarySource, StressSourceID secondarySource) {
-        String key = makeRelationKey(primarySource, secondarySource);
+        RelationKey key = new RelationKey(primarySource, secondarySource);
         return relations.containsKey(key);
     }
     
     /**
-     * Creates a unique key for a relation based on its sources.
-     * 
-     * This prevents duplicate relations between the same two modules.
-     */
-    private String makeRelationKey(StressSourceID primary, StressSourceID secondary) {
-        return primary.name() + ":" + secondary.name();
-    }
-    
-    /**
      * Internal implementation of RelationContext.
+     * 
+     * This class bridges between CEEM's cached state and the
+     * RelationContext interface that relations consume.
      */
     private static class RelationContextImpl implements RelationContext {
         

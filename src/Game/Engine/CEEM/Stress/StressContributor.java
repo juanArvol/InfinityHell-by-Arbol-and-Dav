@@ -56,6 +56,14 @@ public interface StressContributor {
      * 4. Provide diagnostic information
      * 5. Return a complete StressReport
      * 
+     * NULL CONTRACT:
+     * May return null to indicate "no stress report this frame". This is useful
+     * when a module is temporarily inactive or unable to evaluate. CEEM will
+     * silently skip null reports without failing the evaluation cycle.
+     * 
+     * Use null sparingly: prefer returning a report with magnitude 0.0 and
+     * NOMINAL level when the module is active but unstressed.
+     * 
      * PERFORMANCE CONSIDERATION:
      * This method should be lightweight. If stress calculation is expensive,
      * consider caching results or using incremental updates.
@@ -65,7 +73,7 @@ public interface StressContributor {
      * frame number, etc.) that may be useful for contextualizing measurements.
      * 
      * @param context environmental context for evaluation
-     * @return a stress report representing current state
+     * @return a stress report representing current state, or null if no report
      */
     StressReport evaluate(StressContext context);
 }

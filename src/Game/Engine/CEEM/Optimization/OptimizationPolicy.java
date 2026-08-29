@@ -88,10 +88,44 @@ public interface OptimizationPolicy {
     /**
      * Returns whether optimizations are currently active.
      * 
-     * This is informational and diagnostic. CEEM may use this to avoid
-     * redundant apply() calls or to report optimization state.
+     * IMPORTANT SEMANTIC BOUNDARY:
+     * This method reports OPTIMIZATION state, NOT module state.
      * 
-     * @return true if optimizations are currently applied
+     * It answers: "Are optimization actions currently applied?"
+     * It does NOT answer: "Is the module active/enabled/running?"
+     * 
+     * CEEM uses this to avoid redundant apply()/restore() calls:
+     * - Don't call apply() if already optimizing
+     * - Don't call restore() if already nominal
+     * 
+     * ARCHITECTURAL PRINCIPLE:
+     * CEEM coordinates optimization timing but never manages module lifecycle.
+     * The module itself controls whether it's active, enabled, or running.
+     * This method MUST NOT conflate optimization state with module state.
+     * 
+     * CORRECT IMPLEMENTATION:
+     * <pre>
+     * private boolean optimizationsApplied = false;
+     * 
+     * public void apply(StressReport report) {
+     *     enableCulling();
+     *     reduceQuality();
+     *     optimizationsApplied = true;
+     * }
+     * 
+     * public boolean isActive() {
+     *     return optimizationsApplied;  // State of optimizations, not module
+     * }
+     * </pre>
+     * 
+     * INCORRECT IMPLEMENTATION:
+     * <pre>
+     * public boolean isActive() {
+     *     return module.isEnabled();  // WRONG: This is module state, not optimization state
+     * }
+     * </pre>
+     * 
+     * @return true if optimization actions are currently applied, false otherwise
      */
     boolean isActive();
 }
