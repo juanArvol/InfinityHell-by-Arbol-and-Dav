@@ -4,6 +4,7 @@ import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 import Game.Items.Types.Bullets.Movement.GravityMovement;
@@ -109,6 +110,11 @@ public class BulletJump extends BulletBehavior {
     @Override
     public ProjectileData getDefaultData() {
         return DEFAULT_DATA;
+    }
+
+    @Override
+    public BulletID getBulletID() {
+        return BulletID.SPRING_BULLET;
     }
 
     @Override

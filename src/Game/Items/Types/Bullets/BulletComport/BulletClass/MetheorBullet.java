@@ -7,6 +7,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.TrajectoryProvider;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
@@ -106,6 +107,11 @@ public class MetheorBullet extends BulletBehavior {
                 8,                 // height
                 "bullet.comet"      // assetKey
         );
+    }
+
+    @Override
+    public BulletID getBulletID() {
+        return BulletID.METEOR_BULLET;
     }
 
     @Override

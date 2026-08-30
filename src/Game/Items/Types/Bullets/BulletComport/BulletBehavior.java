@@ -1,6 +1,7 @@
 package Game.Items.Types.Bullets.BulletComport;
 
 import Game.Engine.GameObjects;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileContext;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
@@ -90,6 +91,33 @@ public abstract class BulletBehavior {
      */
     public ProjectileData getDefaultData() {
         return ProjectileData.flat(10, 1.0, 10);
+    }
+
+    /**
+     * BulletID registrado de este tipo de proyectil.
+     * 
+     * ── CEEM SUPPORT — Rarity Access ──────────────────────────────────────
+     * 
+     * Permite que Bullet.getRarity() obtenga la rareza desde BulletRegistry
+     * sin almacenar metadata duplicada en cada instancia.
+     * 
+     * Cada BulletBehavior concreto (BulletNormal, BulletJump, MetheorBullet...)
+     * debe sobreescribir este método retornando su BulletID correspondiente.
+     * 
+     * Ejemplo de implementación:
+     * <pre>
+     * public class BulletNormal extends BulletBehavior {
+     *     &#64;Override
+     *     public BulletID getBulletID() {
+     *         return BulletID.NORMAL_BULLET;
+     *     }
+     * }
+     * </pre>
+     * 
+     * @return BulletID registrado, o null si es un behavior custom sin registro
+     */
+    public BulletID getBulletID() {
+        return null; // Default: behavior sin ID registrado
     }
 
     /**

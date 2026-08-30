@@ -3,6 +3,7 @@ package Game.Items.Types.Bullets.BulletComport.BulletClass;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.TrajectoryProvider;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 
@@ -57,6 +58,11 @@ public class FrostBullet extends BulletBehavior {
             60,     // lifetime - ~1 segundo
             0  // hasGravity - sin gravedad
         );
+    }
+
+    @Override
+    public BulletID getBulletID() {
+        return BulletID.FROST_BULLET;
     }
 
     // ══════════════════════════════════════════════════════════════════════

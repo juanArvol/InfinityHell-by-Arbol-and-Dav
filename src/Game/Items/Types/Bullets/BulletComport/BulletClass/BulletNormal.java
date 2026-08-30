@@ -4,6 +4,7 @@ import Game.Engine.AbstractEntity;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.TrajectoryProvider;
+import Game.Items.Types.Bullets.BulletID;
 import Game.Items.Types.Bullets.Definition.Bullet;
 import Game.Items.Types.Bullets.Definition.ProjectileData;
 
@@ -25,6 +26,11 @@ public class BulletNormal extends BulletBehavior {
     @Override
     public ProjectileData getDefaultData() {
         return DEFAULT_DATA;
+    }
+
+    @Override
+    public BulletID getBulletID() {
+        return BulletID.NORMAL_BULLET;
     }
 
     /**

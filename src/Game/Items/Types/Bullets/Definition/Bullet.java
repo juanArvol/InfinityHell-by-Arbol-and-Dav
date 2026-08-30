@@ -14,9 +14,12 @@ import Game.Engine.Lifecycle.SimulationLifecycle;
 import Game.Engine.Physics.Core.PhysicalState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Gameplay.Events.ProjectileEvents;
+import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletLife;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
+import Game.Items.Types.Bullets.BulletID;
+import Game.Items.Types.Bullets.Definition.BulletRegistry;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
 import Game.Items.Types.Bullets.OffScreenTracker;
@@ -477,6 +480,28 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                 bulletLife.kill();  // Marcar para destrucción
             }
         }
+    }
+
+    // ── CEEM Support ──────────────────────────────────────────────────────
+
+    /**
+     * Retorna la rareza de este proyectil desde su BulletID.
+     * 
+     * ARQUITECTURA:
+     *   La rareza se obtiene desde BulletRegistry usando el BulletID expuesto
+     *   por el BulletBehavior concreto. Esto respeta la arquitectura existente
+     *   donde la rareza está declarada en BulletRegistry por tipo.
+     * 
+     *   Mismo patrón usado por LootSpawnLayer con ItemRegistry.
+     * 
+     * @return ItemRarity del tipo, o COMMON si no tiene ID registrado
+     */
+    public ItemRarity getRarity() {
+        BulletID bulletId = getBehavior().getBulletID();
+        if (bulletId == null) {
+            return ItemRarity.COMMON; // fallback para bullets custom sin ID
+        }
+        return BulletRegistry.getRarity(bulletId);
     }
 
     // ── Engine.Lifecycle — SimulationLifecycle ─────────────────────────────
