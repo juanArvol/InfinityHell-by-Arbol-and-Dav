@@ -504,8 +504,9 @@ public final class BulletCEEM {
      * @return distancia en píxeles
      */
     private double estimateDistanceFromViewport(Bullet bullet, GameCamera camera) {
-        double bulletX = bullet.getTransform().getX();
-        double bulletY = bullet.getTransform().getY();
+        // Usar getPositionX/Y() directo — sin allocation
+        double bulletX = bullet.getPositionX();
+        double bulletY = bullet.getPositionY();
         
         double cameraX = camera.getX();
         double cameraY = camera.getY();

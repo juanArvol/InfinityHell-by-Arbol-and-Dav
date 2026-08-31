@@ -5,7 +5,6 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Spatial.LinearSpatialQuery;
 import Game.Engine.Spatial.SpatialQuery;
 import Game.World.Core.WorldManager;
-
 import java.util.List;
 
 /**

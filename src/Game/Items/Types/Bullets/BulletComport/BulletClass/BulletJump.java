@@ -1,6 +1,6 @@
 package Game.Items.Types.Bullets.BulletComport.BulletClass;
 
-import Game.Engine.AbstractEntity;
+import Game.Engine.Entity;
 import Game.Engine.GameObjects;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
@@ -129,7 +129,7 @@ public class BulletJump extends BulletBehavior {
 
     @Override
     public void onCollision(Bullet bullet, GameObjects other) {
-        if (other instanceof AbstractEntity entity) {
+        if (other instanceof Entity entity) {
             // Impacto con entidad viva — el proyectil muere
             entity.gotDamage((int)bullet.getBulletDamage());
             bullet.getBulletLife().kill();

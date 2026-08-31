@@ -2,6 +2,7 @@ package Game.Items.Types.Bullets.Definition;
 
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Simulation.Storage.EntityStore;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletStats;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
@@ -19,7 +20,16 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *   1. Resolver el BulletFlyweight del cache (recursos compartidos del tipo).
  *   2. Calcular velocidad X/Y desde speed escalar y dirección normalizada.
  *   3. Construir la instancia Bullet con el Flyweight ya resuelto.
- *   4. Emitir OnProjectileSpawn cuando corresponde.
+ *   4. Registrar la entidad en EntityStore (DOD).
+ *   5. Emitir OnProjectileSpawn cuando corresponde.
+ *
+ * ── HRFC — Projectile DOD Migration ──────────────────────────────────────
+ *
+ * EntityStore es requerido para construcción. Debe ser inyectado via:
+ *   - setEntityStore() durante bootstrap
+ *   - O pasado explícitamente en cada llamada a build/buildForPool
+ *
+ * Sin EntityStore configurado, las llamadas fallarán con IllegalStateException.
  *
  * ── LO QUE NO HACE ────────────────────────────────────────────────────────
  *
@@ -60,7 +70,43 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  */
 public final class BulletFactory {
 
+    /**
+     * EntityStore compartido para registrar proyectiles.
+     * Debe ser inyectado durante bootstrap via setEntityStore().
+     */
+    private static EntityStore entityStore = null;
+
     private BulletFactory() {}
+
+    /**
+     * Configura el EntityStore usado para registrar proyectiles.
+     * Llamar durante bootstrap del mundo antes de crear proyectiles.
+     *
+     * @param store EntityStore compartido (no null)
+     * @throws IllegalArgumentException si store es null
+     */
+    public static void setEntityStore(EntityStore store) {
+        if (store == null) {
+            throw new IllegalArgumentException("EntityStore cannot be null");
+        }
+        BulletFactory.entityStore = store;
+    }
+
+    /**
+     * Retorna el EntityStore configurado.
+     *
+     * @return EntityStore activo
+     * @throws IllegalStateException si no se configuró via setEntityStore()
+     */
+    private static EntityStore requireEntityStore() {
+        if (entityStore == null) {
+            throw new IllegalStateException(
+                "BulletFactory requires EntityStore to be configured. " +
+                "Call BulletFactory.setEntityStore() during world bootstrap."
+            );
+        }
+        return entityStore;
+    }
 
     // ── Ruta pública — construcción con evento ────────────────────────────
 
@@ -160,6 +206,9 @@ public final class BulletFactory {
      * FASE 4 — Optimización: firma con primitivos para reducir allocations.
      * Los componentes x/y se pasan directamente sin crear Vector2D temporales.
      *
+     * ── HRFC — Projectile DOD Migration ──────────────────────────────────
+     *
+     * Pasa EntityStore al constructor de Bullet para registro DOD.
      * Resuelve el Flyweight, calcula la velocidad vectorial y construye
      * la instancia Bullet. No emite eventos — eso es responsabilidad del
      * caller según si usa la ruta pública o la ruta del pool.
@@ -170,6 +219,7 @@ public final class BulletFactory {
                                     double posX, double posY,
                                     double dirX, double dirY) {
         BulletFlyweight flyweight = BulletFlyweightCache.INSTANCE.get(blueprint);
+        EntityStore store = requireEntityStore();
 
         double xSpeed = dirX * blueprint.speed();
         double ySpeed = dirY * blueprint.speed();
@@ -183,7 +233,8 @@ public final class BulletFactory {
                 ySpeed,
                 blueprint.lifeTime(),
                 blueprint.damage(),
-                blueprint.physicalState()  // Mini-HRFC — null si no declarado
+                blueprint.physicalState(),  // Mini-HRFC — null si no declarado
+                store                        // DOD registration
         );
     }
 

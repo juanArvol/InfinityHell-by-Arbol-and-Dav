@@ -1,6 +1,7 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
+import Game.Engine.Entity;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
@@ -58,7 +59,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      * Inyectado para desacoplar el wrapper del World.
      * Null = sin rebote (degradado graceful).
      */
-    private final Supplier<List<? extends AbstractEntity>> entityProvider;
+    private final Supplier<List<? extends Entity>> entityProvider;
 
     // ── Constructores ─────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      */
     public BounceAmuletWrapper(BulletBehavior inner,
                                int maxBounces,
-                               Supplier<List<? extends AbstractEntity>> entityProvider) {
+                               Supplier<List<? extends Entity>> entityProvider) {
         super(inner);
         this.maxBounces     = maxBounces;
         this.entityProvider = (entityProvider != null) ? entityProvider : List::of;
@@ -113,7 +114,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
         if (bounceCount >= maxBounces) return;
 
         // Buscar el objetivo más cercano diferente a la entidad actual
-        AbstractEntity nextTarget = findNearestOther(
+        Entity nextTarget = findNearestOther(
                 bullet.getTransform().getPosition(), hitEntity);
 
         if (nextTarget == null) return; // sin objetivo — el proyectil muere normalmente
@@ -156,14 +157,14 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      * Busca la AbstractEntity más cercana al origen dentro del radio,
      * excluyendo la entidad que ya fue impactada.
      */
-    private AbstractEntity findNearestOther(Vector2D origin, AbstractEntity exclude) {
-        List<? extends AbstractEntity> candidates = entityProvider.get();
+    private Entity findNearestOther(Vector2D origin, Entity exclude) {
+        List<? extends Entity> candidates = entityProvider.get();
         if (candidates == null || candidates.isEmpty()) return null;
 
-        AbstractEntity nearest  = null;
+        Entity nearest  = null;
         double         minDist  = SEARCH_RADIUS * SEARCH_RADIUS; // comparar con distSq
 
-        for (AbstractEntity candidate : candidates) {
+        for (Entity candidate : candidates) {
             if (candidate == exclude) continue;
             if (candidate.isDead()) continue; // no redirigir a entidades muertas
 

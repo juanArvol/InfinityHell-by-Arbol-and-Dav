@@ -145,7 +145,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.METEOR_BULLET)
+            .initialBullets(BulletType.NORMAL_BULLET)
             .initialAmulets(AmuletType.SPLIT_CRYSTAL)
             .build();
         

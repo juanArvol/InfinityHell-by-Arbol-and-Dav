@@ -194,13 +194,13 @@ public class MetheorBullet extends BulletBehavior {
         // Radio de explosión escala con la potencia
         double maxRadius = RADIUS_BASE + (explosionPower * RADIUS_SCALE);
         
-        // Posición del impacto (epicentro)
-        Vector2D center = bullet.getTransform().getPosition();
-        double centerX = center.getX();
-        double centerY = center.getY();
+        // Posición del impacto (epicentro) — sin allocation de Vector2D
+        double centerX = bullet.getPositionX();
+        double centerY = bullet.getPositionY();
         
         // Buscar todas las entidades en el radio de explosión
-        var entitiesInRange = findNearbyEntities(bullet, center, maxRadius);
+        Vector2D centerVec = new Vector2D(centerX, centerY); // allocation necesaria para findEntitiesInRadius
+        var entitiesInRange = findNearbyEntities(bullet, centerVec, maxRadius);
         
         // Aplicar daño y empuje radial a cada entidad afectada
         for (AbstractEntity entity : entitiesInRange) {

@@ -1,6 +1,5 @@
 package Game.Engine.Entity;
 
-import Game.Engine.AbstractEntity;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Flags.EntityFlags;
@@ -61,7 +60,7 @@ import Game.Engine.Entity.Stats.RuntimeStats;
  *   - NPC, Companion, Summon, Boss (heredan la implementación via Enemy o su propia)
  *
  * RELACIÓN CON Entity (clase):
- *   {@link AbstractEntity} gestiona HealthComponent y StatusEffectComponent — ciclo
+ *   {@link Entity} gestiona HealthComponent y StatusEffectComponent — ciclo
  *   de vida de salud y efectos de estado. Living gestiona el sistema RPG de
  *   estadísticas. Son capas ortogonales: una entidad puede tener salud sin
  *   tener stats RPG (Bullet, WorldItem), y una entidad puede tener stats RPG

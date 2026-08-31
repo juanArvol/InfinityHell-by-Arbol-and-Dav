@@ -2,173 +2,117 @@ package Game.Engine.Simulation.Systems;
 
 import Game.Engine.Simulation.ComponentMask;
 import Game.Engine.Simulation.ComponentType;
-import Game.Engine.Simulation.EntityId;
-import Game.Engine.Simulation.Storage.EntityRecord;
 import Game.Engine.Simulation.Storage.EntityStore;
 import Game.Engine.Simulation.Storage.PrimitiveStorage;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Sistema que gestiona el tiempo de vida de entidades temporales.
+ * Sistema que decrece lifetime y marca entidades expiradas.
  *
- * ── HRFC — Game.Engine Unified Simulation Data Architecture / ECS-DOD ─────
+ * ── HRFC — Projectile DOD Migration ──────────────────────────────────────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  *
- * LifetimeSystem procesa entidades con componente LIFETIME:
+ * Decrece lifetime en deltaTime y marca FLAG_EXPIRED cuando agota el tiempo:
  *
- * 1. Decrementa lifetime por deltaTime
- * 2. Marca como muertas las entidades cuyo lifetime llegó a cero
+ *   lifetime -= deltaTime
+ *   if (lifetime <= 0) flags |= FLAG_EXPIRED
  *
- * ── ECUACIÓN ──────────────────────────────────────────────────────────────
+ * ── COMPONENTES REQUERIDOS ───────────────────────────────────────────────
  *
- *   lifetime(t + Δt) = lifetime(t) - Δt
+ * Este sistema requiere:
+ *   - LIFETIME (write)
+ *   - FLAGS (write)
  *
- *   if lifetime ≤ 0:
- *       marcar entidad como muerta
+ * OPTIMIZACIÓN ACTUAL:
+ *   Como todas las bullets tienen PROJECTILE_MASK (que incluye estos componentes),
+ *   no filtramos en runtime. Procesamos todas las entidades del store.
  *
- * ── REQUISITOS DE COMPONENTES ────────────────────────────────────────────
+ * FUTURO:
+ *   Si el EntityStore contiene tipos mixtos (bullets + particles + enemies),
+ *   activar filtrado por ComponentMask para procesar solo entidades válidas.
  *
- * Requiere:
- *   - LIFETIME (segundos restantes)
+ * ── ÚNICO WRITER DE LIFETIME ─────────────────────────────────────────────
  *
- * Entidades sin LIFETIME no son procesadas (entidades permanentes).
+ * LifetimeSystem es el ÚNICO responsable de decrecer lifetime.
  *
- * ── USO TÍPICO ───────────────────────────────────────────────────────────
+ * PROHIBIDO:
+ * - BulletLife.advance() ya NO decrece lifetime
+ * - Bullet.update() NO toca lifetime
+ * - BulletBehavior NO decrece lifetime
  *
- * Lifetime se usa para entidades temporales:
- *   - Proyectiles (3-5 segundos de vuelo)
- *   - Efectos visuales (0.5-2 segundos)
- *   - Partículas (0.1-1 segundo)
- *   - Power-ups temporales (10-30 segundos)
- *   - Trampas temporales (5-10 segundos)
+ * PERMITIDO:
+ * - BulletLife.kill() escribe 0 directamente (muerte manual)
+ * - BulletLife.extend() añade tiempo (extensión manual)
  *
- * Entidades permanentes (Player, Boss, Enemy) NO tienen componente LIFETIME.
+ * ── FLAGS ────────────────────────────────────────────────────────────────
  *
- * ── DESTRUCCIÓN ──────────────────────────────────────────────────────────
+ * FLAG_EXPIRED (bit 1) se marca cuando lifetime <= 0.
+ * ProjectileBehaviorSystem lee este flag y llama behavior.onExpire().
  *
- * Este sistema NO destruye entidades directamente durante update().
- * Solo las marca como muertas mediante store.destroy().
+ * FLAG_DEAD (bit 0) se marca por kill() manual (comportamiento, colisión).
  *
- * La compactación real ocurre posteriormente:
- *   - Si SimulationPipeline.autoCompact = true → automático
- *   - Si no, el caller debe llamar entityStore.compact() manualmente
+ * isAlive() retorna true si:
+ *   - lifetime > 0
+ *   - FLAG_DEAD no está activo
  *
- * ── ORDEN EN PIPELINE ────────────────────────────────────────────────────
+ * ── ORDEN DE EJECUCIÓN ───────────────────────────────────────────────────
  *
- * LifetimeSystem típicamente se ejecuta DESPUÉS de MovementSystem y
- * ANTES de CollisionSystem:
+ * Puede ejecutarse en cualquier momento. Típicamente después de Movement:
+ *   1. ProjectileMovementSystem
+ *   2. AccelerationSystem
+ *   3. MovementSystem
+ *   4. LifetimeSystem (ESTE)
+ *   5. CollisionSystem
+ *   6. ProjectileBehaviorSystem (lee FLAG_EXPIRED)
  *
- *   1. AccelerationSystem
- *   2. MovementSystem
- *   3. LifetimeSystem      ← marca entidades expiradas
- *   4. CollisionSystem     ← ignora entidades muertas
+ * ── HOT PATH ─────────────────────────────────────────────────────────────
  *
- * ── CALLBACK DE EXPIRACIÓN (FUTURO) ──────────────────────────────────────
- *
- * Este HRFC NO implementa callbacks de expiración.
- * Los dominios que necesiten lógica custom al expirar deben:
- *
- *   a) Registrar un listener en EntityStore (extensión futura)
- *   b) Implementar un sistema propio que detecte lifetime=0 y ejecute lógica
- *   c) Usar el sistema existente de eventos (GameEventBus)
- *
- * ── PERFORMANCE ──────────────────────────────────────────────────────────
- *
- * Loop simple:
- *   - 1 lectura + 1 escritura por entidad con lifetime
- *   - 1 comparación (lifetime <= 0)
- *   - 1 resta (lifetime -= deltaTime)
- *
- * El batch destroy al final puede ser más costoso debido a la búsqueda
- * en HashMap, pero ocurre solo para entidades que expiraron (infrecuente).
- *
- * ── ALLOCATION-FREE (casi) ───────────────────────────────────────────────
- *
- * El loop principal es allocation-free.
- * Solo se allocan objetos cuando hay entidades que destruir:
- *   - ArrayList temporal para recolectar IDs
- *   - Esto solo ocurre cuando lifetime <= 0 (infrecuente)
- *
- * Alternativa futura: pool de ArrayList reutilizables.
- *
- * ── EJEMPLO ──────────────────────────────────────────────────────────────
- *
- *   // Crear proyectil con 3 segundos de vida
- *   ComponentMask mask = ComponentMask.EMPTY
- *       .with(ComponentType.POSITION.id())
- *       .with(ComponentType.VELOCITY.id())
- *       .with(ComponentType.LIFETIME.id());
- *   EntityId id = store.create(mask);
- *
- *   SimulationHandle h = store.getHandle(id);
- *   PrimitiveStorage s = store.getStorage();
- *   s.lifetimes()[h.index()] = 3.0f;  // 3 segundos
- *
- *   // Después de 3 segundos de updates:
- *   // lifetime = 3.0 - 3.0 = 0.0 → entidad marcada muerta → compactada
+ * Loop denso sobre arrays primitivos.
+ * Branch prediction favorable — mayoría de entidades siguen vivas.
  */
 public final class LifetimeSystem implements SimulationSystem {
 
-    private final ComponentMask requirements;
-    private final List<EntityId> toDestroy; // reutilizado entre frames
-
-    public LifetimeSystem() {
-        this.requirements = ComponentMask.EMPTY
-            .with(ComponentType.LIFETIME.id());
-        this.toDestroy = new ArrayList<>();
-    }
+    private static final int FLAG_EXPIRED = 1 << 1;
+    
+    /** Máscara de componentes requeridos por este sistema */
+    private static final ComponentMask REQUIRED_COMPONENTS = ComponentMask.EMPTY
+        .with(ComponentType.LIFETIME)
+        .with(ComponentType.FLAGS);
 
     @Override
-    public void update(EntityStore store, double deltaTime) {
-        PrimitiveStorage storage = store.getStorage();
+    public void update(EntityStore entityStore, double deltaTime) {
+        PrimitiveStorage storage = entityStore.getStorage();
+        int count = entityStore.count();
 
-        // Acceso directo a los arrays
         float[] lifetimes = storage.lifetimes();
+        int[] flags = storage.flags();
 
-        int count = store.count();
+        float dt = (float) deltaTime;
 
-        // Limpiar lista de destrucción del frame anterior
-        toDestroy.clear();
-
-        // Loop denso para decrementar lifetimes
+        // HOT LOOP — procesamiento denso
+        // OPTIMIZACIÓN: No filtramos porque todas las bullets tienen estos componentes
+        // Si en futuro el store contiene tipos mixtos, activar filtrado aquí
         for (int i = 0; i < count; i++) {
-            // Validar que entidad tiene lifetime
-            EntityId entityId = store.getEntityAt(i);
-            if (entityId == null) continue;
-
-            EntityRecord record = store.getRecord(entityId);
-            if (!record.mask().matches(requirements)) continue;
-
-            // Decrementar lifetime
-            lifetimes[i] -= deltaTime;
-
-            // Marcar para destrucción si expiró
-            if (lifetimes[i] <= 0.0f) {
-                toDestroy.add(entityId);
+            if (lifetimes[i] > 0f) {
+                lifetimes[i] -= dt;
+                if (lifetimes[i] <= 0f) {
+                    lifetimes[i] = 0f; // clampeo
+                    flags[i] |= FLAG_EXPIRED; // marcar para callback
+                }
             }
         }
-
-        // Destruir entidades expiradas (batch)
-        for (EntityId entityId : toDestroy) {
-            store.destroy(entityId);
-        }
-
-        // Nota: La compactación real ocurre después si autoCompact está habilitado
+    }
+    
+    /**
+     * Retorna los componentes requeridos por este sistema.
+     * Usado para validación y debugging.
+     */
+    public ComponentMask getRequiredComponents() {
+        return REQUIRED_COMPONENTS;
     }
 
     @Override
     public String name() {
         return "LifetimeSystem";
-    }
-
-    /**
-     * Retorna el número de entidades destruidas en el último update.
-     * Útil para debugging y métricas.
-     */
-    public int getLastDestroyedCount() {
-        return toDestroy.size();
     }
 }

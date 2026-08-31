@@ -1,180 +1,97 @@
 package Game.Engine.Simulation;
 
 /**
- * Tipos de componentes de simulación soportados por la infraestructura DOD.
+ * Tipos de componentes para ComponentMask.
  *
- * ── HRFC — Game.Engine Unified Simulation Data Architecture / ECS-DOD ─────
+ * ── HRFC — Projectile DOD Migration ──────────────────────────────────────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
+ * Define los IDs de bits para cada tipo de componente en PrimitiveStorage.
+ * Usado para construir ComponentMask que indica qué datos tiene una entidad.
  *
- * ComponentType enumera todos los tipos de datos de simulación que pueden
- * almacenarse en la infraestructura DOD del Engine.
+ * ── CONVENCIÓN ───────────────────────────────────────────────────────────
  *
- * Cada tipo tiene:
- *   - Un ID único (para ComponentMask)
- *   - Un nombre descriptivo
- *   - Clasificación hot/warm/cold
+ * Los IDs deben estar en el rango [0, 63] para caber en un long bitmask.
+ * Organizados por dominio para claridad.
  *
- * ── CLASIFICACIÓN DE DATOS ───────────────────────────────────────────────
+ * ── LIMPIEZA DE CAMPOS ───────────────────────────────────────────────────
  *
- * HOT — datos accedidos constantemente por frame:
- *   Position, Velocity, Acceleration, Health, Lifetime, Flags
+ * Se eliminaron los IDs de campos que NO existen en PrimitiveStorage:
+ *   - HEALTH (health/maxHealth ya no están en DOD, solo en HealthComponent OOP)
+ *   - COLLISION_BOUNDS/MASKS (manejado por ColliderComponent OOP)
+ *   - SPATIAL_HASH/REGION_ID (no hay sistema espacial DOD)
+ *   - AGE (no se usa)
+ *   - TYPE_ID/BEHAVIOR_ID (metadata no crítica)
  *
- * WARM — datos accedidos frecuentemente pero no en cada operación:
- *   Rotation, AngularVelocity, CollisionBounds, Mass, TypeId, BehaviorId
+ * Se mantienen solo los campos que realmente existen y se usan.
  *
- * COLD — datos estáticos o de baja frecuencia:
- *   (Los datos cold normalmente NO van al DOD storage — permanecen en dominio)
+ * ── EXTENSIÓN ────────────────────────────────────────────────────────────
  *
- * Esta clasificación es una guía para optimización futura. La implementación
- * actual almacena todos los componentes en el mismo nivel.
- *
- * ── EXTENSIBILIDAD ───────────────────────────────────────────────────────
- *
- * Para añadir un nuevo tipo de componente:
- *
- * 1. Añadir la entrada en este enum
- * 2. Crear el almacenamiento correspondiente en PrimitiveStorage
- * 3. Implementar los sistemas que lo procesen
- *
- * NO es necesario modificar EntityStore ni SimulationHandle.
- *
- * ── LÍMITE DE 64 COMPONENTES ─────────────────────────────────────────────
- *
- * ComponentMask usa un long (64 bits). Si se necesitan más de 64 tipos,
- * migrar a una representación extendida (long[] o BitSet).
- *
- * Para la arquitectura híbrida propuesta, 64 componentes son suficientes
- * porque solo los datos HOT de simulación van al DOD. Los datos de dominio
- * permanecen en las instancias OO.
- *
- * ── ORDEN DE DEFINICIÓN ──────────────────────────────────────────────────
- *
- * El orden en este enum determina el ID del componente.
- * NO reordenar componentes existentes — eso rompería compatibilidad
- * con savegames si se implementa serialización en el futuro.
- *
- * Nuevos componentes deben añadirse AL FINAL.
+ * Al agregar un nuevo componente:
+ * 1. Agregar campo en PrimitiveStorage
+ * 2. Agregar constante aquí con ID único
+ * 3. Actualizar sistemas que lo requieran
  */
-public enum ComponentType {
+public final class ComponentType {
 
-    // ── COMPONENTES HOT (acceso constante por frame) ─────────────────────
+    // ── Kinematic (0-7) ───────────────────────────────────────────────────
+    public static final int POSITION         = 0;  // positionsX/Y
+    public static final int VELOCITY         = 1;  // velocitiesX/Y
+    public static final int ACCELERATION     = 2;  // accelerationsX/Y
+    public static final int ROTATION         = 3;  // rotations (visual rotation)
+    public static final int ANGULAR_VELOCITY = 4;  // angularVelocities (rad/s)
 
-    /** Posición 2D (x, y) en píxeles. */
-    POSITION(DataTemperature.HOT),
+    // ── Physics (8-15) ────────────────────────────────────────────────────
+    public static final int MASS         = 8;  // mass
+    public static final int DRAG         = 9;  // drag
+    public static final int GRAVITY_SCALE = 10; // gravityScale
 
-    /** Velocidad 2D (vx, vy) en píxeles/segundo. */
-    VELOCITY(DataTemperature.HOT),
+    // ── Lifetime (16-23) ──────────────────────────────────────────────────
+    public static final int LIFETIME     = 16; // lifetimes
 
-    /** Aceleración 2D (ax, ay) en píxeles/segundo². */
-    ACCELERATION(DataTemperature.HOT),
+    // ── Metadata (24-31) ──────────────────────────────────────────────────
+    public static final int OWNER        = 24; // ownerEntityIds (quien disparó)
 
-    /** Vida actual de la entidad. */
-    HEALTH(DataTemperature.HOT),
+    // ── State (32-39) ─────────────────────────────────────────────────────
+    public static final int FLAGS        = 32; // flags (bitfield de estado)
+    public static final int DAMAGE       = 33; // damage (daño que inflige)
 
-    /** Tiempo de vida restante en segundos (para proyectiles, efectos). */
-    LIFETIME(DataTemperature.HOT),
-
-    /** Flags de estado (bitfield de 32 bits). */
-    FLAGS(DataTemperature.HOT),
-
-    // ── COMPONENTES WARM (acceso frecuente pero no constante) ────────────
-
-    /** Rotación en radianes. */
-    ROTATION(DataTemperature.WARM),
-
-    /** Velocidad angular en radianes/segundo. */
-    ANGULAR_VELOCITY(DataTemperature.WARM),
-
-    /** Límites de colisión (bounds: minX, minY, maxX, maxY). */
-    COLLISION_BOUNDS(DataTemperature.WARM),
-
-    /** Máscara de colisión (bitfield que determina con qué puede colisionar). */
-    COLLISION_MASK(DataTemperature.WARM),
-
-    /** Masa física en kg (para física basada en fuerzas). */
-    MASS(DataTemperature.WARM),
-
-    /** Coeficiente de arrastre (air drag). */
-    DRAG(DataTemperature.WARM),
-
-    /** Multiplicador de gravedad (1.0 = gravedad normal, 0.0 = sin gravedad). */
-    GRAVITY_SCALE(DataTemperature.WARM),
-
-    /** ID de tipo de entidad (para dispatch de comportamiento). */
-    TYPE_ID(DataTemperature.WARM),
-
-    /** ID de comportamiento activo (para dispatch de lógica). */
-    BEHAVIOR_ID(DataTemperature.WARM),
-
-    /** ID del owner/creador de esta entidad (para atribución de daño). */
-    OWNER_ID(DataTemperature.WARM),
-
-    /** Hash espacial para optimización de queries espaciales. */
-    SPATIAL_HASH(DataTemperature.WARM),
-
-    /** ID de región activa (para ActiveRegion system). */
-    REGION_ID(DataTemperature.WARM),
-
-    // ── COMPONENTES ADICIONALES (reserva para futuros sistemas) ──────────
-
-    /** Edad de la entidad en segundos desde su creación. */
-    AGE(DataTemperature.WARM),
-
-    /** Daño que inflige esta entidad al colisionar. */
-    DAMAGE(DataTemperature.WARM),
-
-    /** Vida máxima de la entidad. */
-    MAX_HEALTH(DataTemperature.WARM);
-
-    // ── Metadata ─────────────────────────────────────────────────────────
-
-    private final DataTemperature temperature;
-
-    ComponentType(DataTemperature temperature) {
-        this.temperature = temperature;
-    }
+    // ── Máscaras predefinidas ─────────────────────────────────────────────
 
     /**
-     * Retorna el ID único de este componente (0-63).
-     * El ID es el ordinal del enum y es estable mientras no se reordene.
+     * Máscara para proyectiles (Bullet).
+     * Incluye los datos hot que se procesan en batch:
+     * - Position, Velocity, Acceleration (integración cinemática)
+     * - Rotation, AngularVelocity (rotación visual)
+     * - Lifetime (expiración temporal)
+     * - Damage (impacto)
+     * - Flags (estado)
+     * - GravityScale, Mass, Drag (física)
+     * - Owner (tracking de quien disparó)
      */
-    public int id() {
-        return ordinal();
-    }
+    public static final ComponentMask PROJECTILE_MASK = ComponentMask.EMPTY
+        .with(POSITION)
+        .with(VELOCITY)
+        .with(ACCELERATION)
+        .with(ROTATION)
+        .with(ANGULAR_VELOCITY)
+        .with(LIFETIME)
+        .with(DAMAGE)
+        .with(FLAGS)
+        .with(GRAVITY_SCALE)
+        .with(MASS)
+        .with(DRAG)
+        .with(OWNER);
 
     /**
-     * Retorna la clasificación de temperatura de este componente.
+     * Máscara para entidades con física completa.
      */
-    public DataTemperature temperature() {
-        return temperature;
-    }
+    public static final ComponentMask PHYSICS_MASK = ComponentMask.EMPTY
+        .with(POSITION)
+        .with(VELOCITY)
+        .with(ACCELERATION)
+        .with(MASS)
+        .with(DRAG)
+        .with(GRAVITY_SCALE);
 
-    /**
-     * Retorna true si este es un componente HOT (acceso constante).
-     */
-    public boolean isHot() {
-        return temperature == DataTemperature.HOT;
-    }
-
-    /**
-     * Retorna true si este es un componente WARM (acceso frecuente).
-     */
-    public boolean isWarm() {
-        return temperature == DataTemperature.WARM;
-    }
-
-    /**
-     * Clasificación de temperatura de datos — determina estrategia de cache.
-     */
-    public enum DataTemperature {
-        /** Acceso constante cada frame — prioridad máxima de cache locality. */
-        HOT,
-
-        /** Acceso frecuente pero no cada frame — segunda prioridad. */
-        WARM,
-
-        /** Acceso infrecuente — puede vivir fuera del DOD storage. */
-        COLD
-    }
+    private ComponentType() {} // no instanciable
 }

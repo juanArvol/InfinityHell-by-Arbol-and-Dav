@@ -2,143 +2,100 @@ package Game.Engine.Simulation.Systems;
 
 import Game.Engine.Simulation.ComponentMask;
 import Game.Engine.Simulation.ComponentType;
-import Game.Engine.Simulation.EntityId;
-import Game.Engine.Simulation.Storage.EntityRecord;
 import Game.Engine.Simulation.Storage.EntityStore;
 import Game.Engine.Simulation.Storage.PrimitiveStorage;
 
 /**
- * Sistema que integra velocidad en posición para todas las entidades con movimiento.
+ * Sistema que integra velocity en position.
  *
- * ── HRFC — Game.Engine Unified Simulation Data Architecture / ECS-DOD ─────
+ * ── HRFC — Projectile DOD Migration ──────────────────────────────────────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  *
- * MovementSystem aplica la ecuación básica de movimiento:
+ * Aplica la ecuación cinemática básica:
  *
  *   position += velocity * deltaTime
  *
- * Opera sobre todas las entidades que tienen Position + Velocity.
+ * ── COMPONENTES REQUERIDOS ───────────────────────────────────────────────
  *
- * ── ECUACIÓN ──────────────────────────────────────────────────────────────
+ * Este sistema requiere:
+ *   - POSITION (write)
+ *   - VELOCITY (read)
  *
- *   x(t + Δt) = x(t) + vx(t) × Δt
- *   y(t + Δt) = y(t) + vy(t) × Δt
+ * OPTIMIZACIÓN ACTUAL:
+ *   Como todas las bullets tienen PROJECTILE_MASK (que incluye estos componentes),
+ *   no filtramos en runtime. Procesamos todas las entidades del store.
  *
- * Donde:
- *   x, y  = posición actual
- *   vx, vy = velocidad actual
- *   Δt = deltaTime en segundos
+ * FUTURO:
+ *   Si el EntityStore contiene tipos mixtos (bullets + particles + enemies),
+ *   activar filtrado por ComponentMask para procesar solo entidades válidas.
  *
- * ── REQUISITOS DE COMPONENTES ────────────────────────────────────────────
+ * ── ÚNICO WRITER DE POSITION ─────────────────────────────────────────────
  *
- * Requiere:
- *   - POSITION (x, y)
- *   - VELOCITY (vx, vy)
+ * MovementSystem es el ÚNICO responsable de modificar position.
  *
- * Ignora entidades que no tienen ambos componentes.
+ * PROHIBIDO:
+ * - Bullet.moveByPhysics() NO se llama
+ * - ProjectileMovement NO modifica position
+ * - BulletBehavior NO modifica position
  *
- * ── ORDEN EN PIPELINE ────────────────────────────────────────────────────
+ * PERMITIDO:
+ * - CollisionSystem puede ajustar position para resolver overlap
  *
- * MovementSystem típicamente se ejecuta DESPUÉS de:
- *   - AccelerationSystem (velocity += acceleration * dt)
- *   - PhysicsSystem (aplicar fuerzas externas)
+ * ── ORDEN DE EJECUCIÓN ───────────────────────────────────────────────────
  *
- * Y ANTES de:
- *   - CollisionSystem (necesita posiciones actualizadas)
- *   - SpatialSystem (actualizar spatial hash)
+ * DEBE ejecutarse DESPUÉS de AccelerationSystem que actualiza velocity.
  *
- * ── PERFORMANCE ──────────────────────────────────────────────────────────
+ * Orden correcto:
+ *   1. ProjectileMovementSystem
+ *   2. AccelerationSystem
+ *   3. MovementSystem (ESTE)
+ *   4. CollisionSystem
  *
- * Este sistema es extremadamente simple y rápido:
- *   - Acceso secuencial a 4 arrays (posX, posY, velX, velY)
- *   - 4 lecturas + 2 escrituras por entidad
- *   - 4 operaciones aritméticas (2 multiplicaciones, 2 sumas)
- *   - Altamente vectorizable (compilador/JIT puede usar SIMD)
- *   - Cache-friendly (acceso secuencial, sin indirecciones)
+ * ── HOT PATH ─────────────────────────────────────────────────────────────
  *
- * Esperado: ~1-2 nanosegundos por entidad en hardware moderno.
- * 10,000 entidades: ~10-20 microsegundos total.
+ * Loop denso sobre arrays primitivos.
+ * Sin indirecciones, sin allocations, cache-friendly.
+ * Compilador puede vectorizar automáticamente (SIMD).
  *
- * ── ALLOCATION-FREE ──────────────────────────────────────────────────────
- *
- * Este sistema no genera ninguna allocation:
- *   - No crea objetos temporales
- *   - No usa boxing
- *   - No usa streams ni lambdas
- *   - Solo primitives y referencias a arrays
- *
- * ── DETERMINISMO ─────────────────────────────────────────────────────────
- *
- * El sistema es completamente determinista:
- *   - Mismo input (posición, velocidad, deltaTime) → mismo output
- *   - No hay randomización
- *   - No hay dependencia de estado global
- *   - Procesamiento independiente por entidad
- *
- * ── EJEMPLO ──────────────────────────────────────────────────────────────
- *
- *   // Setup
- *   EntityStore store = new EntityStore();
- *   SimulationPipeline pipeline = new SimulationPipeline(store);
- *   pipeline.register(new MovementSystem());
- *
- *   // Crear entidad con posición y velocidad
- *   ComponentMask mask = ComponentMask.EMPTY
- *       .with(ComponentType.POSITION.id())
- *       .with(ComponentType.VELOCITY.id());
- *   EntityId id = store.create(mask);
- *
- *   SimulationHandle h = store.getHandle(id);
- *   PrimitiveStorage s = store.getStorage();
- *   s.positionsX()[h.index()] = 100f;
- *   s.positionsY()[h.index()] = 200f;
- *   s.velocitiesX()[h.index()] = 50f;  // 50 px/s
- *   s.velocitiesY()[h.index()] = -30f; // -30 px/s
- *
- *   // Update (deltaTime = 1/60 segundo)
- *   pipeline.update(1.0 / 60.0);
- *
- *   // Resultado:
- *   // posX = 100 + 50 * (1/60) = 100.833
- *   // posY = 200 - 30 * (1/60) = 199.5
+ * Para 3600 projectiles:
+ *   ANTES: 3600 × Bullet.moveByPhysics() con indirecciones
+ *   AHORA: un loop sobre arrays secuenciales
  */
 public final class MovementSystem implements SimulationSystem {
 
-    private final ComponentMask requirements;
-
-    public MovementSystem() {
-        this.requirements = ComponentMask.EMPTY
-            .with(ComponentType.POSITION.id())
-            .with(ComponentType.VELOCITY.id());
-    }
+    /** Máscara de componentes requeridos por este sistema */
+    private static final ComponentMask REQUIRED_COMPONENTS = ComponentMask.EMPTY
+        .with(ComponentType.POSITION)
+        .with(ComponentType.VELOCITY);
 
     @Override
-    public void update(EntityStore store, double deltaTime) {
-        PrimitiveStorage storage = store.getStorage();
+    public void update(EntityStore entityStore, double deltaTime) {
+        PrimitiveStorage storage = entityStore.getStorage();
+        int count = entityStore.count();
 
-        // Acceso directo a los arrays
         float[] posX = storage.positionsX();
         float[] posY = storage.positionsY();
         float[] velX = storage.velocitiesX();
         float[] velY = storage.velocitiesY();
 
-        int count = store.count();
+        float dt = (float) deltaTime;
 
-        // Loop denso allocation-free
+        // HOT LOOP — procesamiento denso, SIMD-friendly
+        // OPTIMIZACIÓN: No filtramos porque todas las bullets tienen estos componentes
+        // Si en futuro el store contiene tipos mixtos, activar filtrado aquí
         for (int i = 0; i < count; i++) {
-            // Validar que entidad tiene los componentes requeridos
-            EntityId entityId = store.getEntityAt(i);
-            if (entityId == null) continue;
-
-            EntityRecord record = store.getRecord(entityId);
-            if (!record.mask().matches(requirements)) continue;
-
-            // Integrar velocidad en posición
-            // position += velocity * deltaTime
-            posX[i] += velX[i] * deltaTime;
-            posY[i] += velY[i] * deltaTime;
+            posX[i] += velX[i] * dt;
+            posY[i] += velY[i] * dt;
         }
+    }
+    
+    /**
+     * Retorna los componentes requeridos por este sistema.
+     * Usado para validación y debugging.
+     */
+    public ComponentMask getRequiredComponents() {
+        return REQUIRED_COMPONENTS;
     }
 
     @Override

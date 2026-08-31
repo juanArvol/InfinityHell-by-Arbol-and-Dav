@@ -117,41 +117,30 @@ public final class PrimitiveStorage {
     private float[] accelerationsX;
     private float[] accelerationsY;
 
-    // ── Health ────────────────────────────────────────────────────────────
-    private float[] health;
-    private float[] maxHealth;
-
     // ── Lifetime ──────────────────────────────────────────────────────────
     private float[] lifetimes; // segundos restantes
 
     // ── Rotation ──────────────────────────────────────────────────────────
-    private float[] rotations;        // radianes
-    private float[] angularVelocities; // radianes/segundo
+    // Visual rotation en radianes (para bullets giratorias, drills, spinning saws)
+    // NO confundir con dirección de velocity
+    private float[] rotations;
+    private float[] angularVelocities; // rad/s — RotationSystem integra esto en rotations
 
     // ── Physics ───────────────────────────────────────────────────────────
     private float[] mass;
     private float[] drag;
     private float[] gravityScale;
 
-    // ── Collision ─────────────────────────────────────────────────────────
-    private float[] collisionMinX;
-    private float[] collisionMinY;
-    private float[] collisionMaxX;
-    private float[] collisionMaxY;
-    private int[]   collisionMask;
-
     // ── Metadata ──────────────────────────────────────────────────────────
-    private int[]   typeIds;
-    private int[]   behaviorIds;
-    private long[]  ownerIds;  // EntityId del owner
-
-    // ── Spatial ───────────────────────────────────────────────────────────
-    private int[]   spatialHash;
-    private int[]   regionIds;
+    // EntityId del owner (quien disparó esta bullet) — FUNDAMENTAL para:
+    // - Faction checks (friendly fire)
+    // - Scoring/attribution
+    // - Achievement tracking
+    // - Damage stats
+    private long[]  ownerEntityIds;
 
     // ── State ─────────────────────────────────────────────────────────────
     private int[]   flags;  // bitfield de estado
-    private float[] age;    // segundos desde creación
     private float[] damage; // daño que inflige
 
     /**
@@ -196,18 +185,13 @@ public final class PrimitiveStorage {
     public float[] accelerationsX() { return accelerationsX; }
     public float[] accelerationsY() { return accelerationsY; }
 
-    // ── Accessors para Health ─────────────────────────────────────────────
-
-    public float[] health()    { return health; }
-    public float[] maxHealth() { return maxHealth; }
-
     // ── Accessors para Lifetime ───────────────────────────────────────────
 
     public float[] lifetimes() { return lifetimes; }
 
     // ── Accessors para Rotation ───────────────────────────────────────────
 
-    public float[] rotations()         { return rotations; }
+    public float[] rotations() { return rotations; }
     public float[] angularVelocities() { return angularVelocities; }
 
     // ── Accessors para Physics ────────────────────────────────────────────
@@ -216,29 +200,13 @@ public final class PrimitiveStorage {
     public float[] drag()         { return drag; }
     public float[] gravityScale() { return gravityScale; }
 
-    // ── Accessors para Collision ──────────────────────────────────────────
-
-    public float[] collisionMinX() { return collisionMinX; }
-    public float[] collisionMinY() { return collisionMinY; }
-    public float[] collisionMaxX() { return collisionMaxX; }
-    public float[] collisionMaxY() { return collisionMaxY; }
-    public int[]   collisionMask() { return collisionMask; }
-
     // ── Accessors para Metadata ───────────────────────────────────────────
 
-    public int[]  typeIds()     { return typeIds; }
-    public int[]  behaviorIds() { return behaviorIds; }
-    public long[] ownerIds()    { return ownerIds; }
-
-    // ── Accessors para Spatial ────────────────────────────────────────────
-
-    public int[] spatialHash() { return spatialHash; }
-    public int[] regionIds()   { return regionIds; }
+    public long[] ownerEntityIds() { return ownerEntityIds; }
 
     // ── Accessors para State ──────────────────────────────────────────────
 
     public int[]   flags()  { return flags; }
-    public float[] age()    { return age; }
     public float[] damage() { return damage; }
 
     // ── Resize ────────────────────────────────────────────────────────────
@@ -269,10 +237,6 @@ public final class PrimitiveStorage {
         accelerationsX = Arrays.copyOf(accelerationsX, newCapacity);
         accelerationsY = Arrays.copyOf(accelerationsY, newCapacity);
 
-        // Health
-        health = Arrays.copyOf(health, newCapacity);
-        maxHealth = Arrays.copyOf(maxHealth, newCapacity);
-
         // Lifetime
         lifetimes = Arrays.copyOf(lifetimes, newCapacity);
 
@@ -285,25 +249,11 @@ public final class PrimitiveStorage {
         drag = Arrays.copyOf(drag, newCapacity);
         gravityScale = Arrays.copyOf(gravityScale, newCapacity);
 
-        // Collision
-        collisionMinX = Arrays.copyOf(collisionMinX, newCapacity);
-        collisionMinY = Arrays.copyOf(collisionMinY, newCapacity);
-        collisionMaxX = Arrays.copyOf(collisionMaxX, newCapacity);
-        collisionMaxY = Arrays.copyOf(collisionMaxY, newCapacity);
-        collisionMask = Arrays.copyOf(collisionMask, newCapacity);
-
         // Metadata
-        typeIds = Arrays.copyOf(typeIds, newCapacity);
-        behaviorIds = Arrays.copyOf(behaviorIds, newCapacity);
-        ownerIds = Arrays.copyOf(ownerIds, newCapacity);
-
-        // Spatial
-        spatialHash = Arrays.copyOf(spatialHash, newCapacity);
-        regionIds = Arrays.copyOf(regionIds, newCapacity);
+        ownerEntityIds = Arrays.copyOf(ownerEntityIds, newCapacity);
 
         // State
         flags = Arrays.copyOf(flags, newCapacity);
-        age = Arrays.copyOf(age, newCapacity);
         damage = Arrays.copyOf(damage, newCapacity);
 
         capacity = newCapacity;
@@ -341,10 +291,6 @@ public final class PrimitiveStorage {
         swapFloat(accelerationsX, indexA, indexB);
         swapFloat(accelerationsY, indexA, indexB);
 
-        // Health
-        swapFloat(health, indexA, indexB);
-        swapFloat(maxHealth, indexA, indexB);
-
         // Lifetime
         swapFloat(lifetimes, indexA, indexB);
 
@@ -357,25 +303,11 @@ public final class PrimitiveStorage {
         swapFloat(drag, indexA, indexB);
         swapFloat(gravityScale, indexA, indexB);
 
-        // Collision
-        swapFloat(collisionMinX, indexA, indexB);
-        swapFloat(collisionMinY, indexA, indexB);
-        swapFloat(collisionMaxX, indexA, indexB);
-        swapFloat(collisionMaxY, indexA, indexB);
-        swapInt(collisionMask, indexA, indexB);
-
         // Metadata
-        swapInt(typeIds, indexA, indexB);
-        swapInt(behaviorIds, indexA, indexB);
-        swapLong(ownerIds, indexA, indexB);
-
-        // Spatial
-        swapInt(spatialHash, indexA, indexB);
-        swapInt(regionIds, indexA, indexB);
+        swapLong(ownerEntityIds, indexA, indexB);
 
         // State
         swapInt(flags, indexA, indexB);
-        swapFloat(age, indexA, indexB);
         swapFloat(damage, indexA, indexB);
     }
 
@@ -388,26 +320,14 @@ public final class PrimitiveStorage {
         velocitiesY = new float[size];
         accelerationsX = new float[size];
         accelerationsY = new float[size];
-        health = new float[size];
-        maxHealth = new float[size];
         lifetimes = new float[size];
         rotations = new float[size];
         angularVelocities = new float[size];
         mass = new float[size];
         drag = new float[size];
         gravityScale = new float[size];
-        collisionMinX = new float[size];
-        collisionMinY = new float[size];
-        collisionMaxX = new float[size];
-        collisionMaxY = new float[size];
-        collisionMask = new int[size];
-        typeIds = new int[size];
-        behaviorIds = new int[size];
-        ownerIds = new long[size];
-        spatialHash = new int[size];
-        regionIds = new int[size];
+        ownerEntityIds = new long[size];
         flags = new int[size];
-        age = new float[size];
         damage = new float[size];
     }
 

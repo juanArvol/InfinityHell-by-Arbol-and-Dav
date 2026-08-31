@@ -5,7 +5,6 @@ import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
 import Game.Engine.GameMath.Logic2D.Transform2D;
 import Game.Engine.GameMath.Logic2D.Vector2D;
-import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Sprites.Core.SpriteHandle;
@@ -180,24 +179,6 @@ public abstract class MovingObjects extends AbstractEntity {
 
     public Physics2D getPhysics()     { return physicsComponent.getPhysics(); }
     public Vector2D getVelocity()   { return getPhysics().getVelocity(); }
-
-    /**
-     * Mueve el objeto según su velocidad actual.
-     *
-     * ── Mini-HRFC 1.5: Temporal integration correction ────────────────────
-     *
-     * CAMBIO: Ahora recibe deltaTime explícito para integración temporal correcta.
-     *
-     * Llamar solo desde objetos TRIGGER (Bullet).
-     * Objetos SOLID son movidos por CollisionsSystem (SweptAABB).
-     *
-     * @param deltaTime tiempo del simulation step en segundos
-     */
-    public void moveByPhysics(double deltaTime) {
-        Vector2D vel = getVelocity();
-        // Mini-HRFC 1.5: displacement = velocity × deltaTime
-        PhysicsStepper.moveWith(this, vel.getX() * deltaTime, vel.getY() * deltaTime);
-    }
 
     public Vector2D getCenter() {
         var pos = getTransform().getPosition();

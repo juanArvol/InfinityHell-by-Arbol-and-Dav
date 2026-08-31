@@ -9,6 +9,7 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  * ── HRFC — Consolidación Final de Kinetic Physics ────────────────────────
  * ── HRFC FASE 2 — Corrección de Unidades ─────────────────────────────────
  * ── HRFC Phase 3 — Temporal Migration ─────────────────────────────────────
+ * ── HRFC DOD Migration — Simplificación Drag ──────────────────────────────
  *
  * MIGRACIÓN TEMPORAL:
  *   GravityMovement ahora integra aceleración con deltaTime: Δv = a × dt
@@ -24,23 +25,23 @@ import Game.Items.Types.Bullets.ProjectileMovement;
  *   - Bolas de fuego
  *   - Proyectiles "pesados" (MetheorBullet)
  *
- * ── Drag Aerodinámico ────────────────────────────────────────────────────
+ * ── Drag Aerodinámico (SIMPLIFICADO EN DOD) ──────────────────────────────
  *
- * GravityMovement ahora aplica resistencia aerodinámica para producir
- * velocidad terminal natural, coherente con Physics2D.applyGravity().
+ * En DOD migration, dragCoefficient y effectiveArea fueron consolidados
+ * en un único campo: drag (coeficiente simplificado).
+ *
+ * Fórmula simplificada:
+ *   F_drag = drag × v²
+ *
+ * (asumimos área = 1.0, coeficiente incorporado en drag)
  *
  * La velocidad terminal emerge del balance:
  *   F_gravity = m × g
- *   F_drag = Cd × A × v²  (Cd escalado para px/frame)
+ *   F_drag = drag × v²
  *
- * Corrección HRFC FASE 2:
- *   - Removido factor mediumDensity del cálculo (era incompatible con px/frame).
- *   - dragCoefficient ya está escalado (0.0001-0.001) en BulletPhysics.
- *   - Fórmula ahora coherente con Physics2D.applyGravity().
- *
- * Los proyectiles pueden configurar sus propiedades aerodinámicas:
- *   bullet.getPhysics().setEffectiveArea(0.3);        // proyectil pequeño
- *   bullet.getPhysics().setDragCoefficient(0.0001);   // muy aerodinámico
+ * Los proyectiles configuran su resistencia con:
+ *   bullet.getPhysics().setDrag(0.0001);   // muy aerodinámico
+ *   bullet.getPhysics().setDrag(0.001);    // alta resistencia
  *
  * ── Diferencia con Physics2D.applyGravity() ──────────────────────────────
  *
@@ -78,17 +79,18 @@ public final class GravityMovement implements ProjectileMovement {
         // ── 1. Aceleración gravitatoria (constante, independiente de masa) ──
         double a_gravity = gravity;
 
-        // ── 2. Resistencia aerodinámica (escalada para px/frame) ─────────
-        // F_drag = Cd × A × v²
-        // Cd ya está escalado (0.0001-0.001) en BulletPhysics.
-        // NO se usa mediumDensity — era factor de SI units incompatible.
+        // ── 2. Resistencia aerodinámica (simplificada) ───────────────────
+        // En DOD migration, dragCoefficient y effectiveArea fueron consolidados
+        // en un único campo: drag (coeficiente simplificado).
+        //
+        // Fórmula simplificada: F_drag = drag × v²
+        // (asumimos área = 1.0, Cd incorporado en drag)
         double vy = physics.getYspeed();
         double speed = Math.abs(vy);
         double mass = physics.getMass();
-        double cd = physics.getDragCoefficient();
-        double area = physics.getEffectiveArea();
+        double drag = physics.getDrag();
 
-        double dragForce = cd * area * speed * speed;
+        double dragForce = drag * speed * speed;
 
         // Dirección del drag: opuesta a la velocidad
         double dragDirection = (vy >= 0) ? -1.0 : 1.0;

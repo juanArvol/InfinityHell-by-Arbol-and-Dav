@@ -12,14 +12,18 @@ import Game.Engine.GameObjects;
 import Game.Engine.Lifecycle.EntityContext;
 import Game.Engine.Lifecycle.SimulationLifecycle;
 import Game.Engine.Physics.Core.PhysicalState;
-import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
+import Game.Engine.Simulation.ComponentType;
+import Game.Engine.Simulation.EntityId;
+import Game.Engine.Simulation.SimulationHandle;
+import Game.Engine.Simulation.Storage.EntityStore;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Creation.ItemRarity;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
-import Game.Items.Types.Bullets.BulletComport.BulletLife;
+import Game.Items.Types.Bullets.BulletComport.BulletDamageDOD;
+import Game.Items.Types.Bullets.BulletComport.BulletLifeDOD;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
+import Game.Items.Types.Bullets.BulletComport.BulletPhysicsDOD;
 import Game.Items.Types.Bullets.BulletID;
-import Game.Items.Types.Bullets.Definition.BulletRegistry;
 import Game.Items.Types.Bullets.Flyweight.BulletFlyweight;
 import Game.Items.Types.Bullets.Movement.LinearMovement;
 import Game.Items.Types.Bullets.OffScreenTracker;
@@ -119,8 +123,17 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     // El estado físico NO se impone universalmente. Cada tipo de proyectil
     // declara explícitamente su PhysicalState en su comportamiento o blueprint.
 
-    private final BulletLife         bulletLife;
+    // ── HRFC — Projectile DOD Migration ───────────────────────────────────
+    // DOD Bridge — identidad y handle en EntityStore
+    private EntityId entityId;
+    private SimulationHandle simulationHandle;
+    private EntityStore entityStore; // referencia al store para revalidación
+
+    private final BulletLifeDOD      bulletLife;  // DOD adapter
     private final Physics2DComponent physicsComponent;
+    private final BulletPhysicsDOD   physicsAdapter; // DOD adapter
+    private final BulletDamageDOD    damageAdapter;  // DOD adapter
+    
     /**
      * EntityContext cacheado — evita crear una nueva lambda en cada llamada
      * a getSimulationContext(). Se inicializa justo después de bulletLife
@@ -147,11 +160,6 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Movement del proyectil. No final — permite transformaciones runtime.
      */
     private ProjectileMovement movement;
-
-    /**
-     * Daño del proyectil. No final para el pool.
-     */
-    private double damage;
 
     /**
      * Flag para emitir OnProjectileDestroy exactamente una vez por ciclo de vida.
@@ -236,6 +244,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * @param lifeTime      ticks de vida máximos
      * @param damage        daño que aplica al impactar
      * @param physicalState estado físico declarado (null = sin física)
+     * @param entityStore   EntityStore para registro DOD
      */
     public Bullet(
             double             posX,
@@ -247,19 +256,47 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             double             ySpeed,
             int                lifeTime,
             double             damage,
-            PhysicalState      physicalState
+            PhysicalState      physicalState,
+            EntityStore        entityStore
     ) {
-        getTransform().setPosition(posX, posY); // FASE 4 — primitivos
+        // NO tocar Transform — será eliminado en futura refactorización
+        // Position SOLO en PrimitiveStorage
 
         this.flyweight  = flyweight;
         this.behavior   = behavior;
         this.movement   = (movement != null) ? movement : LinearMovement.INSTANCE;
-        this.damage     = damage;
-        this.bulletLife = new BulletLife(lifeTime);
+        
+        // ── HRFC — Projectile DOD Migration ───────────────────────────────
+        // 1. Registrar en EntityStore con PROJECTILE_MASK
+        this.entityStore = entityStore;
+        this.entityId = entityStore.create(ComponentType.PROJECTILE_MASK);
+        this.simulationHandle = entityStore.getHandle(entityId);
+        
+        // 2. Inicializar datos en PrimitiveStorage
+        int idx = simulationHandle.index();
+        var storage = entityStore.getStorage();
+        
+        storage.positionsX()[idx] = (float) posX;
+        storage.positionsY()[idx] = (float) posY;
+        storage.velocitiesX()[idx] = (float) xSpeed;
+        storage.velocitiesY()[idx] = (float) ySpeed;
+        storage.accelerationsX()[idx] = 0f;
+        storage.accelerationsY()[idx] = 0f;
+        storage.lifetimes()[idx] = (float) lifeTime;
+        storage.damage()[idx] = (float) damage;
+        storage.flags()[idx] = 0;
+        storage.gravityScale()[idx] = 0f; // default: sin gravedad
+        storage.mass()[idx] = 1f;
+        storage.drag()[idx] = 0f;
+        storage.rotations()[idx] = 0f; // default: sin rotación visual
+        storage.ownerEntityIds()[idx] = 0L; // sin owner por defecto
+        
+        // 3. Crear adapters DOD apuntando al storage
+        this.bulletLife = new BulletLifeDOD(storage, simulationHandle);
+        this.physicsAdapter = new BulletPhysicsDOD(storage, simulationHandle);
+        this.damageAdapter = new BulletDamageDOD(storage, simulationHandle);
+        
         // EntityContext cacheado: envuelve BulletLife sin duplicar su estado.
-        // bulletLife::isAlive expresa "este proyectil tiene razón para existir
-        // mientras tenga tiempo de vida activo" — que es el contexto de simulación
-        // correcto para un proyectil (su contexto ES su lifetime finito).
         this.simulationContext = bulletLife::isAlive;
 
         // ── Render ────────────────────────────────────────────────────────
@@ -281,22 +318,14 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         addComponent(new HitBoxComponent(Color.YELLOW));
 
         // ── Physics (cinemático) ──────────────────────────────────────────
+        // BulletPhysics legacy — mantener para compatibilidad con Physics2DComponent
+        // pero los datos reales están en PrimitiveStorage
         BulletPhysics physics = new BulletPhysics(xSpeed, ySpeed);
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
 
         // ── PhysicsComponent (estado físico opt-in) ───────────────────────
         // Mini-HRFC — Declarative PhysicalState Ownership
-        //
-        // Solo se agrega PhysicsComponent si el Blueprint declaró un estado
-        // físico. Si physicalState es null o isEmpty(), el proyectil no
-        // participa en dominios físicos (thermal, electrical, etc.).
-        //
-        // La declaración del estado es responsabilidad del tipo concreto:
-        //   NormalBullet  → puede no tener PhysicalState
-        //   FireBullet    → declara TEMPERATURE alta
-        //   IceBullet     → declara TEMPERATURE baja
-        //   LightningBullet → declara CHARGE alta
         if (physicalState != null && !physicalState.isEmpty()) {
             addComponent(new PhysicsComponent(physicalState));
         }
@@ -315,25 +344,35 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * CAMBIO: Ahora recibe deltaTime y lo propaga a BulletLife.advance()
      * y ProjectileMovement.tick() para integración temporal correcta.
      *
+     * ── HRFC — Projectile DOD Migration ──────────────────────────────────
+     *
+     * IMPORTANTE: Este método YA NO ejecuta:
+     * - lifetime decremento (LifetimeSystem lo hace)
+     * - movement.tick() (ProjectileMovementSystem lo hace)
+     * - moveByPhysics() (MovementSystem lo hace)
+     *
+     * SimulationPipeline coordina los sistemas DOD:
+     *   1. ProjectileMovementSystem → configura acceleration
+     *   2. AccelerationSystem → integra velocity
+     *   3. MovementSystem → integra position
+     *   4. LifetimeSystem → decrementa lifetime
+     *   5. ProjectileBehaviorSystem → llama behavior.onUpdate()
+     *
+     * Este método se mantiene solo para compatibilidad de Components
+     * legacy (super.update). La lógica real migró a sistemas.
+     *
      * @param deltaTime tiempo del simulation step en segundos
      */
     @Override
     public void update(double deltaTime) {
-        if (!bulletLife.advance(deltaTime)) {
-            emitExpireAndDestroy();
-            return;
-        }
-
-        movement.tick(this, deltaTime);  // actualiza velocity (ej: GravityMovement, Homing)
-        behavior.onUpdate(this);         // lógica de frame del behavior
-
-        // moveByPhysics() ya NO se llama aquí.
-        // CollisionsSystem FASE 1B integra la posición del proyectil con
-        // SweptAABB 2D completo (CCD), garantizando detección correcta de
-        // colisiones y normal del impacto disponible en onCollision().
-        // Llamarlo aquí además de en CollisionsSystem produciría doble movimiento.
-
-        super.update(deltaTime);  // actualiza Components registrados
+        // Los sistemas DOD YA ejecutaron:
+        // - LifetimeSystem decrementó lifetime
+        // - ProjectileMovementSystem ejecutó movement.tick()
+        // - AccelerationSystem integró acceleration → velocity
+        // - MovementSystem integró velocity → position
+        
+        // Solo actualizar Components legacy si quedan
+        super.update(deltaTime);
     }
 
     // ── Colisión ──────────────────────────────────────────────────────────
@@ -349,27 +388,6 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         if (!bulletLife.isAlive()) {
             emitDestroy();
         }
-    }
-
-    // ── Movimiento ────────────────────────────────────────────────────────
-
-    /**
-     * Mueve el proyectil según su velocidad actual.
-     *
-     * ── Mini-HRFC 1.5: Temporal integration correction ────────────────────
-     *
-     * NOTA: Este método ya NO se llama desde Bullet.update().
-     * CollisionsSystem FASE 1B integra la posición del trigger con SweptAABB 2D.
-     *
-     * Mantenido por compatibilidad API y para uso excepcional fuera del
-     * pipeline estándar.
-     *
-     * @param deltaTime tiempo del simulation step en segundos
-     */
-    public void moveByPhysics(double deltaTime) {
-        var vel = getPhysics().getVelocity();
-        // Mini-HRFC 1.5: displacement = velocity × deltaTime
-        PhysicsStepper.moveWith(this, vel.getX() * deltaTime, vel.getY() * deltaTime);
     }
 
     // ── Destroyable ────────────────────────────────────────────────────────
@@ -400,14 +418,116 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     // ── API pública ────────────────────────────────────────────────────────
 
-    public BulletLife         getBulletLife() { return bulletLife; }
-    public double             getBulletDamage()     { return damage; }
+    public BulletLifeDOD      getBulletLife() { return bulletLife; }
+    public double             getBulletDamage()     { return damageAdapter.getDamage(); }
     public BulletBehavior     getBehavior()   { return behavior; }
     public ProjectileMovement getMovement()   { return movement; }
     public BulletFlyweight    getFlyweight()  { return flyweight; }
 
     /** Bus de eventos activo de este proyectil. Null si no fue inyectado. */
     public GameEventBus getEventBus() { return eventBus; }
+    
+    /**
+     * Retorna el adapter DOD de física.
+     * Los datos reales están en PrimitiveStorage.
+     */
+    public BulletPhysicsDOD getPhysics() {
+        return physicsAdapter;
+    }
+    
+    /**
+     * Retorna X position directamente (sin allocation).
+     * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
+     */
+    public double getPositionX() {
+        return entityStore.getStorage().positionsX()[simulationHandle.index()];
+    }
+    
+    /**
+     * Retorna Y position directamente (sin allocation).
+     * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
+     */
+    public double getPositionY() {
+        return entityStore.getStorage().positionsY()[simulationHandle.index()];
+    }
+    
+    /**
+     * Retorna la posición actual desde PrimitiveStorage.
+     * ALLOCATION: Crea nuevo Vector2D — evitar en hot paths.
+     * 
+     * Usar getPositionX() y getPositionY() cuando sea posible para evitar allocation.
+     */
+    public Vector2D getPosition() {
+        return new Vector2D(getPositionX(), getPositionY());
+    }
+    
+    /**
+     * Escribe X/Y position directamente a PrimitiveStorage.
+     * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
+     * 
+     * NO modifica Transform — Transform es legacy y será eliminado.
+     */
+    public void setPosition(double x, double y) {
+        int idx = simulationHandle.index();
+        var storage = entityStore.getStorage();
+        storage.positionsX()[idx] = (float) x;
+        storage.positionsY()[idx] = (float) y;
+    }
+    
+    /**
+     * Retorna rotation visual actual en radianes.
+     * Usado para rendering de bullets giratorias (drills, spinning saws, etc.)
+     */
+    public float getRotation() {
+        return entityStore.getStorage().rotations()[simulationHandle.index()];
+    }
+    
+    /**
+     * Establece rotation visual en radianes.
+     * Usado por behaviors que necesitan rotar visualmente (DrillBullet, etc.)
+     */
+    public void setRotation(float radians) {
+        entityStore.getStorage().rotations()[simulationHandle.index()] = radians;
+    }
+    
+    /**
+     * Retorna el EntityId del owner (quien disparó esta bullet).
+     * 0 = sin owner.
+     * 
+     * Usado para:
+     * - Faction checks (friendly fire)
+     * - Scoring/attribution
+     * - Achievement tracking
+     */
+    public long getOwnerEntityId() {
+        return entityStore.getStorage().ownerEntityIds()[simulationHandle.index()];
+    }
+    
+    /**
+     * Establece el EntityId del owner.
+     * Debe llamarse en spawn para tracking correcto.
+     */
+    public void setOwnerEntityId(long ownerEntityId) {
+        entityStore.getStorage().ownerEntityIds()[simulationHandle.index()] = ownerEntityId;
+    }
+    
+    // ── HRFC — Projectile DOD Migration ───────────────────────────────────
+    
+    /**
+     * Retorna el handle de simulación para acceso directo a PrimitiveStorage.
+     * Usado por ProjectileBehaviorSystem y otros sistemas.
+     */
+    public SimulationHandle getSimulationHandle() {
+        return simulationHandle;
+    }
+    
+    /**
+     * Retorna el EntityId único de esta bullet.
+     * Usado para consultas y mapeos estables.
+     */
+    public EntityId getEntityId() {
+        return entityId;
+    }
 
     /**
      * Contexto de interacción con el mundo.
@@ -432,10 +552,6 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * via acceso explícito.
      */
     public void setEventBus(GameEventBus bus) { this.eventBus = bus; }
-
-    public BulletPhysics getPhysics() {
-        return (BulletPhysics) physicsComponent.getPhysics();
-    }
 
     // ── HRFC — Off-Screen Lifetime Tracking ───────────────────────────────
 
@@ -475,7 +591,9 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     public void updateOffScreenTracking(Game.Engine.Camera.GameCamera camera, double deltaTime) {
         if (offScreenTracker != null) {
-            offScreenTracker.update(getTransform().getPosition(), camera, deltaTime);
+            // Sin allocation — construir Vector2D solo cuando es necesario
+            Vector2D position = new Vector2D(getPositionX(), getPositionY());
+            offScreenTracker.update(position, camera, deltaTime);
             if (offScreenTracker.shouldDestroy()) {
                 bulletLife.kill();  // Marcar para destrucción
             }
@@ -588,6 +706,18 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Tras este método, la instancia tiene exactamente la misma configuración
      * que produciría BulletFactory.build() con el mismo blueprint.
      *
+     * ── HRFC — Projectile DOD Migration ──────────────────────────────────
+     *
+     * IMPORTANTE: resetState() NO crea una nueva entidad DOD.
+     * Reutiliza el EntityId/SimulationHandle existente y resetea los datos
+     * en PrimitiveStorage in-place.
+     *
+     * Esto garantiza:
+     * - EntityId permanece estable (identidad lógica)
+     * - SimulationHandle permanece válido (misma ubicación física)
+     * - No hay fugas de slots DOD
+     * - No hay costo de create/destroy en el hot path
+     *
      * Si el Flyweight cambió (diferente tipo de proyectil), se actualiza:
      *   - El sprite del SpriteRendererComponent
      *   - El perfil de colisión del ColliderComponent
@@ -617,22 +747,48 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                     BulletFlyweight newFlyweight,
                     PhysicalState newPhysicalState) {
 
-        // FASE 4 — Reutilizar Transform.setPosition con primitivos
-        getTransform().setPosition(x, y);
+        // Escribir position directamente a PrimitiveStorage
+        setPosition(x, y);
         
-        // ── HRFC-DT-007 — Temporal Velocity Coherence ────────────────────
-        // xSpeed y ySpeed reciben directamente units/s desde ProjectilePool.acquire(),
-        // que los obtiene del ProjectileBlueprint ya convertido.
-        //
-        // La conversión desde legacy (units/frame @ 30 FPS → units/s) ocurre
-        // exclusivamente en ProjectileResolver. Aquí solo asignamos el valor
-        // ya en el espacio temporal correcto.
-        //
-        BulletPhysics physics = getPhysics();
-        physics.setXspeed(xSpeed);
-        physics.setYspeed(ySpeed);
-        bulletLife.resetTo(lifeTime);
-        this.damage = damage;
+        // ── HRFC — Projectile DOD Migration ───────────────────────────────
+        // Resetear datos en PrimitiveStorage usando el handle existente
+        int idx = simulationHandle.index();
+        var storage = entityStore.getStorage();
+        
+        // Position (ya actualizado en Transform, sincronizar con storage)
+        storage.positionsX()[idx] = (float) x;
+        storage.positionsY()[idx] = (float) y;
+        
+        // Velocity
+        storage.velocitiesX()[idx] = (float) xSpeed;
+        storage.velocitiesY()[idx] = (float) ySpeed;
+        
+        // Acceleration (reset a cero — ProjectileMovement lo configurará)
+        storage.accelerationsX()[idx] = 0f;
+        storage.accelerationsY()[idx] = 0f;
+        
+        // Lifetime
+        storage.lifetimes()[idx] = (float) lifeTime;
+        
+        // Damage
+        storage.damage()[idx] = (float) damage;
+        
+        // Flags (limpiar todos)
+        storage.flags()[idx] = 0;
+        
+        // Physics properties (reset a defaults)
+        storage.gravityScale()[idx] = 0f;
+        storage.mass()[idx] = 1f;
+        storage.drag()[idx] = 0f;
+        storage.rotations()[idx] = 0f;
+        storage.ownerEntityIds()[idx] = 0L;
+        
+        // Metadata (opcional — puede ser útil para debugging)
+        // storage.typeIds()[idx] = behavior.getBulletID().ordinal();
+        // storage.behaviorIds()[idx] = ...;
+        
+        // ── Legacy fields ──────────────────────────────────────────────────
+        // damage ya está en DOD storage — se escribió arriba
         this.destroyEventFired = false;
         // ownerPool y eventBus se limpian aquí; el pool los reinyecta justo después
         this.ownerPool = null;
@@ -647,82 +803,35 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
         // ── HRFC — Reset Physical Properties (cinemático) ────────────────
         // Resetear masa, área efectiva y coeficiente de drag a valores por
-        // defecto de BulletPhysics. Esto previene contaminación entre bullets
-        // cuando un MetheorBullet (masa=3.0, área=1.5, drag=0.0005) se reutiliza
-        // para un BulletNormal que espera valores estándar (masa=1.0, área=0.3,
-        // drag=0.0001).
-        //
-        // El behavior.onAttached() más adelante puede sobreescribir estos valores
-        // si el nuevo bullet requiere propiedades físicas personalizadas.
-        getPhysics().setMass(1.0);
-        getPhysics().setEffectiveArea(0.3);
-        getPhysics().setDragCoefficient(0.0001);
-        
-        // ── REGRESIÓN FIX — Limpiar estado de colisión residual ──────────────
-        // PROBLEMA IDENTIFICADO EN AUDITORÍA PROFUNDA:
-        //   Una bullet reutilizada del pool conservaba lastContactNormalX/Y de su
-        //   vida anterior. Si la nueva bullet colisionaba en el PRIMER frame (antes
-        //   de que CollisionsSystem FASE 0.5 ejecutara clearLastContactNormal()),
-        //   el BulletBehavior leía la normal RESIDUAL y reflejaba la velocidad en
-        //   dirección INCORRECTA.
-        //
-        // MANIFESTACIÓN DEL BUG:
-        //   Bullets spawneadas cerca del Player (ej: muzzle muy cercano al collider)
-        //   colisionaban en el primer frame con normal de vida anterior, produciendo
-        //   comportamiento físico extraño: ralentización, atravesamiento, "rebote"
-        //   hacia el Player, o quedaban atrapadas.
-        //
-        // SOLUCIÓN:
-        //   Limpiar explícitamente lastContactNormal en resetState() para garantizar
-        //   paridad con construcción nueva (donde son 0 por inicialización implícita).
-        //
-        // TIMING:
-        //   resetState() ocurre en acquire() ANTES de añadir al mundo, cerrando la
-        //   ventana de vulnerabilidad entre acquire() y el primer CollisionsSystem.update().
-        BulletPhysics bp = getPhysics();
-        if (bp != null) {
-            bp.clearLastContactNormal();
+        // defecto de BulletPhysics legacy (mantener por compatibilidad)
+        BulletPhysics legacyPhysics = (BulletPhysics) physicsComponent.getPhysics();
+        if (legacyPhysics != null) {
+            legacyPhysics.setMass(1.0);
+            legacyPhysics.setEffectiveArea(0.3);
+            legacyPhysics.setDragCoefficient(0.0001);
         }
         
+        // ── REGRESIÓN FIX — Limpiar estado de colisión residual ──────────────
+        // Limpiar contactNormal en adapter DOD (mantiene estado local)
+        physicsAdapter.clearLastContactNormal();
+        
         // ── REGRESIÓN FIX — Limpiar estado físico acumulado ──────────────────
-        // PROBLEMAS ADICIONALES IDENTIFICADOS:
-        //   - accumulatedFx/Fy: Fuerzas de vida anterior que producen impulso
-        //     fantasma en el primer flushAccumulatedForces().
-        //   - statusStack/environmentStack: Modificadores de vida anterior que
-        //     alteran el movimiento con buffs/debuffs fantasma.
-        //
-        // SOLUCIÓN:
-        //   Llamar Physics2D.clearPooledState() para garantizar paridad completa
-        //   con instancia nueva.
         physicsComponent.getPhysics().clearPooledState();
 
         // ── Mini-HRFC — Reset PhysicalState (declarativo) ─────────────────
         // Actualizar o remover el PhysicsComponent según el nuevo estado.
-        // Esto garantiza que un FireBullet reutilizado como NormalBullet no
-        // conserva temperatura alta, y viceversa.
-        //
-        // Si newPhysicalState es null o isEmpty(), el proyectil no debe tener
-        // PhysicsComponent (no participa en dominios físicos).
         PhysicsComponent existingPhysics = getComponent(PhysicsComponent.class);
         
         if (newPhysicalState == null || newPhysicalState.isEmpty()) {
-            // El nuevo bullet no tiene física — pero el viejo sí la tenía.
-            // Como no podemos remover componentes, lo mejor que podemos hacer
-            // es dejar el componente allí vacío. El PhysicsCoordinator debe
-            // verificar isEmpty() antes de simular.
-            // TODO: Este es un compromiso arquitectónico. Lo ideal sería
-            // que GameObjects tuviera removeComponent().
+            // El nuevo bullet no tiene física — mantener componente si existe
+            // (no podemos remover componentes — limitación arquitectónica)
             if (existingPhysics != null) {
-                // Component existe pero no debería. Dejar una nota en el estado.
-                // Por ahora, este escenario es raro (bullet con física → bullet sin física).
+                // Component existe pero no debería. Por ahora, este escenario es raro.
             }
         } else {
             // El nuevo bullet tiene física declarada
             if (existingPhysics != null) {
-                // Ya existe PhysicsComponent — reemplazar su contenido copiando
-                // las propiedades del nuevo estado al estado existente.
-                // Como PhysicalState es inmutable en su builder pero mutable
-                // en sus propiedades individuales via set(), podemos actualizar.
+                // Ya existe PhysicsComponent — reemplazar su contenido
                 PhysicalState existingState = existingPhysics.getState();
                 
                 // Limpiar propiedades existentes que no estén en el nuevo estado
@@ -779,7 +888,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Modifica el daño del proyectil. Package-private para el pool y ProjectileView.
      */
     void resetDamage(double newDamage) {
-        this.damage = newDamage;
+        damageAdapter.setDamage(newDamage);
     }
 
     /**
@@ -889,6 +998,14 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Protegido por destroyEventFired para garantizar que onRelease() no se
      * invoca dos veces aunque emitDestroy() sea llamado desde múltiples paths
      * (expire + collision concurrente en el mismo frame).
+     *
+     * ── HRFC — Projectile DOD Migration ──────────────────────────────────
+     *
+     * IMPORTANTE: emitDestroy() marca para destrucción pero NO destruye
+     * la entidad DOD inmediatamente. El EntityStore.compact() se encargará
+     * de limpiar slots muertos al final del frame.
+     *
+     * Esto evita invalidar handles durante el processing de comportamientos.
      */
     void emitDestroy() {
         if (!destroyEventFired) {
@@ -896,6 +1013,11 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             behavior.onRelease(this);
             if (eventBus != null && eventBus.hasListeners(ProjectileEvents.OnProjectileDestroy.class)) {
                 eventBus.post(new ProjectileEvents.OnProjectileDestroy(this));
+            }
+            
+            // Marcar entidad DOD para destrucción (compact() limpiará después)
+            if (entityStore != null && entityId != null) {
+                entityStore.destroy(entityId);
             }
         }
     }

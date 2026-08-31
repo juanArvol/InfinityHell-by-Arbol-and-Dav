@@ -1,6 +1,7 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
+import Game.Engine.Entity;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletBehaviorWrapper;
@@ -73,7 +74,7 @@ public class PiercingAmuletWrapper extends BulletBehaviorWrapper {
      *
      * Se limpia en onWrapperRelease() al final del lifecycle del proyectil.
      */
-    private Set<AbstractEntity> hitEntities =
+    private Set<Entity> hitEntities =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
     public PiercingAmuletWrapper(BulletBehavior inner, int maxPierces) {

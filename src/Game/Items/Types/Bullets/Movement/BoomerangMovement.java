@@ -99,8 +99,8 @@ public final class BoomerangMovement implements ResettableMovement {
         // Capturar origin en el primer tick si aún no fue capturado.
         // Siempre refleja la posición de spawn del bullet actual (no del anterior).
         if (capturedOrigin == null) {
-            Vector2D pos = bullet.getTransform().getPosition();
-            capturedOrigin = new Vector2D(pos.getX(), pos.getY());
+            // Sin allocation — construir Vector2D con primitivos
+            capturedOrigin = new Vector2D(bullet.getPositionX(), bullet.getPositionY());
         }
 
         // ── HRFC Phase 3: Temporal integration ───────────────────────────
@@ -110,9 +110,11 @@ public final class BoomerangMovement implements ResettableMovement {
             return; // fase de avance — la velocidad inicial ya está fija
         }
 
-        Vector2D pos = bullet.getTransform().getPosition();
-        double dx   = capturedOrigin.getX() - pos.getX();
-        double dy   = capturedOrigin.getY() - pos.getY();
+        // Sin allocation — usar primitivos directamente
+        double posX = bullet.getPositionX();
+        double posY = bullet.getPositionY();
+        double dx   = capturedOrigin.getX() - posX;
+        double dy   = capturedOrigin.getY() - posY;
         double dist = Math.hypot(dx, dy);
 
         if (dist < returnSpeed * dt) {

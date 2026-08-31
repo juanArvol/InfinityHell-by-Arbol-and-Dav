@@ -2,147 +2,102 @@ package Game.Engine.Simulation.Systems;
 
 import Game.Engine.Simulation.ComponentMask;
 import Game.Engine.Simulation.ComponentType;
-import Game.Engine.Simulation.EntityId;
-import Game.Engine.Simulation.Storage.EntityRecord;
 import Game.Engine.Simulation.Storage.EntityStore;
 import Game.Engine.Simulation.Storage.PrimitiveStorage;
 
 /**
- * Sistema que integra aceleración en velocidad para todas las entidades con física.
+ * Sistema que integra acceleration en velocity.
  *
- * ── HRFC — Game.Engine Unified Simulation Data Architecture / ECS-DOD ─────
+ * ── HRFC — Projectile DOD Migration ──────────────────────────────────────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
+ * ── RESPONSABILIDAD ──────────────────────────────────────────────────────
  *
- * AccelerationSystem aplica la ecuación básica de aceleración:
+ * Aplica la ecuación cinemática básica:
  *
  *   velocity += acceleration * deltaTime
  *
- * Opera sobre todas las entidades que tienen Velocity + Acceleration.
+ * También aplica gravedad global escalada por gravityScale:
  *
- * ── ECUACIÓN ──────────────────────────────────────────────────────────────
+ *   velocityY += (accelerationY + GRAVITY * gravityScale) * deltaTime
  *
- *   vx(t + Δt) = vx(t) + ax(t) × Δt
- *   vy(t + Δt) = vy(t) + ay(t) × Δt
+ * ── COMPONENTES REQUERIDOS ───────────────────────────────────────────────
  *
- * Donde:
- *   vx, vy = velocidad actual
- *   ax, ay = aceleración actual
- *   Δt = deltaTime en segundos
+ * Este sistema requiere:
+ *   - VELOCITY (write)
+ *   - ACCELERATION (read)
+ *   - GRAVITY_SCALE (read)
  *
- * ── REQUISITOS DE COMPONENTES ────────────────────────────────────────────
+ * OPTIMIZACIÓN ACTUAL:
+ *   Como todas las bullets tienen PROJECTILE_MASK (que incluye estos componentes),
+ *   no filtramos en runtime. Procesamos todas las entidades del store.
  *
- * Requiere:
- *   - VELOCITY (vx, vy)
- *   - ACCELERATION (ax, ay)
+ * FUTURO:
+ *   Si el EntityStore contiene tipos mixtos (bullets + particles + enemies),
+ *   activar filtrado por ComponentMask para procesar solo entidades válidas.
  *
- * Ignora entidades que no tienen ambos componentes.
+ * ── ORDEN DE EJECUCIÓN ───────────────────────────────────────────────────
  *
- * ── ORDEN EN PIPELINE ────────────────────────────────────────────────────
+ * DEBE ejecutarse DESPUÉS de que ProjectileMovement configure acceleration,
+ * pero ANTES de MovementSystem que integra position.
  *
- * AccelerationSystem DEBE ejecutarse ANTES de MovementSystem:
+ * Orden correcto:
+ *   1. ProjectileMovementSystem (behaviors configuran acceleration)
+ *   2. AccelerationSystem (ESTE)
+ *   3. MovementSystem
  *
- *   1. AccelerationSystem → velocity += acceleration * dt
- *   2. MovementSystem     → position += velocity * dt
+ * ── GRAVEDAD ─────────────────────────────────────────────────────────────
  *
- * Si se invierte el orden, la aceleración se aplicaría un frame tarde.
+ * GRAVITY es la aceleración gravitatoria global (ej: 0.4 = caída lenta, 9.8 = realista).
+ * gravityScale[i] es el multiplicador por entidad:
+ *   - 0.0 = sin gravedad (proyectiles normales)
+ *   - 1.0 = gravedad estándar
+ *   - 2.0 = doble gravedad (MetheorBullet)
  *
- * ── USO TÍPICO ───────────────────────────────────────────────────────────
+ * ── HOT PATH ─────────────────────────────────────────────────────────────
  *
- * Aceleración se usa para:
- *   - Gravedad (aceleración constante hacia abajo)
- *   - Fuerzas continuas (viento, corrientes)
- *   - Propulsión (cohetes, jetpacks)
- *   - Trayectorias curvas (proyectiles parabólicos)
- *
- * Nota: Para fuerzas instantáneas (explosiones, knockback), modificar
- * velocity directamente en lugar de usar acceleration.
- *
- * ── FÍSICA ───────────────────────────────────────────────────────────────
- *
- * Este sistema implementa integración de Euler explícita:
- *
- *   v(t + Δt) = v(t) + a(t) × Δt
- *
- * Es un integrador de primer orden:
- *   - Simple y rápido
- *   - Suficiente para gameplay
- *   - Error O(Δt²)
- *
- * Para simulación física más precisa, considerar integradores de orden
- * superior (Verlet, RK4), pero eso está fuera del alcance de este HRFC.
- *
- * ── PERFORMANCE ──────────────────────────────────────────────────────────
- *
- * Similar a MovementSystem:
- *   - Acceso secuencial a 4 arrays (velX, velY, accX, accY)
- *   - 4 lecturas + 2 escrituras por entidad
- *   - 4 operaciones aritméticas (2 multiplicaciones, 2 sumas)
- *   - Altamente vectorizable
- *   - Cache-friendly
- *
- * ── ALLOCATION-FREE ──────────────────────────────────────────────────────
- *
- * Sin allocations, sin boxing, sin indirecciones.
- *
- * ── EJEMPLO: GRAVEDAD ────────────────────────────────────────────────────
- *
- *   // Crear entidad con gravedad
- *   ComponentMask mask = ComponentMask.EMPTY
- *       .with(ComponentType.VELOCITY.id())
- *       .with(ComponentType.ACCELERATION.id());
- *   EntityId id = store.create(mask);
- *
- *   SimulationHandle h = store.getHandle(id);
- *   PrimitiveStorage s = store.getStorage();
- *
- *   // Gravedad: 980 px/s² hacia abajo (eje Y positivo = abajo)
- *   s.accelerationsX()[h.index()] = 0f;
- *   s.accelerationsY()[h.index()] = 980f;
- *
- *   // Velocidad inicial
- *   s.velocitiesX()[h.index()] = 100f;
- *   s.velocitiesY()[h.index()] = -500f; // lanzamiento hacia arriba
- *
- *   // Después de 1 segundo:
- *   // vy = -500 + 980 * 1.0 = 480 px/s (cayendo)
+ * Loop denso sobre arrays primitivos.
+ * Sin indirecciones, sin allocations, cache-friendly.
+ * Compilador puede vectorizar automáticamente.
  */
 public final class AccelerationSystem implements SimulationSystem {
 
-    private final ComponentMask requirements;
-
-    public AccelerationSystem() {
-        this.requirements = ComponentMask.EMPTY
-            .with(ComponentType.VELOCITY.id())
-            .with(ComponentType.ACCELERATION.id());
-    }
+    /** Gravedad global en units/s² (ej: 0.4 = caída lenta, 9.8 = realista) */
+    private static final float GRAVITY = 0.4f;
+    
+    /** Máscara de componentes requeridos por este sistema */
+    private static final ComponentMask REQUIRED_COMPONENTS = ComponentMask.EMPTY
+        .with(ComponentType.VELOCITY)
+        .with(ComponentType.ACCELERATION)
+        .with(ComponentType.GRAVITY_SCALE);
 
     @Override
-    public void update(EntityStore store, double deltaTime) {
-        PrimitiveStorage storage = store.getStorage();
+    public void update(EntityStore entityStore, double deltaTime) {
+        PrimitiveStorage storage = entityStore.getStorage();
+        int count = entityStore.count();
 
-        // Acceso directo a los arrays
         float[] velX = storage.velocitiesX();
         float[] velY = storage.velocitiesY();
         float[] accX = storage.accelerationsX();
         float[] accY = storage.accelerationsY();
+        float[] gravityScale = storage.gravityScale();
 
-        int count = store.count();
+        float dt = (float) deltaTime;
 
-        // Loop denso allocation-free
+        // HOT LOOP — procesamiento denso
+        // OPTIMIZACIÓN: No filtramos porque todas las bullets tienen estos componentes
+        // Si en futuro el store contiene tipos mixtos, activar filtrado aquí
         for (int i = 0; i < count; i++) {
-            // Validar que entidad tiene los componentes requeridos
-            EntityId entityId = store.getEntityAt(i);
-            if (entityId == null) continue;
-
-            EntityRecord record = store.getRecord(entityId);
-            if (!record.mask().matches(requirements)) continue;
-
-            // Integrar aceleración en velocidad
-            // velocity += acceleration * deltaTime
-            velX[i] += accX[i] * deltaTime;
-            velY[i] += accY[i] * deltaTime;
+            velX[i] += accX[i] * dt;
+            velY[i] += (accY[i] + GRAVITY * gravityScale[i]) * dt;
         }
+    }
+    
+    /**
+     * Retorna los componentes requeridos por este sistema.
+     * Usado para validación y debugging.
+     */
+    public ComponentMask getRequiredComponents() {
+        return REQUIRED_COMPONENTS;
     }
 
     @Override

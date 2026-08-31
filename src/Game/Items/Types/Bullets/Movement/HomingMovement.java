@@ -114,11 +114,13 @@ public final class HomingMovement implements ProjectileMovement {
         // Un objetivo muerto puede tener posición inválida o estar siendo reciclado.
         if (target.isDead()) return;
 
-        Vector2D bulletPos = bullet.getTransform().getPosition();
+        // Usar getPositionX/Y() en lugar de getTransform().getPosition() — sin allocation
+        double bulletX = bullet.getPositionX();
+        double bulletY = bullet.getPositionY();
         Vector2D targetPos = target.getTransform().getPosition();
 
-        double dx   = targetPos.getX() - bulletPos.getX();
-        double dy   = targetPos.getY() - bulletPos.getY();
+        double dx   = targetPos.getX() - bulletX;
+        double dy   = targetPos.getY() - bulletY;
         double dist = Math.hypot(dx, dy);
         if (dist < 1e-6) return; // proyectil ya sobre el target
 

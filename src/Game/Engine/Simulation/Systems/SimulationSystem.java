@@ -3,183 +3,57 @@ package Game.Engine.Simulation.Systems;
 import Game.Engine.Simulation.Storage.EntityStore;
 
 /**
- * Contrato base de todos los sistemas de simulación DOD.
+ * Sistema de simulación que procesa entidades en batch.
  *
  * ── HRFC — Game.Engine Unified Simulation Data Architecture / ECS-DOD ─────
  *
- * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
+ * ── CONTRATO ─────────────────────────────────────────────────────────────
  *
- * SimulationSystem define el contrato para sistemas que procesan datos
- * de simulación mediante operaciones batch sobre arrays primitivos densos.
+ * update(entityStore, deltaTime) se llama una vez por frame desde
+ * SimulationPipeline. El sistema accede directamente a PrimitiveStorage
+ * para procesar los datos de todas las entidades en loops densos.
  *
- * ── DIFERENCIA CON EngineSystem ──────────────────────────────────────────
+ * ── ORDEN DE EJECUCIÓN ───────────────────────────────────────────────────
  *
- *   EngineSystem (existente):
- *     void update(List<GameObjects> objects)
- *     → Opera sobre lista de objetos OO
- *     → Llama methods virtuales (object.update())
- *     → Indirección, allocations, pointer chasing
+ * El orden de los sistemas es crítico. SimulationPipeline ejecuta en
+ * el orden de registro:
  *
- *   SimulationSystem (nuevo):
- *     void update(EntityStore store, double deltaTime)
- *     → Opera sobre EntityStore (acceso directo a arrays SoA)
- *     → Procesa datos mediante loops densos
- *     → Cache-friendly, allocation-free, vectorizable
+ * 1. ProjectileMovementSystem   — behaviors configuran acceleration
+ * 2. AccelerationSystem          — velocity += acceleration * dt
+ * 3. MovementSystem              — position += velocity * dt
+ * 4. LifetimeSystem              — lifetime -= dt, marcar expired
+ * 5. CollisionSystem             — detectar y resolver colisiones
+ * 6. ProjectileBehaviorSystem    — callbacks de dominio
  *
- * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ * ── THREAD SAFETY ────────────────────────────────────────────────────────
  *
- * SimulationSystem procesa DATOS DE SIMULACIÓN (position, velocity, etc.)
- * EngineSystem procesa OBJETOS DE DOMINIO (GameObjects y sus Components)
- *
- * Ambos pueden coexistir. Un frame típico puede ejecutar:
- *   1. object.update() para cada GameObject (lógica de dominio)
- *   2. SimulationPipeline.update() (datos de simulación DOD)
- *   3. EngineSystem.update() (render, audio, etc.)
- *
- * ── ACCESO A DATOS ───────────────────────────────────────────────────────
- *
- * Los sistemas acceden directamente a los arrays del EntityStore:
- *
- *   @Override
- *   public void update(EntityStore store, double deltaTime) {
- *       PrimitiveStorage s = store.getStorage();
- *       float[] posX = s.positionsX();
- *       float[] posY = s.positionsY();
- *       float[] velX = s.velocitiesX();
- *       float[] velY = s.velocitiesY();
- *
- *       int count = store.count();
- *
- *       for (int i = 0; i < count; i++) {
- *           // Validar que entidad tiene los componentes requeridos
- *           EntityId id = store.getEntityAt(i);
- *           if (id == null) continue;
- *           EntityRecord rec = store.getRecord(id);
- *           if (!rec.mask().matches(requirements)) continue;
- *
- *           // Procesar datos
- *           posX[i] += velX[i] * deltaTime;
- *           posY[i] += velY[i] * deltaTime;
- *       }
- *   }
- *
- * ── ALLOCATION-FREE HOT PATH ─────────────────────────────────────────────
- *
- * Los sistemas deben evitar allocations durante update():
- *
- *   ✗ NO crear: new Vector2D(), new ArrayList<>(), Stream<>, lambda
- *   ✓ SÍ usar: arrays primitivos, variables locales, primitives
- *
- * ── DETERMINISMO ─────────────────────────────────────────────────────────
- *
- * Los sistemas deben ser deterministas — mismo input → mismo output.
- * No depender de:
- *   - System.currentTimeMillis()
- *   - Random sin seed
- *   - Orden no garantizado (HashSet, HashMap iteration sin orden)
- *   - Estado global mutable compartido
- *
- * ── STATELESS ────────────────────────────────────────────────────────────
- *
- * Los sistemas idealmente no tienen estado mutable entre frames.
- * Todo el estado vive en el EntityStore.
- *
- * Si un sistema necesita estado temporal (ej: spatial hash, buffers),
- * debe documentarlo claramente y manejarlo de forma explícita.
- *
- * ── EJEMPLO: MovementSystem ──────────────────────────────────────────────
- *
- *   public class MovementSystem implements SimulationSystem {
- *
- *       private final ComponentMask requirements = ComponentMask.EMPTY
- *           .with(ComponentType.POSITION.id())
- *           .with(ComponentType.VELOCITY.id());
- *
- *       @Override
- *       public void update(EntityStore store, double deltaTime) {
- *           PrimitiveStorage s = store.getStorage();
- *           float[] posX = s.positionsX();
- *           float[] posY = s.positionsY();
- *           float[] velX = s.velocitiesX();
- *           float[] velY = s.velocitiesY();
- *
- *           for (int i = 0; i < store.count(); i++) {
- *               EntityId id = store.getEntityAt(i);
- *               if (id == null) continue;
- *
- *               EntityRecord rec = store.getRecord(id);
- *               if (!rec.mask().matches(requirements)) continue;
- *
- *               posX[i] += velX[i] * deltaTime;
- *               posY[i] += velY[i] * deltaTime;
- *           }
- *       }
- *   }
+ * Los sistemas NO son thread-safe.
+ * Responsabilidad de sincronización es del SimulationPipeline.
  *
  * ── EXTENSIBILIDAD ───────────────────────────────────────────────────────
  *
- * Nuevos sistemas se registran en el SimulationPipeline:
+ * Dominios pueden registrar sus propios sistemas:
  *
- *   pipeline.register(new MovementSystem());
- *   pipeline.register(new AccelerationSystem());
- *   pipeline.register(new LifetimeSystem());
+ * pipeline.register(new EnemyAISystem());
+ * pipeline.register(new ProjectileBehaviorSystem());
  *
- * El orden de registro determina el orden de ejecución.
+ * Los sistemas solo necesitan acceso a EntityStore — no se acoplan
+ * entre sí.
  */
 public interface SimulationSystem {
 
     /**
-     * Actualiza este sistema para el frame actual.
+     * Procesa todas las entidades relevantes para este sistema.
      *
-     * El sistema procesa los datos de simulación del EntityStore
-     * y aplica su lógica sobre los arrays primitivos.
-     *
-     * ── CONTRATO TEMPORAL ─────────────────────────────────────────────────
-     *
-     * deltaTime representa los SEGUNDOS REALES transcurridos desde el último
-     * simulation step. No es un valor fijo (1/60), sino variable según el
-     * framerate real.
-     *
-     * Todos los cálculos temporales deben usar deltaTime:
-     *   position += velocity * deltaTime
-     *   velocity += acceleration * deltaTime
-     *   lifetime -= deltaTime
-     *
-     * PROHIBIDO:
-     *   - Recalcular deltaTime con System.nanoTime()
-     *   - Usar constantes hardcoded (1/60, 0.016, etc.)
-     *   - Asumir 60 FPS
-     *
-     * ── MUTABILIDAD ───────────────────────────────────────────────────────
-     *
-     * Los sistemas PUEDEN mutar los arrays del EntityStore directamente.
-     * Esa es su responsabilidad — aplicar transformaciones sobre los datos.
-     *
-     * Los sistemas NO DEBEN:
-     *   - Crear/destruir entidades durante update (hacer en batch después)
-     *   - Modificar el EntityStore structure (count, capacity, records)
-     *   - Llamar a otros sistemas directamente
-     *
-     * ── VALIDACIÓN DE COMPONENTES ────────────────────────────────────────
-     *
-     * Cada sistema debe validar que las entidades tienen los componentes
-     * requeridos antes de acceder a sus datos:
-     *
-     *   if (!record.mask().matches(requirements)) continue;
-     *
-     * Acceder a un componente que la entidad no tiene resulta en datos
-     * basura (el array existe pero el valor no está inicializado).
-     *
-     * @param store EntityStore que contiene los datos de simulación
+     * @param entityStore store con los datos de simulación
      * @param deltaTime tiempo del simulation step en segundos
      */
-    void update(EntityStore store, double deltaTime);
+    void update(EntityStore entityStore, double deltaTime);
 
     /**
-     * Retorna el nombre descriptivo de este sistema.
-     * Usado para profiling y debugging.
+     * Nombre del sistema para profiling y debugging.
      *
-     * @return nombre del sistema
+     * @return nombre descriptivo (ej: "MovementSystem", "LifetimeSystem")
      */
     default String name() {
         return getClass().getSimpleName();
