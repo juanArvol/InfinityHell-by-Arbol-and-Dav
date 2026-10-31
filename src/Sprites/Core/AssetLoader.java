@@ -136,8 +136,14 @@ public final class AssetLoader {
     }
 
     /**
-     * Carga la imagen raw con caché. Uso interno — úsalo si necesitás la
-     * BufferedImage directamente (ej: construcción manual de SpriteFrame).
+     * Carga la imagen raw con caché y optimización de memoria.
+     * Uso interno — úsalo si necesitás la BufferedImage directamente.
+     *
+     * ── OPTIMIZACIÓN ──────────────────────────────────────────────────────
+     * Las imágenes se optimizan automáticamente:
+     *   1. Downscaling si son >512px (cometa.png 800x600 → 512x384)
+     *   2. Conversión a TYPE_INT_RGB si no usan transparencia (ahorra 25% RAM)
+     *   3. Conversión a TYPE_INT_ARGB si usan transparencia (mejor rendering)
      *
      * @param path path relativo al classpath
      * @return BufferedImage o null si falló la carga
@@ -155,17 +161,45 @@ public final class AssetLoader {
                 System.err.println("[AssetLoader] Recurso no encontrado: " + path);
                 return null;
             }
-            BufferedImage img = ImageIO.read(is);
-            if (img == null) {
+            BufferedImage original = ImageIO.read(is);
+            if (original == null) {
                 System.err.println("[AssetLoader] ImageIO no pudo leer: " + path);
                 return null;
             }
-            cache.put(path, img);
-            return img;
+            
+            // Optimizar imagen (downscaling, formato, etc)
+            BufferedImage optimized = AssetOptimizer.optimize(original);
+            cache.put(path, optimized);
+            return optimized;
         } catch (IOException e) {
             System.err.println("[AssetLoader] Error cargando '" + path + "': " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Optimiza una imagen para uso eficiente en memoria y rendering.
+     * Convierte a TYPE_INT_ARGB si no lo es ya (formato estándar de Java 2D).
+     * 
+     * @deprecated Usar AssetOptimizer.optimize() que incluye más optimizaciones
+     */
+    @Deprecated
+    private static BufferedImage optimizeImage(BufferedImage original) {
+        // Si ya está en el formato óptimo, retornar directo
+        if (original.getType() == BufferedImage.TYPE_INT_ARGB) {
+            return original;
+        }
+        
+        // Convertir a formato optimizado
+        int w = original.getWidth();
+        int h = original.getHeight();
+        BufferedImage optimized = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        
+        java.awt.Graphics2D g = optimized.createGraphics();
+        g.drawImage(original, 0, 0, null);
+        g.dispose();
+        
+        return optimized;
     }
 
     /**
@@ -180,10 +214,21 @@ public final class AssetLoader {
 
     /**
      * Limpia toda la caché.
-     * Uso: tests o recarga en caliente. En producción no es necesario.
+     * Uso: tests, recarga en caliente, o shutdown del juego.
      */
     public static void clearCache() {
         cache.clear();
+        System.out.println("[AssetLoader] Caché de imágenes limpiada");
+    }
+
+    /**
+     * Libera recursos al cerrar el juego.
+     * Limpia la caché de imágenes para liberar memoria.
+     */
+    public static void shutdown() {
+        int size = cache.size();
+        cache.clear();
+        System.out.println("[AssetLoader] Shutdown: " + size + " imágenes liberadas");
     }
 
     /** Cantidad de imágenes actualmente en caché. Útil para diagnóstico. */

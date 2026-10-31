@@ -1,9 +1,9 @@
 package Game.Enemys.EnemyTypes.Hybrid;
 
+import Game.Enemys.Core.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
-import Game.Enemys.Core.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Movement.GroundMovement;
 import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
@@ -28,16 +28,17 @@ import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 public final class HybridAssembler extends EnemyAssembler {
 
     private static final int    MAX_HEALTH      = 120;
-    private static final double DETECTION_RANGE = 400.0;
+    private static final double DETECTION_RANGE = 800.0;  // Increased from 400 for consistency
     private static final double ATTACK_RANGE    = 50.0;
-    private static final double MOVE_SPEED      = 1.2;
+    private static final double MOVE_SPEED      = 180.0;  // units/s (was 1.2 px/frame legacy, converted: 1.2 * 150 ≈ 180)
     private static final int    DAMAGE          = 15;
 
     @Override
     protected EnemyDefinition definition() {
         // Híbrido: comienza en modo terrestre con física de groundStandard()
+        // Gravity ajustada a 702 para match con Zombie y Player
         EnemyPhysics physics = new EnemyPhysics(
-            580,  // gravity
+            702,  // gravity (units/s²) - match con Zombie/Player
             80,   // mass
             1.0,  // effectiveArea
             9,    // dragCoefficient

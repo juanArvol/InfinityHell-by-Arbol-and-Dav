@@ -82,16 +82,20 @@ public class CollisionMatrix {
      * Configuración default de colisiones.
      * 
      * Reglas:
-     *   - PLAYER colisiona con: ENEMY, BULLET, SOLID, ITEM, HAZARD
-     *   - ENEMY colisiona con: PLAYER, BULLET, SOLID, HAZARD
+     *   - PLAYER colisiona con: ENEMY, BULLET, SOLID, ITEM, TRIGGER, PROJECTILE, HAZARD
+     *   - ENEMY colisiona con: PLAYER, BULLET, SOLID, PROJECTILE, HAZARD
      *   - BULLET colisiona con: PLAYER, ENEMY, SOLID, HAZARD
-     *   - SOLID colisiona con: TODO (paredes, pisos)
+     *   - SOLID colisiona con: PLAYER, ENEMY, BULLET, PROJECTILE, HAZARD (geometría estática: paredes, pisos)
      *   - ITEM colisiona con: PLAYER
      *   - TRIGGER colisiona con: PLAYER
      *   - PROJECTILE colisiona con: PLAYER, ENEMY, SOLID, HAZARD
-     *   - HAZARD colisiona con: TODO
+     *   - HAZARD colisiona con: PLAYER, ENEMY, BULLET, SOLID, PROJECTILE (trampas, picos, daño ambiental)
      *
-     * IMPORTANTE: BULLET NO colisiona con BULLET
+     * OPTIMIZACIONES:
+     *   - BULLET NO colisiona con BULLET (evita O(n²) checks entre proyectiles)
+     *   - SOLID NO colisiona con SOLID (paredes no colisionan entre sí)
+     *   - HAZARD NO colisiona con HAZARD (trampas no afectan otras trampas)
+     *   - ENEMY NO colisiona con ENEMY (optimización gameplay)
      */
     public static void configureDefault() {
         // Clear matrix
@@ -134,7 +138,7 @@ public class CollisionMatrix {
         setCollision(Category.SOLID, Category.BULLET, true);
         setCollision(Category.SOLID, Category.PROJECTILE, true);
         setCollision(Category.SOLID, Category.HAZARD, true);
-        // SOLID NO colisiona con SOLID
+        // SOLID NO colisiona con SOLID (optimization: paredes/pisos no colisionan entre sí)
         // SOLID NO colisiona con ITEM
         // SOLID NO colisiona con TRIGGER
 
@@ -160,7 +164,7 @@ public class CollisionMatrix {
         setCollision(Category.HAZARD, Category.BULLET, true);
         setCollision(Category.HAZARD, Category.SOLID, true);
         setCollision(Category.HAZARD, Category.PROJECTILE, true);
-        // HAZARD NO colisiona con HAZARD
+        // HAZARD NO colisiona con HAZARD (optimization: traps no afectan a otras traps)
         // HAZARD NO colisiona con ITEM
         // HAZARD NO colisiona con TRIGGER
     }

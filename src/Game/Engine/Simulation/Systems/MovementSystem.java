@@ -22,19 +22,22 @@ import Game.Engine.Simulation.Storage.PrimitiveStorage;
  *   - POSITION (write)
  *   - VELOCITY (read)
  *
- * OPTIMIZACIÓN ACTUAL:
- *   Como todas las bullets tienen PROJECTILE_MASK (que incluye estos componentes),
- *   no filtramos en runtime. Procesamos todas las entidades del store.
+ * ── CRÍTICO: SOLO PROCESA BULLETS, NO ENEMIES ───────────────────────────
  *
- * FUTURO:
- *   Si el EntityStore contiene tipos mixtos (bullets + particles + enemies),
- *   activar filtrado por ComponentMask para procesar solo entidades válidas.
+ * MovementSystem procesa SOLO entidades con PROJECTILE_MASK.
+ * Enemies (con ENEMY_MASK) NO deben procesarse aquí porque:
+ *   - CollisionsSystem mueve enemies con swept AABB
+ *   - Enemies necesitan resolución de colisiones física
+ *   - Position de enemies vive en Transform OOP, no en DOD
  *
- * ── ÚNICO WRITER DE POSITION ─────────────────────────────────────────────
+ * Si enemies se procesan aquí, se mueven en DOD storage pero CollisionsSystem
+ * lee del Transform OOP, causando desincronización.
  *
- * MovementSystem es el ÚNICO responsable de modificar position.
+ * ── ÚNICO WRITER DE POSITION (PARA BULLETS) ─────────────────────────────
  *
- * PROHIBIDO:
+ * MovementSystem es el ÚNICO responsable de modificar position DE BULLETS.
+ *
+ * PROHIBIDO (para bullets):
  * - Bullet.moveByPhysics() NO se llama
  * - ProjectileMovement NO modifica position
  * - BulletBehavior NO modifica position
@@ -68,6 +71,9 @@ public final class MovementSystem implements SimulationSystem {
     private static final ComponentMask REQUIRED_COMPONENTS = ComponentMask.EMPTY
         .with(ComponentType.POSITION)
         .with(ComponentType.VELOCITY);
+    
+    /** Máscara para EXCLUIR enemies - solo procesar bullets */
+    private static final ComponentMask PROJECTILE_ONLY = ComponentType.PROJECTILE_MASK;
 
     @Override
     public void update(EntityStore entityStore, double deltaTime) {
@@ -82,9 +88,19 @@ public final class MovementSystem implements SimulationSystem {
         float dt = (float) deltaTime;
 
         // HOT LOOP — procesamiento denso, SIMD-friendly
-        // OPTIMIZACIÓN: No filtramos porque todas las bullets tienen estos componentes
-        // Si en futuro el store contiene tipos mixtos, activar filtrado aquí
+        // SOLO para bullets (PROJECTILE_MASK), NO enemies
         for (int i = 0; i < count; i++) {
+            var entityId = entityStore.getEntityAt(i);
+            if (entityId == null) continue;
+            
+            var record = entityStore.getRecord(entityId);
+            if (record == null) continue;
+            
+            // FILTRAR: Skip enemies (ENEMY_MASK), solo procesar bullets (PROJECTILE_MASK)
+            if (!record.mask().equals(PROJECTILE_ONLY)) {
+                continue;
+            }
+            
             posX[i] += velX[i] * dt;
             posY[i] += velY[i] * dt;
         }

@@ -342,7 +342,18 @@ public class WorldManager {
 
         // ── 4. AISystem ────────────────────────────────────────────────────
         // Ejecuta comportamientos de IA con contexto y deltaTime
-        aiSystem.update(activeObjects, trackedPlayer, deltaTime);
+        // CRITICAL FIX: Si trackedPlayer es null, buscar el Player en activeObjects
+        // para que la IA de enemies siempre tenga un objetivo válido
+        Player playerForAI = trackedPlayer;
+        if (playerForAI == null) {
+            for (GameObjects obj : activeObjects) {
+                if (obj instanceof Player p) {
+                    playerForAI = p;
+                    break;
+                }
+            }
+        }
+        aiSystem.update(activeObjects, playerForAI, deltaTime);
 
         // ── 5. StatusEffectSystem ──────────────────────────────────────────
         statusEffectSystem.update(activeObjects);

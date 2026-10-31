@@ -70,18 +70,20 @@ public class FollowSteeringCommand implements EnemyAction {
 
         desired.normalizeLocal().scaleLocal(maxSpeed);
 
-        Vector2D steering = desired.subtract(
-            enemy.getPhysics().getVelocity()
-        );
+        // Capturar la referencia del Vector2D UNA SOLA VEZ
+        // En lugar de llamar getVelocity() múltiples veces (que crea nuevas copias)
+        Vector2D currentVel = enemy.getPhysics().getVelocity();
+        Vector2D steering = desired.subtract(currentVel);
 
         steering.scaleLocal(steeringForce);
 
-        enemy.getPhysics()
-             .getVelocity()
-             .addLocal(steering);
-
-        enemy.getPhysics()
-             .getVelocity()
-             .limitLocal(maxSpeed);
+        // Modificar la copia local
+        currentVel.addLocal(steering);
+        currentVel.limitLocal(maxSpeed);
+        
+        // ── DOD MIGRATION FIX: Sync velocity back to DOD storage ──
+        // Escribir la velocidad modificada de vuelta al DOD
+        enemy.getPhysics().vSetX(currentVel.getX());
+        enemy.getPhysics().vSetY(currentVel.getY());
     }
 }

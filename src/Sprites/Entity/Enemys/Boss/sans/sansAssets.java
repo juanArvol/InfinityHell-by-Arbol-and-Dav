@@ -1,14 +1,6 @@
 package Sprites.Entity.Enemys.Boss.sans;
 
-import Sprites.Core.Animation;
-import Sprites.Core.AssetLoader;
-import Sprites.Core.AssetRegistry;
-import Sprites.Core.Extractors.GridExtractor;
-import Sprites.Core.Extractors.SpriteExtractors;
-import Sprites.Core.SpriteDefinition;
-import Sprites.Core.SpriteFrame;
 import Sprites.Core.SpriteHandle;
-import Sprites.Core.SpriteSheet;
 
 /**
  * PlayerAssets — recursos visuales del jugador basados en SpriteSheet.
@@ -77,53 +69,10 @@ public final class sansAssets {
      * Llamar una sola vez durante la inicialización del juego (Assets.init()).
      */
     public static void init() {
-        // ── Carga ──────────────────────────────────────────────────────────
-        var extractor = SpriteExtractors.grid(FRAME_W, FRAME_H);
-        SpriteSheet sheet = AssetLoader.loadSheet(SHEET_PATH, extractor);
-
-        if (sheet == null) {
-            System.err.println("[PlayerAssets] No se pudo cargar: " + SHEET_PATH
-                + ". Usando handle vacío.");
-            handle = SpriteHandle.EMPTY;
-            return;
-        }
-
-        // ── Exportación de diagnóstico (solo cuando EXPORT_DEBUG_FRAMES = true) ──
-        // Activa esto para comparar cada PNG exportado con el sheet original.
-        // Si un PNG ya contiene parte del frame vecino → FRAME_W está mal.
-        // Si los PNG son perfectos → el problema está en una etapa posterior.
-        if (EXPORT_DEBUG_FRAMES) {
-            GridExtractor ge = (GridExtractor) extractor;
-            GridExtractor.exportFrames(AssetLoader.loadRaw(SHEET_PATH), ge, EXPORT_DIR);
-        }
-
-        // ── Banco completo de frames (todos los extraídos del sheet) ──────
-        SpriteFrame[] bank = sheet.getAllFrames();
-
-        // ── Frame 0: idle ─────────────────────────────────────────────────
-        SpriteFrame idleFrame = sheet.getFrame(0);
-
-        // ── Animación idle — frame único estático ─────────────────────────
-        Animation idle = Animation.still(idleFrame);
-
-        // ── Animación walk_right — frames 0..8 via Builder ────────────────
-        // El Builder trabaja con índices del banco; producirá los frames
-        // 0,1,2,3,4,5,6,7,8 en orden de reproducción.
-        Animation walkRight = Animation.builder(bank)
-            .frame(0, WALK_FRAME_COUNT - 1)   // frames 0..8 inclusive
-            .defaultDuration(TICKS_PER_FRAME)
-            .loop()
-            .build();
-
-        // ── Definición ────────────────────────────────────────────────────
-        SpriteDefinition def = new SpriteDefinition(idleFrame)
-            .addAnimation("idle",       idle)
-            .addAnimation("walk_right", walkRight);
-        // "walk_left" no existe — PlayerRenderer aplica flipH=true en el renderer.
-
-        // ── Registrar ─────────────────────────────────────────────────────
-        handle = new SpriteHandle(def, "player");
-        AssetRegistry.getInstance().register("player", handle);
+        // ── Sans Assets desactivado temporalmente ─────────────────────────
+        // TODO: Implementar sprites de Sans cuando estén disponibles
+        System.out.println("[sansAssets] Sans sprites no implementados aún - usando handle vacío");
+        handle = SpriteHandle.EMPTY;
     }
 }
 

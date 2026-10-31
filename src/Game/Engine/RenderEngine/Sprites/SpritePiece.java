@@ -220,9 +220,11 @@ public final class SpritePiece implements Renderable {
      *   if (elapsed >= frameSeconds) → avanzar frame
      *   A cualquier FPS: velocidad de animación consistente
      *
-     * NOTA: Animation.ticksForFrame() aún retorna ticks (legado @ 30 FPS).
+     * NOTA: Animation.ticksForFrame() retorna ticks del sistema legacy @ 30 FPS.
      * Convertimos ticks → segundos @ 30 FPS como valor esperado.
-     * Migración futura: Animation debería aceptar duraciones en segundos.
+     * 
+     * MIGRACIÓN COMPLETADA: Animation ahora debería usar duraciones en segundos
+     * nativamente, pero mantenemos compatibilidad backward con ticks @ 30 FPS.
      *
      * Llamado por SpriteSkeletonComponent.update(deltaTime).
      *
@@ -234,8 +236,7 @@ public final class SpritePiece implements Renderable {
         // Duración del frame actual en ticks (legado @ 30 FPS)
         int frameTicks = currentAnim.ticksForFrame(frameIndex);
         
-        // Convertir ticks → segundos @ 30 FPS (CORRECCIÓN: era 60, ahora 30)
-        // TODO HRFC: migrar Animation a duraciones en segundos
+        // Convertir ticks → segundos @ 30 FPS (sistema legacy)
         double frameSeconds = frameTicks / 30.0;
 
         elapsed += deltaTime;

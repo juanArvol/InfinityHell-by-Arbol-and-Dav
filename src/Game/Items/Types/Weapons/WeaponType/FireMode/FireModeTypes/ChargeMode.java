@@ -114,7 +114,7 @@ public class ChargeMode implements iFireMode {
      * Mantener 1.0s por ahora como valor de gameplay, pero documentar la discrepancia.
      */
     public ChargeMode() {
-        this(1.0);  // TODO: Verificar si debería ser 2.0s para coincidir con legacy
+        this(2.0); 
     }
 
     /**

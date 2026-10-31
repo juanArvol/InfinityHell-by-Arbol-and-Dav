@@ -2,6 +2,7 @@ package Game.Items.Types.Ammulets;
 
 import Game.Items.Core.ObjectType;
 import Game.Items.Core.ObjectTypeFactory;
+import Game.Items.Types.Ammulets.Effects.ExplosionShieldEffect;
 import Game.Items.Types.Ammulets.Types.*;
 import java.util.function.Supplier;
 
@@ -32,6 +33,7 @@ public final class AmuletType extends ObjectType<AmuletEffect> {
     public static final AmuletType PHASE_SHARD;
     public static final AmuletType ECHO_STONE;
     public static final AmuletType SPLIT_CRYSTAL;
+    public static final AmuletType EXPLOSION_SHIELD;
 
     static {
         BONE_TIP = register(new AmuletType(
@@ -72,6 +74,11 @@ public final class AmuletType extends ObjectType<AmuletEffect> {
         SPLIT_CRYSTAL = register(new AmuletType(
             AmuletDefinition.SPLIT_CRYSTAL,
             SplitCrystalEffect::new
+        ));
+
+        EXPLOSION_SHIELD = register(new AmuletType(
+            AmuletDefinition.EXPLOSION_SHIELD,
+            ExplosionShieldEffect::new
         ));
     }
 

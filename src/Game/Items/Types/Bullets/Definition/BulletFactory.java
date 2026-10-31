@@ -93,6 +93,21 @@ public final class BulletFactory {
     }
 
     /**
+     * Limpia la referencia al EntityStore durante shutdown.
+     * 
+     * Llamar SOLO cuando el World se destruye completamente y ningún
+     * sistema puede intentar crear proyectiles. Esto previene memory leaks
+     * al retener referencias a EntityStore de mundos destruidos.
+     * 
+     * Después de llamar clearEntityStore(), cualquier intento de crear
+     * proyectiles fallará con IllegalStateException hasta que se llame
+     * setEntityStore() de nuevo con un nuevo EntityStore.
+     */
+    public static void clearEntityStore() {
+        BulletFactory.entityStore = null;
+    }
+
+    /**
      * Retorna el EntityStore configurado.
      *
      * @return EntityStore activo

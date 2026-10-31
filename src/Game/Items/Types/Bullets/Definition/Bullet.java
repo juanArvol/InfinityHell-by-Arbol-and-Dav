@@ -300,10 +300,25 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         this.simulationContext = bulletLife::isAlive;
 
         // ── Render ────────────────────────────────────────────────────────
-        // La texture viene del Flyweight — compartida con todas las Bullets
-        // del mismo tipo. No se resuelve por instancia.
+        // Usar SpriteHandle del flyweight para el renderer.
+        // El handle contiene el frame cacheado que se reutiliza sin allocations.
         if (flyweight.hasTexture()) {
-            addComponent(new SpriteRendererComponent(flyweight.texture()));
+            SpriteRendererComponent renderer = new SpriteRendererComponent(flyweight.spriteHandle());
+            
+            // Activar rotación automática basada en velocidad
+            // El sprite se orientará hacia la dirección de movimiento
+            renderer.setAutoRotateToVelocity(true, 0.0);
+            
+            addComponent(renderer);
+            
+            // Si el sprite tiene animaciones, agregar AnimationController
+            Sprites.Core.SpriteHandle spriteHandle = flyweight.spriteHandle();
+            if (spriteHandle.isValid() && spriteHandle.getDefinition() != null 
+                && !spriteHandle.getDefinition().getAnimations().isEmpty()) {
+                Game.Engine.Entity.Components.Visuals.AnimationControllerComponent animController = 
+                    new Game.Engine.Entity.Components.Visuals.AnimationControllerComponent(spriteHandle, "default");
+                addComponent(animController);
+            }
         }
 
         // ── Collider (TRIGGER) — perfil del Flyweight ─────────────────────
@@ -406,7 +421,9 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     @Override
     public boolean isPendingDestruction() {
-        if (!bulletLife.isAlive()) {
+        boolean alive = bulletLife.isAlive();
+        
+        if (!alive) {
             if (ownerPool != null) {
                 ownerPool.release(this);
                 ownerPool = null; // evitar double-release si se consulta más de una vez
@@ -436,6 +453,24 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     }
     
     /**
+     * Escribe la normal de contacto en el adapter DOD.
+     *
+     * ── HRFC — Projectile DOD Migration: Collision Normal Bridge ──────────
+     *
+     * CollisionsSystem escribe la normal en BulletPhysics legacy (via Physics2DComponent).
+     * BulletJump lee desde BulletPhysicsDOD (via bullet.getPhysics()).
+     *
+     * Este método es el bridge: copia la normal desde legacy al adapter DOD
+     * para que behaviors puedan leerla correctamente.
+     *
+     * @param nx normal X (-1, 0, +1)
+     * @param ny normal Y (-1, 0, +1)
+     */
+    public void setCollisionNormal(int nx, int ny) {
+        physicsAdapter.setLastContactNormal(nx, ny);
+    }
+    
+    /**
      * Retorna X position directamente (sin allocation).
      * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
      */
@@ -449,6 +484,45 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     public double getPositionY() {
         return entityStore.getStorage().positionsY()[simulationHandle.index()];
+    }
+    
+    /**
+     * Retorna el Transform sincronizado con el DOD storage.
+     *
+     * ── HRFC — Projectile DOD Migration: Transform Bridge ─────────────────
+     *
+     * PROBLEMA:
+     *   ColliderComponent.getBounds() lee gameObject.getTransform().getPosition()
+     *   para calcular el Rectangle de colisión. En DOD, la posición real está
+     *   en PrimitiveStorage, NO en el Transform legacy. Si no sincronizamos,
+     *   el collider usa la posición obsoleta y las colisiones fallan.
+     *
+     * SOLUCIÓN:
+     *   Bullet sobreescribe getTransform() para sincronizar el Transform con
+     *   el DOD storage ANTES de retornarlo. Así ColliderComponent siempre ve
+     *   la posición correcta sin cambiar su implementación.
+     *
+     * ALTERNATIVA DESCARTADA:
+     *   Hacer que ColliderComponent lea directamente de DOD. Problema: no todos
+     *   los GameObjects usan DOD, y ColliderComponent es generic Engine code
+     *   que no debe conocer ProjectileStorage.
+     *
+     * Esta solución es un bridge temporal hasta que Transform legacy se elimine
+     * completamente y ColliderComponent lea posiciones de una fuente unificada.
+     */
+    @Override
+    public Game.Engine.GameMath.Logic2D.Transform2D getTransform() {
+        // Sincronizar Transform con DOD storage
+        int idx = simulationHandle.index();
+        var storage = entityStore.getStorage();
+        float x = storage.positionsX()[idx];
+        float y = storage.positionsY()[idx];
+        
+        // Actualizar Transform para que ColliderComponent.getBounds() vea la posición correcta
+        super.getTransform().getPosition().setX(x);
+        super.getTransform().getPosition().setY(y);
+        
+        return super.getTransform();
     }
     
     /**
@@ -855,10 +929,10 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         if (this.flyweight != newFlyweight) {
             this.flyweight = newFlyweight;
 
-            // Actualizar sprite
+            // Actualizar sprite usando el nuevo sistema de SpriteHandle
             SpriteRendererComponent renderer = getComponent(SpriteRendererComponent.class);
             if (renderer != null) {
-                renderer.setSprite(newFlyweight.texture());
+                renderer.setHandle(newFlyweight.spriteHandle());
             }
 
             // Actualizar collisionProfile

@@ -1,9 +1,9 @@
 
 package Game.Enemys.Core.Movement;
 
+import Game.Enemys.Core.AI.EnemyContext;
 import Game.Enemys.Core.Contracts.MovementStrategy;
 import Game.Enemys.Core.Enemy;
-import Game.Enemys.Core.AI.EnemyContext;
 import Game.Engine.Entity.Components.Physics2DComponent;
 
 /**
@@ -32,7 +32,8 @@ public final class GroundMovement implements MovementStrategy {
 
         // Sincronizar enElSuelo desde la física hacia EnemyState.
         // MoveCommand.moveX() lo necesita para calcular la aceleración correctamente.
-        enemy.getState().setEnElSuelo(pc.getPhysics().getOnGround());
+        boolean onGround = pc.getPhysics().getOnGround();
+        enemy.getState().setEnElSuelo(onGround);
     }
 
     @Override

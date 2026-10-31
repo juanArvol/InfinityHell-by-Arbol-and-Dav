@@ -125,6 +125,7 @@ public final class HomingMovement implements ProjectileMovement {
         if (dist < 1e-6) return; // proyectil ya sobre el target
 
         double targetAngle  = Math.atan2(dy, dx);
+        // Calcular ángulo actual desde velocity (DOD storage)
         double currentAngle = Math.atan2(
                 bullet.getPhysics().getYspeed(),
                 bullet.getPhysics().getXspeed()

@@ -3,7 +3,6 @@ package Game.Engine.Simulation.Storage;
 import Game.Engine.Simulation.ComponentMask;
 import Game.Engine.Simulation.EntityId;
 import Game.Engine.Simulation.SimulationHandle;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -105,7 +104,7 @@ public final class EntityStore {
 
     private final PrimitiveStorage storage;
     private final Map<EntityId, EntityRecord> records;
-    private final EntityId[] denseToEntity;  // mapeo inverso: index → EntityId
+    private EntityId[] denseToEntity;  // mapeo inverso: index → EntityId (resizable)
     private final List<Integer> freeList;
     private long nextEntityId;
     private int count;  // número de entidades vivas
@@ -395,9 +394,10 @@ public final class EntityStore {
      */
     private void resize(int newCapacity) {
         storage.resize(newCapacity);
-        // No es necesario redimensionar denseToEntity inmediatamente —
-        // se hará en la próxima creación si es necesario.
-        // Por simplicidad, no se implementa resize de denseToEntity aquí.
+        // Resize denseToEntity array
+        EntityId[] newDenseToEntity = new EntityId[newCapacity];
+        System.arraycopy(denseToEntity, 0, newDenseToEntity, 0, denseToEntity.length);
+        denseToEntity = newDenseToEntity;
     }
 
     /**

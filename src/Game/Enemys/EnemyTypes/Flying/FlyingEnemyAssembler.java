@@ -1,9 +1,9 @@
 package Game.Enemys.EnemyTypes.Flying;
 
+import Game.Enemys.Core.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
-import Game.Enemys.Core.AI.Behaviors.FlyingBehavior;
 import Game.Enemys.Core.Movement.FlyingMovement;
 import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
@@ -16,34 +16,74 @@ import Game.Engine.Entity.Stats.EntityStats;
 import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**
- * Ensamblador del enemigo volador.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * FlyingEnemyAssembler — Enemigo Volador
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * ── HRFC-007 — Living Entity Core ────────────────────────────────────────
- * Migrado a los tipos genéricos del Living Entity Core:
- *   EnemyStats       → EntityStats
- *   EnemyFlags       → EntityFlags
- *   EnemyAttributes  → EntityAttributes
- *   AttackSource/s   → Game.Living.Combat
+ * DESCRIPCIÓN:
+ *   Enemigo aéreo que ignora terreno. Vuela libremente controlado por AI.
+ *   Usa steering force para movimiento ágil sin física gravitacional.
  *
- * Fuente de ataque: NATURAL (embestida aérea, picoteo, garras).
+ * COMPORTAMIENTO:
+ *   • Movimiento: Aéreo (FlyingMovement con steering)
+ *   • AI: Flying Behavior (persigue en el aire)
+ *   • Ataque: Embestida aérea
+ *   • Facción: MONSTER (hostil a todos)
+ *
+ * FÍSICA:
+ *   - Gravedad mínima (evita flotar infinito si AI falla)
+ *   - Sin drag (aerodinámica perfecta)
+ *   - Movimiento controlado 100% por AI
+ *   - No usa parámetros terrestres
+ *
+ * USO TÍPICO:
+ *   Enemigos aéreos, jefes voladores, unidades de soporte
  */
 public final class FlyingEnemyAssembler extends EnemyAssembler {
 
-    private static final int    MAX_HEALTH     = 80;
-    private static final double MAX_SPEED      = 380;
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 1: PROPIEDADES FÍSICAS
+    // ═════════════════════════════════════════════════════════════════════
+    
+    /** Gravedad mínima en units/s² (evita flotar infinito) */
+    private static final double GRAVITY = 0.1;
+    
+    /** Masa del enemigo (ligero para vuelo ágil) */
+    private static final double MASS = 40.0;
+    
+    /** Área efectiva (0 = sin drag, aerodinámica perfecta) */
+    private static final double EFFECTIVE_AREA = 0.0;
+    
+    /** Coeficiente de resistencia del aire (0 = sin resistencia) */
+    private static final double DRAG_COEFFICIENT = 0.0;
+    
+    /** Factor de deslizamiento (1.0 = sin fricción, siempre en aire) */
+    private static final double SLIDE = 1.0;
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 2: PROPIEDADES DE MOVIMIENTO AÉREO
+    // ═════════════════════════════════════════════════════════════════════
+    
+    /** Fuerza de steering para control AI en units/s² */
     private static final double STEERING_FORCE = 0.9;
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 3: PROPIEDADES DE GAMEPLAY
+    // ═════════════════════════════════════════════════════════════════════
+    
+    /** Vida máxima */
+    private static final int MAX_HEALTH = 80;
+    
+    /** Velocidad máxima en units/s */
+    private static final double MAX_SPEED = 380.0;
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 4: ASSEMBLER IMPLEMENTATION
+    // ═════════════════════════════════════════════════════════════════════
 
     @Override
     protected EnemyDefinition definition() {
-        // Enemigo volador: mínima gravedad, sin parámetros terrestres
-        // Usa valores de flyingStandard() pero sin drag (effectiveArea=0, dragCoefficient=0)
-        EnemyPhysics physics = new EnemyPhysics(
-            0.1,  // gravity (mínima para voladores)
-            40,   // mass
-            0,    // effectiveArea (aerodinámica optimizada)
-            0,    // dragCoefficient (forma optimizada)
-            1     // slide
-        );
+        EnemyPhysics physics = createPhysics();
         
         return EnemyDefinition.builder()
             .sprite(EnemyAssets.flyingHandle)
@@ -88,5 +128,29 @@ public final class FlyingEnemyAssembler extends EnemyAssembler {
     protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new ShadowComponent(18, 7));
         enemy.addComponent(new AnimationControllerComponent(EnemyAssets.flyingHandle, "idle"));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 5: CONFIGURACIÓN INTERNA
+    // ═════════════════════════════════════════════════════════════════════
+
+    /**
+     * Crea configuración física del enemigo volador.
+     * 
+     * Física aérea minimalista:
+     *   - Gravedad casi nula (0.1 u/s²)
+     *   - Sin drag (aerodinámica perfecta)
+     *   - Sin fricción (siempre en el aire)
+     *   - NO necesita parámetros terrestres (nunca toca suelo)
+     *   - Movimiento controlado 100% por FlyingMovement AI
+     */
+    private EnemyPhysics createPhysics() {
+        return new EnemyPhysics(
+            GRAVITY,
+            MASS,
+            EFFECTIVE_AREA,
+            DRAG_COEFFICIENT,
+            SLIDE
+        );
     }
 }

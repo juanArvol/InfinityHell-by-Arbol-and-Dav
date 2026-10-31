@@ -58,6 +58,11 @@ public class PathSteeringCommand implements EnemyAction {
 
         enemy.getPhysics().getVelocity().addLocal(steering);
         enemy.getPhysics().getVelocity().limitLocal(maxSpeed);
+        
+        // ── DOD MIGRATION FIX: Sync velocity back to DOD storage ──
+        Vector2D vel = enemy.getPhysics().getVelocity();
+        enemy.getPhysics().vSetX(vel.getX());
+        enemy.getPhysics().vSetY(vel.getY());
     }
 
     public void resetPath() { index = 0; }

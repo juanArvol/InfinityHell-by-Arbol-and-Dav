@@ -630,31 +630,13 @@ public class Physics2D {
     public void applyGravity(boolean onGround, double deltaTime) {
         if (onGround) return;
 
-        // ── HRFC: Aplicación directa de gravedad como aceleración ─────────
-        // CORRECCIÓN CRÍTICA: Eliminar compensación /deltaTime.
-        // 
-        // La gravedad ES aceleración (units/s²), no fuerza.
-        // Integración correcta: Δv = a × dt
-        //
-        // ANTES (incorrecto — compensación hack):
-        //   double gravityForce = (mass × gravity) / deltaTime;
-        //   accumulate(0, gravityForce);
-        //   // Luego flush hacía: Δv = (F/m)×dt = ((m×g/dt)/m)×dt = g ✗
-        //
-        // AHORA (correcto — integración temporal directa):
-        //   Δv = gravity × deltaTime
-        //
-        // Verificación @ 30 FPS (dt = 1/30):
-        //   Player: gravity = 23.4 units/s²
-        //   Δv = 23.4 × (1/30) = 0.78 units/frame-equivalent
-        //   Legacy: 0.78 px/frame² → Equivalencia preservada ✓
-        
         if (!isGravityManagedExternally()) {
             // Aplicar gravedad directamente como aceleración
-            // TODO: Considerar environment.gravityInfluenceY cuando esté disponible:
-            //   double effectiveGravity = gravity * environment.getGravityInfluenceY();
+            // DOD FIX: Usar vSetY() en lugar de velocity.setY() para que
+            // subclases como EnemyPhysics puedan interceptar y escribir al DOD storage
             double deltaVy = gravity * deltaTime;
-            velocity.setY(velocity.getY() + deltaVy);
+            double newVy = velocity.getY() + deltaVy;
+            vSetY(newVy);
         }
 
         // ── Drag aerodinámico (correcto en Physics2D) ────────────────────

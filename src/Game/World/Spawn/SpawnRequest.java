@@ -148,10 +148,10 @@ public final class SpawnRequest {
         totalSpawned++;
         activeInstances++;
 
-        // Reiniciar cooldown (MIGRACIÓN: convertir ticks → segundos @ 30 FPS)
-        int cdTicks = descriptor.getCooldownTicks();
-        if (cdTicks > 0) {
-            cooldownRemaining = cdTicks / 30.0; // TODO: migrar SpawnDescriptor a getCooldownSeconds()
+        // Reiniciar cooldown usando el nuevo API temporal
+        double cooldownSeconds = descriptor.getCooldownSeconds();
+        if (cooldownSeconds > 0) {
+            cooldownRemaining = cooldownSeconds;
         }
 
         // Consumir trigger si existe

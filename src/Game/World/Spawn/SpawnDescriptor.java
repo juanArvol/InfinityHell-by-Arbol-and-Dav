@@ -51,6 +51,19 @@ public final class SpawnDescriptor {
     public SpawnPoint    getSpawnPoint()    { return spawnPoint;    }
     public int           getMaxInstances()  { return maxInstances;  }
     public int           getCooldownTicks() { return cooldownTicks; }
+    
+    /**
+     * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * 
+     * Retorna el cooldown en segundos (nuevo API temporal).
+     * El sistema legacy operaba a 30 FPS, por lo que la conversión es:
+     * segundos = ticks / 30.0
+     * 
+     * @return cooldown en segundos
+     */
+    public double getCooldownSeconds() {
+        return cooldownTicks / 30.0;
+    }
 
     // ── Builder ───────────────────────────────────────────────────────────
 

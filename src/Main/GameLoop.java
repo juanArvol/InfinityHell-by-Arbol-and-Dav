@@ -248,6 +248,11 @@ public final class GameLoop implements Runnable {
             //   Lag spike (200ms):    deltaTime = 0.200s → clamped
             double deltaTimeSeconds = elapsed / 1_000_000_000.0;
 
+            // DEBUG: Log deltaTime every 60 frames for monitoring
+            if (simulationStepCounter % 600 == 0) {
+                System.out.println("[GameLoop] frame=" + simulationStepCounter + " deltaTime=" + deltaTimeSeconds + "s");
+            }
+
             // Clamp deltaTime para evitar valores extremos durante lag spikes.
             // Esto NO convierte el sistema en fixed timestep — simplemente
             // previene que un GC pause de 500ms cause físicas inestables.

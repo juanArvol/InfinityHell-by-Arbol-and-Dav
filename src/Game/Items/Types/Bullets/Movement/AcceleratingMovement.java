@@ -42,6 +42,7 @@ public final class AcceleratingMovement implements ProjectileMovement {
 
     @Override
     public void tick(Bullet bullet, double dt) {
+        // Leer velocidad actual desde DOD storage
         double vx = bullet.getPhysics().getXspeed();
         double vy = bullet.getPhysics().getYspeed();
         double currentSpeed = Math.hypot(vx, vy);

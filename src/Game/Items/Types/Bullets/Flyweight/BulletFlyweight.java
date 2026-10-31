@@ -1,7 +1,7 @@
 package Game.Items.Types.Bullets.Flyweight;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
-import java.awt.image.BufferedImage;
+import Sprites.Core.SpriteHandle;
 
 /**
  * Recurso compartido e inmutable de un tipo de proyectil.
@@ -11,32 +11,44 @@ import java.awt.image.BufferedImage;
  * Un BulletFlyweight agrupa los datos de construcción que son idénticos para
  * TODOS los proyectiles del mismo tipo:
  *
- *   - texture          → la misma BufferedImage para todas las instancias
+ *   - spriteHandle     → el mismo SpriteHandle para todas las instancias
  *   - collisionProfile → el mismo perfil de colisión para todas las instancias
  *   - width / height   → las mismas dimensiones de collider para todas las instancias
  *
  * En lugar de que 200 Bullets activas carguen 200 referencias independientes
- * a la misma BufferedImage (y recreen ColliderComponent con los mismos parámetros
+ * al mismo SpriteHandle (y recreen ColliderComponent con los mismos parámetros
  * en cada construcción), esos recursos se resuelven UNA SOLA VEZ y se comparten.
+ *
+ * ── SISTEMA DE SPRITES ────────────────────────────────────────────────────
+ *
+ * El flyweight usa EXCLUSIVAMENTE el nuevo sistema de sprites (SpriteHandle).
+ * El sistema legacy de BufferedImage ha sido completamente eliminado.
+ *
+ * Beneficios:
+ *   ✓ Sin allocations de SpriteFrame temporales cada frame
+ *   ✓ Rotación automática sin overhead
+ *   ✓ Compatible con sistema de animación
+ *   ✓ Cacheo eficiente en BulletBatchRenderer
+ *   ✓ Código más simple y mantenible
  *
  * ── QUÉ NO ESTÁ AQUÍ ──────────────────────────────────────────────────────
  *
  * BulletFlyweight NO contiene:
  *
- *   - BulletBehavior  → puede tener estado (wrappers de amuleto), tiene lifecycle
+ *   - BulletBehavior     → puede tener estado (wrappers de amuleto), tiene lifecycle
  *   - ProjectileMovement → HomingMovement tiene target individual; otros tienen
- *                         estado frame a frame (angle, frameCount)
- *   - damage          → calculado individualmente por ModifiedWeapon + amuletos
- *   - speed           → calculado individualmente
- *   - lifeTime        → calculado individualmente
- *   - target          → estado individual de cada proyectil
+ *                          estado frame a frame (angle, frameCount)
+ *   - damage             → calculado individualmente por ModifiedWeapon + amuletos
+ *   - speed              → calculado individualmente
+ *   - lifeTime           → calculado individualmente
+ *   - target             → estado individual de cada proyectil
  *
  * Estos campos tienen ownership individual y pertenecen a Bullet, no aquí.
  *
  * ── GARANTÍAS DE INMUTABILIDAD ────────────────────────────────────────────
  *
  * BulletFlyweight es un record — todos sus campos son final.
- * La texture no se clona: es un recurso de asset gestionado por AssetRegistry
+ * El SpriteHandle no se clona: es un recurso de asset gestionado por AssetRegistry
  * y es tratado como read-only por el sistema de render.
  *
  * ── ACCESO ────────────────────────────────────────────────────────────────
@@ -48,7 +60,7 @@ import java.awt.image.BufferedImage;
  * No instanciar directamente fuera del paquete Flyweight.
  */
 public record BulletFlyweight(
-        BufferedImage    texture,
+        SpriteHandle     spriteHandle,
         CollisionProfile collisionProfile,
         int              width,
         int              height
@@ -69,9 +81,12 @@ public record BulletFlyweight(
 
     /**
      * true si este Flyweight tiene un sprite válido para renderizar.
-     * false = proyectil invisible (útil para raycast, proyectiles de área).
+     * 
+     * NOTA: Ahora que usamos solo SpriteHandle, esto simplemente verifica
+     * que el handle no sea null. En teoría, NUNCA debería ser null porque
+     * BulletFlyweightCache falla si no puede resolver el asset.
      */
     public boolean hasTexture() {
-        return texture != null;
+        return spriteHandle != null;
     }
 }

@@ -348,7 +348,7 @@ public final class BulletCEEM {
         
         // ── Extraer entradas del modelo ───────────────────────────────────
         
-        // Velocidad final runtime
+        // Velocidad final runtime — leer desde DOD storage, NO desde BulletPhysics legacy
         double vx = bullet.getPhysics().getXspeed();
         double vy = bullet.getPhysics().getYspeed();
         double velocityFinal = Math.sqrt(vx * vx + vy * vy);

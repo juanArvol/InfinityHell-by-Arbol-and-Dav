@@ -142,6 +142,18 @@ public final class PrimitiveStorage {
     // ── State ─────────────────────────────────────────────────────────────
     private int[]   flags;  // bitfield de estado
     private float[] damage; // daño que inflige
+    
+    // ── Health (para enemies) ─────────────────────────────────────────────
+    private float[] health;    // vida actual
+    private float[] maxHealth; // vida máxima
+    
+    // ── Contact Flags (para física de colisiones) ─────────────────────────
+    // Bitfield compacto para flags booleanos:
+    // bit 0: onGround
+    // bit 1: onWall  
+    // bit 2: onCeiling
+    // Uso: (contactFlags[i] & 0x01) != 0 → onGround es true
+    private byte[] contactFlags;
 
     /**
      * Constructor con capacidad inicial por defecto.
@@ -208,6 +220,11 @@ public final class PrimitiveStorage {
 
     public int[]   flags()  { return flags; }
     public float[] damage() { return damage; }
+    
+    public float[] health()    { return health; }
+    public float[] maxHealth() { return maxHealth; }
+    
+    public byte[] contactFlags() { return contactFlags; }
 
     // ── Resize ────────────────────────────────────────────────────────────
 
@@ -255,6 +272,13 @@ public final class PrimitiveStorage {
         // State
         flags = Arrays.copyOf(flags, newCapacity);
         damage = Arrays.copyOf(damage, newCapacity);
+        
+        // Health
+        health = Arrays.copyOf(health, newCapacity);
+        maxHealth = Arrays.copyOf(maxHealth, newCapacity);
+        
+        // Contact flags
+        contactFlags = Arrays.copyOf(contactFlags, newCapacity);
 
         capacity = newCapacity;
     }
@@ -309,6 +333,13 @@ public final class PrimitiveStorage {
         // State
         swapInt(flags, indexA, indexB);
         swapFloat(damage, indexA, indexB);
+        
+        // Health
+        swapFloat(health, indexA, indexB);
+        swapFloat(maxHealth, indexA, indexB);
+        
+        // Contact flags
+        swapByte(contactFlags, indexA, indexB);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -329,6 +360,9 @@ public final class PrimitiveStorage {
         ownerEntityIds = new long[size];
         flags = new int[size];
         damage = new float[size];
+        health = new float[size];
+        maxHealth = new float[size];
+        contactFlags = new byte[size];
     }
 
     private static void swapFloat(float[] array, int i, int j) {
@@ -345,6 +379,12 @@ public final class PrimitiveStorage {
 
     private static void swapLong(long[] array, int i, int j) {
         long temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+    
+    private static void swapByte(byte[] array, int i, int j) {
+        byte temp = array[i];
         array[i] = array[j];
         array[j] = temp;
     }

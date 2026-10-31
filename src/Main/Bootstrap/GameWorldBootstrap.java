@@ -3,12 +3,16 @@ package Main.Bootstrap;
 import Game.Enemys.Core.EnemySpawner;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Simulation.Storage.EntityStore;
+import Game.Engine.Simulation.Systems.*;
 import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.Capability.ProjectileContextResolver;
 import Game.Items.Types.Bullets.Capability.ProjectileSpawningCapability;
 import Game.Items.Types.Bullets.Capability.SpatialQueryCapability;
 import Game.Items.Types.Bullets.Capability.WorldProjectileSpawningProvider;
 import Game.Items.Types.Bullets.Capability.WorldSpatialCapabilityProvider;
+import Game.Items.Types.Bullets.Definition.Bullet;
+import Game.Items.Types.Bullets.Definition.BulletFactory;
 import Game.Items.Types.Bullets.Definition.BulletType;
 import Game.Items.Types.Bullets.ProjectileRegistry;
 import Game.Items.Types.Weapons.WeaponType.WeaponType;
@@ -62,6 +66,8 @@ public final class GameWorldBootstrap {
 
     private final Player player;
     private final ProjectileRegistry projectileRegistry;
+    private final EntityStore entityStore;
+    private final SimulationPipeline simulationPipeline;
 
     /** Bus de eventos del mundo. Lifecycle: desde construcción hasta shutdown(). */
     private final GameEventBus eventBus;
@@ -70,10 +76,44 @@ public final class GameWorldBootstrap {
                               int virtualWidth,
                               int virtualHeight) {
 
+        // ── Inicializar CollisionMatrix ───────────────────────────────────
+        // CRÍTICO: debe configurarse ANTES de crear cualquier objeto con collider
+        Game.Engine.Colisions.Filter.CollisionMatrix.configureDefault();
+        Game.Engine.Colisions.Filter.CollisionMatrix.setEnabled(true);
+
         // ── Bus de eventos del mundo ─────────────────────────────────────
         // Usar el bus que WorldManager ya creó internamente, para que los
         // TransitionEvents y los eventos de gameplay compartan el mismo bus.
         eventBus = worldManager.getEventBus();
+
+        // ── DOD Simulation Infrastructure ────────────────────────────────
+        // Crear EntityStore y SimulationPipeline para procesamiento batch.
+        // DEBE hacerse ANTES de crear Player/Bullets que requieran el store.
+        entityStore = new EntityStore();
+        simulationPipeline = new SimulationPipeline(entityStore);
+        
+        // Supplier dinámico de bullets activas desde WorldManager
+        // Los sistemas híbridos necesitan iterar sobre bullets OOP
+        Iterable<Game.Items.Types.Bullets.Definition.Bullet> bulletsSupplier = () ->
+            worldManager.getGlobalDynamicRegistry()
+                .getAll()
+                .stream()
+                .filter(obj -> obj instanceof Game.Items.Types.Bullets.Definition.Bullet)
+                .map(obj -> (Game.Items.Types.Bullets.Definition.Bullet) obj)
+                .iterator();
+        
+        // Registrar sistemas DOD en orden de ejecución
+        // NOTA: Enemies NO usan estos sistemas batch - usan CollisionsSystem con swept AABB
+        // Solo bullets usan batch processing para optimización
+        simulationPipeline.register(new ProjectileMovementSystem(bulletsSupplier));
+        simulationPipeline.register(new AccelerationSystem());
+        simulationPipeline.register(new MovementSystem());
+        simulationPipeline.register(new LifetimeSystem());
+        simulationPipeline.register(new RotationSystem());
+        simulationPipeline.register(new ProjectileBehaviorSystem(bulletsSupplier));
+        
+        // Configurar BulletFactory con el EntityStore
+        BulletFactory.setEntityStore(entityStore);
 
         // ── Registros globales de ítems ──────────────────────────────────
 
@@ -125,6 +165,19 @@ public final class GameWorldBootstrap {
         
         // Bus en el pool — también antes del Player
         projectileRegistry.getPool().setEventBus(eventBus);
+        
+        // ── HRFC — Player Projectiles Listener ────────────────────────────
+        // CRÍTICO: Registrar ANTES de crear el Player para que el primer disparo
+        // emita el evento correctamente (BulletFactory.emitSpawn verifica hasListeners).
+        eventBus.subscribe(
+            Game.Gameplay.Events.ProjectileEvents.OnProjectileSpawn.class,
+            event -> {
+                Bullet bullet = event.projectile();
+                if (bullet != null) {
+                    worldManager.addDynamic(bullet);
+                }
+            }
+        );
 
         // ── Posición de spawn del jugador ────────────────────────────────
         Vector2D spawnPos = new Vector2D(
@@ -144,8 +197,8 @@ public final class GameWorldBootstrap {
         //
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
-            .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.NORMAL_BULLET)
+            .initialWeapons(WeaponType.ESCOPETA)
+            .initialBullets(BulletType.SPRING_BULLET)
             .initialAmulets(AmuletType.SPLIT_CRYSTAL)
             .build();
         
@@ -188,7 +241,7 @@ public final class GameWorldBootstrap {
         );
 
         // ── Spawn inicial de enemigos — con bus inyectado ─────────────────
-        new EnemySpawner().spawn(worldManager.getCurrentWorld(), 10, eventBus);
+        new EnemySpawner(entityStore).spawn(worldManager.getCurrentWorld(), 10, eventBus);
     }
 
     /** El Player creado durante el bootstrap. */
@@ -206,6 +259,14 @@ public final class GameWorldBootstrap {
     }
 
     /**
+     * Actualiza el SimulationPipeline.
+     * Debe llamarse desde WorldManager.update() ANTES de los sistemas OOP.
+     */
+    public void updateSimulation(double deltaTime) {
+        simulationPipeline.update(deltaTime);
+    }
+
+    /**
      * Libera todos los listeners y referencias de scope World.
      *
      * Llamar cuando el World se destruye (reinicio de partida, cambio de escena,
@@ -214,8 +275,10 @@ public final class GameWorldBootstrap {
      * Limpia:
      *   - ProjectileRegistry: cancela listener en bus + destruye el pool
      *   - AmuletRegistry: elimina el entity provider del World destruido
+     *   - BulletFactory: limpia EntityStore
      */
     public void shutdown() {
+        BulletFactory.clearEntityStore();  // Usar clearEntityStore() en lugar de setEntityStore(null)
         ProjectileRegistry.shutdown();
         Game.Items.Types.Ammulets.AmuletRegistry.setEntityProvider(null);
     }

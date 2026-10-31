@@ -1,6 +1,9 @@
 package Game.Enemys;
 
+import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
+import Game.Engine.Simulation.SimulationHandle;
+import Game.Engine.Simulation.Storage.PrimitiveStorage;
 
 /**
  * Física de enemigos.
@@ -23,8 +26,26 @@ import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
  * por veneno), registrar modificadores externos sin subclasear:
  *
  *   physics.statusStack().add(poisonEffect, ctx -> 0.5);
+ *
+ * ── DOD Integration ───────────────────────────────────────────────────────
+ *
+ * EnemyPhysics ahora lee/escribe velocity desde PrimitiveStorage en lugar
+ * de usar el Vector2D interno heredado de Physics2D.
+ * 
+ * Toda la lógica de moveX(), modificadores, fricción, etc. permanece igual.
+ * Solo cambia DÓNDE se almacena la velocity.
  */
 public class EnemyPhysics extends Physics2D {
+
+    // ── DOD Storage ───────────────────────────────────────────────────────
+    // Public para que Physics2D pueda acceder en logging debug
+    public PrimitiveStorage storage;
+    public SimulationHandle handle;
+    
+    // Máscaras de bits para contactFlags
+    private static final byte FLAG_ON_GROUND  = 0x01; // bit 0
+    private static final byte FLAG_ON_WALL    = 0x02; // bit 1
+    private static final byte FLAG_ON_CEILING = 0x04; // bit 2
 
     /**
      * Constructor 1: Propiedades físicas básicas.
@@ -98,5 +119,177 @@ public class EnemyPhysics extends Physics2D {
         this.aAir = aAir;
         this.speedMaxPiso = speedMaxGround;
         this.speedMaxAir = speedMaxAir;
+    }
+
+    // ── DOD Integration ───────────────────────────────────────────────────
+
+    /**
+     * Conecta este EnemyPhysics al storage DOD.
+     * Debe llamarse DESPUÉS de crear la entidad en EntityStore.
+     * 
+     * @param storage PrimitiveStorage compartido
+     * @param handle handle válido de este enemy
+     */
+    public void connectDOD(PrimitiveStorage storage, SimulationHandle handle) {
+        this.storage = storage;
+        this.handle = handle;
+        
+        // Sincronizar Vector2D interno con DOD storage inicial
+        int idx = handle.index();
+        velocity.setX(storage.velocitiesX()[idx]);
+        velocity.setY(storage.velocitiesY()[idx]);
+    }
+
+    /**
+     * Override de getVelocity() para leer desde DOD storage.
+     * 
+     * CollisionsSystem llama este método, por eso DEBE sincronizar desde DOD.
+     */
+    @Override
+    public Vector2D getVelocity() {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            // Sincronizar desde DOD antes de retornar
+            float vx = storage.velocitiesX()[idx];
+            float vy = storage.velocitiesY()[idx];
+            velocity.setX(vx);
+            velocity.setY(vy);
+        }
+        return velocity;
+    }
+    
+    /**
+     * Override de getOnGround() para leer desde DOD storage.
+     * 
+     * CollisionsSystem y GroundMovement llaman este método.
+     */
+    @Override
+    public boolean getOnGround() {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte flags = storage.contactFlags()[idx];
+            return (flags & FLAG_ON_GROUND) != 0;
+        }
+        return super.getOnGround();
+    }
+    
+    /**
+     * Override de setOnGround() para escribir en DOD storage.
+     * 
+     * CollisionsSystem llama este método cuando detecta colisión con el suelo.
+     */
+    @Override
+    public void setOnGround(boolean value) {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte[] flags = storage.contactFlags();
+            if (value) {
+                flags[idx] |= FLAG_ON_GROUND;  // Activar bit 0
+            } else {
+                flags[idx] &= ~FLAG_ON_GROUND; // Desactivar bit 0
+            }
+            // También sincronizar a variable interna OOP
+            onGround = value;
+        } else {
+            super.setOnGround(value);
+        }
+    }
+    
+    /**
+     * Override de getOnWall() para leer desde DOD storage.
+     */
+    @Override
+    public boolean getOnWall() {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte flags = storage.contactFlags()[idx];
+            return (flags & FLAG_ON_WALL) != 0;
+        }
+        return super.getOnWall();
+    }
+    
+    /**
+     * Override de setOnWall() para escribir en DOD storage.
+     */
+    @Override
+    public void setOnWall(boolean value) {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte[] flags = storage.contactFlags();
+            if (value) {
+                flags[idx] |= FLAG_ON_WALL;  // Activar bit 1
+            } else {
+                flags[idx] &= ~FLAG_ON_WALL; // Desactivar bit 1
+            }
+            onWall = value;
+        } else {
+            super.setOnWall(value);
+        }
+    }
+    
+    /**
+     * Override de getOnCeiling() para leer desde DOD storage.
+     */
+    @Override
+    public boolean getOnCeiling() {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte flags = storage.contactFlags()[idx];
+            return (flags & FLAG_ON_CEILING) != 0;
+        }
+        return super.getOnCeiling();
+    }
+    
+    /**
+     * Override de setOnCeiling() para escribir en DOD storage.
+     */
+    @Override
+    public void setOnCeiling(boolean value) {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            byte[] flags = storage.contactFlags();
+            if (value) {
+                flags[idx] |= FLAG_ON_CEILING;  // Activar bit 2
+            } else {
+                flags[idx] &= ~FLAG_ON_CEILING; // Desactivar bit 2
+            }
+            onCeiling = value;
+        } else {
+            super.setOnCeiling(value);
+        }
+    }
+
+    /**
+     * Override de vSetX() para escribir en DOD storage.
+     * 
+     * Llamado por moveX() al final de su cálculo.
+     */
+    @Override
+    public void vSetX(double vX) {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            // Escribir a DOD storage
+            storage.velocitiesX()[idx] = (float) vX;
+            // Sincronizar Vector2D interno
+            velocity.setX(vX);
+        } else {
+            super.vSetX(vX);
+        }
+    }
+
+    /**
+     * Override de vSetY() para escribir en DOD storage.
+     */
+    @Override
+    public void vSetY(double vY) {
+        if (storage != null && handle != null) {
+            int idx = handle.index();
+            // Escribir a DOD storage
+            storage.velocitiesY()[idx] = (float) vY;
+            // Sincronizar Vector2D interno
+            velocity.setY(vY);
+        } else {
+            super.vSetY(vY);
+        }
     }
 }

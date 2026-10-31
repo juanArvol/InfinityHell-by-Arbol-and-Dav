@@ -2,6 +2,7 @@ package Game.Enemys.Core;
 
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Simulation.Storage.EntityStore;
 import Game.World.Core.World;
 import Game.World.Spawn.SpawnDescriptor;
 import Game.World.Spawn.SpawnPoint;
@@ -48,7 +49,11 @@ import Game.World.Spawn.Strategies.EnemySpawnStrategy;
  */
 public class EnemySpawner {
 
-    public EnemySpawner() {}
+    private final EntityStore entityStore;
+
+    public EnemySpawner(EntityStore entityStore) {
+        this.entityStore = entityStore;
+    }
 
     // ── API legada (retrocompatible) ──────────────────────────────────────
 
@@ -71,7 +76,7 @@ public class EnemySpawner {
         for (int i = 0; i < count; i++) {
             EnemyFactory.EnemyId type = types[(int)(Math.random() * types.length)];
             Vector2D pos   = randomPosition(world);
-            Enemy    enemy = EnemyFactory.create(type, pos, eventBus);
+            Enemy    enemy = EnemyFactory.create(type, pos, eventBus, entityStore);
             world.addDynamic(enemy);
         }
     }
@@ -88,7 +93,7 @@ public class EnemySpawner {
     }
 
     public void spawnAt(World world, EnemyFactory.EnemyId type, Vector2D pos, GameEventBus eventBus) {
-        Enemy enemy = EnemyFactory.create(type, pos, eventBus);
+        Enemy enemy = EnemyFactory.create(type, pos, eventBus, entityStore);
         world.addDynamic(enemy);
     }
 
@@ -104,7 +109,7 @@ public class EnemySpawner {
     }
 
     public void spawnWith(World world, EnemyAssembler assembler, Vector2D pos, GameEventBus eventBus) {
-        Enemy enemy = EnemyFactory.create(assembler, pos, eventBus);
+        Enemy enemy = EnemyFactory.create(assembler, pos, eventBus, entityStore);
         world.addDynamic(enemy);
     }
 
@@ -129,7 +134,7 @@ public class EnemySpawner {
         SpawnPoint point = SpawnPoint.worldBounds(1280, 720, 60);
         SpawnDescriptor desc = SpawnDescriptor.builder()
             .id("enemy_spawner_" + System.nanoTime())
-            .strategy(EnemySpawnStrategy.random(eventBus))
+            .strategy(EnemySpawnStrategy.random(eventBus, entityStore))
             .point(point)
             .build();
         for (int i = 0; i < count; i++) {
@@ -149,7 +154,7 @@ public class EnemySpawner {
                                   Vector2D pos) {
         SpawnDescriptor desc = SpawnDescriptor.builder()
             .id("enemy_at_" + System.nanoTime())
-            .strategy(EnemySpawnStrategy.of(type))
+            .strategy(EnemySpawnStrategy.of(type, entityStore))
             .point(SpawnPoint.at(pos))
             .build();
 

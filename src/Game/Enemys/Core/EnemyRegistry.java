@@ -2,6 +2,7 @@ package Game.Enemys.Core;
 
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Simulation.Storage.EntityStore;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -100,17 +101,18 @@ public final class EnemyRegistry {
      * @param id       identificador del tipo de enemy registrado.
      * @param position posición inicial en el mundo.
      * @param eventBus bus de eventos inyectado en el Enemy.
+     * @param entityStore almacenamiento DOD para la entidad.
      * @return Enemy listo para añadir al mundo.
      * @throws IllegalArgumentException si el ID no está registrado.
      */
-    public static Enemy create(String id, Vector2D position, GameEventBus eventBus) {
+    public static Enemy create(String id, Vector2D position, GameEventBus eventBus, EntityStore entityStore) {
         Supplier<EnemyAssembler> supplier = registry.get(id);
         if (supplier == null) {
             throw new IllegalArgumentException(
                 "EnemyRegistry: no assembler registered for id='" + id + "'"
             );
         }
-        return supplier.get().assemble(position, eventBus);
+        return supplier.get().assemble(position, eventBus, entityStore);
     }
 
     /**
@@ -119,9 +121,10 @@ public final class EnemyRegistry {
      * @param assembler assembler a usar.
      * @param position  posición inicial en el mundo.
      * @param eventBus  bus de eventos inyectado en el Enemy.
+     * @param entityStore almacenamiento DOD para la entidad.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus) {
-        return assembler.assemble(position, eventBus);
+    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus, EntityStore entityStore) {
+        return assembler.assemble(position, eventBus, entityStore);
     }
 }

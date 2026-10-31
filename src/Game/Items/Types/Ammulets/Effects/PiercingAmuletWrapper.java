@@ -1,7 +1,7 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
-import Game.Engine.Entity;
+import Game.Engine.AbstractEntity;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
 import Game.Items.Types.Bullets.BulletComport.BulletBehaviorWrapper;
@@ -19,7 +19,7 @@ import java.util.Set;
  * ── HRFC — Projectile System Refactor ────────────────────────────────────
  *
  * PROBLEMA ANTERIOR (identityHashCode):
- *   Usaba System.identityHashCode(entity) para deduplicar impactos.
+ *   Usaba System.identityHashCode(AbstractEntity) para deduplicar impactos.
  *   identityHashCode() puede tener colisiones (dos objetos distintos con
  *   el mismo hashCode). La probabilidad es baja por entidad individual,
  *   pero en un bullet-hell con miles de entidades simultáneas puede ocurrir.
@@ -74,7 +74,7 @@ public class PiercingAmuletWrapper extends BulletBehaviorWrapper {
      *
      * Se limpia en onWrapperRelease() al final del lifecycle del proyectil.
      */
-    private Set<Entity> hitEntities =
+    private Set<AbstractEntity> hitEntities =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
     public PiercingAmuletWrapper(BulletBehavior inner, int maxPierces) {
@@ -83,9 +83,9 @@ public class PiercingAmuletWrapper extends BulletBehaviorWrapper {
     }
 
     @Override
-    protected void onHitEntity(Bullet bullet, AbstractEntity entity) {
+    protected void onHitEntity(Bullet bullet, AbstractEntity AbstractEntity) {
         // hitEntities usa identidad de referencia — sin colisiones de hashCode
-        if (!hitEntities.add(entity)) return; // ya impactó a esta entidad
+        if (!hitEntities.add(AbstractEntity)) return; // ya impactó a esta entidad
 
         pierceCount++;
 
@@ -95,7 +95,7 @@ public class PiercingAmuletWrapper extends BulletBehaviorWrapper {
 
             var bus = bullet.getEventBus();
             if (bus != null && bus.hasListeners(ProjectileEvents.OnProjectilePierce.class)) {
-                bus.post(new ProjectileEvents.OnProjectilePierce(bullet, entity));
+                bus.post(new ProjectileEvents.OnProjectilePierce(bullet, AbstractEntity));
             }        }
         // Si superó maxPierces, el inner ya mató el proyectil con kill()
     }

@@ -345,6 +345,10 @@ public final class Animation {
 
         // ── Construcción de la secuencia ──────────────────────────────────
 
+        // ══════════════════════════════════════════════════════════════
+        // API MEJORADA - Construcción Declarativa de Secuencias
+        // ══════════════════════════════════════════════════════════════
+
         /**
          * Añade un único frame a la secuencia.
          *
@@ -354,6 +358,16 @@ public final class Animation {
             validateIndex(frameIndex);
             sequence.add(frameIndex);
             return this;
+        }
+
+        /**
+         * Inicia la secuencia desde un frame específico (útil para offset).
+         * Es equivalente a .frame(start) pero más expresivo.
+         *
+         *   .startFrom(3).frame(3, 10)  →  comienza en frame 3
+         */
+        public Builder startFrom(int frameIndex) {
+            return frame(frameIndex);
         }
 
         /**
@@ -471,6 +485,76 @@ public final class Animation {
         }
 
         /**
+         * Mantiene (hold/pause) el frame actual por más tiempo.
+         * Útil para pausas expresivas en animaciones.
+         *
+         *   .frame(0, 5).hold(60)  // Último frame dura 60 ticks
+         */
+        public Builder hold(int ticks) {
+            if (sequence.isEmpty()) {
+                throw new IllegalStateException("Builder.hold: no hay frames en la secuencia");
+            }
+            int lastPos = sequence.size() - 1;
+            return frameDuration(lastPos, ticks);
+        }
+
+        /**
+         * Aplica duraciones variables a un rango para crear aceleración/desaceleración.
+         * Los frames intermedios se interpolan linealmente.
+         *
+         * Ejemplo - Acelerar:
+         *   .frame(0, 10).speedRamp(0, 10, 20, 4)
+         *   → frame 0 dura 20 ticks, frame 10 dura 4 ticks, los demás interpolan
+         *
+         * Ejemplo - Desacelerar:
+         *   .frame(0, 10).speedRamp(0, 10, 4, 20)
+         *
+         * @param startPos  posición inicial en la secuencia
+         * @param endPos    posición final en la secuencia
+         * @param startTicks duración del primer frame
+         * @param endTicks   duración del último frame
+         */
+        public Builder speedRamp(int startPos, int endPos, int startTicks, int endTicks) {
+            if (startPos < 0 || endPos >= sequence.size() || startPos > endPos) {
+                throw new IllegalArgumentException("Builder.speedRamp: rango inválido");
+            }
+            
+            int count = endPos - startPos + 1;
+            for (int i = 0; i < count; i++) {
+                float t = count == 1 ? 0 : (float) i / (count - 1);
+                int ticks = Math.round(startTicks + (endTicks - startTicks) * t);
+                frameDuration(startPos + i, ticks);
+            }
+            return this;
+        }
+
+        /**
+         * Acelera gradualmente desde el inicio hasta alcanzar la velocidad base.
+         *
+         *   .frame(0, 10).accelerateFrom(20, 5)
+         *   → Los primeros 5 frames aceleran de 20 ticks a velocidad base
+         */
+        public Builder accelerateFrom(int startTicks, int frameCount) {
+            if (sequence.size() < frameCount) {
+                frameCount = sequence.size();
+            }
+            return speedRamp(0, frameCount - 1, startTicks, defaultTicksPerFrame);
+        }
+
+        /**
+         * Desacelera gradualmente hacia el final.
+         *
+         *   .frame(0, 10).decelerateTo(30, 5)
+         *   → Los últimos 5 frames desaceleran hasta 30 ticks
+         */
+        public Builder decelerateTo(int endTicks, int frameCount) {
+            if (sequence.isEmpty()) return this;
+            int end = sequence.size() - 1;
+            int start = Math.max(0, end - frameCount + 1);
+            return speedRamp(start, end, defaultTicksPerFrame, endTicks);
+        }
+
+        /**
          * Cambia la duración base (ticks por frame) para todos los frames
          * que no tengan duración individual asignada.
          */
@@ -500,6 +584,78 @@ public final class Animation {
             this.loopStart = loopStart;
             this.loopEnd   = loopEnd;
             return this;
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // API MEJORADA - Intro + Loop Declarativo
+        // ══════════════════════════════════════════════════════════════════
+
+        /**
+         * Define una INTRO que se reproduce una vez, seguida de un LOOP infinito.
+         * 
+         * Este es el patrón más común para animaciones complejas:
+         *   - Reproduce frames de intro una sola vez (transición desde idle)
+         *   - Luego hace loop infinito en los frames principales
+         *
+         * Ejemplo - Animación de caminar con transición:
+         *   .playOnce(0, 2)      // Frames 0-2 se reproducen UNA vez
+         *   .thenLoop(3, 14)     // Luego loop infinito en frames 3-14
+         *   .defaultDuration(6)
+         *
+         * Ejemplo - Animación de ataque:
+         *   .playOnce(0, 5)      // Carga del ataque
+         *   .thenLoop(6, 9)      // Mantener posición de ataque
+         *   .once()              // ... pero en realidad se reproduce una vez
+         *
+         * @param introStart primer frame de la intro
+         * @param introEnd   último frame de la intro (inclusivo)
+         */
+        public Builder playOnce(int introStart, int introEnd) {
+            frame(introStart, introEnd);
+            return this;
+        }
+
+        /**
+         * Define el segmento que se repetirá en loop después de la intro.
+         * Debe llamarse después de playOnce().
+         *
+         * @param loopStart primer frame del loop
+         * @param loopEnd   último frame del loop (inclusivo)
+         */
+        public Builder thenLoop(int loopStart, int loopEnd) {
+            int introLength = sequence.size();
+            frame(loopStart, loopEnd);
+            
+            // Configurar loop interno: vuelve a la posición donde empieza el loop
+            int loopStartPos = introLength;
+            int loopEndPos = sequence.size() - 1;
+            return loopFromToHere(loopStartPos, loopEndPos);
+        }
+
+        /**
+         * Atajo: loop simple sin intro.
+         *
+         *   .loopFrames(3, 14).defaultDuration(6)
+         *   
+         * Es equivalente a:
+         *   .frame(3, 14).loop()
+         */
+        public Builder loopFrames(int start, int end) {
+            frame(start, end);
+            return loop();
+        }
+
+        /**
+         * Atajo: reproducir frames una vez sin loop.
+         *
+         *   .playFrames(0, 10).defaultDuration(5)
+         *
+         * Es equivalente a:
+         *   .frame(0, 10).once()
+         */
+        public Builder playFrames(int start, int end) {
+            frame(start, end);
+            return once();
         }
 
         // ── Modo de loop ──────────────────────────────────────────────────

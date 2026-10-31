@@ -50,6 +50,7 @@ public final class ComponentType {
 
     // ── Metadata (24-31) ──────────────────────────────────────────────────
     public static final int OWNER        = 24; // ownerEntityIds (quien disparó)
+    public static final int HEALTH       = 25; // health/maxHealth (vida de enemigos)
 
     // ── State (32-39) ─────────────────────────────────────────────────────
     public static final int FLAGS        = 32; // flags (bitfield de estado)
@@ -81,6 +82,20 @@ public final class ComponentType {
         .with(MASS)
         .with(DRAG)
         .with(OWNER);
+
+    /**
+     * Máscara para enemigos normales (Enemy, no bosses).
+     * Incluye los datos que se procesan en batch:
+     * - Position, Velocity, Acceleration (movimiento)
+     * - Health (vida y daño)
+     * - Flags (estado)
+     */
+    public static final ComponentMask ENEMY_MASK = ComponentMask.EMPTY
+        .with(POSITION)
+        .with(VELOCITY)
+        .with(ACCELERATION)
+        .with(HEALTH)
+        .with(FLAGS);
 
     /**
      * Máscara para entidades con física completa.

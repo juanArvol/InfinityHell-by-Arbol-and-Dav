@@ -1,7 +1,6 @@
 package Game.Engine.Simulation.Systems;
 
 import Game.Engine.Simulation.Storage.EntityStore;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

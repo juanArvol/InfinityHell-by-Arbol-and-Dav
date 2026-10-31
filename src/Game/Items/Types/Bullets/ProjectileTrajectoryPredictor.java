@@ -114,27 +114,89 @@ public final class ProjectileTrajectoryPredictor {
 
     /**
      * Predice la trayectoria de un proyectil con homing hacia un target.
-     * Pendiente de implementación completa.
+     *
+     * Simula el comportamiento de HomingMovement: en cada frame, el proyectil
+     * rota su vector de velocidad hacia el target, limitado por turnSpeed.
+     * Esto produce una curva suave que converge gradualmente hacia el objetivo.
+     *
+     * IMPORTANTE: Esta simulación asume que el target está estático.
+     * Un target en movimiento produciría una trayectoria diferente en tiempo real.
      *
      * @param spawnPosition posición inicial del proyectil (mundo)
-     * @param direction     dirección inicial del disparo
-     * @param speed         velocidad del proyectil
-     * @param lifeTime      frames de vida máximos
+     * @param direction     dirección inicial del disparo (normalizada)
+     * @param speed         velocidad del proyectil (unidades/segundo)
+     * @param lifeTime      tiempo de vida máximo en segundos
      * @param targetPosition posición del target (puede ser null si no hay target)
-     * @param homingStrength fuerza de homing (0.0-1.0)
+     * @param turnSpeedDeg   velocidad de giro en grados/frame @ 30 FPS
      * @return predicción de trayectoria con curvas de homing
      */
     public static TrajectoryPrediction predictHoming(
             Vector2D spawnPosition,
             Vector2D direction,
             double speed,
-            int lifeTime,
+            double lifeTime,
             Vector2D targetPosition,
-            double homingStrength) {
+            double turnSpeedDeg) {
 
-        // TODO: Implementar simulación de homing
-        // Por ahora, fallback a trayectoria lineal
-        return predict(spawnPosition, direction, speed, lifeTime, 0.0, 0.0);
+        // Si no hay target, fallback a trayectoria lineal
+        if (targetPosition == null) {
+            int frames = (int)(lifeTime * 30.0); // convertir a frames @ 30 FPS
+            return predict(spawnPosition, direction, speed, frames, 0.0, 0.0);
+        }
+
+        List<Vector2D> points = new ArrayList<>();
+        
+        // Convertir turnSpeed de grados a radianes
+        double turnSpeedRad = Math.toRadians(turnSpeedDeg);
+        
+        // Estado inicial del proyectil
+        double px = spawnPosition.getX();
+        double py = spawnPosition.getY();
+        double currentAngle = Math.atan2(direction.getY(), direction.getX());
+        
+        // Calcular número de frames @ 30 FPS legacy
+        int frames = (int)(lifeTime * 30.0);
+        double deltaTime = 1.0 / 30.0; // frame time @ 30 FPS
+        
+        for (int i = 0; i < frames; i++) {
+            points.add(new Vector2D(px, py));
+            
+            // Calcular dirección al target
+            double dx = targetPosition.getX() - px;
+            double dy = targetPosition.getY() - py;
+            double dist = Math.hypot(dx, dy);
+            
+            // Si está muy cerca del target, continuar en línea recta
+            if (dist < 1e-6) {
+                px += Math.cos(currentAngle) * speed * deltaTime;
+                py += Math.sin(currentAngle) * speed * deltaTime;
+                continue;
+            }
+            
+            // Ángulo objetivo
+            double targetAngle = Math.atan2(dy, dx);
+            
+            // Diferencia angular más corta (entre -π y π)
+            double diff = targetAngle - currentAngle;
+            while (diff >  Math.PI) diff -= 2 * Math.PI;
+            while (diff < -Math.PI) diff += 2 * Math.PI;
+            
+            // Limitar el giro por frame (simulando HomingMovement.tick)
+            double rotation = Math.copySign(
+                Math.min(Math.abs(diff), turnSpeedRad), 
+                diff
+            );
+            currentAngle += rotation;
+            
+            // Actualizar posición con nueva dirección
+            px += Math.cos(currentAngle) * speed * deltaTime;
+            py += Math.sin(currentAngle) * speed * deltaTime;
+        }
+
+        return new TrajectoryPrediction(
+                Collections.unmodifiableList(points),
+                TrajectoryType.HOMING
+        );
     }
 
     /**

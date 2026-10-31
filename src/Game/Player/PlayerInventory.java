@@ -1,7 +1,6 @@
 package Game.Player;
 
 import Game.Items.Types.Ammulets.AmuletInventory;
-import Game.Items.Types.Ammulets.AmuletRegistry;
 import Game.Items.Types.Ammulets.AmuletType;
 import Game.Items.Types.Bullets.BulletInventory;
 import Game.Items.Types.Bullets.Definition.BulletType;
@@ -81,7 +80,7 @@ public final class PlayerInventory {
     public PlayerInventory() {
         this.weapons = new WeaponInventory(0,null);    // Items.Types.Weapons
         this.bullets = new BulletInventory(0,null);    // Items.Types.Bullets  
-        this.amulets = new AmuletInventory(0);    // Items.Types.Ammulets
+        this.amulets = new AmuletInventory(0, null);    // Items.Types.Ammulets (eventBus null en test/mock)
     }
 
     // ── Acceso a inventarios especializados ───────────────────────────────

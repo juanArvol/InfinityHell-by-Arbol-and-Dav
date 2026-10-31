@@ -1,9 +1,9 @@
 package Game.Enemys.EnemyTypes.Zombie;
 
+import Game.Enemys.Core.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Enemy;
 import Game.Enemys.Core.EnemyAssembler;
 import Game.Enemys.Core.EnemyDefinition;
-import Game.Enemys.Core.AI.Behaviors.AggressiveBehavior;
 import Game.Enemys.Core.Movement.GroundMovement;
 import Game.Enemys.EnemyPhysics;
 import Game.Engine.Entity.Attributes.EntityAttributes;
@@ -14,39 +14,87 @@ import Game.Engine.Entity.Stats.EntityStats;
 import Sprites.Entity.Enemys.noBoss.Zombie.EnemyAssets;
 
 /**
- * Ensamblador del Zombie — enemigo terrestre estándar.
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ZombieAssembler — Enemigo Terrestre Estándar
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * ── HRFC-007 — Living Entity Core ────────────────────────────────────────
- * Migrado a los tipos genéricos del Living Entity Core:
- *   EnemyStats       → EntityStats
- *   EnemyAttributes  → EntityAttributes
- *   AttackSource/s   → Game.Living.Combat
+ * DESCRIPCIÓN:
+ *   Enemigo terrestre básico con movimiento por gravedad. Camina sobre el suelo,
+ *   persigue al jugador cuando lo detecta, ataca cuerpo a cuerpo.
  *
- * Fuente de ataque: NATURAL. El Zombie es un muerto viviente que ataca
- * únicamente con su cuerpo.
+ * COMPORTAMIENTO:
+ *   • Movimiento: Terrestre (GroundMovement)
+ *   • AI: Agresiva (persigue cuando detecta)
+ *   • Ataque: Cuerpo a cuerpo al entrar en rango
+ *   • Facción: UNDEAD (no ataca a otros undead)
+ *
+ * FÍSICA:
+ *   - Gravedad normal (igual que Player)
+ *   - Más pesado que Player (más difícil de empujar)
+ *   - Movimiento terrestre con fricción estándar
+ *
+ * USO TÍPICO:
+ *   Enemigo común, spawns masivos, hordas
  */
 public final class ZombieAssembler extends EnemyAssembler {
 
-    private static final int    MAX_HEALTH       = 100;
-    private static final double DETECTION_RANGE  = 400.0;
-    private static final double ATTACK_RANGE     = 50.0;
-    private static final double MOVE_SPEED       = 1.0;
-    private static final int    DAMAGE           = 10;
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 1: PROPIEDADES FÍSICAS
+    // ═════════════════════════════════════════════════════════════════════
+    
+    /** Gravedad en units/s² (igual que Player para consistencia) */
+    private static final double GRAVITY = 23.4;
+    
+    /** Masa del enemigo (2× Player, más difícil de empujar) */
+    private static final double MASS = 80.0;
+    
+    /** Área efectiva expuesta al aire */
+    private static final double EFFECTIVE_AREA = 1.0;
+    
+    /** Coeficiente de resistencia del aire */
+    private static final double DRAG_COEFFICIENT = 0.00001;
+    
+    /** Factor de deslizamiento en tierra (fricción) */
+    private static final double SLIDE = 0.8;
+    
+    /** Aceleración en tierra en units/s² */
+    private static final double ACCEL_GROUND = 2190.0;
+    
+    /** Aceleración en aire en units/s² (poco control aéreo) */
+    private static final double ACCEL_AIR = 300.0;
+    
+    /** Velocidad máxima en tierra en units/s */
+    private static final double SPEED_MAX_GROUND = 900.0;
+    
+    /** Velocidad máxima en aire in units/s */
+    private static final double SPEED_MAX_AIR = 600.0;
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 2: PROPIEDADES DE GAMEPLAY
+    // ═════════════════════════════════════════════════════════════════════
+    
+    /** Vida máxima */
+    private static final int MAX_HEALTH = 100;
+    
+    /** Rango de detección del jugador en units */
+    private static final double DETECTION_RANGE = 9000.0;
+    
+    /** Rango de ataque cuerpo a cuerpo in units */
+    private static final double ATTACK_RANGE = 50.0;
+    
+    /** Velocidad de movimiento AI in units/s */
+    private static final double MOVE_SPEED = 250.0;
+    
+    /** Daño por ataque */
+    private static final int DAMAGE = 10;
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 3: ASSEMBLER IMPLEMENTATION
+    // ═════════════════════════════════════════════════════════════════════
 
     @Override
     protected EnemyDefinition definition() {
-        // Física terrestre con todos los parámetros de groundStandard()
-        EnemyPhysics physics = new EnemyPhysics(
-            580,  // gravity
-            80,   // mass
-            1.0,  // effectiveArea
-            9,    // dragCoefficient
-            0.8,  // slide
-            190,  // aGround
-            300,  // aAir
-            900,  // speedMaxGround
-            600   // speedMaxAir
-        );
+        EnemyPhysics physics = createPhysics();
         
         return EnemyDefinition.builder()
             .sprite(EnemyAssets.normalHandle)
@@ -89,5 +137,31 @@ public final class ZombieAssembler extends EnemyAssembler {
     @Override
     protected void configureVisual(Enemy enemy) {
         enemy.addComponent(new AnimationControllerComponent(EnemyAssets.normalHandle, "idle"));
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // SECCIÓN 4: CONFIGURACIÓN INTERNA
+    // ═════════════════════════════════════════════════════════════════════
+
+    /**
+     * Crea configuración física del Zombie.
+     * 
+     * Física terrestre completa con:
+     *   - Gravedad normal (como Player)
+     *   - Mayor masa (más resistente a knockback)
+     *   - Parámetros terrestres (accel, velocidad máxima)
+     */
+    private EnemyPhysics createPhysics() {
+        return new EnemyPhysics(
+            GRAVITY,
+            MASS,
+            EFFECTIVE_AREA,
+            DRAG_COEFFICIENT,
+            SLIDE,
+            ACCEL_GROUND,
+            ACCEL_AIR,
+            SPEED_MAX_GROUND,
+            SPEED_MAX_AIR
+        );
     }
 }

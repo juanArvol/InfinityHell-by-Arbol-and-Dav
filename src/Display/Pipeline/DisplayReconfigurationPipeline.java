@@ -104,6 +104,13 @@ public final class DisplayReconfigurationPipeline
     /** Estado canónico. Única fuente de verdad dentro del Pipeline. */
     private DisplayState currentState;
 
+    /**
+     * Contador de reintentos consecutivos para evitar loops infinitos.
+     * HRFC-004: Protección contra retry infinito durante transiciones.
+     */
+    private int consecutiveRetries = 0;
+    private static final int MAX_CONSECUTIVE_RETRIES = 10;
+
     public DisplayReconfigurationPipeline(
             AwtWindowBackend backend,
             FullscreenManager fullscreenManager,
@@ -441,6 +448,7 @@ public final class DisplayReconfigurationPipeline
             SnapshotValidator.ValidationResult ready = SnapshotValidator.isBootstrapReady(snapshot2);
 
             if (built && ready.passed) {
+                consecutiveRetries = 0; // Reset counter on success
                 publishStateFromSnapshot(snapshot2, SurfaceState.READY);
                 surfacePublisher.openGate();
                 backend.requestCanvasFocus();
@@ -495,6 +503,7 @@ public final class DisplayReconfigurationPipeline
             SnapshotValidator.ValidationResult ready = SnapshotValidator.isBootstrapReady(snapshot2);
 
             if (built && ready.passed) {
+                consecutiveRetries = 0; // Reset counter on recovery success
                 publishStateFromSnapshot(snapshot2, SurfaceState.READY);
                 surfacePublisher.openGate();
                 LOG.info("Pipeline: emergency recovery succeeded.");
@@ -640,8 +649,44 @@ public final class DisplayReconfigurationPipeline
 
     // ── Recovery ─────────────────────────────────────────────────────────────
 
+    /**
+     * Programa un reintento de construcción de surface.
+     * 
+     * HRFC-004: Protección contra retry loops infinitos.
+     * 
+     * Si se excede MAX_CONSECUTIVE_RETRIES, se abre la gate con el estado
+     * degradado actual para evitar que el juego quede con pantalla negra
+     * indefinidamente. Esto permite que el GameLoop al menos intente renderizar,
+     * aunque la BS pueda tener contentsLost transitorio.
+     * 
+     * El contador se resetea en cualquier transición exitosa.
+     */
     private void scheduleBuildRetry() {
-        LOG.warning("Pipeline: scheduling build retry");
+        consecutiveRetries++;
+        
+        if (consecutiveRetries >= MAX_CONSECUTIVE_RETRIES) {
+            LOG.severe("Pipeline: MAX_CONSECUTIVE_RETRIES (" + MAX_CONSECUTIVE_RETRIES 
+                     + ") exceeded — opening gate in degraded mode to prevent permanent black screen");
+            consecutiveRetries = 0; // Reset para próximas transiciones
+            
+            // Intentar abrir gate con el estado actual (aunque no sea ideal)
+            // Esto permite que el GameLoop al menos intente renderizar.
+            // El do-while de RenderFrame.present() manejará contentsLost si ocurre.
+            DisplaySnapshot emergency = backend.readSnapshot();
+            if (emergency.bufferStrategyPresent()) {
+                publishStateFromSnapshot(emergency, SurfaceState.READY);
+                surfacePublisher.openGate();
+                LOG.warning("Pipeline: emergency gate opened with existing BufferStrategy");
+            } else {
+                // Ni siquiera hay BS — publicar LOST pero no reintentar más.
+                publishTransientState(SurfaceState.LOST);
+                LOG.severe("Pipeline: no BufferStrategy available after max retries — rendering disabled");
+            }
+            return;
+        }
+        
+        LOG.warning("Pipeline: scheduling build retry (" + consecutiveRetries 
+                  + "/" + MAX_CONSECUTIVE_RETRIES + ")");
         try { onBuildFailed.run(); }
         catch (Exception e) {
             LOG.warning("Pipeline: onBuildFailed callback threw: " + e.getMessage());

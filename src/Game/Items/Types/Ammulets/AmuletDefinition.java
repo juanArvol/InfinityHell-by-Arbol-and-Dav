@@ -108,6 +108,16 @@ public final class AmuletDefinition extends ItemDefinition {
                     )
             );
 
+    public static final AmuletDefinition EXPLOSION_SHIELD =
+            new AmuletDefinition(
+                    AmuletID.EXPLOSION_SHIELD,
+                    new VisualDefinition(
+                            "Escudo de Explosión",
+                            "Anula el daño de tus propias explosiones. El empuje se mantiene.",
+                            ItemRarity.EPIC
+                    )
+            );
+
     // ── Constructor ──────────────────────────────────────────────────────
 
     private AmuletDefinition(

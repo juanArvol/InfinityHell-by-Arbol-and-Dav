@@ -32,7 +32,8 @@ public enum AmuletID implements ItemID {
     ECHO_STONE,
     SPLIT_CRYSTAL,
     PIERCING,
-    BOUNCE;
+    BOUNCE,
+    EXPLOSION_SHIELD;
 
     @Override
     public String asString() {

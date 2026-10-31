@@ -51,9 +51,13 @@ public final class FollowCameraController implements CameraController {
      * El parámetro {@code disambiguator} (siempre {@code null}) existe
      * exclusivamente para diferenciar esta sobrecarga de los constructores
      * públicos y evitar ambigüedad. No tiene semántica propia.
+     * 
+     * @param supplier el proveedor de posición del objetivo
+     * @param lerpFactor velocidad de interpolación
+     * @param disambiguator parámetro de desambiguación (siempre null)
      */
     private FollowCameraController(Supplier<Vector2D> supplier, float lerpFactor,
-                                    @SuppressWarnings("unused") Void disambiguator) {
+                                    Void disambiguator) {
         this.positionSupplier = supplier;
         this.lerpFactor       = lerpFactor;
     }

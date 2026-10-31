@@ -15,6 +15,7 @@ import Game.Engine.Entity.Stats.EntityStats;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.Core.PhysicalState;
+import Game.Engine.Simulation.Storage.EntityStore;
 
 /**
  * Contrato base del ensamblador de Enemy.
@@ -59,9 +60,10 @@ public abstract class EnemyAssembler {
      * @param position posición inicial en el mundo.
      * @param eventBus bus de eventos para que el Enemy pueda emitir OnEnemyDeathEvent
      *                 y otros eventos de ciclo de vida.
+     * @param entityStore almacenamiento DOD para la entidad.
      * @return Enemy completamente configurado, listo para añadir al mundo.
      */
-    public final Enemy assemble(Vector2D position, GameEventBus eventBus) {
+    public final Enemy assemble(Vector2D position, GameEventBus eventBus, EntityStore entityStore) {
         EnemyDefinition def = definition();
 
         // ── 1. Crear módulos Living Entity Core ───────────────────────────
@@ -114,7 +116,8 @@ public abstract class EnemyAssembler {
             flags,
             attributes,
             attackSources,
-            eventBus
+            eventBus,
+            entityStore
         );
 
         // ── 6. Ajustar collider ───────────────────────────────────────────

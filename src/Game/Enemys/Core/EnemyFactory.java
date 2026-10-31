@@ -5,6 +5,7 @@ import Game.Enemys.EnemyTypes.Hybrid.HybridAssembler;
 import Game.Enemys.EnemyTypes.Zombie.ZombieAssembler;
 import Game.Engine.GameEventBus;
 import Game.Engine.GameMath.Logic2D.Vector2D;
+import Game.Engine.Simulation.Storage.EntityStore;
 
 /**
  * Fábrica de enemigos — delega completamente en EnemyRegistry.
@@ -71,10 +72,11 @@ public final class EnemyFactory {
      * @param id       identificador tipado del tipo de enemy.
      * @param position posición inicial en el mundo.
      * @param eventBus bus de eventos inyectado en el Enemy.
+     * @param entityStore almacenamiento DOD para la entidad.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyId id, Vector2D position, GameEventBus eventBus) {
-        return EnemyRegistry.create(id.registryId, position, eventBus);
+    public static Enemy create(EnemyId id, Vector2D position, GameEventBus eventBus, EntityStore entityStore) {
+        return EnemyRegistry.create(id.registryId, position, eventBus, entityStore);
     }
 
     /**
@@ -83,9 +85,10 @@ public final class EnemyFactory {
      * @param assembler assembler a usar.
      * @param position  posición inicial en el mundo.
      * @param eventBus  bus de eventos inyectado en el Enemy.
+     * @param entityStore almacenamiento DOD para la entidad.
      * @return Enemy listo para añadir al mundo.
      */
-    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus) {
-        return EnemyRegistry.create(assembler, position, eventBus);
+    public static Enemy create(EnemyAssembler assembler, Vector2D position, GameEventBus eventBus, EntityStore entityStore) {
+        return EnemyRegistry.create(assembler, position, eventBus, entityStore);
     }
 }

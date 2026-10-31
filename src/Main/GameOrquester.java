@@ -177,14 +177,34 @@ public class GameOrquester {
         // Display, sin exponer el JFrame hacia GameOrquester.
         // El callback para el GameLoop y para disposeWindow() son la
         // única comunicación necesaria con el Display en este punto.
+        //
+        // HRFC-004: Ejecutar shutdown en thread separado para evitar deadlock.
+        // 
+        // Problema:
+        //   WindowAdapter.windowClosing() se ejecuta en el EDT.
+        //   loop.stop() llama thread.join(5000), bloqueando el EDT.
+        //   Si el GameLoop necesita que el EDT procese comandos (via invokeLater),
+        //   ocurre deadlock: EDT esperando GameLoop, GameLoop esperando EDT.
+        // 
+        // Solución:
+        //   Ejecutar stop() + disposeWindow() en thread dedicado de shutdown.
+        //   El EDT retorna inmediatamente de windowClosing().
+        //   El ShutdownThread ejecuta el protocolo completo sin bloquear el EDT.
         display.addWindowCloseListener(() -> {
-            stop();
-            display.disposeWindow();
+            Thread shutdownThread = new Thread(() -> {
+                stop();
+                display.disposeWindow();
+            }, "GameShutdownThread");
+            shutdownThread.setDaemon(false); // Asegurar que la JVM espera a que termine
+            shutdownThread.start();
         });
     }
 
     public void stop() {
         if (loop         != null) loop.stop();
         if (stateManager != null) stateManager.shutdown();
+        
+        // Liberar recursos de assets (audio e imágenes)
+        Assets.shutdown();
     }
 }

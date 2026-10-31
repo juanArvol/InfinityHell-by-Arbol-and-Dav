@@ -2,9 +2,7 @@ package Game.Items.Types.Bullets.Flyweight;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Resources.ResourceCache;
-import Game.Items.Types.Bullets.BulletAssetResolver;
 import Game.Items.Types.Bullets.ProjectileBlueprint;
-import java.awt.image.BufferedImage;
 
 /**
  * Cache central de BulletFlyweights.
@@ -23,8 +21,23 @@ import java.awt.image.BufferedImage;
  *
  * BulletFlyweightCache aporta:
  *   - FlyweightKey (clave de dominio: assetKey + profile + w + h)
- *   - Resolución de asset via BulletAssetResolver
+ *   - Resolución de SpriteHandle desde AssetRegistry
  *   - API conveniente get(blueprint) y get(assetKey, profile, w, h)
+ *
+ * ── SISTEMA DE SPRITES UNIFICADO ──────────────────────────────────────────
+ *
+ * El cache resuelve SpriteHandles desde AssetRegistry. Si un handle no existe
+ * para el assetKey solicitado, el cache lanza IllegalStateException.
+ *
+ * Esto garantiza que:
+ *   ✓ Todas las balas usan el sistema de sprites optimizado
+ *   ✓ Errores de configuración se detectan al inicio, no en runtime
+ *   ✓ Sin código legacy de fallback que complique mantenimiento
+ *   ✓ Sin allocations de SpriteFrame temporales
+ *
+ * Prerequisito:
+ *   BulletAssets.init() DEBE ser llamado antes de crear cualquier Bullet.
+ *   Esto registra todos los SpriteHandles en AssetRegistry.
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
  *
@@ -41,7 +54,7 @@ import java.awt.image.BufferedImage;
  * La clave agrupa los cuatro campos que definen un tipo de proyectil a nivel
  * de recursos:
  *
- *   - assetKey          → determina la textura (null = "bullet.bala")
+ *   - assetKey          → determina la textura y handle (null = "bullet.bala")
  *   - collisionProfile  → determina con qué capas colisiona (null = PLAYER_BULLET)
  *   - width, height     → dimensiones del collider
  *
@@ -62,9 +75,9 @@ import java.awt.image.BufferedImage;
  * ── GARANTÍAS DE NO-RETENCIÓN ─────────────────────────────────────────────
  *
  * El Flyweight solo contiene:
- *   - BufferedImage  → gestionada por AssetRegistry, no hay riesgo de leak
- *   - CollisionProfile → enum/value object, sin referencias a entidades
- *   - int width/height → primitivos en record
+ *   - SpriteHandle       → gestionado por AssetRegistry, sin riesgo de leak
+ *   - CollisionProfile   → enum/value object, sin referencias a entidades
+ *   - int width/height   → primitivos en record
  *
  * NUNCA almacena: AbstractEntity, Player, Enemy, Bullet, World, BulletBehavior,
  * ProjectileMovement ni ningún objeto con lifecycle de runtime.
@@ -129,8 +142,18 @@ public final class BulletFlyweightCache {
     // ── Construcción interna ──────────────────────────────────────────────
 
     private BulletFlyweight create(FlyweightKey key) {
-        BufferedImage texture = BulletAssetResolver.resolve(key.assetKey());
-        return new BulletFlyweight(texture, key.profile(), key.width(), key.height());
+        // Obtener el SpriteHandle del AssetRegistry
+        String registryKey = key.assetKey() != null ? key.assetKey() : "bullet.bala";
+        Sprites.Core.SpriteHandle handle = Sprites.Core.AssetRegistry.getInstance().get(registryKey);
+        
+        if (handle == null) {
+            throw new IllegalStateException(
+                "No SpriteHandle found for bullet asset key: " + registryKey + 
+                ". Ensure BulletAssets.init() was called and the asset is registered."
+            );
+        }
+        
+        return new BulletFlyweight(handle, key.profile(), key.width(), key.height());
     }
 
     // ── Clave del cache ───────────────────────────────────────────────────

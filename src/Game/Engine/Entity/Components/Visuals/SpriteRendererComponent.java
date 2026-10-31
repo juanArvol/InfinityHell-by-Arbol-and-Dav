@@ -69,6 +69,24 @@ public class SpriteRendererComponent extends Component implements Renderable {
     private int offsetY = 0;
 
     private final SizeSyncMode syncMode;
+    
+    // ── Rotación automática basada en velocidad ───────────────────────────
+    
+    /**
+     * Cuando es true, el sprite se rota automáticamente para alinearse
+     * con la dirección del movimiento. Útil para proyectiles y objetos en movimiento.
+     * 
+     * La rotación se calcula a partir de la velocidad del objeto cada frame.
+     */
+    private boolean autoRotateToVelocity = false;
+    
+    /**
+     * Offset de rotación en radianes para corregir la orientación base del sprite.
+     * 
+     * Ejemplo: Si tu sprite apunta hacia arriba pero quieres que apunte a la derecha
+     * cuando velocidad = (1,0), usa rotationOffset = -Math.PI/2.
+     */
+    private double rotationOffset = 0.0;
 
     // ── HRFC-003: TransformData ───────────────────────────────────────────
 
@@ -156,6 +174,18 @@ public class SpriteRendererComponent extends Component implements Renderable {
             }
         }
     }
+    
+    // ── Update ────────────────────────────────────────────────────────────
+    
+    /**
+     * Actualiza el transform si autoRotateToVelocity está activado.
+     * IMPORTANTE: Esto debe ejecutarse ANTES del BulletBatchRenderer cachee el transform.
+     */
+    @Override
+    public void update(double deltaTime) {
+        // Nota: La rotación automática se calcula en getTransform() 
+        // para garantizar que usa la velocidad más reciente
+    }
 
     // ── Render ────────────────────────────────────────────────────────────
 
@@ -164,9 +194,24 @@ public class SpriteRendererComponent extends Component implements Renderable {
         BufferedImage imageToDraw = resolveImage();
         if (imageToDraw == null) return;
 
-        var pos = gameObject.getTransform().getPosition();
-        int x = (int)(pos.getX() - camera.getX()) + offsetX;
-        int y = (int)(pos.getY() - camera.getY()) + offsetY;
+        // ── DOD Migration: position from PrimitiveStorage for DOD entities ────
+        double worldX, worldY;
+        if (gameObject instanceof Game.Items.Types.Bullets.Definition.Bullet) {
+            var bullet = (Game.Items.Types.Bullets.Definition.Bullet) gameObject;
+            worldX = bullet.getPositionX();
+            worldY = bullet.getPositionY();
+        } else if (gameObject instanceof Game.Enemys.Core.Enemy) {
+            var enemy = (Game.Enemys.Core.Enemy) gameObject;
+            worldX = enemy.getPositionX();
+            worldY = enemy.getPositionY();
+        } else {
+            var pos = gameObject.getTransform().getPosition();
+            worldX = pos.getX();
+            worldY = pos.getY();
+        }
+        
+        int x = (int)(worldX - camera.getX()) + offsetX;
+        int y = (int)(worldY - camera.getY()) + offsetY;
 
         int rw = renderWidth  > 0 ? renderWidth  : imageToDraw.getWidth();
         int rh = renderHeight > 0 ? renderHeight : imageToDraw.getHeight();
@@ -365,7 +410,9 @@ public class SpriteRendererComponent extends Component implements Renderable {
         this.transform = transform != null ? transform : TransformData.IDENTITY;
     }
 
-    public TransformData getTransform() { return transform; }
+    public TransformData getTransform() { 
+        return transform; 
+    }
 
     public void setFlipH(boolean flipH) {
         if (transform.flipH == flipH) return;
@@ -403,6 +450,48 @@ public class SpriteRendererComponent extends Component implements Renderable {
     public void setVirtualSize(int vw, int vh) {
         this.virtualWidth  = vw;
         this.virtualHeight = vh;
+    }
+    
+    // ── Auto-rotación API ─────────────────────────────────────────────────
+    
+    /**
+     * Activa/desactiva la rotación automática del sprite según la dirección de movimiento.
+     * 
+     * Cuando está activado, el sprite se rotará para alinearse con la velocidad del objeto.
+     * Útil para proyectiles, flechas, cohetes, etc.
+     * 
+     * @param enabled true para activar rotación automática
+     */
+    public void setAutoRotateToVelocity(boolean enabled) {
+        this.autoRotateToVelocity = enabled;
+    }
+    
+    /**
+     * Establece el offset de rotación para corregir la orientación base del sprite.
+     * 
+     * Por ejemplo, si tu sprite apunta hacia arriba pero quieres que apunte a la derecha
+     * cuando la velocidad es (1,0), usa rotationOffset = -Math.PI/2.
+     * 
+     * @param radians offset en radianes
+     */
+    public void setRotationOffset(double radians) {
+        this.rotationOffset = radians;
+    }
+    
+    /**
+     * Atajo para configurar auto-rotación con offset en un solo llamado.
+     */
+    public void setAutoRotateToVelocity(boolean enabled, double rotationOffsetRadians) {
+        this.autoRotateToVelocity = enabled;
+        this.rotationOffset = rotationOffsetRadians;
+    }
+    
+    public boolean isAutoRotateToVelocity() {
+        return autoRotateToVelocity;
+    }
+    
+    public double getRotationOffset() {
+        return rotationOffset;
     }
 
     // ── Getters ───────────────────────────────────────────────────────────

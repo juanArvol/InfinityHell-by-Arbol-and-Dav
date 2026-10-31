@@ -74,21 +74,21 @@ import java.util.Set;
  */
 public class MetheorBullet extends BulletBehavior {
 
-    private static final double BASE_DAMAGE          = 0;
-    private static final double GRAVITY_STRENGTH     = 1200;
-    private static final double EXPLOSION_POWER_MULT = 2500;
-    private static final double RADIUS_BASE          = 250.0;
+    private static final double BASE_DAMAGE          = 10;
+    private static final double GRAVITY_STRENGTH     = 120;
+    private static final double EXPLOSION_POWER_MULT = 25;
+    private static final double RADIUS_BASE          = 2.0;
     private static final double RADIUS_SCALE         = 1.5;
-    private static final int    DEFAULT_LIFETIME     = 300;  // 5 segundos a 60fps
+    private static final int    DEFAULT_LIFETIME     = 60;  // 5 segundos a 60fps
     private static final double PUSH_FORCE_SCALE     = 0.1;  // escalado de fuerza de empuje
 
     // ── Propiedades físicas del meteoro (HRFC — Consolidación) ───────────
     // HRFC FASE 2: Coeficientes escalados para px/frame.
     // El meteoro es masivo y poco aerodinámico, resultando en velocidad
     // terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
-    private static final double METEOR_MASS              = 300.0;     // 3x más masivo que proyectil normal
+    private static final double METEOR_MASS              = 10.0;     // 3x más masivo que proyectil normal
     private static final double METEOR_EFFECTIVE_AREA    = 15;     // área grande
-    private static final double METEOR_DRAG_COEFFICIENT  = 0.0021;  // poco aerodinámico (escalado para px/frame)
+    private static final double METEOR_DRAG_COEFFICIENT  = 0.00000021;  // poco aerodinámico (escalado para px/frame)
 
     @Override
     public Set<Class<?>> getRequiredCapabilities() {
@@ -105,7 +105,7 @@ public class MetheorBullet extends BulletBehavior {
                 GRAVITY_STRENGTH,               // gravityValue (manejado por GravityMovement)
                 8,                 // width
                 8,                 // height
-                "bullet.comet"      // assetKey
+                "bullet.cometa"      // assetKey (corregido de "bullet.comet")
         );
     }
 
@@ -149,9 +149,25 @@ public class MetheorBullet extends BulletBehavior {
      * Configurar propiedades físicas del meteoro al ser adquirido del pool
      * o recién creado.
      *
-     * HRFC FASE 2: El meteoro es masivo y poco aerodinámico, produciendo
-     * velocidad terminal moderada (~25-30 px/frame) que escala la potencia
-     * de explosión. Coeficientes escalados para px/frame.
+     * ── HRFC — Projectile DOD Migration: Physics Properties ───────────────
+     *
+     * PROBLEMA LEGACY:
+     *   setEffectiveArea() y setDragCoefficient() eran métodos separados.
+     *   En DOD fueron consolidados en setDrag() que calcula directamente el
+     *   coeficiente de drag resultante.
+     *
+     * SOLUCIÓN:
+     *   drag_coefficient = 0.5 × C_d × ρ × A / m
+     *   Donde:
+     *     C_d = 0.0021 (coef. de drag del meteoro)
+     *     A = 15 (área efectiva)
+     *     m = 300 (masa)
+     *     ρ = 1 (densidad del medio, asumida constante)
+     *
+     *   drag = 0.5 × 0.0021 × 1 × 15 / 300 = 0.0000525
+     *
+     * El meteoro es masivo y poco aerodinámico, produciendo velocidad
+     * terminal moderada (~25-30 px/frame) que escala la potencia de explosión.
      */
     @Override
     public void onAttached(Bullet bullet) {
@@ -159,8 +175,10 @@ public class MetheorBullet extends BulletBehavior {
 
         var physics = bullet.getPhysics();
         physics.setMass(METEOR_MASS);
-        physics.setEffectiveArea(METEOR_EFFECTIVE_AREA);
-        physics.setDragCoefficient(METEOR_DRAG_COEFFICIENT);
+        
+        // Drag consolidado = 0.5 × C_d × A / m
+        double consolidatedDrag = 0.5 * METEOR_DRAG_COEFFICIENT * METEOR_EFFECTIVE_AREA / METEOR_MASS;
+        physics.setDrag(consolidatedDrag);
     }
 
     @Override
@@ -219,8 +237,12 @@ public class MetheorBullet extends BulletBehavior {
             double damageFactor = 1.0 - (distance / maxRadius);
             double finalDamage = BASE_DAMAGE * (explosionPower * damageFactor);
             
-            // Aplicar daño via AbstractEntity.damage()
-            entity.gotDamage((int) finalDamage);
+            // Aplicar daño — si es Player, usar receiveDamage() para eventos
+            if (entity instanceof Game.Player.Player player) {
+                player.receiveDamage((int) finalDamage, bullet);
+            } else {
+                entity.gotDamage((int) finalDamage);
+            }
             
             // Calcular fuerza de empuje radial (preserva fórmula legacy)
             double force = (maxRadius - distance) * PUSH_FORCE_SCALE;

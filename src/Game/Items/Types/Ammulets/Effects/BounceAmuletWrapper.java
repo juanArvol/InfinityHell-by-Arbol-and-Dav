@@ -1,7 +1,6 @@
 package Game.Items.Types.Ammulets.Effects;
 
 import Game.Engine.AbstractEntity;
-import Game.Engine.Entity;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Gameplay.Events.ProjectileEvents;
 import Game.Items.Types.Bullets.BulletComport.BulletBehavior;
@@ -59,7 +58,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      * Inyectado para desacoplar el wrapper del World.
      * Null = sin rebote (degradado graceful).
      */
-    private final Supplier<List<? extends Entity>> entityProvider;
+    private final Supplier<List<? extends AbstractEntity>> entityProvider;
 
     // ── Constructores ─────────────────────────────────────────────────────
 
@@ -72,7 +71,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      */
     public BounceAmuletWrapper(BulletBehavior inner,
                                int maxBounces,
-                               Supplier<List<? extends Entity>> entityProvider) {
+                               Supplier<List<? extends AbstractEntity>> entityProvider) {
         super(inner);
         this.maxBounces     = maxBounces;
         this.entityProvider = (entityProvider != null) ? entityProvider : List::of;
@@ -114,7 +113,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
         if (bounceCount >= maxBounces) return;
 
         // Buscar el objetivo más cercano diferente a la entidad actual
-        Entity nextTarget = findNearestOther(
+        AbstractEntity nextTarget = findNearestOther(
                 bullet.getTransform().getPosition(), hitEntity);
 
         if (nextTarget == null) return; // sin objetivo — el proyectil muere normalmente
@@ -132,6 +131,7 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
         if (dist < 1e-6) return;
 
         // Conservar la velocidad actual del proyectil (solo cambiar dirección)
+        // Leer desde DOD storage
         double currentSpeed = Math.hypot(
                 bullet.getPhysics().getXspeed(),
                 bullet.getPhysics().getYspeed()
@@ -157,14 +157,14 @@ public class BounceAmuletWrapper extends BulletBehaviorWrapper {
      * Busca la AbstractEntity más cercana al origen dentro del radio,
      * excluyendo la entidad que ya fue impactada.
      */
-    private Entity findNearestOther(Vector2D origin, Entity exclude) {
-        List<? extends Entity> candidates = entityProvider.get();
+    private AbstractEntity findNearestOther(Vector2D origin, AbstractEntity exclude) {
+        List<? extends AbstractEntity> candidates = entityProvider.get();
         if (candidates == null || candidates.isEmpty()) return null;
 
-        Entity nearest  = null;
+        AbstractEntity nearest  = null;
         double         minDist  = SEARCH_RADIUS * SEARCH_RADIUS; // comparar con distSq
 
-        for (Entity candidate : candidates) {
+        for (AbstractEntity candidate : candidates) {
             if (candidate == exclude) continue;
             if (candidate.isDead()) continue; // no redirigir a entidades muertas
 

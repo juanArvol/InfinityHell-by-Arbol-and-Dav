@@ -89,15 +89,21 @@ public final class LifetimeSystem implements SimulationSystem {
 
         float dt = (float) deltaTime;
 
+        // DEBUG: verificar que el sistema se ejecuta
+        int decremented = 0;
+        int expired = 0;
+
         // HOT LOOP — procesamiento denso
         // OPTIMIZACIÓN: No filtramos porque todas las bullets tienen estos componentes
         // Si en futuro el store contiene tipos mixtos, activar filtrado aquí
         for (int i = 0; i < count; i++) {
             if (lifetimes[i] > 0f) {
                 lifetimes[i] -= dt;
+                decremented++;
                 if (lifetimes[i] <= 0f) {
                     lifetimes[i] = 0f; // clampeo
                     flags[i] |= FLAG_EXPIRED; // marcar para callback
+                    expired++;
                 }
             }
         }

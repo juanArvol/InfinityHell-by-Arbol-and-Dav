@@ -205,6 +205,9 @@ public class GameState implements State {
      */
     @Override
     public void update(Main.TemporalContext temporalContext) {
+        // DOD simulation ANTES de sistemas OOP
+        worldBootstrap.updateSimulation(temporalContext.getDeltaTime());
+        
         Mechanics.updateMechanics(player);
         worldManager.update(temporalContext);
         uiManager.update();

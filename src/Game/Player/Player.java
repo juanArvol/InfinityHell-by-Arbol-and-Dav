@@ -102,6 +102,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
     private final PlayerStats      playerStats;
     private final PlayerState      state;
     private final AmuletInventory  amulets;
+    private final Game.Engine.GameEventBus eventBus;
 
     // ── UI / Visualización ────────────────────────────────────────────────
     private final Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities;
@@ -130,7 +131,8 @@ public class Player extends MovingObjects implements EntityInfoProvider {
            AmuletInventory amulets,
            PlayerController controller,
            PlayerCombat combat,
-           Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities) {
+           Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities,
+           Game.Engine.GameEventBus eventBus) {
 
         super(spawn, PlayerAssets.handle, physics, SizeSyncMode.NONE);
 
@@ -145,6 +147,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
         this.controller       = controller;
         this.combat           = combat;
         this.aimCapabilities  = aimCapabilities;
+        this.eventBus         = eventBus;
     }
 
     // ── Post-construcción — llamado por PlayerAssembler ───────────────────
@@ -225,12 +228,38 @@ public class Player extends MovingObjects implements EntityInfoProvider {
      * Para daño de efecto de estado usar {@code damage(amount)} heredado,
      * que no aplica invulnerabilidad.
      *
-     * @param amount cantidad de daño a aplicar.
+     * ── EVENTO DE DAÑO ────────────────────────────────────────────────────
+     * Antes de aplicar el daño, se publica un DamageEvent en el bus.
+     * Los amuletos y otros sistemas pueden:
+     *   • Cancelar el daño completamente (event.cancel())
+     *   • Modificar la cantidad (event.setAmount())
+     *   • Reaccionar al evento (logging, efectos visuales, etc.)
+     *
+     * @param amount cantidad de daño a aplicar
+     * @param source fuente del daño (Bullet, AbstractEntity, o null para ambiental)
+     */
+    public void receiveDamage(int amount, Object source) {
+        if (playerStats.isInvulnerable()) return;
+        
+        // Publicar evento — los amuletos pueden cancelar o modificar el daño
+        Game.Gameplay.Events.DamageEvent event = 
+            new Game.Gameplay.Events.DamageEvent(this, amount, source);
+        eventBus.post(event);
+        
+        // Si el evento fue cancelado, no aplicar daño
+        if (event.isCancelled()) return;
+        
+        // Aplicar el daño (puede haber sido modificado por listeners)
+        gotDamage(event.getAmount());
+        playerStats.triggerInvulnerability();
+    }
+    
+    /**
+     * Sobrecarga de conveniencia — daño sin fuente conocida.
+     * @param amount cantidad de daño a aplicar
      */
     public void receiveDamage(int amount) {
-        if (playerStats.isInvulnerable()) return;
-        gotDamage(amount);                         // AbstractEntity → HealthComponent
-        playerStats.triggerInvulnerability();
+        receiveDamage(amount, null);
     }
 
     // ── EntityInfoProvider — integración con Engine Systems ──────────────

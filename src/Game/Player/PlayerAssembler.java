@@ -197,7 +197,7 @@ public final class PlayerAssembler {
         PlayerPhysics physics = new PlayerPhysics(BASE_GRAVITY);
         PlayerState state = new PlayerState();
         PlayerStats playerStats = new PlayerStats();
-        AmuletInventory amulets = new AmuletInventory(0);
+        AmuletInventory amulets = new AmuletInventory(0, eventBus);
 
         // ── 3. Inventory y Runtime — independientes de Player ─────────────
         PlayerInventory playerInventory = new PlayerInventory();
@@ -233,7 +233,8 @@ public final class PlayerAssembler {
             amulets,
             controller,
             combat,
-            aimCapabilities
+            aimCapabilities,
+            eventBus
         );
 
         // ── 6. Post-construcción — inyección de dependencias diferidas ────

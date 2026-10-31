@@ -84,14 +84,14 @@ public class BulletBatchRenderer {
         // Extraer render data de cada bullet y aplicar culling temprano.
 
         for (GameObjects obj : bullets) {
-            if (!(obj instanceof Bullet)) {
+            if (!(obj instanceof Bullet bullet)) {
                 continue;  // Solo procesar bullets
             }
 
             processedCount++;
 
             // Extraer componente de render
-            SpriteRendererComponent renderer = obj.getComponent(SpriteRendererComponent.class);
+            SpriteRendererComponent renderer = bullet.getComponent(SpriteRendererComponent.class);
             if (renderer == null) {
                 continue;  // Sin renderer → skip
             }
@@ -108,15 +108,16 @@ public class BulletBatchRenderer {
                 continue;  // Sin transform → skip
             }
 
-            // Extraer posición y dimensiones
-            var pos = obj.getTransform().getPosition();
+            // HRFC — DOD Migration: leer position desde PrimitiveStorage, NO desde Transform
+            double posX = bullet.getPositionX();
+            double posY = bullet.getPositionY();
             int rw = renderer.getRenderWidth();
             int rh = renderer.getRenderHeight();
 
             // Crear cache entry
             RenderDataCache cache = new RenderDataCache(
-                pos.getX(),
-                pos.getY(),
+                posX,
+                posY,
                 frame,
                 transform,
                 rw,
@@ -185,18 +186,61 @@ public class BulletBatchRenderer {
             SpriteRendererComponent renderer = bullet.getComponent(SpriteRendererComponent.class);
             if (renderer == null) continue;
 
+            // Obtener el frame del renderer
+            // - Si usa SpriteHandle: getCurrentFrame() o handle.resolveDefault()
+            // - Si usa BufferedImage: crear SpriteFrame temporal (legacy)
             var frame = renderer.getCurrentFrame();
+            if (frame == null || !frame.isValid()) {
+                var handle = renderer.getHandle();
+                if (handle != null && handle.isValid()) {
+                    frame = handle.resolveDefault();
+                }
+            }
+            
             if (frame == null || !frame.isValid()) continue;
 
             var transform = renderer.getTransform();
             if (transform == null) continue;
+            
+            // ROTACIÓN AUTOMÁTICA: Si el renderer tiene autoRotateToVelocity activo,
+            // calcular la rotación basada en la velocidad ACTUAL de la bala
+            if (renderer.isAutoRotateToVelocity()) {
+                var physics = bullet.getPhysics();
+                double vx = physics.getXspeed();
+                double vy = physics.getYspeed();
+                
+                // Solo aplicar rotación si hay velocidad significativa
+                if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01) {
+                    // Calcular ángulo basado en la dirección de movimiento
+                    // atan2 retorna el ángulo en radianes donde:
+                    // - 0 rad = derecha (→)
+                    // - π/2 rad = abajo (↓)
+                    // - π rad = izquierda (←)
+                    // - -π/2 rad = arriba (↑)
+                    double angle = Math.atan2(vy, vx) + renderer.getRotationOffset();
+                    
+                    // Crear nuevo transform con rotación, SIN flip (la rotación ya maneja todas las direcciones)
+                    transform = Game.Engine.RenderEngine.Transform.TransformData.builder()
+                        .flipH(false).flipV(false)  // NO usar flip con rotación
+                        .scaleX(transform.scaleX).scaleY(transform.scaleY)
+                        .rotation((float)angle)
+                        .pivot(0.5f, 0.5f)  // Rotar desde el centro del sprite
+                        .offset(transform.offsetX, transform.offsetY)
+                        .alpha(transform.alpha)
+                        .tint(transform.tintColor, transform.tintAlpha)
+                        .blendMode(transform.blendMode)
+                        .build();
+                }
+            }
 
-            var pos = bullet.getTransform().getPosition();
+            // HRFC — DOD Migration: leer position desde PrimitiveStorage, NO desde Transform legacy
+            double posX = bullet.getPositionX();
+            double posY = bullet.getPositionY();
             int rw = renderer.getRenderWidth();
             int rh = renderer.getRenderHeight();
 
             RenderDataCache cache = new RenderDataCache(
-                pos.getX(), pos.getY(), frame, transform, rw, rh
+                posX, posY, frame, transform, rw, rh
             );
 
             if (cache.isVisible(
@@ -209,6 +253,8 @@ public class BulletBatchRenderer {
                 culledCount++;
             }
         }
+
+
 
         double cameraX = camera.getX();
         double cameraY = camera.getY();

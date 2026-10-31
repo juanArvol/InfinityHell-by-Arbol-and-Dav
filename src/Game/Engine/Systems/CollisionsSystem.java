@@ -261,8 +261,9 @@ public class CollisionsSystem {
             // para obtener displacement en units.
             // ANTES: vx = velocity.x  (tratado como px/frame)
             // AHORA: vx = velocity.x × deltaTime  (displacement correcto)
-            double    vx      = physics.getVelocity().getX() * deltaTime;
-            double    vy      = physics.getVelocity().getY() * deltaTime;
+            double vx = physics.getVelocity().getX() * deltaTime;
+            double vy = physics.getVelocity().getY() * deltaTime;
+            
             if (vx == 0.0 && vy == 0.0) continue;
 
             List<ContactRecord> records = frameContacts.computeIfAbsent(
@@ -581,9 +582,20 @@ public class CollisionsSystem {
                 if (physics instanceof BulletPhysics bp) {
                     bp.setLastContactNormal(hitNormalX, hitNormalY);
                 }
+                
+                // ── HRFC — DOD Bridge: también escribir en Bullet DOD adapter ─
+                if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                    bullet.setCollisionNormal(hitNormalX, hitNormalY);
+                }
 
                 // Evitar que FASE 2 despache este par de nuevo
                 detector.markDispatched(obj, hitObj);
+
+                // ── Filtro de colisión por ownership ───────────────────────
+                // DOD: Un proyectil NO debe colisionar con su owner
+                if (shouldFilterCollision(obj, hitObj)) {
+                    continue; // skip dispatch
+                }
 
                 CollisionDispatcher.dispatch(obj, hitObj);
 
@@ -623,6 +635,12 @@ public class CollisionsSystem {
             // Guard: skip si alguno está destruido
             if (pair.a instanceof Destroyable da && da.isPendingDestruction()) continue;
             if (pair.b instanceof Destroyable db && db.isPendingDestruction()) continue;
+
+            // ── Filtro de colisión por ownership ───────────────────────────
+            // DOD: Un proyectil NO debe colisionar con su owner
+            if (shouldFilterCollision(pair.a, pair.b)) {
+                continue; // skip dispatch
+            }
 
             // Para triggers de FASE 2 que llegaron con normal calculada,
             // escribir la normal en BulletPhysics antes del dispatch
@@ -728,11 +746,56 @@ public class CollisionsSystem {
     // ── Helpers de resolución de velocidad (política sólida) ──────────────
 
     private static void resolveVelocityX(Physics2D physics, GameObjects other, double vx) {
-        physics.getVelocity().setX(0);
+        // DOD FIX: Usar vSetX() en lugar de velocity.setX() para que
+        // EnemyPhysics pueda escribir al DOD storage
+        physics.vSetX(0);
     }
 
     private static void resolveVelocityY(Physics2D physics, GameObjects other, double vy) {
-        physics.getVelocity().setY(0);
+        // DOD FIX: Usar vSetY() en lugar de velocity.setY() para que
+        // EnemyPhysics pueda escribir al DOD storage
+        physics.vSetY(0);
+    }
+
+    // ── Helper: filtro de colisiones por ownership ────────────────────────
+
+    /**
+     * Determina si una colisión debe ser filtrada (no despachada).
+     *
+     * ── HRFC — Projectile DOD Migration: Collision Filtering ──────────────
+     *
+     * REGLA: Un proyectil NO debe colisionar con su owner.
+     *
+     * Esta es la solución correcta en DOD — el filtro está en el sistema
+     * de colisiones, no en cada behavior individual. Evita que proyectiles
+     * maten a su owner o se autodestruyan al spawnearse.
+     *
+     * CASOS FILTRADOS:
+     *   - Bullet A con owner O colisionando con O
+     *   - O colisionando con Bullet A que tiene owner O
+     *
+     * @param a primer objeto
+     * @param b segundo objeto
+     * @return true si la colisión debe ser filtrada (no despachar)
+     */
+    private boolean shouldFilterCollision(GameObjects a, GameObjects b) {
+        // Verificar si A es un proyectil que colisiona con su owner
+        if (a instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+            Object owner = bullet.getOwner();
+            if (owner != null && owner == b) {
+                return true; // filtrar: proyectil colisionando con su owner
+            }
+        }
+        
+        // Verificar si B es un proyectil que colisiona con su owner
+        if (b instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+            Object owner = bullet.getOwner();
+            if (owner != null && owner == a) {
+                return true; // filtrar: proyectil colisionando con su owner
+            }
+        }
+        
+        return false; // no filtrar
     }
 
     // ── Helper: propagar normal a trigger desde CollisionResult de FASE 2 ─
@@ -755,6 +818,10 @@ public class CollisionsSystem {
                     && !bp.hasContactNormal()) {
                 bp.setLastContactNormal(pair.normalX, pair.normalY);
             }
+            // ── HRFC — DOD Bridge: también escribir en Bullet DOD adapter ─
+            if (pair.a instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                bullet.setCollisionNormal(pair.normalX, pair.normalY);
+            }
         }
 
         if (pair.b.getComponent(ColliderComponent.class) != null
@@ -764,6 +831,10 @@ public class CollisionsSystem {
                     && !bp.hasContactNormal()) {
                 // Normal invertida: la de pair es desde perspectiva de A
                 bp.setLastContactNormal(-pair.normalX, -pair.normalY);
+            }
+            // ── HRFC — DOD Bridge: también escribir en Bullet DOD adapter ─
+            if (pair.b instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                bullet.setCollisionNormal(-pair.normalX, -pair.normalY);
             }
         }
     }

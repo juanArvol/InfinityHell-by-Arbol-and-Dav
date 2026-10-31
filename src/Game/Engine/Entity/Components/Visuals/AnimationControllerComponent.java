@@ -122,9 +122,18 @@ public class AnimationControllerComponent extends Component {
 
     /**
      * ── HRFC — Unified DeltaTime Migration ───────────────────────────────
+     * ── FIX: Corrección de bug de reinicio de animaciones ────────────────
      *
-     * CAMBIO: Ahora recibe deltaTime y acumula tiempo en segundos.
-     * La duración del frame se convierte de ticks → segundos @ 60 FPS.
+     * PROBLEMA ANTERIOR:
+     *   Si elapsedTime acumulaba más de frameDuration (ej: lag spike),
+     *   solo se avanzaba 1 frame y se perdían los frames intermedios.
+     *   Esto causaba que animaciones se "saltaran" frames o se reiniciaran
+     *   incorrectamente al final del spritesheet.
+     *
+     * SOLUCIÓN:
+     *   Usar un while loop para avanzar múltiples frames si es necesario,
+     *   manteniendo el exceso de tiempo para el siguiente frame.
+     *   Esto garantiza animaciones suaves incluso con framerate irregular.
      *
      * @param deltaTime tiempo del simulation step en segundos
      */
@@ -132,14 +141,19 @@ public class AnimationControllerComponent extends Component {
     public void update(double deltaTime) {
         if (currentAnimation == null || renderer == null) return;
 
-        // Duración efectiva del frame actual (ticks → segundos @ 30 FPS)
-        int frameTicks = currentAnimation.ticksForFrame(frameIndex);
-        double frameDuration = frameTicks / 30.0; // TODO: Animation should migrate to seconds
-
         elapsedTime += deltaTime;
-        if (elapsedTime >= frameDuration) {
-            elapsedTime = 0.0;
-            advanceFrame();
+
+        // Avanzar tantos frames como sea necesario según el tiempo acumulado
+        while (elapsedTime > 0) {
+            int frameTicks = currentAnimation.ticksForFrame(frameIndex);
+            double frameDuration = frameTicks / 30.0;
+            
+            if (elapsedTime >= frameDuration) {
+                elapsedTime -= frameDuration;
+                advanceFrame();
+            } else {
+                break; // No hay suficiente tiempo para avanzar al siguiente frame
+            }
         }
 
         // Empujar el frame actual al SpriteRenderer
