@@ -1,11 +1,11 @@
 package Game.World.Index;
 
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.World.Chunk.Chunk;
 import Game.World.Chunk.ChunkStorage;
 import Game.World.Chunk.GlobalChunkResolver;
 import Game.World.Core.WorldCoordinator;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -162,6 +162,31 @@ public final class WorldSpatialIndex {
         }
 
         return result;
+    }
+
+    /**
+     * Query con expansión automática de margen.
+     * 
+     * ── HRFC — Helper para patrón común ────────────────────────────────────
+     * Es común expandir un bounds antes de consultar para incluir objetos
+     * cercanos. Este método encapsula ese patrón.
+     * 
+     * Casos de uso:
+     * - Búsqueda de enemigos cercanos con buffer
+     * - Render culling con margen para evitar pop-in
+     * - Consultas de proximidad con radio
+     * 
+     * @param region bounds base de búsqueda
+     * @param margin píxeles extra en cada dirección
+     * @return objetos dentro del bounds expandido
+     * 
+     * Ejemplo:
+     *   // Buscar objetos en área de 100x100 con buffer de 32px
+     *   RectangleH area = new RectangleH(x, y, 100, 100);
+     *   List<GameObjects> nearby = index.queryExpanded(area, 32);
+     */
+    public List<GameObjects> queryExpanded(RectangleH region, double margin) {
+        return query(region.expanded(margin));
     }
 
     /**

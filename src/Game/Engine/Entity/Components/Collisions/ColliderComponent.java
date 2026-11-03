@@ -82,9 +82,25 @@ public class ColliderComponent extends Component {
     public CollisionProfile getProfile() { return profile; }
     public void setProfile(CollisionProfile profile) { this.profile = profile; }
 
-    /** Shorthand para saber si este collider puede chocar con otro. */
+    /** Shorthand para saber si este collider puede chocar con otro. 
+     * 
+     * ── HRFC FIX: Filtrado unificado ──────────────────────────────────────
+     * Combina layer/mask Y CollisionMatrix en un solo check para evitar
+     * redundancia y garantizar consistencia.
+     */
     public boolean canCollideWith(ColliderComponent other) {
-        return this.profile.canCollideWith(other.profile);
+        // Check 1: layer/mask tradicional
+        boolean layerCheck = this.profile.canCollideWith(other.profile);
+        
+        // Check 2: CollisionMatrix (si está habilitado)
+        boolean matrixCheck = !Game.Engine.Colisions.Filter.CollisionMatrix.isEnabled()
+            || Game.Engine.Colisions.Filter.CollisionMatrix.canCollide(
+                this.profile.category, 
+                other.profile.category
+            );
+        
+        // Ambos deben pasar
+        return layerCheck && matrixCheck;
     }
 
     // ── Tamaño y offset ───────────────────────────────────────────────────

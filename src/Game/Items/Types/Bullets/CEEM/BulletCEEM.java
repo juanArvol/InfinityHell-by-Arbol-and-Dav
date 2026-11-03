@@ -499,49 +499,28 @@ public final class BulletCEEM {
      * Si el bullet está dentro: retorna 0
      * Si está fuera: retorna distancia aproximada al edge más cercano
      * 
+     * ── HRFC — Uso de RectangleH.distanceToPoint() ────────────────────────
+     * Refactorizado para usar el método distanceToPoint() de RectangleH en
+     * lugar de 40+ líneas de cálculo manual. Este método calcula exactamente
+     * lo que necesitamos: distancia desde un punto al borde más cercano del
+     * rectángulo, retornando 0 si el punto está dentro.
+     * 
      * @param bullet el proyectil
      * @param camera cámara activa
-     * @return distancia en píxeles
+     * @return distancia en píxeles (0 si está dentro del viewport)
      */
     private double estimateDistanceFromViewport(Bullet bullet, GameCamera camera) {
-        // Usar getPositionX/Y() directo — sin allocation
+        // Obtener posición del bullet sin allocations
         double bulletX = bullet.getPositionX();
         double bulletY = bullet.getPositionY();
         
-        double cameraX = camera.getX();
-        double cameraY = camera.getY();
-        double cameraWidth = camera.getVirtualWidth();
-        double cameraHeight = camera.getVirtualHeight();
+        // Usar el método getBounds() que agregamos a GameCamera en Fase 2
+        Game.Engine.GameMath.Logic2D.RectangleH viewport = camera.getBounds();
         
-        // Calcular distancia a cada edge
-        double distanceLeft = cameraX - bulletX;
-        double distanceRight = bulletX - (cameraX + cameraWidth);
-        double distanceTop = cameraY - bulletY;
-        double distanceBottom = bulletY - (cameraY + cameraHeight);
-        
-        // Si está dentro en ambos ejes: distancia = 0
-        boolean insideX = (distanceLeft < 0 && distanceRight < 0);
-        boolean insideY = (distanceTop < 0 && distanceBottom < 0);
-        
-        if (insideX && insideY) {
-            return 0.0;
-        }
-        
-        // Calcular distancia al edge más cercano
-        double distanceX = 0.0;
-        if (distanceLeft > 0) distanceX = distanceLeft;
-        else if (distanceRight > 0) distanceX = distanceRight;
-        
-        double distanceY = 0.0;
-        if (distanceTop > 0) distanceY = distanceTop;
-        else if (distanceBottom > 0) distanceY = distanceBottom;
-        
-        // Distancia euclidiana si está fuera en ambos ejes, lineal si solo en uno
-        if (distanceX > 0 && distanceY > 0) {
-            return Math.sqrt(distanceX * distanceX + distanceY * distanceY);
-        } else {
-            return Math.max(distanceX, distanceY);
-        }
+        // RectangleH.distanceToPoint() hace exactamente lo que necesitamos:
+        // - Retorna 0 si el punto está dentro del bounds
+        // - Retorna distancia euclidiana al borde más cercano si está fuera
+        return viewport.distanceToPoint(bulletX, bulletY);
     }
     
     // ── Helpers privados ──────────────────────────────────────────────────

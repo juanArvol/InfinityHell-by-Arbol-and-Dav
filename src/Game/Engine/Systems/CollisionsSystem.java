@@ -13,13 +13,13 @@ import Game.Engine.Entity.Components.InteractionSideComponent.SideInteraction;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.Entity.Components.SurfaceComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Contact.ContactState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.awt.geom.Point2D;
 import java.util.*;
 
@@ -161,6 +161,12 @@ public class CollisionsSystem {
      * Evita allocations en hot path — solo válido durante una iteración.
      */
     private final RectangleH reusableBroadY = new RectangleH();
+
+    /**
+     * RectangleH reutilizable para broadphase 2D (FASE 1B triggers).
+     * Evita allocations en hot path — solo válido durante una iteración.
+     */
+    private final RectangleH reusableBroad2D = new RectangleH();
 
 
     // ── HRFC — Profiling Infrastructure ───────────────────────────────────
@@ -448,7 +454,7 @@ public class CollisionsSystem {
             // ── HRFC — Collision Culling ──────────────────────────────────
             // Omitir triggers que están completamente fuera del área relevante.
             // Esto reduce drásticamente el trabajo cuando hay muchos bullets off-screen.
-            if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera)) {
+            if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera, deltaTime)) {
                 // Trigger fuera del área relevante — skip collision pero seguir simulando
                 // El trigger sigue vivo y se mueve, pero no genera colisiones.
                 // Integrar el movimiento completo sin colisiones.
@@ -481,7 +487,8 @@ public class CollisionsSystem {
 
             // Broad phase: swept bounds del path completo del frame
             // Cualquier obstáculo que no intersecte con este rect es imposible de impactar
-            RectangleH sweptB = SweptAABB.sweptBounds(bounds, vx, vy);
+            // HRFC FIX: Reutilizar RectangleH en lugar de crear nueva instancia
+            reusableBroad2D.copyFrom(bounds.sweep(vx, vy));
 
             double      nearestTime  = 1.0;
             int         hitNormalX   = 0;
@@ -495,22 +502,10 @@ public class CollisionsSystem {
                 if (colB == null || colB.isTrigger()) continue;  // trigger vs solo sólidos aquí
                 if (!colA.canCollideWith(colB)) continue;
                 
-                // ── HRFC — CollisionMatrix Filtering ──────────────────────
-                // Skip este par si la matriz indica que no deben colisionar.
-                // BULLET ↔ BULLET típicamente está filtrado aquí.
-                if (Game.Engine.Colisions.Filter.CollisionMatrix.isEnabled()) {
-                    if (!Game.Engine.Colisions.Filter.CollisionMatrix.canCollide(
-                        colA.getProfile().category,
-                        colB.getProfile().category
-                    )) {
-                        continue;  // Matrix says no collision needed
-                    }
-                }
-
                 RectangleH ob = colB.getBounds();
 
                 // Broad phase: descartar rápidamente sin swept
-                if (!sweptB.intersects(ob)) continue;
+                if (!reusableBroad2D.intersects(ob)) continue;
 
                 // Narrow phase: swept 2D completo
                 SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);

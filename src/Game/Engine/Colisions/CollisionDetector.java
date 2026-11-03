@@ -32,10 +32,16 @@ import java.util.*;
  * Los pares de TRIGGERS ya se procesaron en FASE 1B de CollisionsSystem.
  * Esta fase detecta overlaps estáticos entre pares que no participaron en FASE 1.
  *
- * ── Spatial hash ─────────────────────────────────────────────────────────
- * Divide el mundo en celdas de CELL_SIZE px. Cada objeto se registra en
- * las celdas que toca. Solo se comparan objetos en la misma celda → O(n)
- * en lugar de O(n²) para mundos con objetos distribuidos.
+ * ── Spatial hash adaptativo ───────────────────────────────────────────────
+ * HRFC FIX: El tamaño de celda ahora se calcula dinámicamente basado en el
+ * tamaño promedio de los objetos activos, con límites razonables:
+ *   - Mínimo 64px (para bullets pequeños)
+ *   - Máximo 256px (para bosses grandes)
+ *   - Por defecto 128px (balance general)
+ *
+ * Divide el mundo en celdas. Cada objeto se registra en las celdas que toca.
+ * Solo se comparan objetos en la misma celda → O(n) en lugar de O(n²)
+ * para mundos con objetos distribuidos.
  *
  * ── Cálculo de normal en FASE 2 ──────────────────────────────────────────
  * Para pares detectados por overlap AABB (no swept), la normal se calcula
@@ -57,7 +63,16 @@ import java.util.*;
  */
 public final class CollisionDetector {
 
-    private static final int CELL_SIZE = 128;
+    private static final int MIN_CELL_SIZE = 64;
+    private static final int MAX_CELL_SIZE = 256;
+    private static final int DEFAULT_CELL_SIZE = 128;
+
+    /**
+     * Tamaño de celda actual del spatial hash.
+     * Se recalcula dinámicamente en detect() basado en el tamaño promedio
+     * de los objetos activos en el frame.
+     */
+    private int currentCellSize = DEFAULT_CELL_SIZE;
 
     // ── Colecciones reutilizables — eliminan allocations por frame ────────
     //
@@ -103,6 +118,12 @@ public final class CollisionDetector {
      * Excluye los pares ya procesados en FASE 1 (registrados via markDispatched).
      * Excluye objetos marcados como Destroyable.isPendingDestruction().
      *
+     * ── HRFC FIX: Spatial hash adaptativo ─────────────────────────────────
+     * El tamaño de celda se calcula dinámicamente basado en el tamaño promedio
+     * de los colliders activos. Esto optimiza el spatial hash para el contenido
+     * actual del frame: muchos bullets pequeños usan celdas pequeñas, pocos
+     * bosses grandes usan celdas grandes.
+     *
      * @param objects lista de todos los objetos activos del frame
      * @return lista de pares en colisión (sin duplicados, sin pares ya despachados)
      */
@@ -115,6 +136,9 @@ public final class CollisionDetector {
         // skipSet se limpia al final — el caller lo popula antes de llamar detect()
 
         List<CollisionResult> results = new ArrayList<>();
+
+        // HRFC FIX: Calcular cell size adaptativo basado en objetos activos
+        currentCellSize = computeAdaptiveCellSize(objects);
 
         // Construir indexMap y grid en un solo pass
         for (int i = 0; i < objects.size(); i++) {
@@ -130,8 +154,8 @@ public final class CollisionDetector {
 
             RectangleH b = col.getBounds();
             
-            // HRFC: Usar getCellIndices() de RectangleH para evitar cálculo manual
-            int[] cellIndices = b.getCellIndices(CELL_SIZE);
+            // HRFC: Usar getCellIndices() de RectangleH con cell size dinámico
+            int[] cellIndices = b.getCellIndices(currentCellSize);
             int x0 = cellIndices[0];
             int y0 = cellIndices[1];
             int x1 = cellIndices[2];
@@ -204,6 +228,53 @@ public final class CollisionDetector {
     }
 
     /**
+     * Calcula el tamaño de celda óptimo basado en los colliders activos.
+     *
+     * ── HRFC FIX: Spatial hash adaptativo ─────────────────────────────────
+     * ESTRATEGIA:
+     *   - Calcular el tamaño promedio de los colliders activos
+     *   - cell_size = promedio × 2 (para que objetos típicos ocupen ~1-2 celdas)
+     *   - Clampear entre MIN_CELL_SIZE y MAX_CELL_SIZE
+     *
+     * BENEFICIOS:
+     *   - Bullets pequeños (4×4): cell=64 → menos celdas desperdiciadas
+     *   - Bosses grandes (200×200): cell=256 → menos multi-celda overhead
+     *   - Mix: cell=128 (default) → balance general
+     *
+     * @param objects lista de objetos activos
+     * @return tamaño de celda óptimo para este frame
+     */
+    private int computeAdaptiveCellSize(List<GameObjects> objects) {
+        if (objects.isEmpty()) {
+            return DEFAULT_CELL_SIZE;
+        }
+
+        double totalSize = 0.0;
+        int count = 0;
+
+        for (GameObjects obj : objects) {
+            ColliderComponent col = obj.getComponent(ColliderComponent.class);
+            if (col == null) continue;
+
+            RectangleH b = col.getBounds();
+            // Usar la diagonal como medida representativa del tamaño
+            double size = Math.sqrt(b.width * b.width + b.height * b.height);
+            totalSize += size;
+            count++;
+        }
+
+        if (count == 0) {
+            return DEFAULT_CELL_SIZE;
+        }
+
+        double averageSize = totalSize / count;
+        int adaptiveSize = (int) Math.round(averageSize * 2.0);
+
+        // Clampear entre límites razonables
+        return Math.max(MIN_CELL_SIZE, Math.min(MAX_CELL_SIZE, adaptiveSize));
+    }
+
+    /**
      * Limpia el estado del detector. Llamar al cambiar de mundo/escena.
      */
     public void clear() {
@@ -236,6 +307,13 @@ public final class CollisionDetector {
      * Actualizado para usar penetrationX() y penetrationY() en lugar de
      * cálculo manual. Esto elimina duplicación de lógica y usa la API probada.
      *
+     * ── HRFC FIX — Tie-breaking consistente en esquinas ───────────────────
+     * Cuando penX ≈ penY (esquina), se usa el vector centro-a-centro como
+     * desempate en lugar de elegir arbitrariamente Y. Esto es consistente
+     * con el tie-breaking de SweptAABB.calculate2D() que usa la velocidad.
+     * Aquí no tenemos velocidad, pero el vector centro-a-centro produce una
+     * normal geométricamente coherente y determinista.
+     *
      * @param ra bounds del objeto A
      * @param rb bounds del objeto B
      * @return int[2] con {normalX, normalY} desde la perspectiva de A hacia B
@@ -264,6 +342,16 @@ public final class CollisionDetector {
                 return new int[]{1, 0};
             }
             // Normal apunta desde B hacia A en el eje de mayor separación
+            return Math.abs(dx) >= Math.abs(dy)
+                    ? new int[]{ dx > 0 ? 1 : -1, 0 }
+                    : new int[]{ 0, dy > 0 ? 1 : -1 };
+        }
+
+        // HRFC FIX: Tie-breaking para esquinas (penX ≈ penY)
+        // Usar vector centro-a-centro como desempate en lugar de elegir Y arbitrariamente
+        double cornerEps = 1e-8;
+        if (Math.abs(penX - penY) <= cornerEps) {
+            // Esquina: usar el vector centro-a-centro para determinar el eje
             return Math.abs(dx) >= Math.abs(dy)
                     ? new int[]{ dx > 0 ? 1 : -1, 0 }
                     : new int[]{ 0, dy > 0 ? 1 : -1 };

@@ -96,8 +96,10 @@ public final class MovementSystem implements SimulationSystem {
             var record = entityStore.getRecord(entityId);
             if (record == null) continue;
             
-            // FILTRAR: Skip enemies (ENEMY_MASK), solo procesar bullets (PROJECTILE_MASK)
-            if (!record.mask().equals(PROJECTILE_ONLY)) {
+            // HRFC FIX: FILTRAR con matches() en lugar de equals()
+            // Skip enemies (ENEMY_MASK), solo procesar bullets que TENGAN PROJECTILE_MASK
+            // (no requiere match exacto — bullets pueden tener componentes adicionales)
+            if (!record.mask().matches(PROJECTILE_ONLY)) {
                 continue;
             }
             

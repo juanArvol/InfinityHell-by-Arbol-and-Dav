@@ -75,6 +75,11 @@ public final class AccelerationSystem implements SimulationSystem {
         PrimitiveStorage storage = entityStore.getStorage();
         int count = entityStore.count();
 
+        // HRFC FIX: Validación de componentes en DEBUG
+        // Solo en debug para evitar overhead en producción
+        assert validateComponents(entityStore) 
+            : "AccelerationSystem requiere VELOCITY+ACCELERATION+GRAVITY_SCALE en todas las entidades";
+
         float[] velX = storage.velocitiesX();
         float[] velY = storage.velocitiesY();
         float[] accX = storage.accelerationsX();
@@ -90,6 +95,30 @@ public final class AccelerationSystem implements SimulationSystem {
             velX[i] += accX[i] * dt;
             velY[i] += (accY[i] + GRAVITY * gravityScale[i]) * dt;
         }
+    }
+    
+    /**
+     * Valida que todas las entidades tengan los componentes requeridos.
+     * Solo se ejecuta en modo DEBUG (assert).
+     *
+     * @param entityStore store a validar
+     * @return true si todas las entidades tienen los componentes requeridos
+     */
+    private boolean validateComponents(EntityStore entityStore) {
+        for (int i = 0; i < entityStore.count(); i++) {
+            var entityId = entityStore.getEntityAt(i);
+            if (entityId == null) continue;
+            
+            var record = entityStore.getRecord(entityId);
+            if (record == null) continue;
+            
+            if (!record.mask().matches(REQUIRED_COMPONENTS)) {
+                System.err.println("[AccelerationSystem] Entity at index " + i 
+                    + " missing required components: " + REQUIRED_COMPONENTS);
+                return false;
+            }
+        }
+        return true;
     }
     
     /**

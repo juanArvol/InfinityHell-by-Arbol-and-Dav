@@ -10,13 +10,24 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
  *   DynamicConstraint combat = DynamicConstraint.of(
  *       (dx, dy, vw, vh, zoom) -> {
  *           if (!player.isInCombat()) return new Vector2D(dx, dy);
- *           // Confinada durante combate
- *           double clampX = Math.max(bossRoom.x, Math.min(dx, bossRoom.x + bossRoom.width));
- *           double clampY = Math.max(bossRoom.y, Math.min(dy, bossRoom.y + bossRoom.height));
- *           return new Vector2D(clampX, clampY);
+ *           
+ *           // HRFC: Usar RectangleH.clampPoint() en lugar de Math.max/min anidados
+ *           // Más declarativo y menos propenso a errores
+ *           Game.Engine.GameMath.Logic2D.RectangleH bossRoomBounds = 
+ *               new Game.Engine.GameMath.Logic2D.RectangleH(
+ *                   bossRoom.x, bossRoom.y,
+ *                   bossRoom.width, bossRoom.height
+ *               );
+ *           
+ *           java.awt.geom.Point2D.Double clamped = bossRoomBounds.clampPoint(dx, dy);
+ *           return new Vector2D(clamped.x, clamped.y);
  *       },
  *       () -> !player.isAlive()   // expira cuando el player muere
  *   );
+ *
+ *   // Ejemplo legacy (aún funcional pero menos expresivo):
+ *   // double clampX = Math.max(bossRoom.x, Math.min(dx, bossRoom.x + bossRoom.width));
+ *   // double clampY = Math.max(bossRoom.y, Math.min(dy, bossRoom.y + bossRoom.height));
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
  * DynamicConstraint es la "escotilla de escape" del sistema de constraints:
