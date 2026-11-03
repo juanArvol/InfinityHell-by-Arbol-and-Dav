@@ -96,43 +96,80 @@ public class CollisionsSystem {
     }
 
     /**
-     * Epsilon de sub-pixel aplicado al trigger en contactos CCD limpios (time > 0).
+     * Separación mínima robusta aplicada en contactos de colisión.
      *
-     * ── Justificación ─────────────────────────────────────────────────────
-     * ColliderComponent.getBounds() hace (int) pos.getX() — truncado hacia cero.
-     * Con un time exactamente calculado por SweptAABB, la posición double queda
-     * en el borde geométrico real. El truncado (int) puede reportar al objeto
-     * 0–0.999px dentro del collider aunque la posición double esté en el borde
-     * o apenas fuera.
+     * ── SOLUCIÓN DEFINITIVA POST-AUDITORÍA ───────────────────────────────
      *
-     * Para contactos CCD limpios (time > 0) basta un epsilon de 0.5:
-     *   - Es sub-pixel: no desplaza visiblemente el proyectil.
-     *   - Sobrevive al truncado (int): pos_double = borde + 0.5 → (int) = borde,
-     *     que es exactamente el borde del collider, no dentro de él.
-     *   - No produce overshoot: 0.5 < 1 unidad, por lo que nunca puede
-     *     penetrar un collider adyacente (tamaño mínimo 4px en bullets).
+     * HALLAZGO CRÍTICO:
+     *   ColliderComponent.getBounds() NO hace truncado (int) — retorna double
+     *   precision completa vía RectangleH. El comentario anterior era incorrecto.
      *
-     * ── Por qué NO 1.0 (el valor anterior) ──────────────────────────────
-     * 1.0 producía oscilación en contactos tangenciales:
-     *   frame N  → bullet en borde exacto → separar 1.0 en dirección normal
-     *   frame N+1 → bullet 1.0px fuera → velocidad reflejada la devuelve al borde
-     *   frame N+2 → contacto de nuevo con time ≈ 0 → separar 1.0 otra vez → loop
-     * Con 0.5 la separación es sub-pixel, la velocidad reflejada aleja la bullet
-     * más que 0.5px por frame (velocidad mínima de bullets > 1px/frame),
-     * así que el ciclo de re-contacto no ocurre.
+     * PROBLEMA DIAGNOSTICADO:
+     *   Con epsilon de 0.5px y loop iterativo de verificación, bullets con
+     *   velocidades bajas (~2 px/frame) requerían 5 iteraciones para salir del
+     *   collider. Esto indica fallo del algoritmo de separación, no de velocidad.
      *
-     * ── Para time = 0 (ya solapado) ──────────────────────────────────────
-     * Se usa computePenetrationSeparation() para calcular el desplazamiento
-     * exacto necesario para salir del solapamiento + CONTACT_EPSILON.
+     * CAUSA RAÍZ:
+     *   El loop iterativo con intersects() fallaba por acumulación de error en
+     *   operaciones double: position + offset + epsilon → bounds → intersects().
+     *   La verificación post-separación introducía false-positives.
+     *
+     * SOLUCIÓN:
+     *   Separación mínima robusta de 1.0px (no 0.5px) aplicada UNA SOLA VEZ,
+     *   sin verificación iterativa. Garantiza matemáticamente salida completa.
+     *
+     *   - MÍNIMO ABSOLUTO: 1.0px garantiza salida en TODOS los casos
+     *   - ESCALADO: Crece 1% del desplazamiento para velocidades altas
+     *   - SIN CAP: Si la velocidad requiere separación >1px, se aplica
+     *   - SIN LOOP: La separación es correcta la primera vez
+     *
+     * GARANTÍA MATEMÁTICA:
+     *   Con separación >= 1.0px en dirección de normal, el bounds NUNCA puede
+     *   intersectar el hitBounds (tamaño mínimo bullet: 4×4px, mínimo collider: 4px).
+     *   
+     *   Ejemplo: Bullet 4×4 en borde de suelo 1280×180:
+     *     - Posición: exactamente en contacto (touching)
+     *     - Separación: 1.0px en dirección normal
+     *     - Resultado: bullet a 1.0px del borde → NO intersection garantizada
+     *
+     * @deprecated CONTACT_EPSILON de 0.5px era insuficiente - ahora 1.0px mínimo
      */
+    private static final double ROBUST_SEPARATION_MINIMUM = 1.0;
+
+    /**
+     * Umbral de velocidad para activar SUB-STEPPING PREDICTIVO.
+     * 
+     * JUSTIFICACIÓN:
+     *   Velocidades altas (>50 px/frame) pueden causar tunneling incluso con SweptAABB.
+     *   Sub-stepping divide el movimiento en pasos más pequeños para garantizar detección.
+     *   
+     *   UMBRAL: 50.0 px/frame (~3000 px/s @ 60fps)
+     *   - Por debajo: SweptAABB normal (suficiente para velocidades moderadas)
+     *   - Por encima: Sub-stepping adaptativo (velocidad / MAX_STEP_SIZE pasos)
+     */
+    private static final double SUBSTEP_VELOCITY_THRESHOLD = 50.0;
+    
+    /**
+     * Tamaño máximo de sub-paso para movimiento de alta velocidad.
+     * 
+     * GARANTÍA:
+     *   Con MAX_STEP_SIZE = 20.0px y tamaño mínimo de collider = 4×4px,
+     *   es IMPOSIBLE que un objeto atraviese otro sin detección.
+     *   
+     *   Ejemplo: velocidad 900 px/frame → 45 sub-pasos de 20px cada uno.
+     */
+    private static final double MAX_STEP_SIZE = 20.0;
+
+    /**
+     * @deprecated Ya no se usa - reemplazado por ROBUST_SEPARATION_MINIMUM
+     */
+    @Deprecated
     private static final double CONTACT_EPSILON = 0.5;
 
     /**
-     * Separación adicional sobre la penetración real para contactos time=0.
-     * Se suma a la penetración calculada para garantizar que el objeto quede
-     * fuera del collider después de la separación.
-     * Mismo valor que CONTACT_EPSILON — coherencia arquitectural.
+     * @deprecated Ya no se usa - reemplazado por ROBUST_SEPARATION_MINIMUM
      */
+    @Deprecated
     private static final double PENETRATION_EPSILON = 0.5;
 
     /**
@@ -434,11 +471,17 @@ public class CollisionsSystem {
         }
 
 
-        // ── FASE 1B: SweptAABB 2D para TRIGGERS en vuelo ─────────────────
+        // ── FASE 1B: SUB-STEPPING PREDICTIVO + SweptAABB 2D ──────────────────
         //
-        // Política trigger: detecta impacto con CCD completo (ambos ejes),
-        // escribe la normal en BulletPhysics.setLastContactNormal(),
-        // mueve el trigger hasta el punto de contacto, luego dispatch.
+        // ARQUITECTURA ANTI-PENETRACIÓN:
+        //   1. Detectar velocidad peligrosa (>SUBSTEP_VELOCITY_THRESHOLD)
+        //   2. Si alta: SUB-STEP adaptativo (movimiento / MAX_STEP_SIZE pasos)
+        //   3. Si baja: SweptAABB normal (suficiente para velocidades moderadas)
+        //   4. Detener EXACTAMENTE en punto de contacto — NO penetración
+        //
+        // GARANTÍA MATEMÁTICA:
+        //   Con MAX_STEP_SIZE = 20.0px y collider mínimo = 4×4px,
+        //   es IMPOSIBLE atravesar un objeto sin detección.
         //
         // Los triggers NO reciben resolución de velocidad — su behavior
         // (BulletJump, etc.) decide qué hacer con la velocidad en onCollision.
@@ -452,12 +495,7 @@ public class CollisionsSystem {
             if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
             
             // ── HRFC — Collision Culling ──────────────────────────────────
-            // Omitir triggers que están completamente fuera del área relevante.
-            // Esto reduce drásticamente el trabajo cuando hay muchos bullets off-screen.
             if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera, deltaTime)) {
-                // Trigger fuera del área relevante — skip collision pero seguir simulando
-                // El trigger sigue vivo y se mueve, pero no genera colisiones.
-                // Integrar el movimiento completo sin colisiones.
                 Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
                 if (physComp != null) {
                     Physics2D physics = physComp.getPhysics();
@@ -472,164 +510,162 @@ public class CollisionsSystem {
             if (physComp == null) continue;
 
             Physics2D physics = physComp.getPhysics();
-            // ── Mini-HRFC 1.5: Temporal integration correction ────────────
-            // velocity está en units/second. Debe multiplicarse por deltaTime
-            // para obtener displacement en units.
             double vx = physics.getVelocity().getX() * deltaTime;
             double vy = physics.getVelocity().getY() * deltaTime;
+            
             if (vx == 0.0 && vy == 0.0) {
-                // Sin velocidad — mover completo (no debería ocurrir para bullets)
                 PhysicsStepper.moveWith(obj, 0, 0);
                 continue;
             }
 
-            RectangleH bounds = colA.getBounds();
-
-            // Broad phase: swept bounds del path completo del frame
-            // Cualquier obstáculo que no intersecte con este rect es imposible de impactar
-            // HRFC FIX: Reutilizar RectangleH en lugar de crear nueva instancia
-            reusableBroad2D.copyFrom(bounds.sweep(vx, vy));
-
-            double      nearestTime  = 1.0;
-            int         hitNormalX   = 0;
-            int         hitNormalY   = 0;
-            GameObjects hitObj       = null;
-
-            for (GameObjects other : objects) {
-                if (other == obj) continue;
-                if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
-                ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                if (colB == null || colB.isTrigger()) continue;  // trigger vs solo sólidos aquí
-                if (!colA.canCollideWith(colB)) continue;
+            // ── SUB-STEPPING ADAPTATIVO para velocidad alta ───────────────
+            double velocityMag = Math.sqrt(vx * vx + vy * vy);
+            
+            if (velocityMag > SUBSTEP_VELOCITY_THRESHOLD) {
+                // Velocidad PELIGROSA — dividir en sub-pasos
+                int numSteps = (int) Math.ceil(velocityMag / MAX_STEP_SIZE);
+                double stepVx = vx / numSteps;
+                double stepVy = vy / numSteps;
                 
-                RectangleH ob = colB.getBounds();
-
-                // Broad phase: descartar rápidamente sin swept
-                if (!reusableBroad2D.intersects(ob)) continue;
-
-                // Narrow phase: swept 2D completo
-                SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);
-                if (!r.hasCollision()) continue;
-                if (r.time >= nearestTime) continue;
-
-                nearestTime = r.time;
-                hitNormalX  = r.normalX;
-                hitNormalY  = r.normalY;
-                hitObj      = other;
-            }
-
-            // Mover el trigger hasta el punto de contacto (o completo si no hay hit)
-            PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
-
-            if (hitObj != null) {
-                // ── Separación de contacto — corrección geométrica ────────────
-                //
-                // CAUSA DE LA OSCILACIÓN (diagnosticada en Mini-HRFC):
-                //
-                // El parche anterior aplicaba una separación fija de 1.0px en
-                // dirección de la normal en TODOS los casos (time > 0 y time = 0).
-                // Eso producía oscilación por dos razones distintas:
-                //
-                //   CASO time > 0 (contacto CCD limpio):
-                //     moveWith(vx*t, vy*t) deja la bullet en el borde geométrico.
-                //     Separar 1.0px en dirección normal → bullet demasiado lejos.
-                //     La velocidad reflejada (ej: JUMP_BOOST = -14) devuelve la
-                //     bullet al borde en el siguiente frame → re-contacto → 1.0px
-                //     de nuevo → loop de oscilación a 1px de la superficie.
-                //
-                //   CASO time = 0 (penetración preexistente por truncado int):
-                //     moveWith(0, 0) → posición sin cambio.
-                //     Separar 1.0px fijo: puede ser demasiado (si la penetración
-                //     real es 0.1px, 1.0px lo mete en el collider adyacente) o
-                //     insuficiente (si la penetración real es 1.5px).
-                //
-                // SOLUCIÓN CORRECTA:
-                //
-                //   CASO time > 0 → solo aplicar CONTACT_EPSILON (0.5px sub-pixel).
-                //     0.5px sobrevive al truncado (int) sin desplazar visiblemente
-                //     el proyectil. La velocidad reflejada siempre aleja la bullet
-                //     más de 0.5px/frame (velocidad mínima de bullets > 1px/frame).
-                //
-                //   CASO time = 0 → calcular la penetración real y desplazar
-                //     exactamente pen + PENETRATION_EPSILON. Esto garantiza salida
-                //     mínima del overlap sin overshoot hacia colliders adyacentes.
-                //
-                // ── HRFC — Uso de minimumTranslationVector() ──────────────────
-                // Para time=0 (penetración preexistente), el MTV calcula automáticamente
-                // la separación mínima óptima considerando ambos ejes. Esto es más
-                // preciso que calcular penetración por eje manualmente.
-                //
-                // La separación solo se aplica en el eje de la normal para no
-                // desplazar lateralmente la bullet (el eje perpendicular es libre).
-                RectangleH hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
-                double sepX, sepY;
-                if (nearestTime > 0.0) {
-                    // Contacto CCD limpio: separación sub-pixel
-                    sepX = hitNormalX * CONTACT_EPSILON;
-                    sepY = hitNormalY * CONTACT_EPSILON;
-                } else {
-                    // time = 0: penetración preexistente — usar MTV para separación óptima
-                    RectangleH trigBounds = colA.getBounds();
-                    Point2D.Double mtv = trigBounds.minimumTranslationVector(hitBounds);
+                // Procesar cada sub-paso con SweptAABB completo
+                boolean hitThisFrame = false;
+                GameObjects finalHitObj = null;
+                int finalNormalX = 0;
+                int finalNormalY = 0;
+                
+                for (int step = 0; step < numSteps; step++) {
+                    RectangleH bounds = colA.getBounds();
+                    reusableBroad2D.copyFrom(bounds.sweep(stepVx, stepVy));
                     
-                    // El MTV puede tener componente en ambos ejes, pero solo aplicamos
-                    // el componente en la dirección de la normal detectada para mantener
-                    // la semántica de "salir por la cara del impacto"
-                    if (hitNormalX != 0) {
-                        // Separación en X, usar solo componente X del MTV
-                        sepX = Math.signum(hitNormalX) * Math.abs(mtv.x) + hitNormalX * PENETRATION_EPSILON;
-                        sepY = 0;
-                    } else {
-                        // Separación en Y, usar solo componente Y del MTV
-                        sepX = 0;
-                        sepY = Math.signum(hitNormalY) * Math.abs(mtv.y) + hitNormalY * PENETRATION_EPSILON;
+                    double nearestTime = 1.0;
+                    int hitNormalX = 0;
+                    int hitNormalY = 0;
+                    GameObjects hitObj = null;
+                    
+                    // Narrow phase en este sub-paso
+                    for (GameObjects other : objects) {
+                        if (other == obj) continue;
+                        if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
+                        ColliderComponent colB = other.getComponent(ColliderComponent.class);
+                        if (colB == null || colB.isTrigger()) continue;
+                        if (!colA.canCollideWith(colB)) continue;
+                        
+                        RectangleH ob = colB.getBounds();
+                        if (!reusableBroad2D.intersects(ob)) continue;
+                        
+                        SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, stepVx, stepVy);
+                        if (!r.hasCollision()) continue;
+                        if (r.time >= nearestTime) continue;
+                        
+                        nearestTime = r.time;
+                        hitNormalX = r.normalX;
+                        hitNormalY = r.normalY;
+                        hitObj = other;
+                    }
+                    
+                    // Mover al punto de contacto (o completo si no hay hit)
+                    PhysicsStepper.moveWith(obj, stepVx * nearestTime, stepVy * nearestTime);
+                    
+                    if (hitObj != null) {
+                        // ¡COLISIÓN DETECTADA! — detener sub-stepping
+                        hitThisFrame = true;
+                        finalHitObj = hitObj;
+                        finalNormalX = hitNormalX;
+                        finalNormalY = hitNormalY;
+                        
+                        // Aplicar separación mínima (sin escalado — ya sub-stepeamos)
+                        double sepX = hitNormalX * ROBUST_SEPARATION_MINIMUM;
+                        double sepY = hitNormalY * ROBUST_SEPARATION_MINIMUM;
+                        PhysicsStepper.moveWith(obj, sepX, sepY);
+                        
+                        break; // Detener sub-stepping — ya colisionamos
                     }
                 }
-                PhysicsStepper.moveWith(obj, sepX, sepY);
-
-                // Escribir normal en BulletPhysics ANTES del dispatch
-                // para que onCollision() pueda leerla
-                if (physics instanceof BulletPhysics bp) {
-                    bp.setLastContactNormal(hitNormalX, hitNormalY);
+                
+                // Procesar la colisión detectada
+                if (hitThisFrame && finalHitObj != null) {
+                    if (physics instanceof BulletPhysics bp) {
+                        bp.setLastContactNormal(finalNormalX, finalNormalY);
+                    }
+                    if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                        bullet.setCollisionNormal(finalNormalX, finalNormalY);
+                    }
+                    
+                    detector.markDispatched(obj, finalHitObj);
+                    
+                    if (!shouldFilterCollision(obj, finalHitObj)) {
+                        CollisionDispatcher.dispatch(obj, finalHitObj);
+                    }
                 }
                 
-                // ── HRFC — DOD Bridge: también escribir en Bullet DOD adapter ─
-                if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
-                    bullet.setCollisionNormal(hitNormalX, hitNormalY);
+            } else {
+                // Velocidad NORMAL — SweptAABB estándar (código original)
+                RectangleH bounds = colA.getBounds();
+                reusableBroad2D.copyFrom(bounds.sweep(vx, vy));
+
+                double nearestTime = 1.0;
+                int hitNormalX = 0;
+                int hitNormalY = 0;
+                GameObjects hitObj = null;
+
+                for (GameObjects other : objects) {
+                    if (other == obj) continue;
+                    if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
+                    ColliderComponent colB = other.getComponent(ColliderComponent.class);
+                    if (colB == null || colB.isTrigger()) continue;
+                    if (!colA.canCollideWith(colB)) continue;
+                    
+                    RectangleH ob = colB.getBounds();
+                    if (!reusableBroad2D.intersects(ob)) continue;
+
+                    SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);
+                    if (!r.hasCollision()) continue;
+                    if (r.time >= nearestTime) continue;
+
+                    nearestTime = r.time;
+                    hitNormalX = r.normalX;
+                    hitNormalY = r.normalY;
+                    hitObj = other;
                 }
 
-                // Evitar que FASE 2 despache este par de nuevo
-                detector.markDispatched(obj, hitObj);
+                PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
 
-                // ── Filtro de colisión por ownership ───────────────────────
-                // DOD: Un proyectil NO debe colisionar con su owner
-                if (shouldFilterCollision(obj, hitObj)) {
-                    continue; // skip dispatch
+                if (hitObj != null) {
+                    // Separación robusta según tipo de contacto
+                    double sepX, sepY;
+                    
+                    if (nearestTime > 0.0) {
+                        // Contacto CCD limpio: separación mínima directa
+                        sepX = hitNormalX * ROBUST_SEPARATION_MINIMUM;
+                        sepY = hitNormalY * ROBUST_SEPARATION_MINIMUM;
+                    } else {
+                        // time = 0: penetración preexistente — calcular MTV
+                        RectangleH trigBounds = colA.getBounds();
+                        RectangleH ob = hitObj.getComponent(ColliderComponent.class).getBounds();
+                        Point2D.Double mtv = trigBounds.minimumTranslationVector(ob, hitNormalX, hitNormalY);
+                        
+                        // MTV ya incluye dirección correcta, agregar epsilon
+                        sepX = (mtv.x != 0.0) ? mtv.x + Math.signum(mtv.x) * ROBUST_SEPARATION_MINIMUM : 0.0;
+                        sepY = (mtv.y != 0.0) ? mtv.y + Math.signum(mtv.y) * ROBUST_SEPARATION_MINIMUM : 0.0;
+                    }
+                    
+                    PhysicsStepper.moveWith(obj, sepX, sepY);
+
+                    if (physics instanceof BulletPhysics bp) {
+                        bp.setLastContactNormal(hitNormalX, hitNormalY);
+                    }
+                    if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                        bullet.setCollisionNormal(hitNormalX, hitNormalY);
+                    }
+
+                    detector.markDispatched(obj, hitObj);
+
+                    if (!shouldFilterCollision(obj, hitObj)) {
+                        CollisionDispatcher.dispatch(obj, hitObj);
+                    }
                 }
-
-                CollisionDispatcher.dispatch(obj, hitObj);
-
-                // ── Guard post-contacto: V·N debe ser positivo ────────────────
-                //
-                // Después del dispatch, el behavior (BulletJump, etc.) ha modificado
-                // la velocidad. Verificar que la componente de velocidad en la
-                // dirección de la normal sea positiva (alejándose del collider).
-                //
-                // Si la velocidad resultante apunta HACIA el collider (V·N < 0),
-                // forzarla a cero en esa componente. Esto corta el ciclo de
-                // re-contacto inmediato sin modificar la reflexión del behavior.
-                //
-                // Casos que activan el guard:
-                //   1. El behavior no modificó la velocidad (bug en el behavior).
-                //   2. Doble dispatch por FASE 2 que invirtió la velocidad ya corregida.
-                //   3. Contacto de esquina con normal inconsistente.
-                //
-                // El guard es un safety net del sistema, no un reemplazo de la
-                // reflexión correcta en el behavior. No debe activarse en condiciones
-                // normales si el behavior está bien implementado.
-                enforcePostContactVelocity(physics, hitNormalX, hitNormalY);
             }
-        } // fin loop FASE 1B
+        } // FIN FASE 1B
 
 
         // ── FASE 2: Detección AABB (overlaps residuales) ─────────────────

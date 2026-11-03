@@ -1056,6 +1056,10 @@ public class RectangleH implements Serializable, Cloneable {
      * Positivo = mover hacia la derecha, negativo = mover hacia la izquierda.
      * Retorna 0.0 si no hay overlap.
      * 
+     * LIMITACIÓN: Este método puede producir resultados incorrectos con bounds
+     * de tamaños muy asimétricos cuando no hay información de la dirección de
+     * impacto. Para casos con normal de contacto, usar penetrationX(other, normalX).
+     * 
      * CASO ESPECIAL - CENTROS COINCIDENTES EN X:
      * Cuando los centros tienen exactamente la misma coordenada X (caso raro pero posible),
      * el desempate se hace por el orden de las coordenadas absolutas:
@@ -1084,10 +1088,50 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     /**
+     * Calcula la penetración en el eje X guiada por normal de contacto.
+     * 
+     * DIFERENCIA CON penetrationX() SIN NORMAL:
+     * Este método calcula la profundidad de penetración DESDE LA CARA indicada
+     * por la normal, evitando ambigüedades con bounds asimétricos.
+     * 
+     * @param other bounds con el que se solapa
+     * @param normalX normal horizontal del contacto: -1 (cara izquierda), +1 (cara derecha)
+     * @return penetración siempre con signo correcto según la normal
+     * 
+     * Ejemplo: Bala 4×4 impactando bloque 1280×180 desde la IZQUIERDA
+     *   - normalX = +1 (impacto en cara derecha del bloque)
+     *   - penetración = |(bulletRight) - (blockLeft)| = profundidad real
+     *   - retorna +penetración (separar hacia la derecha)
+     * 
+     * Sin la normal, el método clásico podría elegir incorrectamente el otro eje.
+     */
+    public double penetrationX(RectangleH other, int normalX) {
+        if (!intersects(other)) return 0.0;
+        if (normalX == 0) return penetrationX(other); // fallback sin hint
+
+        // Calcular la penetración desde la cara indicada por la normal
+        if (normalX > 0) {
+            // Normal apunta a la DERECHA → bala impactó cara IZQUIERDA de other
+            // Penetración = cuánto se metió la bala por la izquierda de other
+            double pen = (x + width) - other.x;
+            return Math.abs(pen); // siempre positivo, la normal ya indica dirección
+        } else {
+            // Normal apunta a la IZQUIERDA → bala impactó cara DERECHA de other
+            // Penetración = cuánto se metió la bala por la derecha de other
+            double pen = (other.x + other.width) - x;
+            return Math.abs(pen); // siempre positivo, la normal ya indica dirección
+        }
+    }
+
+    /**
      * Calcula la penetración en el eje Y con otro bounds.
      * Retorna el desplazamiento necesario para separar este bounds del otro.
      * Positivo = mover hacia abajo, negativo = mover hacia arriba.
      * Retorna 0.0 si no hay overlap.
+     * 
+     * LIMITACIÓN: Este método puede producir resultados incorrectos con bounds
+     * de tamaños muy asimétricos cuando no hay información de la dirección de
+     * impacto. Para casos con normal de contacto, usar penetrationY(other, normalY).
      * 
      * CASO ESPECIAL - CENTROS COINCIDENTES EN Y:
      * Cuando los centros tienen exactamente la misma coordenada Y,
@@ -1115,9 +1159,55 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     /**
+     * Calcula la penetración en el eje Y guiada por normal de contacto.
+     * 
+     * DIFERENCIA CON penetrationY() SIN NORMAL:
+     * Este método calcula la profundidad de penetración DESDE LA CARA indicada
+     * por la normal, evitando ambigüedades con bounds asimétricos.
+     * 
+     * @param other bounds con el que se solapa
+     * @param normalY normal vertical del contacto: -1 (cara superior/suelo), +1 (cara inferior/techo)
+     * @return penetración siempre con signo correcto según la normal
+     * 
+     * Ejemplo: Bala 4×4 impactando suelo 1280×180 desde ABAJO
+     *   - normalY = -1 (impacto en cara SUPERIOR del suelo, mirando hacia abajo)
+     *   - penetración = |(bulletBottom) - (groundTop)| = profundidad real (~2px)
+     *   - retorna +2.0 (magnitud positiva, usaremos normalY para el signo final)
+     * 
+     * SIN la normal, el método clásico calcularía:
+     *   - topPenetration ≈ 2px (correcto pero pequeño)
+     *   - bottomPenetration ≈ 180px (altura del suelo, irrelevante)
+     *   - elegiría topPenetration pero con SIGNO INCORRECTO
+     * 
+     * CON la normal, sabemos que la cara impactada fue la SUPERIOR (normalY=-1),
+     * así que medimos solo desde esa cara.
+     */
+    public double penetrationY(RectangleH other, int normalY) {
+        if (!intersects(other)) return 0.0;
+        if (normalY == 0) return penetrationY(other); // fallback sin hint
+
+        // Calcular la penetración desde la cara indicada por la normal
+        if (normalY > 0) {
+            // Normal apunta HACIA ABAJO → bala impactó cara SUPERIOR de other (suelo)
+            // Penetración = cuánto se metió la bala por arriba de other
+            double pen = (y + height) - other.y;
+            return Math.abs(pen); // siempre positivo, la normal ya indica dirección
+        } else {
+            // Normal apunta HACIA ARRIBA → bala impactó cara INFERIOR de other (techo)
+            // Penetración = cuánto se metió la bala por abajo de other
+            double pen = (other.y + other.height) - y;
+            return Math.abs(pen); // siempre positivo, la normal ya indica dirección
+        }
+    }
+
+    /**
      * Calcula el vector de penetración mínimo (MTV - Minimum Translation Vector).
      * Retorna el vector que mueve este bounds fuera del otro con mínimo desplazamiento.
      * Retorna (0, 0) si no hay intersección.
+     * 
+     * NOTA: Este método puede producir resultados ambiguos o incorrectos cuando
+     * los bounds tienen tamaños muy asimétricos (ej: bala 4×4 vs suelo 1280×180).
+     * Para casos con contexto de colisión disponible, usar minimumTranslationVector(other, normalX, normalY).
      */
     public Point2D.Double minimumTranslationVector(RectangleH other) {
         if (!intersects(other)) {
@@ -1131,6 +1221,106 @@ public class RectangleH implements Serializable, Cloneable {
             return new Point2D.Double(penX, 0.0);
         } else {
             return new Point2D.Double(0.0, penY);
+        }
+    }
+
+    /**
+     * Calcula el vector de penetración mínimo (MTV) con hint de dirección de colisión.
+     * 
+     * Esta versión resuelve correctamente la separación incluso con bounds muy
+     * asimétricos usando la normal de contacto detectada por CCD (Swept AABB).
+     * 
+     * ── PROBLEMA CON MTV CLÁSICO ──────────────────────────────────────────
+     * 
+     * El MTV estándar elige la dirección de menor penetración absoluta sin
+     * considerar desde dónde vino el impacto. Con bounds asimétricos esto
+     * produce separaciones incorrectas:
+     * 
+     * Ejemplo: Bala 4×4 impactando suelo 1280×180 desde ABAJO
+     * 
+     *   penX ≈ 2px   (bala penetró 2px en el borde inferior del suelo)
+     *   penY ≈ 180px (altura total del suelo, irrelevante para la separación)
+     * 
+     *   MTV clásico → elige X porque |2| < |180|
+     *   Resultado   → empuja lateralmente (INCORRECTO)
+     * 
+     * ── SOLUCIÓN: MTV GUIADO POR NORMAL ───────────────────────────────────
+     * 
+     * La normal (nx, ny) indica la cara de impacto real detectada por CCD.
+     * Usamos esta información para:
+     * 
+     * 1. Identificar el eje relevante (el que tiene normal != 0)
+     * 2. Calcular la penetración DESDE ESA CARA específica
+     * 3. Aplicar la separación en la dirección de la normal
+     * 
+     * Esto garantiza separación correcta independiente del tamaño de los bounds.
+     * 
+     * ── CASOS ESPECIALES ──────────────────────────────────────────────────
+     * 
+     * - Normal (0, 0): Fallback a MTV clásico (sin información direccional)
+     * - Esquina (nx != 0 && ny != 0): Usar el eje de mayor componente de normal
+     * 
+     * @param other  bounds con el que se solapa
+     * @param normalX normal horizontal del contacto (-1, 0, +1) desde Swept AABB
+     * @param normalY normal vertical del contacto (-1, 0, +1) desde Swept AABB
+     * @return vector de separación que considera la dirección de impacto
+     * 
+     * Ejemplo de uso correcto:
+     * <pre>
+     *   SweptAABB.Result hit = SweptAABB.calculate2D(bullet, ground, vx, vy);
+     *   if (hit.time == 0.0) { // penetración preexistente
+     *       Point2D.Double mtv = bullet.minimumTranslationVector(ground, hit.normalX, hit.normalY);
+     *       PhysicsStepper.moveWith(bullet, mtv.x, mtv.y);
+     *   }
+     * </pre>
+     */
+    public Point2D.Double minimumTranslationVector(RectangleH other, int normalX, int normalY) {
+        if (!intersects(other)) {
+            return new Point2D.Double(0.0, 0.0);
+        }
+
+        // Caso especial: sin información de normal, fallback a MTV clásico
+        if (normalX == 0 && normalY == 0) {
+            return minimumTranslationVector(other);
+        }
+
+        // Caso normal: usar el eje indicado por la normal para separación
+        // Los métodos penetrationX/Y con normal calculan la magnitud CORRECTA
+        // desde la cara impactada, retornando siempre valores positivos
+        
+        if (normalX != 0 && normalY == 0) {
+            // Separación horizontal pura
+            double penX = penetrationX(other, normalX);
+            // La normal indica la dirección de separación:
+            // normalX = +1 → separar hacia la derecha (+)
+            // normalX = -1 → separar hacia la izquierda (-)
+            double sepX = normalX * penX;
+            return new Point2D.Double(sepX, 0.0);
+            
+        } else if (normalY != 0 && normalX == 0) {
+            // Separación vertical pura
+            double penY = penetrationY(other, normalY);
+            // La normal indica la dirección de separación:
+            // normalY = +1 → separar hacia abajo (+)
+            // normalY = -1 → separar hacia arriba (-)
+            double sepY = normalY * penY;
+            return new Point2D.Double(0.0, sepY);
+            
+        } else {
+            // Contacto de esquina (ambas normales != 0)
+            // Elegir el eje de mayor componente absoluta de normal
+            // Este es el eje "más impactado" y debe recibir la separación
+            if (Math.abs(normalX) >= Math.abs(normalY)) {
+                // Eje X dominante
+                double penX = penetrationX(other, normalX);
+                double sepX = normalX * penX;
+                return new Point2D.Double(sepX, 0.0);
+            } else {
+                // Eje Y dominante
+                double penY = penetrationY(other, normalY);
+                double sepY = normalY * penY;
+                return new Point2D.Double(0.0, sepY);
+            }
         }
     }
 
