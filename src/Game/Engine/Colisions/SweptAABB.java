@@ -1,6 +1,6 @@
 package Game.Engine.Colisions;
 
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 
 /**
  * Detección continua de colisiones (Swept AABB).
@@ -116,7 +116,7 @@ public final class SweptAABB {
      * de llamar a este método. Este algoritmo opera sobre desplazamientos
      * espaciales, no sobre velocidades temporales.
      */
-    public static Result calculate(Rectangle moving, Rectangle target,
+    public static Result calculate(RectangleH moving, RectangleH target,
                                    double vx, double vy) {
 
         if (vx == 0.0 && vy == 0.0) return Result.NONE;
@@ -224,7 +224,7 @@ public final class SweptAABB {
      * de llamar a este método. Este algoritmo opera sobre desplazamientos
      * espaciales, no sobre velocidades temporales.
      */
-    public static Result calculate2D(Rectangle moving, Rectangle target,
+    public static Result calculate2D(RectangleH moving, RectangleH target,
                                      double vx, double vy) {
 
         if (vx == 0.0 && vy == 0.0) return Result.NONE;
@@ -357,17 +357,17 @@ public final class SweptAABB {
      * @param bounds  bounds actuales del objeto en movimiento
      * @param vx      DESPLAZAMIENTO horizontal del frame [units], NO velocidad
      * @param vy      DESPLAZAMIENTO vertical del frame [units], NO velocidad
-     * @return Rectangle que envuelve el path completo del frame
+     * @return RectangleH que envuelve el path completo del frame
      */
-    public static Rectangle sweptBounds(Rectangle bounds, double vx, double vy) {
-        int x = bounds.x, y = bounds.y;
-        int w = bounds.width, h = bounds.height;
+    public static RectangleH sweptBounds(RectangleH bounds, double vx, double vy) {
+        double x = bounds.x, y = bounds.y;
+        double w = bounds.width, h = bounds.height;
 
-        int newX = (int)(vx < 0 ? x + vx : x);
-        int newY = (int)(vy < 0 ? y + vy : y);
-        int newW = (int)(w + Math.abs(vx)) + 1;
-        int newH = (int)(h + Math.abs(vy)) + 1;
+        double newX = (vx < 0 ? x + vx : x);
+        double newY = (vy < 0 ? y + vy : y);
+        double newW = w + Math.abs(vx);
+        double newH = h + Math.abs(vy);
 
-        return new Rectangle(newX, newY, newW, newH);
+        return new RectangleH(newX, newY, newW, newH);
     }
 }

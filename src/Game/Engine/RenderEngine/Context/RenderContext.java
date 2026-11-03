@@ -1,6 +1,7 @@
 package Game.Engine.RenderEngine.Context;
 
 import Game.Engine.Camera.GameCamera;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.RenderEngine.Strategies.SpriteDrawer;
 import Game.Engine.RenderEngine.Transform.TransformData;
 import Sprites.Core.SpriteFrame;
@@ -8,7 +9,6 @@ import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Graphics2D;
-import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 
 /**
@@ -122,10 +122,10 @@ public class RenderContext {
         g.drawImage(img, x, y, w, h, null);
     }
 
-    public void drawHitbox(Rectangle r, Color color) {
+    public void drawHitbox(RectangleH r, Color color) {
         Color saved = g.getColor();
         g.setColor(color);
-        g.drawRect(r.x, r.y, r.width, r.height);
+        g.drawRect((int) r.x, (int) r.y, (int) r.width, (int) r.height);
         g.setColor(saved);
     }
 

@@ -5,7 +5,7 @@ import Game.World.Chunk.Chunk;
 import Game.World.Chunk.ChunkStorage;
 import Game.World.Chunk.GlobalChunkResolver;
 import Game.World.Core.WorldCoordinator;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -34,7 +34,7 @@ import java.util.Set;
  * porque su posición cambia frame a frame.
  *
  * ── EXTENSIBILIDAD ────────────────────────────────────────────────────────
- * La interfaz expone query(Rectangle) y queryChunk(coord). Los consumidores
+ * La interfaz expone query(RectangleH) y queryChunk(coord). Los consumidores
  * (SimulationRegion, RenderRegion) no conocen la implementación interna.
  * Reemplazar por spatial hash o quadtree es un cambio interno sin efecto
  * en los consumidores.
@@ -44,7 +44,7 @@ import java.util.Set;
  *   index.indexChunk(chunk);
  *
  *   // Consultar objetos en una región:
- *   List<GameObjects> candidates = index.query(new Rectangle(100, 100, 1500, 800));
+ *   List<GameObjects> candidates = index.query(new RectangleH(100, 100, 1500, 800));
  *
  *   // Desregistrar un chunk descargado:
  *   index.removeChunk(coord);
@@ -145,7 +145,7 @@ public final class WorldSpatialIndex {
      * @param region rectángulo de consulta en coordenadas globales
      * @return lista de candidatos (puede incluir objetos fuera del rect exacto)
      */
-    public List<GameObjects> query(Rectangle region) {
+    public List<GameObjects> query(RectangleH region) {
         List<GameObjects> result = new ArrayList<>();
 
         int cx0 = GlobalChunkResolver.firstChunkIndex(region.getMinX(), chunkWidth);

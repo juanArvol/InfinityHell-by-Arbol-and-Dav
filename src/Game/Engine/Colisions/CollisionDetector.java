@@ -2,8 +2,8 @@ package Game.Engine.Colisions;
 
 import Game.Engine.Destroyable;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
-import java.awt.Rectangle;
 import java.util.*;
 
 /**
@@ -25,6 +25,7 @@ import java.util.*;
  *     - CollisionResult incluye la normal calculada desde la geometría relativa
  *     - Guard de Destroyable: pares donde un objeto está muerto se omiten
  *     - Los pares ya despachados en FASE 1 (sólidos) se excluyen via skipSet
+ *     - Usa RectangleH (double) en lugar de Rectangle (int) para precisión exacta
  *
  * ── Responsabilidad única ─────────────────────────────────────────────────
  * Solo DETECTA pares residuales (FASE 2). No mueve objetos, no llama eventos.
@@ -49,10 +50,10 @@ import java.util.*;
  * correcta para overlaps residuales estáticos.
  *
  * GARANTÍA: computeOverlapNormal() nunca retorna (0,0) cuando hay overlap
- * real — si la penetración es cero en un eje (borde exacto por truncado int),
- * usa el vector centro-a-centro como fallback geométrico. Esto garantiza que
- * los behaviors como BulletJump siempre tengan una normal válida en FASE 2
- * y no necesiten recurrir al fallback heurístico de velocidad.
+ * real — si la penetración es cero en un eje (borde exacto), usa el vector
+ * centro-a-centro como fallback geométrico. Esto garantiza que los behaviors
+ * como BulletJump siempre tengan una normal válida en FASE 2 y no necesiten
+ * recurrir al fallback heurístico de velocidad.
  */
 public final class CollisionDetector {
 
@@ -127,11 +128,11 @@ public final class CollisionDetector {
 
             indexMap.put(obj, i);
 
-            Rectangle b = col.getBounds();
-            int x0 = Math.floorDiv(b.x, CELL_SIZE);
-            int y0 = Math.floorDiv(b.y, CELL_SIZE);
-            int x1 = Math.floorDiv(b.x + b.width,  CELL_SIZE);
-            int y1 = Math.floorDiv(b.y + b.height, CELL_SIZE);
+            RectangleH b = col.getBounds();
+            int x0 = (int) Math.floor(b.x / CELL_SIZE);
+            int y0 = (int) Math.floor(b.y / CELL_SIZE);
+            int x1 = (int) Math.floor((b.x + b.width) / CELL_SIZE);
+            int y1 = (int) Math.floor((b.y + b.height) / CELL_SIZE);
 
             for (int cx = x0; cx <= x1; cx++) {
                 for (int cy = y0; cy <= y1; cy++) {
@@ -178,9 +179,9 @@ public final class CollisionDetector {
                             : ((long) idHashB << 32) | (idHashA & 0xFFFFFFFFL);
                     if (skipSet.contains(skipKey)) continue;
 
-                    // Comprobación AABB
-                    Rectangle ra = colA.getBounds();
-                    Rectangle rb = colB.getBounds();
+                    // Comprobación AABB con RectangleH (precisión double)
+                    RectangleH ra = colA.getBounds();
+                    RectangleH rb = colB.getBounds();
                     if (!ra.intersects(rb)) continue;
 
                     boolean isTrigger = colA.isTrigger() || colB.isTrigger();
@@ -222,22 +223,22 @@ public final class CollisionDetector {
      *
      * ── Garantía de normal no-nula ────────────────────────────────────────
      * Si las penetraciones calculadas son ambas cero o negativas (puede ocurrir
-     * por el truncado (int) en ColliderComponent.getBounds() cuando los objetos
-     * se tocan exactamente en un borde), se usa el vector centro-a-centro como
-     * fallback geométrico. Esto garantiza que un overlap detectado por AABB
-     * produzca siempre una normal válida — nunca (0,0) — para que los behaviors
-     * como BulletJump no caigan al fallback heurístico por velocidad.
+     * cuando los objetos se tocan exactamente en un borde), se usa el vector
+     * centro-a-centro como fallback geométrico. Esto garantiza que un overlap
+     * detectado por AABB produzca siempre una normal válida — nunca (0,0) —
+     * para que los behaviors como BulletJump no caigan al fallback heurístico
+     * por velocidad.
      *
      * @param ra bounds del objeto A
      * @param rb bounds del objeto B
      * @return int[2] con {normalX, normalY} desde la perspectiva de A hacia B
      */
-    private static int[] computeOverlapNormal(Rectangle ra, Rectangle rb) {
-        // Centros
-        double cxA = ra.x + ra.width  * 0.5;
-        double cyA = ra.y + ra.height * 0.5;
-        double cxB = rb.x + rb.width  * 0.5;
-        double cyB = rb.y + rb.height * 0.5;
+    private static int[] computeOverlapNormal(RectangleH ra, RectangleH rb) {
+        // Centros (ahora con precisión double completa)
+        double cxA = ra.getCenterX();
+        double cyA = ra.getCenterY();
+        double cxB = rb.getCenterX();
+        double cyB = rb.getCenterY();
 
         double dx = cxA - cxB;
         double dy = cyA - cyB;
@@ -248,11 +249,8 @@ public final class CollisionDetector {
 
         if (penX <= 0 || penY <= 0) {
             // Overlap mínimo en un eje — los objetos se tocan exactamente en un borde.
-            // Esto ocurre por el truncado (int) en getBounds() cuando la posición
-            // double está en el límite exacto. Usar el vector centro-a-centro para
-            // producir una normal geométricamente coherente en lugar de (0,0).
-            // Un (0,0) forzaría a BulletJump al fallback heurístico de velocidad,
-            // que es menos preciso que esta información espacial.
+            // Usar el vector centro-a-centro para producir una normal geométricamente
+            // coherente en lugar de (0,0).
             if (dx == 0 && dy == 0) {
                 // Centros exactamente superpuestos — caso degenerado extremo.
                 // Usar eje X como fallback arbitrario pero documentado.

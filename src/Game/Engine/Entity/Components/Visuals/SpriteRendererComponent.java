@@ -163,14 +163,14 @@ public class SpriteRendererComponent extends Component implements Renderable {
                 if (w > 0 && h > 0) col.setSize(w, h);
             }
             case SPRITE_TO_COLLIDER -> {
-                renderWidth  = col.getWidth();
-                renderHeight = col.getHeight();
+                renderWidth  = (int) col.getWidth();
+                renderHeight = (int) col.getHeight();
             }
             case SPRITE_TO_COLLIDER_WITH_OFFSET -> {
-                renderWidth  = col.getWidth();
-                renderHeight = col.getHeight();
-                offsetX      = col.getOffsetX();
-                offsetY      = col.getOffsetY();
+                renderWidth  = (int) col.getWidth();
+                renderHeight = (int) col.getHeight();
+                offsetX      = (int) col.getOffsetX();
+                offsetY      = (int) col.getOffsetY();
             }
         }
     }
@@ -358,10 +358,22 @@ public class SpriteRendererComponent extends Component implements Renderable {
         this.renderHeight = h;
     }
 
+    /** Fuerza un tamaño de render desde valores double (redondeo automático). */
+    public void setRenderSize(double w, double h) {
+        this.renderWidth  = (int) Math.round(w);
+        this.renderHeight = (int) Math.round(h);
+    }
+
     /** Offset visual respecto a la posición del objeto. */
     public void setOffset(int ox, int oy) {
         this.offsetX = ox;
         this.offsetY = oy;
+    }
+
+    /** Offset visual desde valores double (redondeo automático). */
+    public void setOffset(double ox, double oy) {
+        this.offsetX = (int) Math.round(ox);
+        this.offsetY = (int) Math.round(oy);
     }
 
     // ── HRFC-004: FillMode API ────────────────────────────────────────────

@@ -2,7 +2,7 @@ package Game.World.Region;
 
 import Game.World.Chunk.GlobalChunkResolver;
 import Game.World.Core.WorldCoordinator;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;

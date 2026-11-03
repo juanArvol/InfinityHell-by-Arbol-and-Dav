@@ -19,7 +19,7 @@ import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.*;
 
 /**
@@ -150,16 +150,16 @@ public class CollisionsSystem {
 
     // ── HRFC: Performance — Reusable broadphase rectangles ────────────────
     /**
-     * Rectangle reutilizable para broadphase X.
+     * RectangleH reutilizable para broadphase X.
      * Evita allocations en hot path — solo válido durante una iteración.
      */
-    private final Rectangle reusableBroadX = new Rectangle();
+    private final RectangleH reusableBroadX = new RectangleH();
 
     /**
-     * Rectangle reutilizable para broadphase Y.
+     * RectangleH reutilizable para broadphase Y.
      * Evita allocations en hot path — solo válido durante una iteración.
      */
-    private final Rectangle reusableBroadY = new Rectangle();
+    private final RectangleH reusableBroadY = new RectangleH();
 
 
     // ── HRFC — Profiling Infrastructure ───────────────────────────────────
@@ -271,8 +271,8 @@ public class CollisionsSystem {
 
             // ── Eje X ──────────────────────────────────────────────────
             if (vx != 0.0) {
-                Rectangle bounds = colA.getBounds();
-                // HRFC Performance: Reutilizar Rectangle en lugar de alocar
+                RectangleH bounds = colA.getBounds();
+                // HRFC Performance: Reutilizar RectangleH en lugar de alocar
                 reusableBroadX.setBounds(
                         (int)(vx < 0 ? bounds.x + vx : bounds.x + bounds.width),
                         bounds.y + 1,
@@ -292,7 +292,7 @@ public class CollisionsSystem {
                     if (!colA.canCollideWith(colB)) continue;
 
                     InteractionSideComponent iscB = other.getComponent(InteractionSideComponent.class);
-                    Rectangle ob = colB.getBounds();
+                    RectangleH ob = colB.getBounds();
                     if (ob.y >= bounds.y + bounds.height) continue;
                     if (ob.y + ob.height <= bounds.y) continue;
                     if (!reusableBroadX.intersects(ob)) continue;
@@ -329,8 +329,8 @@ public class CollisionsSystem {
 
             // ── Eje Y ──────────────────────────────────────────────────
             if (vy != 0.0) {
-                Rectangle bounds = colA.getBounds();
-                // HRFC Performance: Reutilizar Rectangle en lugar de alocar
+                RectangleH bounds = colA.getBounds();
+                // HRFC Performance: Reutilizar RectangleH en lugar de alocar
                 reusableBroadY.setBounds(
                         bounds.x,
                         (int)(vy < 0 ? bounds.y + vy : bounds.y),
@@ -349,7 +349,7 @@ public class CollisionsSystem {
                     if (colB == null || colB.isTrigger()) continue;
                     if (!colA.canCollideWith(colB)) continue;
 
-                    Rectangle ob = colB.getBounds();
+                    RectangleH ob = colB.getBounds();
                     if (!reusableBroadY.intersects(ob)) continue;
 
                     SweptAABB.Result r = SweptAABB.calculate(bounds, ob, 0.0, vy);
@@ -478,11 +478,11 @@ public class CollisionsSystem {
                 continue;
             }
 
-            Rectangle bounds = colA.getBounds();
+            RectangleH bounds = colA.getBounds();
 
             // Broad phase: swept bounds del path completo del frame
             // Cualquier obstáculo que no intersecte con este rect es imposible de impactar
-            Rectangle sweptB = SweptAABB.sweptBounds(bounds, vx, vy);
+            RectangleH sweptB = SweptAABB.sweptBounds(bounds, vx, vy);
 
             double      nearestTime  = 1.0;
             int         hitNormalX   = 0;
@@ -508,7 +508,7 @@ public class CollisionsSystem {
                     }
                 }
 
-                Rectangle ob = colB.getBounds();
+                RectangleH ob = colB.getBounds();
 
                 // Broad phase: descartar rápidamente sin swept
                 if (!sweptB.intersects(ob)) continue;
@@ -562,7 +562,7 @@ public class CollisionsSystem {
                 //
                 // La separación solo se aplica en el eje de la normal para no
                 // desplazar lateralmente la bullet (el eje perpendicular es libre).
-                Rectangle hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
+                RectangleH hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
                 double sepX, sepY;
                 if (nearestTime > 0.0) {
                     // Contacto CCD limpio: separación sub-pixel
@@ -570,7 +570,7 @@ public class CollisionsSystem {
                     sepY = hitNormalY * CONTACT_EPSILON;
                 } else {
                     // time = 0: penetración preexistente — calcular profundidad real
-                    Rectangle trigBounds = colA.getBounds();
+                    RectangleH trigBounds = colA.getBounds();
                     double pen = computePenetrationDepth(trigBounds, hitBounds, hitNormalX, hitNormalY);
                     sepX = hitNormalX * (pen + PENETRATION_EPSILON);
                     sepY = hitNormalY * (pen + PENETRATION_EPSILON);
@@ -928,7 +928,7 @@ public class CollisionsSystem {
      * @param normalY   normal en Y del impacto (-1, 0, +1)
      * @return profundidad de penetración en el eje de la normal (>= 0)
      */
-    private static double computePenetrationDepth(Rectangle trig, Rectangle hit,
+    private static double computePenetrationDepth(RectangleH trig, RectangleH hit,
                                                    int normalX, int normalY) {
         if (normalX != 0) {
             // Eje X: calcular overlap horizontal

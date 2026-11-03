@@ -2,7 +2,7 @@ package Game.World.Chunk;
 
 import Game.Engine.GameObjects;
 import Game.World.Core.WorldCoordinator;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -131,10 +131,10 @@ public final class Chunk {
      * Rectángulo que representa los bounds globales de este chunk.
      * Útil para tests de intersección con regiones.
      *
-     * @return Rectangle(originX, originY, width, height) en coords globales
+     * @return RectangleH(originX, originY, width, height) en coords globales
      */
-    public Rectangle getBoundsGlobal() {
-        return new Rectangle(originX, originY, width, height);
+    public RectangleH getBoundsGlobal() {
+        return new RectangleH(originX, originY, width, height);
     }
 
     /**

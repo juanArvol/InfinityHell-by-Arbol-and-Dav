@@ -3,7 +3,7 @@ package Game.World.Transition;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.GameObjects;
 import Game.World.Core.World;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.List;
 
 /**
@@ -82,7 +82,7 @@ public final class TransitionValidator {
         if (subjectCol == null) return ValidationResult.ok();
 
         // Calcular AABB del subject en la posición destino
-        Rectangle subjectBounds = calculateBoundsAt(subjectCol, request.getTargetPosition());
+        RectangleH subjectBounds = calculateBoundsAt(subjectCol, request.getTargetPosition());
 
         // Verificar intersección con colisionadores sólidos del mundo destino
         for (GameObjects other : targetWorld.getDynamicEntityRegistry().getAll()) {
@@ -116,10 +116,10 @@ public final class TransitionValidator {
      * Calcula el AABB del collider del subject si estuviera en la posición dada.
      * Usa el tamaño actual del collider, solo desplaza su origen.
      */
-    private Rectangle calculateBoundsAt(ColliderComponent col,
+    private RectangleH calculateBoundsAt(ColliderComponent col,
                                          Game.Engine.GameMath.Logic2D.Vector2D position) {
-        Rectangle current = col.getBounds();
-        return new Rectangle(
+        RectangleH current = col.getBounds();
+        return new RectangleH(
             (int) position.getX(),
             (int) position.getY(),
             current.width,

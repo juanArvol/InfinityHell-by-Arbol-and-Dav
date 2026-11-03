@@ -7,7 +7,7 @@ import Game.World.Chunk.GlobalChunkResolver;
 import Game.World.Core.WorldCoordinator;
 import Game.World.Entity.DynamicEntityRegistry;
 import Game.World.Index.WorldSpatialIndex;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -70,7 +70,7 @@ public final class SimulationRegion {
     // ── Estado del frame actual ───────────────────────────────────────────
 
     /** Bounds actuales de la región en coords globales. */
-    private Rectangle currentBounds = new Rectangle(0, 0, 0, 0);
+    private RectangleH currentBounds = new RectangleH(0, 0, 0, 0);
 
     /** Lista unificada de objetos activos para este frame. */
     private final List<GameObjects> activeObjects = new ArrayList<>();
@@ -123,7 +123,7 @@ public final class SimulationRegion {
         int top    = (int)(centerY - simulationRadius);
         int width  = (int)(simulationRadius * 2);
         int height = (int)(simulationRadius * 2);
-        currentBounds = new Rectangle(left, top, width, height);
+        currentBounds = new RectangleH(left, top, width, height);
 
         // 1. Objetos estáticos de los chunks dentro de la región
         List<GameObjects> staticCandidates = spatialIndex.query(currentBounds);
@@ -158,7 +158,7 @@ public final class SimulationRegion {
         int top    = (int)(centerY - simulationRadius);
         int width  = (int)(simulationRadius * 2);
         int height = (int)(simulationRadius * 2);
-        currentBounds = new Rectangle(left, top, width, height);
+        currentBounds = new RectangleH(left, top, width, height);
 
         // Calcular qué chunks intersectan con la región
         int cx0 = GlobalChunkResolver.firstChunkIndex(currentBounds.getMinX(), chunkWidth);
@@ -196,10 +196,10 @@ public final class SimulationRegion {
     /**
      * Bounds actuales de la región de simulación en coords globales.
      *
-     * @return Rectangle de la región activa
+     * @return RectangleH de la región activa
      */
-    public Rectangle getCurrentBounds() {
-        return new Rectangle(currentBounds);
+    public RectangleH getCurrentBounds() {
+        return new RectangleH(currentBounds);
     }
 
     /**

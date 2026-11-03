@@ -1,10 +1,9 @@
 package Game.Engine.Entity.Components.Collisions;
 
-import Game.Engine.Component;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Colisions.Filter.Layer;
-
-import java.awt.Rectangle;
+import Game.Engine.Component;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 
 /**
  * Define el área de colisión de un objeto y su perfil (layer/mask).
@@ -32,10 +31,10 @@ public class ColliderComponent extends Component {
 
     public enum Type { SOLID, TRIGGER }
 
-    private int width;
-    private int height;
-    private int offsetX;
-    private int offsetY;
+    private double width;
+    private double height;
+    private double offsetX;
+    private double offsetY;
 
     private CollisionProfile profile;
     private Type type = Type.SOLID;
@@ -48,12 +47,12 @@ public class ColliderComponent extends Component {
     }
 
     /** Collider con tamaño y perfil. Offset = (0,0). */
-    public ColliderComponent(int width, int height, CollisionProfile profile) {
+    public ColliderComponent(double width, double height, CollisionProfile profile) {
         this(width, height, 0, 0, profile);
     }
 
     /** Collider con tamaño, offset y perfil. */
-    public ColliderComponent(int width, int height, int offsetX, int offsetY, CollisionProfile profile) {
+    public ColliderComponent(double width, double height, double offsetX, double offsetY, CollisionProfile profile) {
         this.width   = width;
         this.height  = height;
         this.offsetX = offsetX;
@@ -66,12 +65,13 @@ public class ColliderComponent extends Component {
     /**
      * Rectángulo de colisión en coordenadas de mundo.
      * Se recalcula cada vez que se llama (no se cachea — el objeto puede moverse).
+     * Retorna RectangleH con precisión double para física exacta.
      */
-    public Rectangle getBounds() {
+    public RectangleH getBounds() {
         var pos = gameObject.getTransform().getPosition();
-        return new Rectangle(
-                (int) pos.getX() + offsetX,
-                (int) pos.getY() + offsetY,
+        return new RectangleH(
+                pos.getX() + offsetX,
+                pos.getY() + offsetY,
                 width,
                 height
         );
@@ -89,13 +89,13 @@ public class ColliderComponent extends Component {
 
     // ── Tamaño y offset ───────────────────────────────────────────────────
 
-    public void setSize(int w, int h)       { this.width = w; this.height = h; }
-    public void setOffset(int ox, int oy)   { this.offsetX = ox; this.offsetY = oy; }
+    public void setSize(double w, double h)       { this.width = w; this.height = h; }
+    public void setOffset(double ox, double oy)   { this.offsetX = ox; this.offsetY = oy; }
 
-    public int getWidth()   { return width; }
-    public int getHeight()  { return height; }
-    public int getOffsetX() { return offsetX; }
-    public int getOffsetY() { return offsetY; }
+    public double getWidth()   { return width; }
+    public double getHeight()  { return height; }
+    public double getOffsetX() { return offsetX; }
+    public double getOffsetY() { return offsetY; }
 
     // ── Tipo ──────────────────────────────────────────────────────────────
 

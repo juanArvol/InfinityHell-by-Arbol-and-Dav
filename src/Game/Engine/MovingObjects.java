@@ -8,7 +8,7 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Sprites.Core.SpriteHandle;
-import java.awt.Rectangle;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.awt.image.BufferedImage;
 
 /**
@@ -189,10 +189,10 @@ public abstract class MovingObjects extends AbstractEntity {
         return pos;
     }
 
-    public Rectangle getBounds() {
+    public RectangleH getBounds() {
         ColliderComponent col = getComponent(ColliderComponent.class);
         if (col != null) return col.getBounds();
         var pos = getTransform().getPosition();
-        return new Rectangle((int) pos.getX(), (int) pos.getY(), 0, 0);
+        return new RectangleH(pos.getX(), pos.getY(), 0, 0);
     }
 }

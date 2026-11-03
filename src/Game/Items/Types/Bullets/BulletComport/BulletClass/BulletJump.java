@@ -48,7 +48,7 @@ public class BulletJump extends BulletBehavior {
     private static final double DRAG = 0.00015;
     
     /** Área efectiva expuesta al aire (documentado, no configurable aún) */
-    private static final double EFFECTIVE_AREA = 0.4;
+    private static final double EFFECTIVE_AREA = 0.0001;
 
     // ═════════════════════════════════════════════════════════════════════
     // SECCIÓN 2: PROPIEDADES DE REBOTE
@@ -58,7 +58,7 @@ public class BulletJump extends BulletBehavior {
     private static final double MIN_BOUNCE_SPEED = 90.0;
     
     /** Factor de fricción por rebote (1.01 = pierde 1% de velocidad horizontal) */
-    private static final double FRICTION = 1.01;
+    private static final double FRICTION = 0.9;
 
     // ═════════════════════════════════════════════════════════════════════
     // SECCIÓN 3: PROPIEDADES DE GAMEPLAY
@@ -128,7 +128,7 @@ public class BulletJump extends BulletBehavior {
         int nx = physics.getLastContactNormalX();
         int ny = physics.getLastContactNormalY();
 
-        bullet.getBulletLife().extend(0.1);
+        bullet.getBulletLife().extend(0.5);
         
         if (ny == -1) {
             // ── Suelo: Rebote vertical adaptativo ─────────────────────────

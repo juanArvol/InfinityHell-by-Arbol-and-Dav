@@ -1,8 +1,8 @@
 package Game.World.Region;
 
 import Game.Engine.Camera.GameCamera;
-import Game.Engine.GameObjects;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Culling.RenderBounds;
 import Game.Engine.RenderEngine.Culling.RenderBoundsStrategy;
 import Game.World.Chunk.Chunk;
@@ -134,12 +134,12 @@ public final class RenderRegion {
 
         List<GameObjects> result = new ArrayList<>();
 
-        // Objetos estáticos de los chunks visibles
-        java.awt.Rectangle queryRect = new java.awt.Rectangle(
-            (int) currentBounds.left,
-            (int) currentBounds.top,
-            (int) currentBounds.getWidth(),
-            (int) currentBounds.getHeight()
+        // Objetos estáticos de los chunks visibles - usar RectangleH para precisión
+        Game.Engine.GameMath.Logic2D.RectangleH queryRect = new Game.Engine.GameMath.Logic2D.RectangleH(
+            currentBounds.left,
+            currentBounds.top,
+            currentBounds.getWidth(),
+            currentBounds.getHeight()
         );
         result.addAll(spatialIndex.query(queryRect));
 
@@ -202,7 +202,7 @@ public final class RenderRegion {
         var pos = obj.getTransform().getPosition();
         return currentBounds.isVisible(
             pos.getX(), pos.getY(),
-            col.getWidth(), col.getHeight()
+            (int) col.getWidth(), (int) col.getHeight()
         );
     }
 

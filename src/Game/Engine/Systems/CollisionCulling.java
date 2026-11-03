@@ -2,9 +2,9 @@ package Game.Engine.Systems;
 
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.Engine.RenderEngine.Culling.ViewportCuller;
-import java.awt.Rectangle;
 
 /**
  * CollisionCulling — optimización para reducir trabajo de colisiones fuera de cámara.
@@ -105,15 +105,15 @@ public final class CollisionCulling {
         }
 
         // Verificar si el trigger está dentro del área relevante
-        Rectangle bounds = collider.getBounds();
+        RectangleH bounds = collider.getBounds();
         
         boolean isVisible = ViewportCuller.isVisible(
-            bounds.x,
-            bounds.y,
-            bounds.width,
-            bounds.height,
-            camera.getX(),
-            camera.getY(),
+            (int) bounds.x,
+            (int) bounds.y,
+            (int) bounds.width,
+            (int) bounds.height,
+            (int) camera.getX(),
+            (int) camera.getY(),
             camera.getVirtualWidth(),
             camera.getVirtualHeight(),
             DEFAULT_COLLISION_MARGIN
@@ -135,19 +135,19 @@ public final class CollisionCulling {
      * @return true si está fuera del área relevante
      */
     public static boolean isOutsideCollisionArea(double worldX, double worldY,
-                                                  int width, int height,
+                                                  double width, double height,
                                                   GameCamera camera) {
         if (!ENABLED) {
             return false;
         }
 
         boolean isVisible = ViewportCuller.isVisible(
-            worldX,
-            worldY,
-            width,
-            height,
-            camera.getX(),
-            camera.getY(),
+            (int) worldX,
+            (int) worldY,
+            (int) width,
+            (int) height,
+            (int) camera.getX(),
+            (int) camera.getY(),
             camera.getVirtualWidth(),
             camera.getVirtualHeight(),
             DEFAULT_COLLISION_MARGIN
