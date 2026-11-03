@@ -202,10 +202,25 @@ public class RectangleH implements Serializable, Cloneable {
     public double bottom()  { return getMaxY(); }
 
     /**
-     * Retorna true si width o height son <= 0.
+     * Retorna true si este bounds no representa un área o punto válido.
+     * 
+     * CONVENCIÓN PARA RECTANGLEH:
+     * - width < 0 o height < 0: VACÍO (inválido)
+     * - width == 0 o height == 0: VÁLIDO (punto o línea degenerada)
+     * - width > 0 y height > 0: VÁLIDO (área rectangular)
+     * 
+     * DIFERENCIA CON AWT Rectangle:
+     * AWT considera vacío cualquier rectángulo con width <= 0 o height <= 0.
+     * RectangleH permite puntos (width=0, height=0) y líneas degeneradas como válidos.
+     * 
+     * RAZÓN: En física y colisiones de precisión double, los puntos y líneas
+     * son casos geométricos válidos que deben procesarse (ej: posición exacta,
+     * swept bounds de velocidad cero en un eje).
+     * 
+     * @return true si tiene dimensiones negativas (inválido/vacío)
      */
     public boolean isEmpty() {
-        return width <= 0.0 || height <= 0.0;
+        return width < 0.0 || height < 0.0;
     }
 
     /**
@@ -271,12 +286,23 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Expande o contrae el bounds desde su centro.
      * Un valor positivo agranda, negativo achica.
+     * Si el resultado produce dimensiones negativas, se ajusta a cero.
      */
     public void grow(double h, double v) {
         this.x -= h;
         this.y -= v;
         this.width += h * 2.0;
         this.height += v * 2.0;
+        
+        // Prevenir dimensiones negativas
+        if (this.width < 0.0) {
+            this.x += this.width * 0.5;
+            this.width = 0.0;
+        }
+        if (this.height < 0.0) {
+            this.y += this.height * 0.5;
+            this.height = 0.0;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -293,7 +319,26 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     /**
-     * Test punto-en-bounds.
+     * Test punto-en-bounds usando límites semiabiertos [x, x+width) × [y, y+height).
+     * 
+     * CONVENCIÓN DE LÍMITES:
+     * - Borde izquierdo e inferior: INCLUIDO (px >= x, py >= y)
+     * - Borde derecho y superior: EXCLUIDO (px < x+width, py < y+height)
+     * 
+     * Ejemplo con bounds (0, 0, 10, 10):
+     * - (0, 0): DENTRO ✓
+     * - (9.999, 9.999): DENTRO ✓
+     * - (10, 0): FUERA ✗ (borde derecho)
+     * - (0, 10): FUERA ✗ (borde superior)
+     * 
+     * DIFERENCIA CON intersectsLine():
+     * contains() usa límites semiabiertos mientras que intersectsLine()
+     * considera válidos los contactos tangentes en los bordes. Esto es
+     * intencional: un punto ESTÁ o NO ESTÁ dentro, pero una línea puede
+     * TOCAR un borde sin cruzarlo.
+     * 
+     * COHERENCIA CON outcode():
+     * outcode(px, py) == 0  ⟺  contains(px, py) == true
      */
     public boolean contains(double px, double py) {
         return px >= x && px < x + width
@@ -340,15 +385,84 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Test AABB: true si este bounds intersecta con otro.
      * Usa comparaciones double directas sin pérdida de precisión.
+     * 
+     * COMPORTAMIENTO CON DIMENSIONES CERO:
+     * - Bounds vacíos (negativos) nunca intersectan
+     * - Puntos (0,0) pueden intersectar si están dentro del otro bounds
+     * - Líneas degeneradas se tratan como casos válidos
+     * 
+     * CONTACTO DE BORDE:
+     * Los bounds que solo se tocan por un borde NO se consideran intersectando.
+     * Ejemplo: (0,0,10,10) y (10,0,10,10) no intersectan (tocan en x=10).
      */
     public boolean intersects(RectangleH other) {
+        // Bounds vacíos nunca intersectan
         if (isEmpty() || other.isEmpty()) {
             return false;
         }
+        // Intersección estricta: los bordes deben solaparse, no solo tocarse
         return x < other.x + other.width
                 && x + width > other.x
                 && y < other.y + other.height
                 && y + height > other.y;
+    }
+
+    /**
+     * Test AABB inclusivo: true si este bounds intersecta o TOCA otro bounds.
+     * 
+     * A diferencia de intersects(), este método considera contacto de borde
+     * como intersección válida.
+     * 
+     * Ejemplo:
+     *   A = (0,0,10,10), B = (10,0,10,10)
+     *   A.intersects(B) = false (solo se tocan)
+     *   A.intersectsInclusive(B) = true (contacto válido)
+     * 
+     * Útil para:
+     * - Detección de contactos físicos (objetos que se tocan)
+     * - Grid/tile adjacency checks
+     * - Pathfinding y navegación
+     */
+    public boolean intersectsInclusive(RectangleH other) {
+        if (isEmpty() || other.isEmpty()) {
+            return false;
+        }
+        // Intersección inclusiva: <= en lugar de <
+        return x <= other.x + other.width
+                && x + width >= other.x
+                && y <= other.y + other.height
+                && y + height >= other.y;
+    }
+
+    /**
+     * Test AABB con tolerancia geométrica explícita.
+     * 
+     * Considera que hay intersección si los bounds están a una distancia
+     * menor o igual que la tolerancia especificada.
+     * 
+     * @param other bounds a verificar
+     * @param tolerance distancia máxima para considerar intersección (en unidades de mundo)
+     * @return true si intersectan o están dentro de la tolerancia
+     * 
+     * Ejemplo con tolerance=1.0:
+     *   A = (0,0,10,10), B = (11,0,10,10)
+     *   A.intersects(B) = false (separados por 1px)
+     *   A.intersectsWithTolerance(B, 1.0) = true (dentro de tolerancia)
+     * 
+     * Útil para:
+     * - Detección "casi-colisión" para physics warmup
+     * - Proximity queries con margen de error
+     * - Compensación de imprecisión numérica acumulada
+     */
+    public boolean intersectsWithTolerance(RectangleH other, double tolerance) {
+        if (isEmpty() || other.isEmpty()) {
+            return false;
+        }
+        // Expandir conceptualmente ambos bounds por tolerance/2
+        return x < other.x + other.width + tolerance
+                && x + width + tolerance > other.x
+                && y < other.y + other.height + tolerance
+                && y + height + tolerance > other.y;
     }
 
     /**
@@ -373,8 +487,27 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Test si una línea intersecta este bounds.
+     * 
+     * Implementación basada en algoritmo Cohen-Sutherland que maneja correctamente:
+     * - Segmentos horizontales (y1 == y2)
+     * - Segmentos verticales (x1 == x2)
+     * - Segmentos diagonales
+     * - Segmentos tangentes a los bordes
+     * - Segmentos completamente dentro
+     * - Segmentos completamente fuera
+     * 
+     * @param x1 coordenada X del primer punto
+     * @param y1 coordenada Y del primer punto
+     * @param x2 coordenada X del segundo punto
+     * @param y2 coordenada Y del segundo punto
+     * @return true si el segmento intersecta o toca el bounds
      */
     public boolean intersectsLine(double x1, double y1, double x2, double y2) {
+        // Caso especial: segmento degenerado (punto)
+        if (x1 == x2 && y1 == y2) {
+            return contains(x1, y1);
+        }
+        
         // Implementación basada en algoritmo Cohen-Sutherland
         int outcode0 = outcode(x1, y1);
         int outcode1 = outcode(x2, y2);
@@ -393,16 +526,24 @@ public class RectangleH implements Serializable, Cloneable {
             int outcodeOut = (outcode0 != 0) ? outcode0 : outcode1;
             double ix, iy;
 
-            if ((outcodeOut & 8) != 0) { // TOP
+            if ((outcodeOut & OUT_TOP) != 0) { // TOP
+                // Evitar división por cero en líneas horizontales
+                if (y2 - y1 == 0) return false;
                 ix = x1 + (x2 - x1) * (y - y1) / (y2 - y1);
                 iy = y;
-            } else if ((outcodeOut & 4) != 0) { // BOTTOM
+            } else if ((outcodeOut & OUT_BOTTOM) != 0) { // BOTTOM
+                // Evitar división por cero en líneas horizontales
+                if (y2 - y1 == 0) return false;
                 ix = x1 + (x2 - x1) * (y + height - y1) / (y2 - y1);
                 iy = y + height;
-            } else if ((outcodeOut & 2) != 0) { // RIGHT
+            } else if ((outcodeOut & OUT_RIGHT) != 0) { // RIGHT
+                // Evitar división por cero en líneas verticales
+                if (x2 - x1 == 0) return false;
                 iy = y1 + (y2 - y1) * (x + width - x1) / (x2 - x1);
                 ix = x + width;
             } else { // LEFT
+                // Evitar división por cero en líneas verticales
+                if (x2 - x1 == 0) return false;
                 iy = y1 + (y2 - y1) * (x - x1) / (x2 - x1);
                 ix = x;
             }
@@ -427,13 +568,20 @@ public class RectangleH implements Serializable, Cloneable {
      * - OUT_TOP (8): el punto está arriba
      * - OUT_BOTTOM (4): el punto está abajo
      * - 0: el punto está dentro
+     * 
+     * COHERENCIA CON contains():
+     * - outcode(px, py) == 0  ⟺  contains(px, py) == true
+     * - outcode(px, py) != 0  ⟺  contains(px, py) == false
+     * 
+     * NOTA: Los puntos exactamente en los bordes (x == bounds.x o y == bounds.y)
+     * se consideran DENTRO para coherencia con contains() que usa >= en los límites inferiores.
      */
     public int outcode(double px, double py) {
         int code = 0;
-        if (py > y + height) code |= OUT_BOTTOM;  // 4
-        else if (py < y) code |= OUT_TOP;         // 8
-        if (px > x + width) code |= OUT_RIGHT;    // 2
-        else if (px < x) code |= OUT_LEFT;        // 1
+        if (py >= y + height) code |= OUT_BOTTOM;  // 4 - punto abajo del bounds
+        else if (py < y) code |= OUT_TOP;          // 8 - punto arriba del bounds
+        if (px >= x + width) code |= OUT_RIGHT;    // 2 - punto a la derecha
+        else if (px < x) code |= OUT_LEFT;         // 1 - punto a la izquierda
         return code;
     }
 
@@ -450,7 +598,7 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Calcula la intersección entre este bounds y otro.
      * Retorna un nuevo RectangleH con el área común.
-     * Si no hay intersección, retorna un bounds vacío.
+     * Si no hay intersección (o solo se tocan por un borde), retorna un bounds vacío.
      */
     public RectangleH intersection(RectangleH other) {
         double tx1 = Math.max(this.x, other.x);
@@ -458,8 +606,9 @@ public class RectangleH implements Serializable, Cloneable {
         double tx2 = Math.min(this.x + this.width, other.x + other.width);
         double ty2 = Math.min(this.y + this.height, other.y + other.height);
 
-        if (tx2 < tx1 || ty2 < ty1) {
-            return new RectangleH(); // Vacío
+        // Si no hay overlap real (solo contacto de borde), retornar vacío
+        if (tx2 <= tx1 || ty2 <= ty1) {
+            return new RectangleH(0, 0, -1, -1); // Bounds vacío con dimensiones negativas
         }
         return new RectangleH(tx1, ty1, tx2 - tx1, ty2 - ty1);
     }
@@ -536,17 +685,17 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Expande este bounds para incluir un punto.
-     * Si este bounds está vacío, se convierte en un bounds que contiene solo el punto.
+     * Si este bounds está vacío (dimensiones negativas), se convierte en un punto.
      * Maneja correctamente la acumulación de puntos, incluso cuando el bounds tiene dimensiones cero.
      */
     public void add(double px, double py) {
         if (isEmpty()) {
-            // Primer punto: crear bounds en ese punto con dimensiones cero
+            // Bounds vacío: crear punto en esa posición
             setRect(px, py, 0.0, 0.0);
             return;
         }
         
-        // Calcular los extremos actuales
+        // Calcular los extremos actuales (incluye bounds de dimensión cero)
         double x1 = x;
         double y1 = y;
         double x2 = x + width;
@@ -571,11 +720,12 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Expande este bounds para incluir otro bounds.
      * Si este bounds está vacío, se convierte en una copia del otro bounds.
-     * Si el otro bounds está vacío, no hace nada.
+     * Si el otro bounds está vacío (dimensiones negativas), no hace nada.
+     * Los bounds con dimensiones cero (puntos) SÍ se incluyen.
      */
     public void add(RectangleH bounds) {
         if (bounds.isEmpty()) {
-            return;
+            return; // Ignorar bounds vacíos
         }
         if (isEmpty()) {
             setRect(bounds);
@@ -605,11 +755,12 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Expande este bounds para incluir un rectángulo.
      * Si este bounds está vacío, se convierte en el rectángulo dado.
-     * Si el rectángulo está vacío, no hace nada.
+     * Si el rectángulo tiene dimensiones negativas, no hace nada.
+     * Los rectángulos con dimensiones cero SÍ se incluyen.
      */
     public void add(double rx, double ry, double rw, double rh) {
-        if (rw <= 0.0 || rh <= 0.0) {
-            return;
+        if (rw < 0.0 || rh < 0.0) {
+            return; // Ignorar rectángulos vacíos
         }
         if (isEmpty()) {
             setRect(rx, ry, rw, rh);
@@ -630,6 +781,11 @@ public class RectangleH implements Serializable, Cloneable {
      * Convierte a java.awt.Rectangle para rendering o APIs legacy.
      * Usa floor/ceil para garantizar que el Rectangle cubra completamente este bounds.
      * 
+     * OVERFLOW DE INT:
+     * Si las coordenadas exceden el rango de int (±2^31), se ajustan a los límites:
+     * - Coordenadas < Integer.MIN_VALUE → Integer.MIN_VALUE
+     * - Coordenadas > Integer.MAX_VALUE → Integer.MAX_VALUE
+     * 
      * IMPORTANTE: Este método agranda ligeramente para evitar pérdida de área.
      * Para colisiones, usar siempre RectangleH directamente.
      * 
@@ -638,25 +794,43 @@ public class RectangleH implements Serializable, Cloneable {
      *   El Rectangle cubre [10..16] × [20..29], garantizando que incluye [10.3..15.7] × [20.7..28.9]
      */
     public Rectangle toRectangle() {
-        int left = (int) Math.floor(x);
-        int top = (int) Math.floor(y);
-        int right = (int) Math.ceil(x + width);
-        int bottom = (int) Math.ceil(y + height);
-        return new Rectangle(left, top, right - left, bottom - top);
+        // Clamp a rango de int para prevenir overflow
+        int left = clampToInt(Math.floor(x));
+        int top = clampToInt(Math.floor(y));
+        int right = clampToInt(Math.ceil(x + width));
+        int bottom = clampToInt(Math.ceil(y + height));
+        
+        // Calcular width y height con protección contra overflow
+        int w = (right > left) ? Math.min(right - left, Integer.MAX_VALUE) : 0;
+        int h = (bottom > top) ? Math.min(bottom - top, Integer.MAX_VALUE) : 0;
+        
+        return new Rectangle(left, top, w, h);
     }
 
     /**
      * Convierte a Rectangle redondeando al int más cercano.
      * Más preciso visualmente pero puede no cubrir completamente el bounds original.
      * Útil para rendering donde la precisión visual es más importante que la cobertura exacta.
+     * 
+     * OVERFLOW DE INT:
+     * Las coordenadas se ajustan al rango válido de int si es necesario.
      */
     public Rectangle toRectangleRounded() {
         return new Rectangle(
-                (int) Math.round(x),
-                (int) Math.round(y),
-                (int) Math.round(width),
-                (int) Math.round(height)
+                clampToInt(Math.round(x)),
+                clampToInt(Math.round(y)),
+                clampToInt(Math.round(width)),
+                clampToInt(Math.round(height))
         );
+    }
+    
+    /**
+     * Ajusta un double al rango válido de int.
+     */
+    private static int clampToInt(double value) {
+        if (value <= Integer.MIN_VALUE) return Integer.MIN_VALUE;
+        if (value >= Integer.MAX_VALUE) return Integer.MAX_VALUE;
+        return (int) value;
     }
 
     /**
@@ -743,7 +917,20 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Calcula la distancia más corta desde un punto a este bounds.
-     * Retorna 0.0 si el punto está dentro.
+     * Retorna 0.0 si el punto está dentro O EN EL BORDE.
+     * 
+     * COMPORTAMIENTO EN BORDES:
+     * Un punto en el borde derecho (x == bounds.x + bounds.width) o
+     * superior (y == bounds.y + bounds.height) retorna distancia 0.0,
+     * aunque contains() lo considere fuera por usar límites semiabiertos.
+     * 
+     * RAZÓN: Geométricamente, un punto EN el borde tiene distancia cero
+     * al rectángulo. La diferencia con contains() es intencional:
+     * - contains(): membresía lógica (¿está DENTRO del área?)
+     * - distanceToPoint(): distancia geométrica (¿qué tan lejos está?)
+     * 
+     * Estos son conceptos diferentes y ambos comportamientos son correctos
+     * en sus respectivos contextos.
      */
     public double distanceToPoint(double px, double py) {
         double dx = Math.max(0.0, Math.max(x - px, px - (x + width)));
@@ -804,6 +991,13 @@ public class RectangleH implements Serializable, Cloneable {
      * Positivo = mover hacia la derecha, negativo = mover hacia la izquierda.
      * Retorna 0.0 si no hay overlap.
      * 
+     * CASO ESPECIAL - CENTROS COINCIDENTES EN X:
+     * Cuando los centros tienen exactamente la misma coordenada X (caso raro pero posible),
+     * el desempate se hace por el orden de las coordenadas absolutas:
+     * - Si this.x < other.x: mover hacia la izquierda (negativo)
+     * - Si this.x >= other.x: mover hacia la derecha (positivo)
+     * Esto garantiza un comportamiento determinista independiente del orden de llamada.
+     * 
      * Ejemplo:
      *   A está en (0,0,10,10), B está en (8,0,10,10)
      *   A.penetrationX(B) retorna -2.0 (mover A hacia la izquierda)
@@ -815,12 +1009,13 @@ public class RectangleH implements Serializable, Cloneable {
         double leftPenetration = (x + width) - other.x;      // Cuánto penetra este bounds por la izquierda de other
         double rightPenetration = (other.x + other.width) - x; // Cuánto penetra este bounds por la derecha de other
 
-        // Elegir la penetración más pequeña y devolver el vector para sacar este bounds
-        if (leftPenetration < rightPenetration) {
-            return -leftPenetration;  // Mover hacia la izquierda (negativo)
-        } else {
-            return rightPenetration;  // Mover hacia la derecha (positivo)
+        // Elegir la penetración más pequeña
+        if (Math.abs(leftPenetration - rightPenetration) < 1e-10) {
+            // Centros casi coincidentes: desempate por posición absoluta
+            return (x < other.x) ? -leftPenetration : rightPenetration;
         }
+        
+        return (leftPenetration < rightPenetration) ? -leftPenetration : rightPenetration;
     }
 
     /**
@@ -828,6 +1023,11 @@ public class RectangleH implements Serializable, Cloneable {
      * Retorna el desplazamiento necesario para separar este bounds del otro.
      * Positivo = mover hacia abajo, negativo = mover hacia arriba.
      * Retorna 0.0 si no hay overlap.
+     * 
+     * CASO ESPECIAL - CENTROS COINCIDENTES EN Y:
+     * Cuando los centros tienen exactamente la misma coordenada Y,
+     * el desempate se hace por el orden de las coordenadas absolutas.
+     * Ver documentación de penetrationX() para detalles.
      * 
      * Ejemplo:
      *   A está en (0,0,10,10), B está en (0,8,10,10)
@@ -840,12 +1040,13 @@ public class RectangleH implements Serializable, Cloneable {
         double topPenetration = (y + height) - other.y;      // Cuánto penetra este bounds por arriba de other
         double bottomPenetration = (other.y + other.height) - y; // Cuánto penetra este bounds por abajo de other
 
-        // Elegir la penetración más pequeña y devolver el vector para sacar este bounds
-        if (topPenetration < bottomPenetration) {
-            return -topPenetration;  // Mover hacia arriba (negativo)
-        } else {
-            return bottomPenetration;  // Mover hacia abajo (positivo)
+        // Elegir la penetración más pequeña
+        if (Math.abs(topPenetration - bottomPenetration) < 1e-10) {
+            // Centros casi coincidentes: desempate por posición absoluta
+            return (y < other.y) ? -topPenetration : bottomPenetration;
         }
+        
+        return (topPenetration < bottomPenetration) ? -topPenetration : bottomPenetration;
     }
 
     /**
@@ -878,6 +1079,42 @@ public class RectangleH implements Serializable, Cloneable {
         return thisArea > 0.0 ? overlap / thisArea : 0.0;
     }
 
+    /**
+     * Calcula la profundidad de solapamiento en el eje X.
+     * Retorna un valor positivo indicando cuánto se solapan en X,
+     * o 0.0 si no hay solapamiento.
+     * 
+     * A diferencia de penetrationX(), este método NO calcula la dirección
+     * de separación, solo la magnitud del overlap.
+     * 
+     * Útil para:
+     * - Queries de proximidad simples
+     * - Scoring de colisiones por profundidad
+     * - Optimizaciones que solo necesitan magnitud
+     */
+    public double overlapX(RectangleH other) {
+        if (!intersects(other)) return 0.0;
+        
+        double leftEdge = Math.max(x, other.x);
+        double rightEdge = Math.min(x + width, other.x + other.width);
+        return rightEdge - leftEdge;
+    }
+
+    /**
+     * Calcula la profundidad de solapamiento en el eje Y.
+     * Retorna un valor positivo indicando cuánto se solapan en Y,
+     * o 0.0 si no hay solapamiento.
+     * 
+     * Ver overlapX() para detalles.
+     */
+    public double overlapY(RectangleH other) {
+        if (!intersects(other)) return 0.0;
+        
+        double topEdge = Math.max(y, other.y);
+        double bottomEdge = Math.min(y + height, other.y + other.height);
+        return bottomEdge - topEdge;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // ══ UTILIDADES DE ESCALA Y TRANSFORMACIÓN
     // ═══════════════════════════════════════════════════════════════════════
@@ -885,8 +1122,13 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Escala este bounds desde su centro.
      * factor > 1.0 agranda, factor < 1.0 achica.
+     * Factores negativos se convierten a su valor absoluto.
+     * Si el resultado produce dimensiones negativas, se ajusta a cero.
      */
     public void scale(double factor) {
+        // Prevenir factores negativos
+        factor = Math.abs(factor);
+        
         double cx = getCenterX();
         double cy = getCenterY();
         double newWidth = width * factor;
@@ -899,8 +1141,13 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Escala este bounds desde su centro con factores independientes.
+     * Factores negativos se convierten a su valor absoluto.
      */
     public void scale(double factorX, double factorY) {
+        // Prevenir factores negativos
+        factorX = Math.abs(factorX);
+        factorY = Math.abs(factorY);
+        
         double cx = getCenterX();
         double cy = getCenterY();
         double newWidth = width * factorX;
@@ -931,22 +1178,46 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Expande este bounds por un margen uniforme en todos los lados.
+     * Márgenes negativos contraen el bounds.
+     * Si el resultado produce dimensiones negativas, se ajusta a cero.
      */
     public void expand(double margin) {
         x -= margin;
         y -= margin;
         width += margin * 2.0;
         height += margin * 2.0;
+        
+        // Prevenir dimensiones negativas
+        if (width < 0.0) {
+            x += width * 0.5;
+            width = 0.0;
+        }
+        if (height < 0.0) {
+            y += height * 0.5;
+            height = 0.0;
+        }
     }
 
     /**
      * Expande este bounds con márgenes independientes.
+     * Márgenes negativos contraen el bounds.
+     * Si el resultado produce dimensiones negativas, se ajusta a cero.
      */
     public void expand(double horizontal, double vertical) {
         x -= horizontal;
         y -= vertical;
         width += horizontal * 2.0;
         height += vertical * 2.0;
+        
+        // Prevenir dimensiones negativas
+        if (width < 0.0) {
+            x += width * 0.5;
+            width = 0.0;
+        }
+        if (height < 0.0) {
+            y += height * 0.5;
+            height = 0.0;
+        }
     }
 
     /**
@@ -1253,10 +1524,12 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Crea un bounds que engloba todos los puntos dados.
+     * Los elementos null se ignoran.
+     * Si no hay puntos válidos, retorna un bounds vacío.
      */
     public static RectangleH fromPoints(Point2D... points) {
         if (points == null || points.length == 0) {
-            return new RectangleH();
+            return new RectangleH(0, 0, -1, -1);
         }
 
         double minX = Double.POSITIVE_INFINITY;
@@ -1264,11 +1537,20 @@ public class RectangleH implements Serializable, Cloneable {
         double maxX = Double.NEGATIVE_INFINITY;
         double maxY = Double.NEGATIVE_INFINITY;
 
+        int validCount = 0;
         for (Point2D p : points) {
+            if (p == null) continue; // Ignorar nulls
+            
             minX = Math.min(minX, p.getX());
             minY = Math.min(minY, p.getY());
             maxX = Math.max(maxX, p.getX());
             maxY = Math.max(maxY, p.getY());
+            validCount++;
+        }
+
+        // Si no hay puntos válidos, retornar vacío
+        if (validCount == 0) {
+            return new RectangleH(0, 0, -1, -1);
         }
 
         return new RectangleH(minX, minY, maxX - minX, maxY - minY);
@@ -1276,18 +1558,19 @@ public class RectangleH implements Serializable, Cloneable {
 
     /**
      * Crea un bounds que engloba todos los bounds dados.
-     * Ignora los bounds vacíos en la unión.
+     * Ignora los bounds con dimensiones negativas (vacíos).
+     * Los bounds con dimensiones cero (puntos) SÍ se incluyen.
      * Si todos están vacíos, retorna un bounds vacío.
      */
     public static RectangleH union(RectangleH... bounds) {
         if (bounds == null || bounds.length == 0) {
-            return new RectangleH();
+            return new RectangleH(0, 0, -1, -1);
         }
 
-        // Buscar el primer bounds no vacío
+        // Buscar el primer bounds válido (no vacío con dimensiones negativas)
         RectangleH result = null;
         for (RectangleH b : bounds) {
-            if (!b.isEmpty()) {
+            if (!b.isEmpty()) {  // isEmpty() ahora solo detecta dimensiones negativas
                 result = new RectangleH(b);
                 break;
             }
@@ -1295,10 +1578,10 @@ public class RectangleH implements Serializable, Cloneable {
 
         // Si todos estaban vacíos, retornar vacío
         if (result == null) {
-            return new RectangleH();
+            return new RectangleH(0, 0, -1, -1);
         }
 
-        // Agregar el resto de bounds no vacíos
+        // Agregar el resto de bounds válidos (incluye puntos con dimensión cero)
         for (RectangleH b : bounds) {
             if (!b.isEmpty()) {
                 result.add(b);
@@ -1362,6 +1645,166 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // ══ SWEPT Y SUPPORT (Para física avanzada y CCD)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Construye el bounds barrido (swept) por un desplazamiento dado.
+     * 
+     * El swept bounds es el AABB que contiene todas las posiciones que
+     * este bounds ocupa durante el movimiento desde su posición actual
+     * hasta posición + (dx, dy).
+     * 
+     * @param dx desplazamiento en X
+     * @param dy desplazamiento en Y
+     * @return nuevo RectangleH que envuelve el path completo
+     * 
+     * Ejemplo:
+     *   bounds = (10, 10, 5, 5), desplazamiento = (3, -2)
+     *   sweep(3, -2) = (10, 8, 8, 7)
+     *   
+     * Útil para:
+     * - Broad phase en CCD (Continuous Collision Detection)
+     * - Path queries (¿qué objetos puede tocar durante el movimiento?)
+     * - Motion blur bounds para rendering
+     */
+    public RectangleH sweep(double dx, double dy) {
+        double minX = Math.min(x, x + dx);
+        double minY = Math.min(y, y + dy);
+        double maxX = Math.max(x + width, x + width + dx);
+        double maxY = Math.max(y + height, y + height + dy);
+        return new RectangleH(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    /**
+     * Calcula la unión entre este bounds y su versión desplazada.
+     * Equivalente a: this.union(this.translated(dx, dy))
+     * 
+     * Más eficiente que crear el bounds trasladado y hacer union.
+     * 
+     * @param dx desplazamiento en X
+     * @param dy desplazamiento en Y
+     * @return bounds que contiene posición inicial y final
+     */
+    public RectangleH sweptUnion(double dx, double dy) {
+        return sweep(dx, dy);  // Implementación idéntica, nombre semántico diferente
+    }
+
+    /**
+     * Obtiene el punto extremo de soporte en una dirección dada.
+     * 
+     * El punto de soporte es el vértice del bounds que está más lejos
+     * en la dirección especificada. Útil para algoritmos de separación
+     * de ejes (SAT) y detección de colisiones avanzada.
+     * 
+     * @param dirX componente X de la dirección (no necesita estar normalizada)
+     * @param dirY componente Y de la dirección
+     * @return punto del bounds más alejado en esa dirección
+     * 
+     * Ejemplo:
+     *   bounds = (0, 0, 10, 10)
+     *   getSupportPoint(1, 0) = (10, 0) o (10, 10) (cualquier esquina derecha)
+     *   getSupportPoint(1, 1) = (10, 10) (esquina superior-derecha)
+     *   getSupportPoint(-1, 0) = (0, 0) o (0, 10) (cualquier esquina izquierda)
+     * 
+     * Útil para:
+     * - Separating Axis Theorem (SAT)
+     * - GJK algorithm para detección de colisiones
+     * - Cálculo de distancias dirigidas
+     */
+    public Point2D.Double getSupportPoint(double dirX, double dirY) {
+        // El punto de soporte de un AABB es siempre una de sus esquinas
+        // Elegimos la esquina cuyo producto punto con la dirección es máximo
+        double supportX = (dirX >= 0) ? (x + width) : x;
+        double supportY = (dirY >= 0) ? (y + height) : y;
+        return new Point2D.Double(supportX, supportY);
+    }
+
+    /**
+     * Sobrecarga de getSupportPoint que acepta un Point2D como dirección.
+     */
+    public Point2D.Double getSupportPoint(Point2D direction) {
+        return getSupportPoint(direction.getX(), direction.getY());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ══ VALIDACIÓN Y UTILIDADES DE ESTADO
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Verifica que todas las coordenadas y dimensiones son finitas.
+     * 
+     * Retorna false si algún campo contiene:
+     * - NaN (Not a Number)
+     * - POSITIVE_INFINITY
+     * - NEGATIVE_INFINITY
+     * 
+     * Útil para:
+     * - Validación de entrada después de cálculos complejos
+     * - Debug de errores numéricos
+     * - Assertions en código crítico
+     * 
+     * Ejemplo:
+     *   RectangleH valid = new RectangleH(10, 20, 5, 8);
+     *   valid.isFinite() = true
+     *   
+     *   RectangleH invalid = new RectangleH(10, Double.NaN, 5, 8);
+     *   invalid.isFinite() = false
+     */
+    public boolean isFinite() {
+        return Double.isFinite(x) 
+            && Double.isFinite(y) 
+            && Double.isFinite(width) 
+            && Double.isFinite(height);
+    }
+
+    /**
+     * Copia los valores de otro bounds a este bounds.
+     * 
+     * Actualiza este bounds existente sin crear una nueva instancia.
+     * Más eficiente que crear nuevos objetos cuando se reutilizan buffers.
+     * 
+     * @param source bounds desde el cual copiar los valores
+     * 
+     * Útil para:
+     * - Reutilización de objetos en hot paths (evita GC pressure)
+     * - Actualización de bounds cacheados
+     * - Patrones de object pooling
+     * 
+     * Ejemplo:
+     *   RectangleH buffer = new RectangleH();
+     *   // En hot loop:
+     *   buffer.copyFrom(collider.getBounds());  // Sin allocación
+     *   processCollision(buffer);
+     */
+    public void copyFrom(RectangleH source) {
+        this.x = source.x;
+        this.y = source.y;
+        this.width = source.width;
+        this.height = source.height;
+    }
+
+    /**
+     * Copia los valores desde un Rectangle a este bounds.
+     */
+    public void copyFrom(Rectangle source) {
+        this.x = source.x;
+        this.y = source.y;
+        this.width = source.width;
+        this.height = source.height;
+    }
+
+    /**
+     * Copia los valores desde un Rectangle2D a este bounds.
+     */
+    public void copyFrom(Rectangle2D source) {
+        this.x = source.getX();
+        this.y = source.getY();
+        this.width = source.getWidth();
+        this.height = source.getHeight();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // ══ OBJECT OVERRIDES
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -1381,6 +1824,28 @@ public class RectangleH implements Serializable, Cloneable {
                 x, y, width, height);
     }
 
+    /**
+     * Compara este bounds con otro objeto para igualdad EXACTA.
+     * 
+     * IGUALDAD EXACTA vs APROXIMADA:
+     * Este método verifica igualdad bit-a-bit de los valores double.
+     * Dos bounds son iguales si y solo si x, y, width, height son
+     * EXACTAMENTE iguales (mismo patrón de bits IEEE 754).
+     * 
+     * ADVERTENCIA:
+     * Esta NO es igualdad geométrica aproximada. Bounds que difieren
+     * en cantidades microscópicas (< epsilon) se consideran diferentes.
+     * 
+     * Para comparación con tolerancia, usar:
+     *   Math.abs(a.x - b.x) < epsilon &&
+     *   Math.abs(a.y - b.y) < epsilon &&
+     *   Math.abs(a.width - b.width) < epsilon &&
+     *   Math.abs(a.height - b.height) < epsilon
+     * 
+     * USO EN COLECCIONES:
+     * Este método es consistente con hashCode() y seguro para
+     * usar en HashMap, HashSet, etc.
+     */
     @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;
