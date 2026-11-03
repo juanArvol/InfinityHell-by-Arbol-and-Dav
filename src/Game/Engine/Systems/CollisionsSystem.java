@@ -13,65 +13,64 @@ import Game.Engine.Entity.Components.InteractionSideComponent.SideInteraction;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PushableComponent;
 import Game.Engine.Entity.Components.SurfaceComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Contact.ContactState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.awt.geom.Point2D;
 import java.util.*;
 
 /**
  * Sistema de colisiones — pipeline unificado por frame.
  *
- * ── HRFC — Unificación del pipeline de colisiones ─────────────────────────
+ * ── HRFC — Simplificación: Eliminación de Type enum redundante ────────────
  *
- * PRINCIPIO FUNDAMENTAL (Diseño B):
- *   La matemática de detección geométrica es ÚNICA para todos los objetos.
- *   La diferencia entre SÓLIDO y TRIGGER está en la POLÍTICA DE RESPUESTA,
- *   no en la detección.
+ * PRINCIPIO FUNDAMENTAL:
+ *   Todos los objetos son entidades físicas. La única distinción es:
+ *   - SENSOR (isSensor=true): detecta colisiones pero NO aplica resolución física
+ *   - FÍSICO (isSensor=false): detecta colisiones Y aplica resolución física
  *
- *   SÓLIDO  → SweptAABB eje-por-eje → resolución de velocidad + ContactState
- *   TRIGGER → SweptAABB 2D completo → setLastContactNormal + dispatch (sin resolución)
+ * ARQUITECTURA DEL PIPELINE:
+ *
+ *   FASE 0   = applyGravity + flushForces (solo objetos físicos con gravedad)
+ *   FASE 0.5 = reset contactState + normal (todos con collider)
+ *   FASE 1A  = SweptAABB eje-por-eje para OBJETOS FÍSICOS (no-sensor)
+ *              → permite slide along walls (esencial para platformers)
+ *              → aplica resolución de velocidad + ContactState
+ *   FASE 1B  = SweptAABB 2D para SENSORES (bullets, pickups, etc)
+ *              → detección pura sin resolución física
+ *              → solo escribe normal y despacha
+ *   FASE 2   = CollisionDetector.detect() (overlaps residuales AABB)
+ *   FASE 3   = dispatch pares FASE 2
+ *   FASE 4   = CollisionHandler enter/stay/exit
  *
  * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
  *
- *   ANTES:
- *     FASE 1   = SweptAABB solo para SÓLIDOS
- *     FASE 2   = AABB estática para TODOS (incluidos TRIGGERS)
- *     Bullets nunca recibían normal de colisión
- *     Bullets no participaban en CCD
- *     moveByPhysics() en Bullet.update() antes de CollisionsSystem
+ *   ELIMINADO:
+ *     - ColliderComponent.Type enum (SOLID/TRIGGER) — concepto redundante
+ *     - CollisionResult.trigger flag — no tiene sentido en un par
+ *     - CollisionHandler.onTriggerEnter/Stay/Exit — eventos duplicados
  *
- *   AHORA:
- *     FASE 0   = applyGravity + flushForces          [SÓLIDOS]
- *     FASE 0.5 = reset contactState + normal trigger  [SÓLIDOS + TRIGGERS]
- *     FASE 1   = SweptAABB eje X, luego eje Y         [SÓLIDOS no-trigger]
- *                 → política sólida: resolveVelocity + ContactState
- *     FASE 1B  = SweptAABB 2D simultáneo              [TRIGGERS con velocity != 0]
- *                 → política trigger: setLastContactNormal + dispatch
- *                 → integra el movimiento del trigger (mover hasta contacto)
- *                 → CollisionDetector.markDispatched() para evitar duplicado
- *     FASE 2   = CollisionDetector.detect()           [overlaps residuales]
- *                 (con colecciones reutilizables, con normal calculada)
- *     FASE 3   = dispatch pares FASE 2
- *                 → guard: omitir si algún objeto está destruido
- *     FASE 4   = CollisionListener enter/stay/exit
+ *   MANTENIDO:
+ *     - Detección eje-por-eje para objetos físicos (Player, Enemies)
+ *     - Detección 2D para sensores (Bullets)
+ *     - Toda la lógica de resolución física intacta
  *
- * ORDEN DEL PIPELINE:
- *   Bullet.update() llama movement.tick() + behavior.onUpdate() pero YA NO
- *   llama moveByPhysics(). CollisionsSystem integra la posición del trigger
- *   en FASE 1B con CCD, garantizando que la detección es swept y que la
- *   normal está disponible cuando onCollision() se ejecuta.
+ * BENEFICIOS:
+ *   - Código más limpio: eliminado enum redundante y eventos duplicados
+ *   - Semántica correcta: un objeto ES una entidad física, no cambia de "tipo"
+ *   - Sin cambios en comportamiento: la física sigue siendo idéntica
+ *   - Más mantenible: menos abstracciones innecesarias
  *
  * INVARIANTES GARANTIZADOS:
- *   1. Todo objeto con velocity != 0 recibe detección swept (no AABB snapshot).
- *   2. La normal del impacto siempre está disponible en onCollision().
- *   3. Un par no se despacha más de una vez por frame.
- *   4. Objetos destruidos durante dispatch no reciben eventos adicionales.
- *   5. Bullets mueven su posición dentro de CollisionsSystem con CCD.
+ *   1. Objetos físicos se mueven eje-por-eje (slide along walls)
+ *   2. Sensores se mueven con CCD 2D (precisión en bullets)
+ *   3. La normal del impacto siempre está disponible
+ *   4. Un par no se despacha más de una vez por frame
+ *   5. Objetos destruidos no reciben eventos adicionales
  */
 public class CollisionsSystem {
 
@@ -162,6 +161,12 @@ public class CollisionsSystem {
      */
     private final RectangleH reusableBroadY = new RectangleH();
 
+    /**
+     * RectangleH reutilizable para broadphase 2D (FASE 1B triggers).
+     * Evita allocations en hot path — solo válido durante una iteración.
+     */
+    private final RectangleH reusableBroad2D = new RectangleH();
+
 
     // ── HRFC — Profiling Infrastructure ───────────────────────────────────
     private final Game.Engine.Profiling.SubsystemTimer collisionTimer = 
@@ -204,15 +209,15 @@ public class CollisionsSystem {
 
         // ── FASE 0: Aplicar gravedad y fuerzas acumuladas ────────────────
         // Usa el onGround del frame ANTERIOR (todavía válido aquí).
-        // Solo objetos SÓLIDOS — los triggers gestionan su gravedad
-        // externamente via ProjectileMovement (isGravityManagedExternally).
+        // Solo objetos con física que NO gestionan gravedad externamente
+        // (los proyectiles gestionan gravedad via ProjectileMovement).
         for (GameObjects obj : objects) {
             Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
             if (physComp == null) continue;
             Physics2D physics = physComp.getPhysics();
             if (physics.isGravityManagedExternally()) continue;
             ColliderComponent col = obj.getComponent(ColliderComponent.class);
-            if (col == null || col.isTrigger()) continue;
+            if (col == null || col.isSensor()) continue;
             // Mini-HRFC: Pasar deltaTime para integración temporal correcta
             physics.applyGravity(physics.getOnGround(), deltaTime);
             physics.flushAccumulatedForces(deltaTime);
@@ -221,21 +226,21 @@ public class CollisionsSystem {
         // ── FASE 0.5: Resetear estado de contacto ────────────────────────
         // DESPUÉS de applyGravity para que use el onGround previo correcto.
         // ANTES de SweptAABB para que los nuevos contactos partan de cero.
-        // Para TRIGGERS: limpia lastContactNormal (escrito en el frame anterior).
+        // Para SENSORES: limpia lastContactNormal (escrito en el frame anterior).
         for (GameObjects obj : objects) {
             Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
             ColliderComponent  colA     = obj.getComponent(ColliderComponent.class);
             if (physComp == null || colA == null) continue;
             Physics2D physics = physComp.getPhysics();
-            if (!colA.isTrigger()) {
-                // Sólido: resetear flags de contacto
+            if (!colA.isSensor()) {
+                // Objeto físico normal: resetear flags de contacto
                 physics.setOnGround(false);
                 physics.setOnWall(false);
                 physics.setOnCeiling(false);
                 physics.clearSurface();
                 physComp.setContactState(ContactState.NONE);
             } else {
-                // Trigger: resetear normal de contacto
+                // Sensor: resetear normal de contacto
                 if (physics instanceof BulletPhysics bp) {
                     bp.clearLastContactNormal();
                 }
@@ -243,40 +248,32 @@ public class CollisionsSystem {
         }
 
 
-        // ── FASE 1: SweptAABB eje-por-eje para SÓLIDOS ───────────────────
-        // Solo objetos no-trigger con Physics2DComponent y velocity != 0.
-        // Política sólida: resuelve movimiento, escribe ContactState.
+        // ── FASE 1: SweptAABB para objetos físicos ───────────────────────
+        // OBJETOS FÍSICOS (no-sensor): usan SweptAABB eje-por-eje para permitir
+        // deslizamiento en plataformas (slide along walls).
+        // SENSORES: usan SweptAABB 2D para detección pura sin resolución física.
 
         IdentityHashMap<GameObjects, List<ContactRecord>> frameContacts =
                 new IdentityHashMap<>();
 
+        // ── FASE 1A: Objetos físicos (no-sensor) con resolución eje-por-eje ──
         for (GameObjects obj : objects) {
             Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
             ColliderComponent  colA     = obj.getComponent(ColliderComponent.class);
-            if (physComp == null || colA == null || colA.isTrigger()) continue;
+            if (physComp == null || colA == null || colA.isSensor()) continue;
             if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
 
             Physics2D physics = physComp.getPhysics();
-            // ── Mini-HRFC 1.5: Temporal integration correction ────────────
-            // velocity está en units/second. Debe multiplicarse por deltaTime
-            // para obtener displacement en units.
-            // ANTES: vx = velocity.x  (tratado como px/frame)
-            // AHORA: vx = velocity.x × deltaTime  (displacement correcto)
             double vx = physics.getVelocity().getX() * deltaTime;
             double vy = physics.getVelocity().getY() * deltaTime;
             
             if (vx == 0.0 && vy == 0.0) continue;
 
-            List<ContactRecord> records = frameContacts.computeIfAbsent(
-                    obj, k -> new ArrayList<>(4));
+            List<ContactRecord> records = frameContacts.computeIfAbsent(obj, k -> new ArrayList<>(4));
 
             // ── Eje X ──────────────────────────────────────────────────
             if (vx != 0.0) {
                 RectangleH bounds = colA.getBounds();
-                
-                // HRFC: Usar sweep() de RectangleH para construir broadphase bounds
-                // El shrink vertical (y+1, height-2) evita falsos positivos en esquinas
-                // durante movimiento horizontal puro
                 RectangleH sweptX = bounds.sweep(vx, 0).shrunk(0, 1);
                 reusableBroadX.copyFrom(sweptX);
 
@@ -288,7 +285,7 @@ public class CollisionsSystem {
                     if (other == obj) continue;
                     if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
                     ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                    if (colB == null || colB.isTrigger()) continue;
+                    if (colB == null || colB.isSensor()) continue;
                     if (!colA.canCollideWith(colB)) continue;
 
                     InteractionSideComponent iscB = other.getComponent(InteractionSideComponent.class);
@@ -326,14 +323,9 @@ public class CollisionsSystem {
                 }
             }
 
-
             // ── Eje Y ──────────────────────────────────────────────────
             if (vy != 0.0) {
                 RectangleH bounds = colA.getBounds();
-                
-                // HRFC: Usar sweep() de RectangleH para construir broadphase bounds
-                // En Y no se hace shrink horizontal porque queremos detectar
-                // contactos en toda la anchura del objeto
                 RectangleH sweptY = bounds.sweep(0, vy);
                 reusableBroadY.copyFrom(sweptY);
 
@@ -345,7 +337,7 @@ public class CollisionsSystem {
                     if (other == obj) continue;
                     if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
                     ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                    if (colB == null || colB.isTrigger()) continue;
+                    if (colB == null || colB.isSensor()) continue;
                     if (!colA.canCollideWith(colB)) continue;
 
                     RectangleH ob = colB.getBounds();
@@ -382,8 +374,101 @@ public class CollisionsSystem {
                     CollisionDispatcher.dispatch(obj, hitY);
                 }
             }
-        } // fin loop FASE 1
+        } // fin FASE 1A
 
+        // ── FASE 1B: Sensores con detección 2D ────────────────────────────
+        for (GameObjects obj : objects) {
+            ColliderComponent colA = obj.getComponent(ColliderComponent.class);
+            if (colA == null || !colA.isSensor()) continue;
+            if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
+            
+            if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera, deltaTime)) {
+                Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+                if (physComp != null) {
+                    Physics2D physics = physComp.getPhysics();
+                    double vx = physics.getVelocity().getX() * deltaTime;
+                    double vy = physics.getVelocity().getY() * deltaTime;
+                    PhysicsStepper.moveWith(obj, vx, vy);
+                }
+                continue;
+            }
+
+            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+            if (physComp == null) continue;
+
+            Physics2D physics = physComp.getPhysics();
+            double vx = physics.getVelocity().getX() * deltaTime;
+            double vy = physics.getVelocity().getY() * deltaTime;
+            if (vx == 0.0 && vy == 0.0) {
+                PhysicsStepper.moveWith(obj, 0, 0);
+                continue;
+            }
+
+            RectangleH bounds = colA.getBounds();
+            reusableBroad2D.copyFrom(bounds.sweep(vx, vy));
+
+            double nearestTime = 1.0;
+            int hitNormalX = 0;
+            int hitNormalY = 0;
+            GameObjects hitObj = null;
+
+            for (GameObjects other : objects) {
+                if (other == obj) continue;
+                if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
+                ColliderComponent colB = other.getComponent(ColliderComponent.class);
+                if (colB == null || colB.isSensor()) continue;
+                if (!colA.canCollideWith(colB)) continue;
+                
+                RectangleH ob = colB.getBounds();
+                if (!reusableBroad2D.intersects(ob)) continue;
+
+                SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);
+                if (!r.hasCollision() || r.time >= nearestTime) continue;
+
+                nearestTime = r.time;
+                hitNormalX = r.normalX;
+                hitNormalY = r.normalY;
+                hitObj = other;
+            }
+
+            PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
+
+            if (hitObj != null) {
+                RectangleH hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
+                double sepX, sepY;
+                if (nearestTime > 0.0) {
+                    sepX = hitNormalX * CONTACT_EPSILON;
+                    sepY = hitNormalY * CONTACT_EPSILON;
+                } else {
+                    RectangleH trigBounds = colA.getBounds();
+                    Point2D.Double mtv = trigBounds.minimumTranslationVector(hitBounds);
+                    if (hitNormalX != 0) {
+                        sepX = Math.signum(hitNormalX) * Math.abs(mtv.x) + hitNormalX * PENETRATION_EPSILON;
+                        sepY = 0;
+                    } else {
+                        sepX = 0;
+                        sepY = Math.signum(hitNormalY) * Math.abs(mtv.y) + hitNormalY * PENETRATION_EPSILON;
+                    }
+                }
+                PhysicsStepper.moveWith(obj, sepX, sepY);
+
+                if (physics instanceof BulletPhysics bp) {
+                    bp.setLastContactNormal(hitNormalX, hitNormalY);
+                }
+                if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                    bullet.setCollisionNormal(hitNormalX, hitNormalY);
+                }
+
+                detector.markDispatched(obj, hitObj);
+
+                if (shouldFilterCollision(obj, hitObj)) {
+                    continue;
+                }
+
+                CollisionDispatcher.dispatch(obj, hitObj);
+                enforcePostContactVelocity(physics, hitNormalX, hitNormalY);
+            }
+        } // fin FASE 1B
 
         // ── FASE 1 — finalización: construir ContactState por objeto ─────
         for (Map.Entry<GameObjects, List<ContactRecord>> entry : frameContacts.entrySet()) {
@@ -427,220 +512,10 @@ public class CollisionsSystem {
             physComp.setContactState(state);
         }
 
-
-        // ── FASE 1B: SweptAABB 2D para TRIGGERS en vuelo ─────────────────
-        //
-        // Política trigger: detecta impacto con CCD completo (ambos ejes),
-        // escribe la normal en BulletPhysics.setLastContactNormal(),
-        // mueve el trigger hasta el punto de contacto, luego dispatch.
-        //
-        // Los triggers NO reciben resolución de velocidad — su behavior
-        // (BulletJump, etc.) decide qué hacer con la velocidad en onCollision.
-        //
-        // Solo se comparan triggers contra NO-triggers (objetos sólidos del mundo).
-        // Trigger vs Trigger se maneja en FASE 2 si es necesario.
-
-        for (GameObjects obj : objects) {
-            ColliderComponent colA = obj.getComponent(ColliderComponent.class);
-            if (colA == null || !colA.isTrigger()) continue;
-            if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
-            
-            // ── HRFC — Collision Culling ──────────────────────────────────
-            // Omitir triggers que están completamente fuera del área relevante.
-            // Esto reduce drásticamente el trabajo cuando hay muchos bullets off-screen.
-            if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera)) {
-                // Trigger fuera del área relevante — skip collision pero seguir simulando
-                // El trigger sigue vivo y se mueve, pero no genera colisiones.
-                // Integrar el movimiento completo sin colisiones.
-                Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
-                if (physComp != null) {
-                    Physics2D physics = physComp.getPhysics();
-                    double vx = physics.getVelocity().getX() * deltaTime;
-                    double vy = physics.getVelocity().getY() * deltaTime;
-                    PhysicsStepper.moveWith(obj, vx, vy);
-                }
-                continue;
-            }
-
-            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
-            if (physComp == null) continue;
-
-            Physics2D physics = physComp.getPhysics();
-            // ── Mini-HRFC 1.5: Temporal integration correction ────────────
-            // velocity está en units/second. Debe multiplicarse por deltaTime
-            // para obtener displacement en units.
-            double vx = physics.getVelocity().getX() * deltaTime;
-            double vy = physics.getVelocity().getY() * deltaTime;
-            if (vx == 0.0 && vy == 0.0) {
-                // Sin velocidad — mover completo (no debería ocurrir para bullets)
-                PhysicsStepper.moveWith(obj, 0, 0);
-                continue;
-            }
-
-            RectangleH bounds = colA.getBounds();
-
-            // Broad phase: swept bounds del path completo del frame
-            // Cualquier obstáculo que no intersecte con este rect es imposible de impactar
-            RectangleH sweptB = SweptAABB.sweptBounds(bounds, vx, vy);
-
-            double      nearestTime  = 1.0;
-            int         hitNormalX   = 0;
-            int         hitNormalY   = 0;
-            GameObjects hitObj       = null;
-
-            for (GameObjects other : objects) {
-                if (other == obj) continue;
-                if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
-                ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                if (colB == null || colB.isTrigger()) continue;  // trigger vs solo sólidos aquí
-                if (!colA.canCollideWith(colB)) continue;
-                
-                // ── HRFC — CollisionMatrix Filtering ──────────────────────
-                // Skip este par si la matriz indica que no deben colisionar.
-                // BULLET ↔ BULLET típicamente está filtrado aquí.
-                if (Game.Engine.Colisions.Filter.CollisionMatrix.isEnabled()) {
-                    if (!Game.Engine.Colisions.Filter.CollisionMatrix.canCollide(
-                        colA.getProfile().category,
-                        colB.getProfile().category
-                    )) {
-                        continue;  // Matrix says no collision needed
-                    }
-                }
-
-                RectangleH ob = colB.getBounds();
-
-                // Broad phase: descartar rápidamente sin swept
-                if (!sweptB.intersects(ob)) continue;
-
-                // Narrow phase: swept 2D completo
-                SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);
-                if (!r.hasCollision()) continue;
-                if (r.time >= nearestTime) continue;
-
-                nearestTime = r.time;
-                hitNormalX  = r.normalX;
-                hitNormalY  = r.normalY;
-                hitObj      = other;
-            }
-
-            // Mover el trigger hasta el punto de contacto (o completo si no hay hit)
-            PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
-
-            if (hitObj != null) {
-                // ── Separación de contacto — corrección geométrica ────────────
-                //
-                // CAUSA DE LA OSCILACIÓN (diagnosticada en Mini-HRFC):
-                //
-                // El parche anterior aplicaba una separación fija de 1.0px en
-                // dirección de la normal en TODOS los casos (time > 0 y time = 0).
-                // Eso producía oscilación por dos razones distintas:
-                //
-                //   CASO time > 0 (contacto CCD limpio):
-                //     moveWith(vx*t, vy*t) deja la bullet en el borde geométrico.
-                //     Separar 1.0px en dirección normal → bullet demasiado lejos.
-                //     La velocidad reflejada (ej: JUMP_BOOST = -14) devuelve la
-                //     bullet al borde en el siguiente frame → re-contacto → 1.0px
-                //     de nuevo → loop de oscilación a 1px de la superficie.
-                //
-                //   CASO time = 0 (penetración preexistente por truncado int):
-                //     moveWith(0, 0) → posición sin cambio.
-                //     Separar 1.0px fijo: puede ser demasiado (si la penetración
-                //     real es 0.1px, 1.0px lo mete en el collider adyacente) o
-                //     insuficiente (si la penetración real es 1.5px).
-                //
-                // SOLUCIÓN CORRECTA:
-                //
-                //   CASO time > 0 → solo aplicar CONTACT_EPSILON (0.5px sub-pixel).
-                //     0.5px sobrevive al truncado (int) sin desplazar visiblemente
-                //     el proyectil. La velocidad reflejada siempre aleja la bullet
-                //     más de 0.5px/frame (velocidad mínima de bullets > 1px/frame).
-                //
-                //   CASO time = 0 → calcular la penetración real y desplazar
-                //     exactamente pen + PENETRATION_EPSILON. Esto garantiza salida
-                //     mínima del overlap sin overshoot hacia colliders adyacentes.
-                //
-                // ── HRFC — Uso de minimumTranslationVector() ──────────────────
-                // Para time=0 (penetración preexistente), el MTV calcula automáticamente
-                // la separación mínima óptima considerando ambos ejes. Esto es más
-                // preciso que calcular penetración por eje manualmente.
-                //
-                // La separación solo se aplica en el eje de la normal para no
-                // desplazar lateralmente la bullet (el eje perpendicular es libre).
-                RectangleH hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
-                double sepX, sepY;
-                if (nearestTime > 0.0) {
-                    // Contacto CCD limpio: separación sub-pixel
-                    sepX = hitNormalX * CONTACT_EPSILON;
-                    sepY = hitNormalY * CONTACT_EPSILON;
-                } else {
-                    // time = 0: penetración preexistente — usar MTV para separación óptima
-                    RectangleH trigBounds = colA.getBounds();
-                    Point2D.Double mtv = trigBounds.minimumTranslationVector(hitBounds);
-                    
-                    // El MTV puede tener componente en ambos ejes, pero solo aplicamos
-                    // el componente en la dirección de la normal detectada para mantener
-                    // la semántica de "salir por la cara del impacto"
-                    if (hitNormalX != 0) {
-                        // Separación en X, usar solo componente X del MTV
-                        sepX = Math.signum(hitNormalX) * Math.abs(mtv.x) + hitNormalX * PENETRATION_EPSILON;
-                        sepY = 0;
-                    } else {
-                        // Separación en Y, usar solo componente Y del MTV
-                        sepX = 0;
-                        sepY = Math.signum(hitNormalY) * Math.abs(mtv.y) + hitNormalY * PENETRATION_EPSILON;
-                    }
-                }
-                PhysicsStepper.moveWith(obj, sepX, sepY);
-
-                // Escribir normal en BulletPhysics ANTES del dispatch
-                // para que onCollision() pueda leerla
-                if (physics instanceof BulletPhysics bp) {
-                    bp.setLastContactNormal(hitNormalX, hitNormalY);
-                }
-                
-                // ── HRFC — DOD Bridge: también escribir en Bullet DOD adapter ─
-                if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
-                    bullet.setCollisionNormal(hitNormalX, hitNormalY);
-                }
-
-                // Evitar que FASE 2 despache este par de nuevo
-                detector.markDispatched(obj, hitObj);
-
-                // ── Filtro de colisión por ownership ───────────────────────
-                // DOD: Un proyectil NO debe colisionar con su owner
-                if (shouldFilterCollision(obj, hitObj)) {
-                    continue; // skip dispatch
-                }
-
-                CollisionDispatcher.dispatch(obj, hitObj);
-
-                // ── Guard post-contacto: V·N debe ser positivo ────────────────
-                //
-                // Después del dispatch, el behavior (BulletJump, etc.) ha modificado
-                // la velocidad. Verificar que la componente de velocidad en la
-                // dirección de la normal sea positiva (alejándose del collider).
-                //
-                // Si la velocidad resultante apunta HACIA el collider (V·N < 0),
-                // forzarla a cero en esa componente. Esto corta el ciclo de
-                // re-contacto inmediato sin modificar la reflexión del behavior.
-                //
-                // Casos que activan el guard:
-                //   1. El behavior no modificó la velocidad (bug en el behavior).
-                //   2. Doble dispatch por FASE 2 que invirtió la velocidad ya corregida.
-                //   3. Contacto de esquina con normal inconsistente.
-                //
-                // El guard es un safety net del sistema, no un reemplazo de la
-                // reflexión correcta en el behavior. No debe activarse en condiciones
-                // normales si el behavior está bien implementado.
-                enforcePostContactVelocity(physics, hitNormalX, hitNormalY);
-            }
-        } // fin loop FASE 1B
-
-
         // ── FASE 2: Detección AABB (overlaps residuales) ─────────────────
-        // Detecta pares que no fueron procesados en FASE 1 ni FASE 1B:
-        //   - Trigger vs Trigger
-        //   - Sólido vs Sólido ya solapados (penetración preexistente sin velocidad)
+        // Detecta pares que no fueron procesados en FASE 1:
+        //   - Sensor vs Sensor
+        //   - Objetos ya solapados (penetración preexistente sin velocidad)
         //   - Cualquier par que se solape y no haya sido despachado ya
         // CollisionDetector omite los pares registrados via markDispatched().
         List<CollisionResult> pairs = detector.detect(objects);
@@ -657,14 +532,14 @@ public class CollisionsSystem {
                 continue; // skip dispatch
             }
 
-            // Para triggers de FASE 2 que llegaron con normal calculada,
+            // Para sensores de FASE 2 que llegaron con normal calculada,
             // escribir la normal en BulletPhysics antes del dispatch
             propagateNormalToTrigger(pair);
 
             CollisionDispatcher.dispatch(pair.a, pair.b);
         }
 
-        // ── FASE 4: CollisionListener enter / stay / exit ─────────────────
+        // ── FASE 4: CollisionHandler enter / stay / exit ─────────────────
         IdentityHashMap<GameObjects, Set<GameObjects>> currentContacts =
                 new IdentityHashMap<>();
 
@@ -683,18 +558,15 @@ public class CollisionsSystem {
 
             Set<GameObjects> current  = currentContacts.getOrDefault(obj, Set.of());
             Set<GameObjects> previous = previousContacts.getOrDefault(obj, Set.of());
-            boolean          isTrigger = isTriggerObj(obj);
 
             for (GameObjects contact : current) {
                 if (!previous.contains(contact)) {
                     for (CollisionHandler listener : listeners) {
-                        if (isTrigger) listener.onTriggerEnter(contact);
-                        else           listener.onCollisionEnter(contact);
+                        listener.onCollisionEnter(contact);
                     }
                 } else {
                     for (CollisionHandler listener : listeners) {
-                        if (isTrigger) listener.onTriggerStay(contact);
-                        else           listener.onCollisionStay(contact);
+                        listener.onCollisionStay(contact);
                     }
                 }
             }
@@ -702,8 +574,7 @@ public class CollisionsSystem {
             for (GameObjects contact : previous) {
                 if (!current.contains(contact)) {
                     for (CollisionHandler listener : listeners) {
-                        if (isTrigger) listener.onTriggerExit(contact);
-                        else           listener.onCollisionExit(contact);
+                        listener.onCollisionExit(contact);
                     }
                 }
             }
@@ -813,21 +684,21 @@ public class CollisionsSystem {
         return false; // no filtrar
     }
 
-    // ── Helper: propagar normal a trigger desde CollisionResult de FASE 2 ─
+    // ── Helper: propagar normal a sensores desde CollisionResult de FASE 2 ─
 
     /**
-     * Si el par de FASE 2 involucra un trigger con BulletPhysics,
-     * escribe la normal calculada por CollisionDetector en el trigger
+     * Si el par de FASE 2 involucra un sensor con BulletPhysics,
+     * escribe la normal calculada por CollisionDetector en el sensor
      * antes del dispatch para que onCollision() pueda leerla.
      *
      * Solo escribe si la normal es válida (no (0,0)) — evita borrar
-     * una normal escrita por FASE 1B en el mismo frame.
+     * una normal escrita por FASE 1 en el mismo frame.
      */
     private static void propagateNormalToTrigger(CollisionResult pair) {
         if (pair.normalX == 0 && pair.normalY == 0) return;
 
         if (pair.a.getComponent(ColliderComponent.class) != null
-                && pair.a.getComponent(ColliderComponent.class).isTrigger()) {
+                && pair.a.getComponent(ColliderComponent.class).isSensor()) {
             Physics2DComponent pc = pair.a.getComponent(Physics2DComponent.class);
             if (pc != null && pc.getPhysics() instanceof BulletPhysics bp
                     && !bp.hasContactNormal()) {
@@ -840,7 +711,7 @@ public class CollisionsSystem {
         }
 
         if (pair.b.getComponent(ColliderComponent.class) != null
-                && pair.b.getComponent(ColliderComponent.class).isTrigger()) {
+                && pair.b.getComponent(ColliderComponent.class).isSensor()) {
             Physics2DComponent pc = pair.b.getComponent(Physics2DComponent.class);
             if (pc != null && pc.getPhysics() instanceof BulletPhysics bp
                     && !bp.hasContactNormal()) {
@@ -906,11 +777,6 @@ public class CollisionsSystem {
             }
         }
         return result != null ? result : List.of();
-    }
-
-    private static boolean isTriggerObj(GameObjects obj) {
-        ColliderComponent col = obj.getComponent(ColliderComponent.class);
-        return col != null && col.isTrigger();
     }
 
     // ── Helpers de separación de contacto ────────────────────────────────

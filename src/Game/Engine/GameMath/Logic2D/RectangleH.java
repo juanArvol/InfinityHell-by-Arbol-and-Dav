@@ -204,23 +204,60 @@ public class RectangleH implements Serializable, Cloneable {
     /**
      * Retorna true si este bounds no representa un área o punto válido.
      * 
-     * CONVENCIÓN PARA RECTANGLEH:
-     * - width < 0 o height < 0: VACÍO (inválido)
-     * - width == 0 o height == 0: VÁLIDO (punto o línea degenerada)
-     * - width > 0 y height > 0: VÁLIDO (área rectangular)
+     * ── CONVENCIÓN PARA RectangleH (DIFERENTE DE java.awt.Rectangle) ──────
      * 
-     * DIFERENCIA CON AWT Rectangle:
+     * RectangleH considera válidos los puntos y líneas degeneradas:
+     *   - width < 0 o height < 0: VACÍO (inválido) ✗
+     *   - width == 0 o height == 0: VÁLIDO (punto o línea) ✓
+     *   - width > 0 y height > 0: VÁLIDO (área rectangular) ✓
+     * 
+     * DIFERENCIA CON java.awt.Rectangle:
      * AWT considera vacío cualquier rectángulo con width <= 0 o height <= 0.
-     * RectangleH permite puntos (width=0, height=0) y líneas degeneradas como válidos.
      * 
-     * RAZÓN: En física y colisiones de precisión double, los puntos y líneas
-     * son casos geométricos válidos que deben procesarse (ej: posición exacta,
-     * swept bounds de velocidad cero en un eje).
+     *   java.awt.Rectangle(0, 0, 0, 0).isEmpty() → true  (vacío)
+     *   RectangleH(0, 0, 0, 0).isEmpty()         → false (punto válido)
+     * 
+     * RAZÓN DE LA DIFERENCIA:
+     * En física y colisiones de precisión double, los puntos (width=0, height=0)
+     * y líneas degeneradas (width=0 o height=0) son casos geométricos válidos
+     * que deben procesarse correctamente. Por ejemplo:
+     *   - Posición exacta de un proyectil (punto)
+     *   - Swept bounds de velocidad cero en un eje (línea)
+     *   - Trigger sensor de área cero (detector de posición exacta)
+     * 
+     * MIGRACIÓN DESDE AWT:
+     * Si migras código que usa Rectangle.isEmpty() y espera que (0,0,0,0) sea
+     * vacío, considera usar isDegenerate() en su lugar:
+     * 
+     *   // AWT:
+     *   if (rect.isEmpty()) { ... }
+     * 
+     *   // RectangleH equivalente:
+     *   if (rectH.isDegenerate()) { ... }  // Para detectar puntos/líneas
+     *   if (rectH.isEmpty()) { ... }        // Para detectar inválidos (negativos)
      * 
      * @return true si tiene dimensiones negativas (inválido/vacío)
+     * @see #isDegenerate() para detectar puntos y líneas degeneradas (área cero)
      */
     public boolean isEmpty() {
         return width < 0.0 || height < 0.0;
+    }
+
+    /**
+     * Retorna true si este bounds representa un punto o línea (área cero).
+     * 
+     * Un bounds es degenerado si:
+     *   - width == 0 (línea vertical o punto)
+     *   - height == 0 (línea horizontal o punto)
+     *   - Ambos == 0 (punto)
+     * 
+     * NOTA: Los bounds degenerados NO son vacíos — son geometrías válidas.
+     * Use isEmpty() para detectar bounds inválidos (dimensiones negativas).
+     * 
+     * @return true si width==0 o height==0
+     */
+    public boolean isDegenerate() {
+        return width == 0.0 || height == 0.0;
     }
 
     /**

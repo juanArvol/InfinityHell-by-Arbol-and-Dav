@@ -291,14 +291,9 @@ public final class SweptAABB {
 
             if (!overlapX || !overlapY) return Result.NONE;
 
-            double penX = vx != 0 ? Math.min(
-                    (moving.x + moving.width) - target.x,
-                    (target.x + target.width) - moving.x
-            ) : Double.MAX_VALUE;
-            double penY = vy != 0 ? Math.min(
-                    (moving.y + moving.height) - target.y,
-                    (target.y + target.height) - moving.y
-            ) : Double.MAX_VALUE;
+            // HRFC FIX: Usar RectangleH API en lugar de cálculo manual
+            double penX = vx != 0 ? moving.penetrationX(target) : Double.MAX_VALUE;
+            double penY = vy != 0 ? moving.penetrationY(target) : Double.MAX_VALUE;
 
             int nx = 0, ny = 0;
             if (penX <= penY && vx != 0.0) {

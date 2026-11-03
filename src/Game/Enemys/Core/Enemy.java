@@ -574,12 +574,28 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     
     /**
      * Mueve el Enemy en DOD storage directamente (usado por PhysicsStepper).
-     * NO modifica el Transform OOP - syncFromDOD() lo actualizará en el siguiente frame.
+     *
+     * ── HRFC FIX: Sincronización DOD-OOP inmediata ────────────────────────
+     * ANTES: Solo modificaba DOD storage, Transform OOP se desincronizaba.
+     * AHORA: Modifica DOD Y actualiza Transform OOP en el mismo paso.
+     *
+     * GARANTÍA: CollisionsSystem siempre lee position correcta del Transform.
+     *
+     * @param dx desplazamiento en X
+     * @param dy desplazamiento en Y
      */
     public void moveDOD(double dx, double dy) {
         if (simulationHandle == null || !simulationHandle.isValid()) return;
+        
+        // 1. Actualizar DOD storage
         int idx = simulationHandle.index();
         entityStore.getStorage().positionsX()[idx] += (float)dx;
         entityStore.getStorage().positionsY()[idx] += (float)dy;
+        
+        // 2. Sincronizar Transform OOP inmediatamente
+        // CRÍTICO: CollisionsSystem lee de Transform, no de DOD
+        Vector2D position = getTransform().getPosition();
+        position.setX(position.getX() + dx);
+        position.setY(position.getY() + dy);
     }
 }

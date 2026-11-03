@@ -59,12 +59,12 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
             addComponent(new SpriteRendererComponent(icon));
         }
 
-        // Collider trigger para detectar al jugador
+        // Collider sensor para detectar al jugador
         ColliderComponent collider = new ColliderComponent(
             16, 16,
             CollisionProfile.WORLD_ITEM   // nuevo profile — ver nota abajo
         );
-        collider.setType(ColliderComponent.Type.TRIGGER);
+        collider.setSensor(true);
         addComponent(collider);
     }
 

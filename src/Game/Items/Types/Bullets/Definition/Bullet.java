@@ -321,13 +321,13 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             }
         }
 
-        // ── Collider (TRIGGER) — perfil del Flyweight ─────────────────────
+        // ── Collider (SENSOR) — perfil del Flyweight ─────────────────────
         // effectiveProfile() retorna PLAYER_BULLET si collisionProfile es null.
         ColliderComponent collider = new ColliderComponent(
                 flyweight.width(),
                 flyweight.height(),
                 flyweight.effectiveProfile());
-        collider.setType(ColliderComponent.Type.TRIGGER);
+        collider.setSensor(true);
         addComponent(collider);
 
         addComponent(new HitBoxComponent(Color.YELLOW));

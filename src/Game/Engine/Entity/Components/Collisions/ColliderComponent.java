@@ -29,15 +29,22 @@ import Game.Engine.GameMath.Logic2D.RectangleH;
  */
 public class ColliderComponent extends Component {
 
-    public enum Type { SOLID, TRIGGER }
-
     private double width;
     private double height;
     private double offsetX;
     private double offsetY;
 
     private CollisionProfile profile;
-    private Type type = Type.SOLID;
+    
+    /**
+     * Si true, este collider NO resuelve físicamente las colisiones (no aplica
+     * resolución de velocidad ni ContactState), pero SÍ genera eventos de colisión.
+     * Útil para sensores, zonas de daño, pickups, etc.
+     * 
+     * Los objetos con isSensor=true siguen usando la misma detección swept que
+     * todos los demás — la única diferencia es que no modifican la velocidad al colisionar.
+     */
+    private boolean isSensor = false;
 
     // ── Constructores ──────────────────────────────────────────────────────
 
@@ -82,9 +89,25 @@ public class ColliderComponent extends Component {
     public CollisionProfile getProfile() { return profile; }
     public void setProfile(CollisionProfile profile) { this.profile = profile; }
 
-    /** Shorthand para saber si este collider puede chocar con otro. */
+    /** Shorthand para saber si este collider puede chocar con otro. 
+     * 
+     * ── HRFC FIX: Filtrado unificado ──────────────────────────────────────
+     * Combina layer/mask Y CollisionMatrix en un solo check para evitar
+     * redundancia y garantizar consistencia.
+     */
     public boolean canCollideWith(ColliderComponent other) {
-        return this.profile.canCollideWith(other.profile);
+        // Check 1: layer/mask tradicional
+        boolean layerCheck = this.profile.canCollideWith(other.profile);
+        
+        // Check 2: CollisionMatrix (si está habilitado)
+        boolean matrixCheck = !Game.Engine.Colisions.Filter.CollisionMatrix.isEnabled()
+            || Game.Engine.Colisions.Filter.CollisionMatrix.canCollide(
+                this.profile.category, 
+                other.profile.category
+            );
+        
+        // Ambos deben pasar
+        return layerCheck && matrixCheck;
     }
 
     // ── Tamaño y offset ───────────────────────────────────────────────────
@@ -97,12 +120,10 @@ public class ColliderComponent extends Component {
     public double getOffsetX() { return offsetX; }
     public double getOffsetY() { return offsetY; }
 
-    // ── Tipo ──────────────────────────────────────────────────────────────
+    // ── Sensor flag ───────────────────────────────────────────────────────
 
-    public Type getType()       { return type; }
-    public void setType(Type t) { this.type = t; }
-    public boolean isTrigger()  { return type == Type.TRIGGER; }
-    public boolean isSolid()    { return type == Type.SOLID; }
+    public boolean isSensor()       { return isSensor; }
+    public void setSensor(boolean s) { this.isSensor = s; }
 
     // ── Layer/Mask directo (compatibilidad) ───────────────────────────────
 

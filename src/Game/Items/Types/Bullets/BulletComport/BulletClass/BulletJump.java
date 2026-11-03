@@ -132,69 +132,76 @@ public class BulletJump extends BulletBehavior {
         
         if (ny == -1) {
             // ── Suelo: Rebote vertical adaptativo ─────────────────────────
-            // FÍSICA DE REBOTE MEJORADA:
-            //   - Velocidad baja (< MIN_BOUNCE_SPEED): Boost hasta mínimo
-            //   - Velocidad alta (>= MIN_BOUNCE_SPEED): Reflejo natural
-            double currentVy = physics.getYspeed();
-            double currentVx = physics.getXspeed();
-            double impactSpeed = Math.abs(currentVy);
-            
-            double targetVy = (impactSpeed < MIN_BOUNCE_SPEED) 
-                ? -MIN_BOUNCE_SPEED 
-                : -impactSpeed;
-            
-            double targetVx = currentVx / FRICTION;
-            physics.addVelocity(targetVx - currentVx, targetVy - currentVy);
-
+            bounceVertical(bullet, -1);
         } else if (ny == 1) {
             // ── Techo: Reflejo vertical hacia abajo ───────────────────────
-            double currentVy = physics.getYspeed();
-            double currentVx = physics.getXspeed();
-            
-            double targetVy = Math.abs(currentVy);
-            double targetVx = currentVx / FRICTION;
-            physics.addVelocity(targetVx - currentVx, targetVy - currentVy);
-
+            bounceVertical(bullet, 1);
         } else if (nx != 0) {
             // ── Pared: Reflejo horizontal ─────────────────────────────────
-            double currentVx = physics.getXspeed();
-            double targetVx = Math.abs(currentVx) * nx / FRICTION;
-            physics.addVelocity(targetVx - currentVx, 0);
-
+            bounceHorizontal(bullet, nx);
         } else {
             // ── Fallback: Sin normal disponible ───────────────────────────
+            // Inferir dirección desde velocidad
             double vy = physics.getYspeed();
             double vx = physics.getXspeed();
             
-            if (vy > 0) {
-                // Venía bajando → tratar como suelo
-                double impactSpeed = Math.abs(vy);
-                double targetVy = (impactSpeed < MIN_BOUNCE_SPEED) ? -MIN_BOUNCE_SPEED : -impactSpeed;
-                double targetVx = vx / FRICTION;
-                physics.addVelocity(targetVx - vx, targetVy - vy);
-                bullet.getBulletLife().extend(1);
-                
-            } else if (vy < 0) {
-                // Venía subiendo → tratar como techo
-                double targetVy = Math.abs(vy);
-                double targetVx = vx / FRICTION;
-                physics.addVelocity(targetVx - vx, targetVy - vy);
-                
+            if (Math.abs(vy) > Math.abs(vx)) {
+                // Movimiento predominantemente vertical
+                int sign = (vy > 0) ? -1 : 1;  // Bajando→suelo(-1), Subiendo→techo(+1)
+                bounceVertical(bullet, sign);
+                if (vy > 0) bullet.getBulletLife().extend(1);  // Bonus en suelo
             } else if (vx != 0) {
-                // Solo horizontal → tratar como pared
-                double targetVx = -vx / FRICTION;
-                physics.addVelocity(targetVx - vx, 0);
-                
+                // Movimiento predominantemente horizontal
+                int sign = (vx > 0) ? -1 : 1;
+                bounceHorizontal(bullet, sign);
             } else {
-                // Completamente estático → aplicar impulso mínimo
+                // Completamente estático → aplicar impulso mínimo hacia arriba
                 physics.addVelocity(0, -MIN_BOUNCE_SPEED - vy);
             }
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    // SECCIÓN 7: CONFIGURACIÓN INTERNA
+    // SECCIÓN 7: CONFIGURACIÓN INTERNA Y HELPERS
     // ═════════════════════════════════════════════════════════════════════
+
+    /**
+     * Aplica rebote vertical (suelo o techo).
+     *
+     * ── HRFC FIX: Lógica unificada sin duplicación ────────────────────────
+     * FÍSICA DE REBOTE ADAPTATIVA:
+     *   - Velocidad baja (< MIN_BOUNCE_SPEED): Boost hasta mínimo
+     *   - Velocidad alta (>= MIN_BOUNCE_SPEED): Reflejo natural
+     *
+     * @param bullet proyectil a rebotar
+     * @param sign dirección del rebote: -1 = hacia arriba (suelo), +1 = hacia abajo (techo)
+     */
+    private void bounceVertical(Bullet bullet, int sign) {
+        var physics = bullet.getPhysics();
+        double currentVy = physics.getYspeed();
+        double currentVx = physics.getXspeed();
+        double impactSpeed = Math.abs(currentVy);
+        
+        double targetVy = (impactSpeed < MIN_BOUNCE_SPEED) 
+            ? sign * MIN_BOUNCE_SPEED 
+            : sign * impactSpeed;
+        
+        double targetVx = currentVx / FRICTION;
+        physics.addVelocity(targetVx - currentVx, targetVy - currentVy);
+    }
+
+    /**
+     * Aplica rebote horizontal (pared).
+     *
+     * @param bullet proyectil a rebotar
+     * @param sign dirección del rebote: -1 = hacia izquierda, +1 = hacia derecha
+     */
+    private void bounceHorizontal(Bullet bullet, int sign) {
+        var physics = bullet.getPhysics();
+        double currentVx = physics.getXspeed();
+        double targetVx = Math.abs(currentVx) * sign / FRICTION;
+        physics.addVelocity(targetVx - currentVx, 0);
+    }
 
     /**
      * Aplica propiedades físicas al proyectil.
