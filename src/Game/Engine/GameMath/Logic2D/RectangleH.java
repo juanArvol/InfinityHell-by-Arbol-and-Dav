@@ -873,18 +873,46 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     /**
+     * Calcula el overlap horizontal con otro bounds.
+     * Retorna 0.0 si no hay intersección en el eje X.
+     * 
+     * Útil para física y resolución de colisiones cuando necesitas
+     * la penetración en un eje específico.
+     */
+    public double overlapWidth(RectangleH other) {
+        // Verificar si hay overlap en el eje X
+        if (right() <= other.left() || left() >= other.right()) {
+            return 0.0;
+        }
+        return Math.min(right(), other.right()) - Math.max(left(), other.left());
+    }
+
+    /**
+     * Calcula el overlap vertical con otro bounds.
+     * Retorna 0.0 si no hay intersección en el eje Y.
+     * 
+     * Útil para física y resolución de colisiones cuando necesitas
+     * la penetración en un eje específico.
+     */
+    public double overlapHeight(RectangleH other) {
+        // Verificar si hay overlap en el eje Y
+        if (bottom() <= other.top() || top() >= other.bottom()) {
+            return 0.0;
+        }
+        return Math.min(bottom(), other.bottom()) - Math.max(top(), other.top());
+    }
+
+    /**
      * Calcula el área del overlap con otro bounds.
      * Retorna 0.0 si no hay intersección.
      */
     public double overlapArea(RectangleH other) {
         if (!intersects(other)) return 0.0;
 
-        double overlapWidth = Math.min(right(), other.right())
-                - Math.max(left(), other.left());
-        double overlapHeight = Math.min(bottom(), other.bottom())
-                - Math.max(top(), other.top());
+        double width = overlapWidth(other);
+        double height = overlapHeight(other);
 
-        return overlapWidth * overlapHeight;
+        return width * height;
     }
 
     /**
@@ -1256,6 +1284,27 @@ public class RectangleH implements Serializable, Cloneable {
      */
     public RectangleH shrunken(double margin) {
         return expanded(-margin);
+    }
+
+    /**
+     * Retorna un nuevo bounds contraído con márgenes independientes.
+     */
+    public RectangleH shrunken(double horizontal, double vertical) {
+        return expanded(-horizontal, -vertical);
+    }
+
+    /**
+     * Alias de shrunken() - retorna un nuevo bounds contraído uniformemente.
+     */
+    public RectangleH shrunk(double margin) {
+        return shrunken(margin);
+    }
+
+    /**
+     * Alias de shrunken() - retorna un nuevo bounds contraído con márgenes independientes.
+     */
+    public RectangleH shrunk(double horizontal, double vertical) {
+        return shrunken(horizontal, vertical);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1645,6 +1694,69 @@ public class RectangleH implements Serializable, Cloneable {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // ══ SPATIAL HASH Y GRID UTILITIES
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Calcula los índices de celda (grid) que este bounds ocupa.
+     * 
+     * Útil para spatial hashing y sistemas de particionamiento espacial.
+     * Retorna [x0, y0, x1, y1] donde (x0,y0) es la primera celda y (x1,y1) la última.
+     * 
+     * @param cellSize tamaño de cada celda del grid
+     * @return array de 4 enteros [minCellX, minCellY, maxCellX, maxCellY]
+     * 
+     * Ejemplo:
+     *   bounds = (10, 10, 50, 50), cellSize = 32
+     *   getCellIndices(32) = [0, 0, 1, 1]  // ocupa 4 celdas (2×2)
+     */
+    public int[] getCellIndices(int cellSize) {
+        if (cellSize <= 0) {
+            throw new IllegalArgumentException("cellSize debe ser > 0");
+        }
+        
+        int x0 = (int) Math.floor(x / cellSize);
+        int y0 = (int) Math.floor(y / cellSize);
+        int x1 = (int) Math.floor((x + width) / cellSize);
+        int y1 = (int) Math.floor((y + height) / cellSize);
+        
+        return new int[]{x0, y0, x1, y1};
+    }
+
+    /**
+     * Retorna el número de celdas que este bounds ocupa en un grid.
+     * 
+     * @param cellSize tamaño de cada celda
+     * @return número total de celdas ocupadas
+     */
+    public int getCellCount(int cellSize) {
+        int[] indices = getCellIndices(cellSize);
+        int cellsX = indices[2] - indices[0] + 1;
+        int cellsY = indices[3] - indices[1] + 1;
+        return cellsX * cellsY;
+    }
+
+    /**
+     * Itera sobre todas las coordenadas de celda que este bounds ocupa.
+     * 
+     * @param cellSize tamaño de cada celda
+     * @param consumer función que recibe (cellX, cellY) para cada celda ocupada
+     * 
+     * Ejemplo:
+     *   bounds.forEachCell(128, (cx, cy) -> {
+     *       grid.add(cx, cy, object);
+     *   });
+     */
+    public void forEachCell(int cellSize, java.util.function.BiConsumer<Integer, Integer> consumer) {
+        int[] indices = getCellIndices(cellSize);
+        for (int cx = indices[0]; cx <= indices[2]; cx++) {
+            for (int cy = indices[1]; cy <= indices[3]; cy++) {
+                consumer.accept(cx, cy);
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // ══ SWEPT Y SUPPORT (Para física avanzada y CCD)
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -1802,6 +1914,38 @@ public class RectangleH implements Serializable, Cloneable {
         this.y = source.getY();
         this.width = source.getWidth();
         this.height = source.getHeight();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ══ INTEROPERABILIDAD Y FACTORY METHODS ADICIONALES
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Crea un RectangleH desde coordenadas left-top-right-bottom.
+     * Útil para interoperabilidad con RenderBounds y sistemas de cámara.
+     * 
+     * @param left   coordenada X izquierda
+     * @param top    coordenada Y superior
+     * @param right  coordenada X derecha
+     * @param bottom coordenada Y inferior
+     * @return nuevo RectangleH
+     */
+    public static RectangleH fromEdges(double left, double top, double right, double bottom) {
+        if (right < left || bottom < top) {
+            throw new IllegalArgumentException(
+                "Edges inválidos: right debe ser >= left, bottom >= top. " +
+                "Recibido: left=" + left + ", top=" + top + ", right=" + right + ", bottom=" + bottom
+            );
+        }
+        return new RectangleH(left, top, right - left, bottom - top);
+    }
+
+    /**
+     * Retorna las coordenadas de bordes en orden [left, top, right, bottom].
+     * Útil para interoperabilidad con sistemas que usan este formato.
+     */
+    public double[] getEdges() {
+        return new double[]{x, y, x + width, y + height};
     }
 
     // ═══════════════════════════════════════════════════════════════════════

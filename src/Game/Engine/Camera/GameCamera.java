@@ -421,6 +421,38 @@ public final class GameCamera {
     public int getVirtualHeight() { return virtualHeight; }
 
     /**
+     * Retorna los bounds de la cámara en coordenadas de mundo.
+     * 
+     * ── HRFC — Interoperabilidad con sistemas espaciales ──────────────────
+     * Permite que sistemas de física, colisiones y render consulten directamente
+     * el área visible sin reconstruir el rectángulo manualmente.
+     * 
+     * El bounds retornado considera el zoom efectivo de la cámara.
+     * 
+     * Ejemplo de uso:
+     *   RectangleH viewBounds = camera.getBounds();
+     *   List<GameObjects> visible = spatialIndex.query(viewBounds);
+     * 
+     * @return RectangleH que representa el área visible de la cámara
+     */
+    public Game.Engine.GameMath.Logic2D.RectangleH getBounds() {
+        double vw = virtualWidth / (double) effectiveZoom;
+        double vh = virtualHeight / (double) effectiveZoom;
+        return new Game.Engine.GameMath.Logic2D.RectangleH(finalX, finalY, vw, vh);
+    }
+
+    /**
+     * Retorna los bounds de la cámara expandidos con un margen.
+     * Útil para culling con buffer para evitar pop-in.
+     * 
+     * @param margin píxeles extra en cada dirección
+     * @return bounds expandidos
+     */
+    public Game.Engine.GameMath.Logic2D.RectangleH getBounds(double margin) {
+        return getBounds().expanded(margin);
+    }
+
+    /**
      * Copia defensiva de la posición efectiva como Vector2D.
      * Preferir getX()/getY() cuando solo se necesita el valor escalar.
      */

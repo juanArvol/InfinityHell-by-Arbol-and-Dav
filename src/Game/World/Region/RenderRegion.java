@@ -134,13 +134,8 @@ public final class RenderRegion {
 
         List<GameObjects> result = new ArrayList<>();
 
-        // Objetos estáticos de los chunks visibles - usar RectangleH para precisión
-        Game.Engine.GameMath.Logic2D.RectangleH queryRect = new Game.Engine.GameMath.Logic2D.RectangleH(
-            currentBounds.left,
-            currentBounds.top,
-            currentBounds.getWidth(),
-            currentBounds.getHeight()
-        );
+        // HRFC: Usar toRectangleH() en lugar de conversión manual
+        Game.Engine.GameMath.Logic2D.RectangleH queryRect = currentBounds.toRectangleH();
         result.addAll(spatialIndex.query(queryRect));
 
         // Entidades dinámicas (culling por SpriteRenderer)

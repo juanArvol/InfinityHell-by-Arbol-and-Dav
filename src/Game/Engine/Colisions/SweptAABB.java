@@ -359,15 +359,20 @@ public final class SweptAABB {
      * @param vy      DESPLAZAMIENTO vertical del frame [units], NO velocidad
      * @return RectangleH que envuelve el path completo del frame
      */
+    /**
+     * Calcula el bounds barrido (swept) que contiene todas las posiciones
+     * que el bounds original ocupa durante el movimiento.
+     * 
+     * ── HRFC — Uso de RectangleH.sweep() ──────────────────────────────────
+     * Refactorizado para usar el método sweep() de RectangleH en lugar de
+     * cálculo manual. Esto elimina duplicación y usa la API probada.
+     * 
+     * @param bounds bounds original del objeto
+     * @param vx     desplazamiento en X
+     * @param vy     desplazamiento en Y
+     * @return bounds que engloba toda la trayectoria
+     */
     public static RectangleH sweptBounds(RectangleH bounds, double vx, double vy) {
-        double x = bounds.x, y = bounds.y;
-        double w = bounds.width, h = bounds.height;
-
-        double newX = (vx < 0 ? x + vx : x);
-        double newY = (vy < 0 ? y + vy : y);
-        double newW = w + Math.abs(vx);
-        double newH = h + Math.abs(vy);
-
-        return new RectangleH(newX, newY, newW, newH);
+        return bounds.sweep(vx, vy);
     }
 }

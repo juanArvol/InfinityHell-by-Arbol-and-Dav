@@ -112,6 +112,10 @@ public final class RenderDataCache {
 
     /**
      * Verifica si este objeto es visible en el viewport dado.
+     * 
+     * ── HRFC — Uso de RectangleH para culling ─────────────────────────────
+     * Refactorizado para usar RectangleH.intersects() en lugar de comparaciones
+     * manuales. Esto usa la API probada y elimina duplicación de lógica.
      *
      * @param cameraX       offset X de la cámara
      * @param cameraY       offset Y de la cámara
@@ -123,20 +127,41 @@ public final class RenderDataCache {
     public boolean isVisible(double cameraX, double cameraY,
                              int virtualWidth, int virtualHeight,
                              int margin) {
+        // Crear RectangleH del objeto en coordenadas de pantalla
         int screenX = getScreenX(cameraX);
         int screenY = getScreenY(cameraY);
+        Game.Engine.GameMath.Logic2D.RectangleH objBounds = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(screenX, screenY, renderWidth, renderHeight);
+        
+        // Crear RectangleH del viewport expandido con margen
+        Game.Engine.GameMath.Logic2D.RectangleH viewport = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(
+                -margin, 
+                -margin, 
+                virtualWidth + 2 * margin, 
+                virtualHeight + 2 * margin
+            );
+        
+        return viewport.intersects(objBounds);
+    }
 
-        int vpLeft   = -margin;
-        int vpTop    = -margin;
-        int vpRight  = virtualWidth  + margin;
-        int vpBottom = virtualHeight + margin;
-
-        if (screenX + renderWidth  < vpLeft)   return false;
-        if (screenY + renderHeight < vpTop)    return false;
-        if (screenX                > vpRight)  return false;
-        if (screenY                > vpBottom) return false;
-
-        return true;
+    /**
+     * Sobrecarga para usar con RectangleH del viewport directamente.
+     * Útil cuando el viewport ya está calculado como RectangleH.
+     * 
+     * @param viewportBounds bounds del viewport (ya con margen si aplica)
+     * @param cameraX        offset X de la cámara (para convertir a pantalla)
+     * @param cameraY        offset Y de la cámara
+     * @return true si es visible
+     */
+    public boolean isVisible(Game.Engine.GameMath.Logic2D.RectangleH viewportBounds,
+                             double cameraX, double cameraY) {
+        int screenX = getScreenX(cameraX);
+        int screenY = getScreenY(cameraY);
+        Game.Engine.GameMath.Logic2D.RectangleH objBounds = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(screenX, screenY, renderWidth, renderHeight);
+        
+        return viewportBounds.intersects(objBounds);
     }
 
     @Override

@@ -86,6 +86,36 @@ public final class RenderBounds {
     public double getHeight() { return bottom - top;  }
 
     /**
+     * Convierte este RenderBounds a RectangleH para uso en sistemas de física/colisiones.
+     * 
+     * ── HRFC — Interoperabilidad RenderBounds ↔ RectangleH ────────────────
+     * RenderBounds usa formato left-top-right-bottom (edges).
+     * RectangleH usa formato x-y-width-height (position + size).
+     * Esta conversión permite pasar bounds de render a sistemas espaciales.
+     * 
+     * @return RectangleH equivalente a este RenderBounds
+     */
+    public Game.Engine.GameMath.Logic2D.RectangleH toRectangleH() {
+        return Game.Engine.GameMath.Logic2D.RectangleH.fromEdges(left, top, right, bottom);
+    }
+
+    /**
+     * Crea RenderBounds desde un RectangleH.
+     * Útil cuando sistemas de física/colisiones necesitan convertir a formato de render.
+     * 
+     * @param rect el RectangleH a convertir
+     * @return RenderBounds equivalente
+     */
+    public static RenderBounds from(Game.Engine.GameMath.Logic2D.RectangleH rect) {
+        return new RenderBounds(
+            rect.x,
+            rect.y,
+            rect.x + rect.width,
+            rect.y + rect.height
+        );
+    }
+
+    /**
      * True si el sprite es (parcialmente) visible dentro de estos bounds.
      *
      * @param worldX       posición X del sprite en el mundo

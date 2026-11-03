@@ -129,10 +129,13 @@ public final class CollisionDetector {
             indexMap.put(obj, i);
 
             RectangleH b = col.getBounds();
-            int x0 = (int) Math.floor(b.x / CELL_SIZE);
-            int y0 = (int) Math.floor(b.y / CELL_SIZE);
-            int x1 = (int) Math.floor((b.x + b.width) / CELL_SIZE);
-            int y1 = (int) Math.floor((b.y + b.height) / CELL_SIZE);
+            
+            // HRFC: Usar getCellIndices() de RectangleH para evitar cálculo manual
+            int[] cellIndices = b.getCellIndices(CELL_SIZE);
+            int x0 = cellIndices[0];
+            int y0 = cellIndices[1];
+            int x1 = cellIndices[2];
+            int y1 = cellIndices[3];
 
             for (int cx = x0; cx <= x1; cx++) {
                 for (int cy = y0; cy <= y1; cy++) {
@@ -229,12 +232,16 @@ public final class CollisionDetector {
      * para que los behaviors como BulletJump no caigan al fallback heurístico
      * por velocidad.
      *
+     * ── HRFC — Uso de RectangleH API ──────────────────────────────────────
+     * Actualizado para usar penetrationX() y penetrationY() en lugar de
+     * cálculo manual. Esto elimina duplicación de lógica y usa la API probada.
+     *
      * @param ra bounds del objeto A
      * @param rb bounds del objeto B
      * @return int[2] con {normalX, normalY} desde la perspectiva de A hacia B
      */
     private static int[] computeOverlapNormal(RectangleH ra, RectangleH rb) {
-        // Centros (ahora con precisión double completa)
+        // Centros (con precisión double completa de RectangleH)
         double cxA = ra.getCenterX();
         double cyA = ra.getCenterY();
         double cxB = rb.getCenterX();
@@ -243,9 +250,9 @@ public final class CollisionDetector {
         double dx = cxA - cxB;
         double dy = cyA - cyB;
 
-        // Penetraciones en cada eje
-        double penX = (ra.width  + rb.width)  * 0.5 - Math.abs(dx);
-        double penY = (ra.height + rb.height) * 0.5 - Math.abs(dy);
+        // HRFC: Usar API de RectangleH en lugar de cálculo manual
+        double penX = ra.penetrationX(rb);
+        double penY = ra.penetrationY(rb);
 
         if (penX <= 0 || penY <= 0) {
             // Overlap mínimo en un eje — los objetos se tocan exactamente en un borde.

@@ -115,15 +115,23 @@ public final class TransitionValidator {
     /**
      * Calcula el AABB del collider del subject si estuviera en la posición dada.
      * Usa el tamaño actual del collider, solo desplaza su origen.
+     * 
+     * ── HRFC — Uso de RectangleH.translated() ─────────────────────────────
+     * Refactorizado para usar translated() en lugar de construcción manual.
+     * Esto calcula el desplazamiento desde la posición actual y aplica la
+     * traslación de forma más eficiente.
      */
     private RectangleH calculateBoundsAt(ColliderComponent col,
-                                         Game.Engine.GameMath.Logic2D.Vector2D position) {
-        RectangleH current = col.getBounds();
-        return new RectangleH(
-            (int) position.getX(),
-            (int) position.getY(),
-            current.width,
-            current.height
-        );
+                                         Game.Engine.GameMath.Logic2D.Vector2D targetPosition) {
+        RectangleH currentBounds = col.getBounds();
+        Game.Engine.GameMath.Logic2D.Vector2D currentPosition = 
+            col.getOwner().getTransform().getPosition();
+        
+        // Calcular el desplazamiento desde posición actual a target
+        double dx = targetPosition.getX() - currentPosition.getX();
+        double dy = targetPosition.getY() - currentPosition.getY();
+        
+        // Aplicar traslación al bounds actual
+        return currentBounds.translated(dx, dy);
     }
 }

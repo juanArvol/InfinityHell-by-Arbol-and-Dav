@@ -22,6 +22,14 @@ public abstract class Component {
         this.gameObject = obj;
     }
 
+    /**
+     * Retorna el GameObject propietario de este componente.
+     * @return el GameObject al que pertenece este componente
+     */
+    public GameObjects getOwner() {
+        return gameObject;
+    }
+
     /** Inicialización. Se llama una vez al agregarse al objeto. */
     public void start() {}
 

@@ -26,12 +26,22 @@ package Game.Engine.RenderEngine.Culling;
  * Útil para evitar pop-in con sprites que tienen efectos que sobresalen
  * de su bounding box (sombras, glows). Default: 32px.
  *
+ * ── HRFC — Refactor con RectangleH ────────────────────────────────────────
+ * Las versiones de viewport refactorizadas usan RectangleH internamente para
+ * eliminar duplicación de lógica de intersección. Las variantes legacy se
+ * mantienen por compatibilidad pero delegan a las versiones RectangleH.
+ *
  * ── USO ───────────────────────────────────────────────────────────────────
  *   // Test sin margen
  *   if (!ViewportCuller.isVisible(x, y, w, h, camX, camY, vw, vh)) return;
  *
  *   // Test con margen de 32px
  *   if (!ViewportCuller.isVisible(x, y, w, h, camX, camY, vw, vh, 32)) return;
+ *
+ *   // Test con RectangleH (nuevo)
+ *   RectangleH viewport = new RectangleH(camX, camY, vw, vh).expanded(margin);
+ *   RectangleH sprite = new RectangleH(worldX, worldY, w, h);
+ *   if (!ViewportCuller.isVisible(viewport, sprite)) return;
  *
  * ── NOTA SOBRE ROTACIÓN ───────────────────────────────────────────────────
  * Este culler opera en AABB (axis-aligned bounding box).
@@ -48,7 +58,42 @@ public final class ViewportCuller {
     // Clase utilitaria — no instanciable.
     private ViewportCuller() {}
 
-    // ── API principal ─────────────────────────────────────────────────────────
+    // ── API basada en RectangleH (recomendada) ────────────────────────────
+
+    /**
+     * Determina si un sprite es visible usando RectangleH para viewport y sprite.
+     * Versión más eficiente cuando los bounds ya están precalculados.
+     * 
+     * @param viewport bounds del viewport (ya con margen aplicado si corresponde)
+     * @param sprite   bounds del sprite en coordenadas de pantalla
+     * @return true si el sprite es (parcialmente) visible
+     */
+    public static boolean isVisible(Game.Engine.GameMath.Logic2D.RectangleH viewport,
+                                    Game.Engine.GameMath.Logic2D.RectangleH sprite) {
+        return viewport.intersects(sprite);
+    }
+
+    /**
+     * Determina si un sprite es visible usando coordenadas directas.
+     * Crea RectangleH internamente — usar sobrecarga anterior si los bounds
+     * ya están disponibles para evitar allocations.
+     * 
+     * @param viewport     bounds del viewport
+     * @param spriteX      posición X del sprite en pantalla
+     * @param spriteY      posición Y del sprite en pantalla
+     * @param spriteWidth  ancho del sprite
+     * @param spriteHeight alto del sprite
+     * @return true si es visible
+     */
+    public static boolean isVisible(Game.Engine.GameMath.Logic2D.RectangleH viewport,
+                                    double spriteX, double spriteY,
+                                    int spriteWidth, int spriteHeight) {
+        Game.Engine.GameMath.Logic2D.RectangleH sprite = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(spriteX, spriteY, spriteWidth, spriteHeight);
+        return viewport.intersects(sprite);
+    }
+
+    // ── API principal (compatibilidad) ────────────────────────────────────
 
     /**
      * Determina si un sprite en coordenadas de MUNDO es visible en el viewport.
@@ -83,23 +128,19 @@ public final class ViewportCuller {
                                     int virtualWidth, int virtualHeight,
                                     int margin) {
 
-        // Posición del sprite en coordenadas de pantalla
-        double screenX = worldX - cameraX;
-        double screenY = worldY - cameraY;
-
-        // Viewport expandido con margen
-        int vpLeft   = -margin;
-        int vpTop    = -margin;
-        int vpRight  = virtualWidth  + margin;
-        int vpBottom = virtualHeight + margin;
-
-        // El sprite es invisible si está completamente fuera del viewport
-        if (screenX + spriteWidth  < vpLeft)   return false;
-        if (screenY + spriteHeight < vpTop)    return false;
-        if (screenX                > vpRight)  return false;
-        if (screenY                > vpBottom) return false;
-
-        return true;
+        // HRFC: Usar RectangleH internamente para eliminar duplicación de lógica
+        Game.Engine.GameMath.Logic2D.RectangleH viewport = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(
+                cameraX - margin,
+                cameraY - margin,
+                virtualWidth + 2 * margin,
+                virtualHeight + 2 * margin
+            );
+        
+        Game.Engine.GameMath.Logic2D.RectangleH sprite = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(worldX, worldY, spriteWidth, spriteHeight);
+        
+        return viewport.intersects(sprite);
     }
 
     /**
@@ -118,17 +159,19 @@ public final class ViewportCuller {
                                             int spriteWidth,  int spriteHeight,
                                             int virtualWidth, int virtualHeight,
                                             int margin) {
-        int vpLeft   = -margin;
-        int vpTop    = -margin;
-        int vpRight  = virtualWidth  + margin;
-        int vpBottom = virtualHeight + margin;
-
-        if (screenX + spriteWidth  < vpLeft)   return false;
-        if (screenY + spriteHeight < vpTop)    return false;
-        if (screenX                > vpRight)  return false;
-        if (screenY                > vpBottom) return false;
-
-        return true;
+        // HRFC: Usar RectangleH para consistencia
+        Game.Engine.GameMath.Logic2D.RectangleH viewport = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(
+                -margin,
+                -margin,
+                virtualWidth + 2 * margin,
+                virtualHeight + 2 * margin
+            );
+        
+        Game.Engine.GameMath.Logic2D.RectangleH sprite = 
+            new Game.Engine.GameMath.Logic2D.RectangleH(screenX, screenY, spriteWidth, spriteHeight);
+        
+        return viewport.intersects(sprite);
     }
 
     /**

@@ -20,6 +20,7 @@ import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
 import Game.Engine.GameMath.Logic2D.RectangleH;
+import java.awt.geom.Point2D;
 import java.util.*;
 
 /**
@@ -272,13 +273,12 @@ public class CollisionsSystem {
             // ── Eje X ──────────────────────────────────────────────────
             if (vx != 0.0) {
                 RectangleH bounds = colA.getBounds();
-                // HRFC Performance: Reutilizar RectangleH en lugar de alocar
-                reusableBroadX.setBounds(
-                        (int)(vx < 0 ? bounds.x + vx : bounds.x + bounds.width),
-                        bounds.y + 1,
-                        (int)(Math.abs(vx) + 1),
-                        bounds.height - 2
-                );
+                
+                // HRFC: Usar sweep() de RectangleH para construir broadphase bounds
+                // El shrink vertical (y+1, height-2) evita falsos positivos en esquinas
+                // durante movimiento horizontal puro
+                RectangleH sweptX = bounds.sweep(vx, 0).shrunk(0, 1);
+                reusableBroadX.copyFrom(sweptX);
 
                 double      nearestTimeX = 1.0;
                 int         hitNormalX   = 0;
@@ -330,13 +330,12 @@ public class CollisionsSystem {
             // ── Eje Y ──────────────────────────────────────────────────
             if (vy != 0.0) {
                 RectangleH bounds = colA.getBounds();
-                // HRFC Performance: Reutilizar RectangleH en lugar de alocar
-                reusableBroadY.setBounds(
-                        bounds.x,
-                        (int)(vy < 0 ? bounds.y + vy : bounds.y),
-                        bounds.width,
-                        (int)(bounds.height + Math.abs(vy))
-                );
+                
+                // HRFC: Usar sweep() de RectangleH para construir broadphase bounds
+                // En Y no se hace shrink horizontal porque queremos detectar
+                // contactos en toda la anchura del objeto
+                RectangleH sweptY = bounds.sweep(0, vy);
+                reusableBroadY.copyFrom(sweptY);
 
                 double      nearestTimeY = 1.0;
                 int         hitNormalY   = 0;
@@ -560,6 +559,11 @@ public class CollisionsSystem {
                 //     exactamente pen + PENETRATION_EPSILON. Esto garantiza salida
                 //     mínima del overlap sin overshoot hacia colliders adyacentes.
                 //
+                // ── HRFC — Uso de minimumTranslationVector() ──────────────────
+                // Para time=0 (penetración preexistente), el MTV calcula automáticamente
+                // la separación mínima óptima considerando ambos ejes. Esto es más
+                // preciso que calcular penetración por eje manualmente.
+                //
                 // La separación solo se aplica en el eje de la normal para no
                 // desplazar lateralmente la bullet (el eje perpendicular es libre).
                 RectangleH hitBounds = hitObj.getComponent(ColliderComponent.class).getBounds();
@@ -569,11 +573,22 @@ public class CollisionsSystem {
                     sepX = hitNormalX * CONTACT_EPSILON;
                     sepY = hitNormalY * CONTACT_EPSILON;
                 } else {
-                    // time = 0: penetración preexistente — calcular profundidad real
+                    // time = 0: penetración preexistente — usar MTV para separación óptima
                     RectangleH trigBounds = colA.getBounds();
-                    double pen = computePenetrationDepth(trigBounds, hitBounds, hitNormalX, hitNormalY);
-                    sepX = hitNormalX * (pen + PENETRATION_EPSILON);
-                    sepY = hitNormalY * (pen + PENETRATION_EPSILON);
+                    Point2D.Double mtv = trigBounds.minimumTranslationVector(hitBounds);
+                    
+                    // El MTV puede tener componente en ambos ejes, pero solo aplicamos
+                    // el componente en la dirección de la normal detectada para mantener
+                    // la semántica de "salir por la cara del impacto"
+                    if (hitNormalX != 0) {
+                        // Separación en X, usar solo componente X del MTV
+                        sepX = Math.signum(hitNormalX) * Math.abs(mtv.x) + hitNormalX * PENETRATION_EPSILON;
+                        sepY = 0;
+                    } else {
+                        // Separación en Y, usar solo componente Y del MTV
+                        sepX = 0;
+                        sepY = Math.signum(hitNormalY) * Math.abs(mtv.y) + hitNormalY * PENETRATION_EPSILON;
+                    }
                 }
                 PhysicsStepper.moveWith(obj, sepX, sepY);
 
@@ -908,6 +923,10 @@ public class CollisionsSystem {
      * donde SweptAABB ya no puede calcular el desplazamiento correcto porque el
      * objeto ya está dentro del obstáculo.
      *
+     * ── HRFC — Uso de RectangleH API ──────────────────────────────────────
+     * Actualizado para usar overlapWidth() y overlapHeight() en lugar de
+     * cálculo manual de overlaps. Esto elimina duplicación y usa la API probada.
+     *
      * ── Cálculo ───────────────────────────────────────────────────────────
      * Para normal (nx=1, ny=0) — pared derecha:
      *   La bullet viene desde la derecha y penetró la pared.
@@ -930,18 +949,13 @@ public class CollisionsSystem {
      */
     private static double computePenetrationDepth(RectangleH trig, RectangleH hit,
                                                    int normalX, int normalY) {
+        // HRFC: Usar overlapWidth/Height en lugar de cálculo manual
         if (normalX != 0) {
             // Eje X: calcular overlap horizontal
-            double overlapLeft  = (trig.x + trig.width) - hit.x;
-            double overlapRight = (hit.x + hit.width) - trig.x;
-            double pen = Math.min(overlapLeft, overlapRight);
-            return Math.max(0.0, pen);
+            return trig.overlapWidth(hit);
         } else {
             // Eje Y: calcular overlap vertical
-            double overlapTop    = (trig.y + trig.height) - hit.y;
-            double overlapBottom = (hit.y + hit.height) - trig.y;
-            double pen = Math.min(overlapTop, overlapBottom);
-            return Math.max(0.0, pen);
+            return trig.overlapHeight(hit);
         }
     }
 
