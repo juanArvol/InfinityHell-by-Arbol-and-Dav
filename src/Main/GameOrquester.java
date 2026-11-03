@@ -137,11 +137,16 @@ public class GameOrquester {
 
         // ── 8. Listeners de teclado ───────────────────────────────────────────
         keyboard.addKeyActionListener((KeyActionListener) action -> {
+            System.out.println("[GameOrquester] Key action received: " + action); // DEBUG
             switch (action) {
                 case "toggleFullscreen" ->
                     display.requestToggleFullscreen();
                 case "toggleFps" ->
                     DebugGameSettings.getInstance().toggleFps();
+                case "raycast" -> {
+                    System.out.println("[GameOrquester] Calling RaycastConfig.toggle()"); // DEBUG
+                    Game.Engine.Physics.Predictive.RaycastConfig.toggle();
+                }
                 // ── HRFC-DT-003: Prueba arquitectónica de cambio de estado ───
                 case "toggleIdleState" -> {
                     // Demostración de transición entre estados

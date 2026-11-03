@@ -19,6 +19,8 @@ import Game.Engine.Physics.Contact.ContactState;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
+import Game.Engine.Physics.Predictive.VelocityRaycast;
+import Game.Engine.Physics.Predictive.RaycastCollisionDetector;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
 import java.awt.geom.Point2D;
 import java.util.*;
@@ -518,8 +520,56 @@ public class CollisionsSystem {
                 continue;
             }
 
-            // ── SUB-STEPPING ADAPTATIVO para velocidad alta ───────────────
+            // ── RAYCAST PREDICTIVO LIMITANTE (GENÉRICO) ───────────────────
+            // Detectar obstáculos y calcular factor de limitación del movimiento
+            RaycastCollisionDetector.DetectionResult detection = 
+                RaycastCollisionDetector.detectAndLimitMovement(obj, vx, vy, objects);
+            
+            // REGISTRAR RAYCAST PARA VISUALIZACIÓN (si está activo)
+            if (VelocityRaycast.SHOW_RAYCASTS) {
+                double objX = obj.getTransform().getPosition().getX();
+                double objY = obj.getTransform().getPosition().getY();
+                VelocityRaycast.RaycastResult raycastVis = VelocityRaycast.calculateRaycast(vx, vy);
+                Game.Engine.Physics.Predictive.RaycastVisualizationSystem.registerRaycast(
+                    obj, objX, objY, raycastVis, detection);
+            }
+            
+            // APLICAR LIMITACIÓN: Si hay obstáculo cercano, reducir velocidad
+            if (detection.hasObstacle && detection.movementLimitFactor < 1.0) {
+                vx *= detection.movementLimitFactor;
+                vy *= detection.movementLimitFactor;
+                
+                // Si el movimiento queda casi en cero, detener completamente
+                if (Math.abs(vx) < 0.1 && Math.abs(vy) < 0.1) {
+                    PhysicsStepper.moveWith(obj, 0, 0);
+                    
+                    // Marcar colisión y despachar evento
+                    if (detection.nearestObject != null) {
+                        if (physics instanceof BulletPhysics bp) {
+                            // Calcular normal desde la dirección del movimiento
+                            int normalX = (vx > 0) ? -1 : (vx < 0) ? 1 : 0;
+                            int normalY = (vy > 0) ? -1 : (vy < 0) ? 1 : 0;
+                            bp.setLastContactNormal(normalX, normalY);
+                        }
+                        if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                            int normalX = (vx > 0) ? -1 : (vx < 0) ? 1 : 0;
+                            int normalY = (vy > 0) ? -1 : (vy < 0) ? 1 : 0;
+                            bullet.setCollisionNormal(normalX, normalY);
+                        }
+                        
+                        detector.markDispatched(obj, detection.nearestObject);
+                        if (!shouldFilterCollision(obj, detection.nearestObject)) {
+                            CollisionDispatcher.dispatch(obj, detection.nearestObject);
+                        }
+                    }
+                    continue; // No mover más
+                }
+            }
+            
+            // Recalcular velocityMag después de limitación
             double velocityMag = Math.sqrt(vx * vx + vy * vy);
+            
+            // ── SUB-STEPPING ADAPTATIVO para velocidad alta ───────────────
             
             if (velocityMag > SUBSTEP_VELOCITY_THRESHOLD) {
                 // Velocidad PELIGROSA — dividir en sub-pasos

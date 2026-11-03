@@ -5,6 +5,7 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.security.Key;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -57,6 +58,7 @@ public class KeyBoard implements KeyListener, FocusListener {
         KeyBinding.stateAndEdge  (KeyEvent.VK_C,      "c",     "special"),
 
         // ── Sistema ───────────────────────────────────────────────────────────
+        KeyBinding.edgeOnly      (KeyEvent.VK_P, "raycast"),
         KeyBinding.edgeOnly      (KeyEvent.VK_F11,    "toggleFullscreen"),
         KeyBinding.edgeOnly      (KeyEvent.VK_ESCAPE, "pause"),
         KeyBinding.edgeOnly      (KeyEvent.VK_F3,     "toggleFps"),

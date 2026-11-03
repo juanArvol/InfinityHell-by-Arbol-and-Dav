@@ -198,8 +198,8 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.SPRING_BULLET)
-            .initialAmulets(AmuletType.SPLIT_CRYSTAL)
+            .initialBullets(BulletType.NORMAL_BULLET)
+            .initialAmulets(AmuletType.EXPLOSION_SHIELD)
             .build();
         
         // ── EJEMPLO DE CONFIGURACIÓN DECLARATIVA ─────────────────────────

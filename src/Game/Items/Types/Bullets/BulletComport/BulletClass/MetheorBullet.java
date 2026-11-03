@@ -191,7 +191,7 @@ public class MetheorBullet extends BulletBehavior {
         explode(bullet);
         
         // Matar el proyectil tras la explosión
-        bullet.getBulletLife().kill();
+        /* bullet.getBulletLife().kill(); */
     }
 
     /**

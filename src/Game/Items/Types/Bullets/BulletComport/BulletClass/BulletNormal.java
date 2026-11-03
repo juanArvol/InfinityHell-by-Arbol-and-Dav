@@ -98,7 +98,7 @@ public class BulletNormal extends BulletBehavior {
         }
         
         // Destruir proyectil al impactar cualquier cosa
-        bullet.getBulletLife().kill();
+        /* bullet.getBulletLife().kill(); */
     }
 
     // ═════════════════════════════════════════════════════════════════════

@@ -205,6 +205,9 @@ public class GameState implements State {
      */
     @Override
     public void update(Main.TemporalContext temporalContext) {
+        // Limpiar raycasts del frame anterior
+        Game.Engine.Physics.Predictive.RaycastVisualizationSystem.clearFrame();
+        
         // DOD simulation ANTES de sistemas OOP
         worldBootstrap.updateSimulation(temporalContext.getDeltaTime());
         
@@ -237,6 +240,17 @@ public class GameState implements State {
     public void draw(RenderFrame frame) {
         // Mundo: entidades, tiles, efectos. Con transformación de cámara.
         worldManager.draw(frame.getLayerGraphics(LayerIndex.WORLD_ENTITIES));
+
+        // Raycasts: visualización de debug de física predictiva
+        if (Game.Engine.Physics.Predictive.VelocityRaycast.SHOW_RAYCASTS) {
+            java.awt.Graphics2D g = frame.getLayerGraphics(LayerIndex.WORLD_ENTITIES);
+            // TODO: Obtener dimensiones virtuales desde DisplayManager
+            Game.Engine.RenderEngine.Context.RenderContext ctx = 
+                new Game.Engine.RenderEngine.Context.RenderContext(g, 1280, 720);
+            Game.Engine.RenderEngine.Context.RenderCamera camera = 
+                new Game.Engine.RenderEngine.Context.RenderCamera(worldManager.getCamera());
+            Game.Engine.Physics.Predictive.RaycastVisualizationSystem.render(ctx, camera);
+        }
 
         // HUD: vida, munición, crosshair. Sin transformación de cámara.
         uiManager.draw(frame.getLayerGraphics(LayerIndex.HUD));
