@@ -9,28 +9,80 @@ import java.util.List;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * RaycastCollisionDetector — Detector de Colisiones por Raycast
+ * RaycastCollisionDetector — Detector de Limitación Predictiva de Movimiento
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * PROPÓSITO:
- *   Detectar POTENCIALES colisiones en el path de movimiento de un objeto
- *   usando raycast predictivo, ANTES de ejecutar el movimiento real.
+ * ── RESPONSABILIDAD ÚNICA ─────────────────────────────────────────────────
  *
- * FLUJO DE USO:
- *   1. Calcular raycast con VelocityRaycast
- *   2. Usar este detector para verificar si hay obstáculos en el path
- *   3. Si hay obstáculo → ajustar sub-stepping
- *   4. Si NO hay obstáculo → movimiento normal
+ * Detectar el PRIMER obstáculo en el path de movimiento predicho y calcular
+ * el FACTOR DE LIMITACIÓN del desplazamiento.
  *
- * OPTIMIZACIÓN:
- *   - Broadphase rápida con bounds extendidos
- *   - Solo objetos sólidos (no triggers) cuentan como obstáculos
- *   - Ignorar objetos pendientes de destrucción
+ * RESPONSABILIDADES:
+ *   1. Buscar obstáculos en el path volumétrico de movimiento
+ *   2. Identificar el obstáculo más cercano
+ *   3. Calcular distancia precisa al primer impacto
+ *   4. Calcular factor de limitación del movimiento (0.0-1.0)
+ *   5. Proporcionar información del impacto (objeto, distancia)
  *
- * ── NO ES UN RAYCAST TRADICIONAL ──────────────────────────────────────────
- *   Este NO es un raycast punto-a-punto tradicional.
- *   Es una DETECCIÓN VOLUMÉTRICA en el path de movimiento futuro.
- *   Más eficiente y apropiado para física de juegos 2D.
+ * NO RESPONSABILIDADES (delegadas a otros componentes):
+ *   - Aplicar el desplazamiento limitado → MovementSystem
+ *   - Modificar velocidad → CollisionSystem
+ *   - Resolver penetraciones → CollisionSystem
+ *   - Ejecutar eventos de colisión → CollisionSystem
+ *   - Actualizar estado físico (onGround) → CollisionSystem
+ *
+ * ── ALGORITMO DE LIMITACIÓN ───────────────────────────────────────────────
+ *
+ * 1. Calcular desplazamiento previsto: displacement = velocity × deltaTime
+ * 2. Crear consulta volumétrica (swept bounds + raycast geometry)
+ * 3. Broadphase: filtrar candidatos con bounds extendidos
+ * 4. Narrowphase: calcular TOI preciso con SweptAABB.calculate2D()
+ * 5. Identificar el obstáculo con TOI mínimo
+ * 6. Calcular factor de limitación: limitFactor = distanceToObstacle / plannedMovement
+ * 7. Retornar DetectionResult con limitFactor
+ *
+ * EJEMPLO:
+ *   - Velocidad: 500 px/s, deltaTime: 0.016s
+ *   - Desplazamiento previsto: 8 px
+ *   - Obstáculo detectado a: 5 px
+ *   - Factor de limitación: 5 / 8 = 0.625
+ *   - Desplazamiento real aplicado: 8 × 0.625 = 5 px
+ *
+ * ── GEOMETRÍA DE CONSULTA ─────────────────────────────────────────────────
+ *
+ * NO es un raycast punto-a-punto tradicional.
+ * Es una CONSULTA VOLUMÉTRICA que cubre toda la cara frontal del objeto:
+ *
+ * Para Entity de 32×48 moviéndose hacia la derecha:
+ *   - Swept bounds cubre todo el volumen del recorrido
+ *   - SweptAABB.calculate2D() detecta contacto de CUALQUIER parte del bounds
+ *   - Garantiza que esquinas y bordes no atraviesen obstáculos
+ *
+ * ── CONVIVENCIA CON SWEPTAABB ─────────────────────────────────────────────
+ *
+ * Este detector USA SweptAABB internamente para cálculos precisos:
+ *
+ * RaycastCollisionDetector:
+ *   - Propósito: LIMITAR desplazamiento ANTES de mover
+ *   - Timing: FASE 0.6 (antes de MovementSystem)
+ *   - Output: factor de limitación (0.0-1.0)
+ *   - Acción: ninguna (solo informa)
+ *
+ * CollisionSystem (SweptAABB):
+ *   - Propósito: RESOLVER contactos DESPUÉS de mover
+ *   - Timing: FASE 1 (después de MovementSystem)
+ *   - Output: normales, penetraciones, eventos
+ *   - Acción: modifica velocidad, dispara eventos
+ *
+ * NO son redundantes — tienen propósitos complementarios.
+ *
+ * ── OPTIMIZACIÓN ──────────────────────────────────────────────────────────
+ *
+ * - Broadphase con bounds extendidos (VelocityRaycast.createRaycastBounds)
+ * - Solo objetos con blockMovement=true se consideran obstáculos
+ * - Ignora objetos pendientes de destrucción
+ * - Usa SweptAABB.calculate2D() para cálculo preciso (sin duplicar código)
+ * - Sin allocations innecesarias en hot path
  */
 public class RaycastCollisionDetector {
 

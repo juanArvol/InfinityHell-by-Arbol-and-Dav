@@ -5,33 +5,61 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * VelocityRaycast — Raycast Predictivo que Limita Movimiento
+ * VelocityRaycast — Geometría de Consulta Predictiva para Limitación de Movimiento
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * PRINCIPIO CORRECTO:
- *   El raycast NO es solo para "predecir", es para **LIMITAR EL MOVIMIENTO**.
- *   
- *   Funciona como un "margen de frenado":
- *   - Velocidad baja → raycast corto → puede moverse sin restricción
- *   - Velocidad alta → raycast largo → detecta obstáculos antes y DETIENE
+ * ── RESPONSABILIDAD ÚNICA ─────────────────────────────────────────────────
  *
- * ALGORITMO:
- *   1. Calcular raycast proporcional a velocidad
- *   2. Si el raycast toca un obstáculo a distancia D
- *   3. LIMITAR el movimiento a máximo D (no puede ir más allá)
- *   4. El objeto se DETIENE justo antes del obstáculo
+ * Esta clase calcula los **parámetros geométricos** de una consulta de raycast
+ * extendido basada en la velocidad de un objeto.
  *
- * CONCEPTO VISUAL:
- *   [Bala]----raycast---->|Muro|
- *          ^
- *          |
- *   Movimiento máximo = distancia al muro
+ * RESPONSABILIDADES:
+ *   1. Calcular longitud y dirección del raycast basado en velocidad
+ *   2. Proporcionar geometría de consulta (swept bounds, extensiones)
+ *   3. Determinar si la velocidad justifica raycast
  *
- * USO:
- *   1. Calcular raycast
- *   2. Detectar obstáculo más cercano
- *   3. Si distancia < desplazamiento planeado → LIMITAR desplazamiento
- *   4. Mover solo hasta el obstáculo
+ * NO RESPONSABILIDADES (delegadas a RaycastCollisionDetector):
+ *   - Buscar obstáculos en el mundo
+ *   - Calcular distancias a obstáculos específicos
+ *   - Limitar el movimiento directamente
+ *   - Modificar estado de entidades
+ *
+ * ── PRINCIPIO DE FUNCIONAMIENTO ──────────────────────────────────────────
+ *
+ * El raycast NO es un rayo infinitesimal desde el centro del objeto.
+ * Es una **consulta volumétrica extendida** que cubre toda la cara frontal.
+ *
+ * Geometría:
+ *   - Origen: posición actual del objeto
+ *   - Dirección: vector de velocidad normalizado
+ *   - Longitud: proporcional al desplazamiento previsto
+ *   - Anchura: dimensión transversal de la cara que encabeza el movimiento
+ *
+ * Ejemplo: Entity 32×48 moviéndose hacia la derecha
+ *   - Dirección: (1, 0)
+ *   - Anchura transversal: 48 unidades (height completo)
+ *   - Longitud: velocityMagnitude × RAYCAST_FACTOR
+ *
+ * ── INTEGRACIÓN CON SWEPTAABB ─────────────────────────────────────────────
+ *
+ * VelocityRaycast y SweptAABB tienen propósitos COMPLEMENTARIOS:
+ *
+ * VelocityRaycast:
+ *   - Calcula GEOMETRÍA de consulta predictiva
+ *   - Determina CUÁNDO consultar (velocidad suficiente)
+ *   - Proporciona datos para visualización debug
+ *
+ * SweptAABB (usado por RaycastCollisionDetector):
+ *   - Calcula intersecciones matemáticas precisas
+ *   - Determina tiempo de impacto (TOI)
+ *   - Calcula normales de contacto
+ *
+ * ── SEPARACIÓN DE RESPONSABILIDADES ──────────────────────────────────────
+ *
+ * VelocityRaycast        → geometría de consulta (AQUÍ)
+ * RaycastCollisionDetector → detección de obstáculos
+ * MovementSystem           → aplicación de desplazamiento
+ * CollisionSystem          → resolución de contactos
  *
  * ── PARÁMETROS DE CALIBRACIÓN ─────────────────────────────────────────────
  */

@@ -2,6 +2,7 @@ package Game.Engine.Physics.KineticPhysics;
 
 import Game.Enemys.Core.Enemy;
 import Game.Engine.GameObjects;
+import Game.Items.Types.Bullets.Definition.Bullet;
 
 /**
  * Utilidad para mover objetos paso a paso.
@@ -23,16 +24,26 @@ import Game.Engine.GameObjects;
  * permitiendo que CollisionsSystem aplique sub-steps o swept AABB
  * sin acoplarse a Physics directamente.
  *
- * ── Enemy DOD Migration ──────────────────────────────────────────────────
+ * ── HRFC — Movement Unification ──────────────────────────────────────────
  *
- * ACTUALIZACIÓN: Ahora sincroniza position a DOD storage para enemies.
- * CollisionsSystem mueve el Transform OOP, PhysicsStepper sincroniza a DOD.
+ * ACTUALIZACIÓN: Ahora sincroniza position para TODOS los modelos de almacenamiento:
+ *   - Enemy: DOD storage + Transform OOP (sincronización bidireccional)
+ *   - Bullet: DOD storage (PrimitiveStorage)
+ *   - Otros: Transform OOP
+ *
+ * Este es el ÚNICO punto de escritura de posición durante movimiento físico.
  */
 public class PhysicsStepper {
 
     public static void moveX(GameObjects obj, double moveX) {
         if (obj instanceof Enemy enemy) {
             enemy.moveDOD(moveX, 0);
+            return;
+        }
+        if (obj instanceof Bullet bullet) {
+            int idx = bullet.getSimulationHandle().index();
+            var storage = bullet.getEntityStore().getStorage();
+            storage.positionsX()[idx] += (float) moveX;
             return;
         }
         var pos = obj.getTransform().getPosition();
@@ -44,6 +55,12 @@ public class PhysicsStepper {
             enemy.moveDOD(0, moveY);
             return;
         }
+        if (obj instanceof Bullet bullet) {
+            int idx = bullet.getSimulationHandle().index();
+            var storage = bullet.getEntityStore().getStorage();
+            storage.positionsY()[idx] += (float) moveY;
+            return;
+        }
         var pos = obj.getTransform().getPosition();
         pos.setY(pos.getY() + moveY);
     }
@@ -52,6 +69,13 @@ public class PhysicsStepper {
     public static void moveWith(GameObjects obj, double moveX, double moveY) {
         if (obj instanceof Enemy enemy) {
             enemy.moveDOD(moveX, moveY);
+            return;
+        }
+        if (obj instanceof Bullet bullet) {
+            int idx = bullet.getSimulationHandle().index();
+            var storage = bullet.getEntityStore().getStorage();
+            storage.positionsX()[idx] += (float) moveX;
+            storage.positionsY()[idx] += (float) moveY;
             return;
         }
         var pos = obj.getTransform().getPosition();

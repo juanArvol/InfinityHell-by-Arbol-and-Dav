@@ -105,9 +105,13 @@ public final class GameWorldBootstrap {
         // Registrar sistemas DOD en orden de ejecución
         // NOTA: Enemies NO usan estos sistemas batch - usan CollisionsSystem con swept AABB
         // Solo bullets usan batch processing para optimización
+        //
+        // ── HRFC — Movement Unification ───────────────────────────────────
+        // MovementSystem ELIMINADO — todo el movimiento ocurre en CollisionsSystem
+        // para garantizar un único flujo de simulación con CCD para todos.
         simulationPipeline.register(new ProjectileMovementSystem(bulletsSupplier));
         simulationPipeline.register(new AccelerationSystem());
-        simulationPipeline.register(new MovementSystem());
+        // MovementSystem eliminado - CollisionsSystem integra position con CCD
         simulationPipeline.register(new LifetimeSystem());
         simulationPipeline.register(new RotationSystem());
         simulationPipeline.register(new ProjectileBehaviorSystem(bulletsSupplier));
@@ -198,7 +202,7 @@ public final class GameWorldBootstrap {
         // Loadout estándar para inicio de partida:
         PlayerLoadout loadout = PlayerLoadout
             .initialWeapons(WeaponType.PISTOLA)
-            .initialBullets(BulletType.NORMAL_BULLET)
+            .initialBullets(BulletType.SPRING_BULLET)
             .initialAmulets(AmuletType.EXPLOSION_SHIELD)
             .build();
         

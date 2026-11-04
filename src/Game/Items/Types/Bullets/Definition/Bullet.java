@@ -129,10 +129,15 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
     private SimulationHandle simulationHandle;
     private EntityStore entityStore; // referencia al store para revalidación
 
-    private final BulletLifeDOD      bulletLife;  // DOD adapter
+    // ── DOD Adapters ──────────────────────────────────────────────────────
+    private final BulletLifeDOD      bulletLife;
+    private final BulletPhysicsDOD   physicsAdapter;
+    private final BulletDamageDOD    damageAdapter;
+    
+    /** Adapter unificado para acceso a datos de física (Movement Unification) */
+    private final Game.Engine.Physics.Adapter.PhysicsDataAdapter unifiedPhysicsAdapter;
+    
     private final Physics2DComponent physicsComponent;
-    private final BulletPhysicsDOD   physicsAdapter; // DOD adapter
-    private final BulletDamageDOD    damageAdapter;  // DOD adapter
     
     /**
      * EntityContext cacheado — evita crear una nueva lambda en cada llamada
@@ -296,6 +301,11 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         this.physicsAdapter = new BulletPhysicsDOD(storage, simulationHandle);
         this.damageAdapter = new BulletDamageDOD(storage, simulationHandle);
         
+        // ── HRFC — Movement Unification ───────────────────────────────────
+        // Adapter unificado para CollisionsSystem — acceso DOD sin allocations
+        this.unifiedPhysicsAdapter = new Game.Engine.Physics.Adapter.DODPhysicsAdapter(
+            storage, simulationHandle);
+        
         // EntityContext cacheado: envuelve BulletLife sin duplicar su estado.
         this.simulationContext = bulletLife::isAlive;
 
@@ -443,6 +453,17 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     /** Bus de eventos activo de este proyectil. Null si no fue inyectado. */
     public GameEventBus getEventBus() { return eventBus; }
+    
+    /**
+     * Adapter unificado para acceso a datos de física.
+     * 
+     * ── HRFC — Movement Unification ───────────────────────────────────────
+     * Usado por CollisionsSystem para mover proyectiles con el mismo
+     * pipeline que entidades OOP, sin conocer el modelo de almacenamiento.
+     */
+    public Game.Engine.Physics.Adapter.PhysicsDataAdapter getUnifiedPhysicsAdapter() {
+        return unifiedPhysicsAdapter;
+    }
     
     /**
      * Retorna el adapter DOD de física.
@@ -601,6 +622,16 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     public EntityId getEntityId() {
         return entityId;
+    }
+    
+    /**
+     * Retorna el EntityStore para acceso directo al storage.
+     * 
+     * ── HRFC — Movement Unification ───────────────────────────────────────
+     * Usado por PhysicsStepper para escritura directa en PrimitiveStorage.
+     */
+    public Game.Engine.Simulation.Storage.EntityStore getEntityStore() {
+        return entityStore;
     }
 
     /**

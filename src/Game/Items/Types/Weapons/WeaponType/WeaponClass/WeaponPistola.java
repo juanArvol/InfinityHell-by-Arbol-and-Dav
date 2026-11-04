@@ -16,10 +16,10 @@ public class WeaponPistola extends WeaponComport {
     public WeaponPistola() {
         super(new WeaponStats(
         0, // cooldown en segundos
-            1, // balas por disparo
-            0.975, // spread
+            5, // balas por disparo
+            2.975, // spread
             15, // daño
-            360 // velocidad en units/s (10 × 30)
+            1060 // velocidad en units/s (10 × 30)
             ), 
         new AutoMode(), 
         1500, 

@@ -3,12 +3,12 @@ package Game.Engine;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameMath.Logic2D.Transform2D;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Sprites.Core.SpriteHandle;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.awt.image.BufferedImage;
 
 /**
@@ -59,6 +59,16 @@ import java.awt.image.BufferedImage;
 public abstract class MovingObjects extends AbstractEntity {
 
     protected final Physics2DComponent physicsComponent;
+    
+    /**
+     * Adapter unificado para acceso a datos de física.
+     * Creado bajo demanda y cacheado para evitar allocations.
+     * 
+     * ── HRFC — Movement Unification ───────────────────────────────────────
+     * Usado por CollisionsSystem para mover entidades OOP con el mismo
+     * pipeline que proyectiles DOD, sin conocer el modelo de almacenamiento.
+     */
+    private Game.Engine.Physics.Adapter.PhysicsDataAdapter unifiedPhysicsAdapter;
 
     // ── Constructores con SpriteHandle (HRFC-004 — sin legacySprite) ──────
 
@@ -194,5 +204,22 @@ public abstract class MovingObjects extends AbstractEntity {
         if (col != null) return col.getBounds();
         var pos = getTransform().getPosition();
         return new RectangleH(pos.getX(), pos.getY(), 0, 0);
+    }
+    
+    // ── HRFC — Movement Unification ───────────────────────────────────────
+    
+    /**
+     * Retorna el adapter unificado para acceso a datos de física.
+     * Usado por CollisionsSystem para mover entidades OOP y DOD
+     * con el mismo pipeline.
+     * 
+     * El adapter se crea bajo demanda y se cachea para evitar allocations.
+     */
+    public Game.Engine.Physics.Adapter.PhysicsDataAdapter getUnifiedPhysicsAdapter() {
+        if (unifiedPhysicsAdapter == null) {
+            unifiedPhysicsAdapter = new Game.Engine.Physics.Adapter.OOPPhysicsAdapter(
+                physicsComponent.getPhysics());
+        }
+        return unifiedPhysicsAdapter;
     }
 }
