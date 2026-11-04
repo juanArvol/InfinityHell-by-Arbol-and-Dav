@@ -16,74 +16,87 @@ import Game.Engine.Entity.Components.SurfaceComponent;
 import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.Contact.ContactState;
-import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.SurfaceMaterial;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
-import Game.Engine.Physics.Predictive.RaycastCollisionDetector;
-import Game.Engine.Physics.Predictive.VelocityRaycast;
 import Game.Items.Types.Bullets.BulletComport.BulletPhysics;
-import java.awt.geom.Point2D;
 import java.util.*;
 
 /**
- * Sistema de colisiones — pipeline unificado por frame.
+ * Sistema de colisiones — pipeline de detección y resolución.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * REFACTORIZACIÓN ARQUITECTÓNICA COMPLETA — Eliminación SOLID vs TRIGGER
+ * REFACTORIZACIÓN ARQUITECTÓNICA — Separación Movimiento/Colisión
  * ══════════════════════════════════════════════════════════════════════════
  *
- * PRINCIPIO FUNDAMENTAL:
- *   La matemática de detección geométrica es ÚNICA para todos los objetos.
- *   NO existe diferencia entre "sólidos" y "triggers" en la DETECCIÓN.
- *   La diferencia está en la POLÍTICA DE RESPUESTA (comportamientos).
+ * ── NUEVO PARADIGMA ───────────────────────────────────────────────────────
  *
- * ── ANTES (Sistema Duplicado) ─────────────────────────────────────────────
- *   FASE 1   → SweptAABB eje-por-eje SOLO para SÓLIDOS (~200 líneas)
- *   FASE 1B  → SweptAABB 2D SOLO para TRIGGERS (~250 líneas)
- *   FASE 0.6 → Raycast predictivo separado (~90 líneas)
- *   Total: ~540 líneas de código duplicado
- *   Problema: Bullets no recibían CCD, atravesaban muros a alta velocidad
+ * ANTES (TODO en CollisionsSystem):
+ *   FASE 0   → Gravedad
+ *   FASE 0.5 → Reset contactState
+ *   FASE 0.6 → Raycast predictivo
+ *   FASE 1   → SweptAABB + MOVER objetos
+ *   FASE 2   → Overlaps residuales
+ *   FASE 3-4 → Eventos
  *
- * ── AHORA (Sistema Unificado) ─────────────────────────────────────────────
- *   FASE 0   → Gravedad + fuerzas (solo objetos con gravedad habilitada)
- *   FASE 0.5 → Reset contactState + lastContactNormal
- *   FASE 1   → SweptAABB 2D UNIFICADO para TODOS los objetos dinámicos
- *              - Raycast predictivo integrado (limita velocidad)
- *              - Usa blockMovement flag para filtrar narrow phase
- *              - Usa canPush flag para aplicar empuje
- *              - Sub-stepping automático para velocidades altas
- *   FASE 2   → Overlaps residuales (AABB estático)
- *   FASE 3   → Dispatch eventos FASE 2
- *   FASE 4   → CollisionListener enter/stay/exit
+ * AHORA (Separación limpia):
+ *   RaycastMovementSystem:
+ *     • Evalúa raycast anti-tunneling (velocidad >= 1px)
+ *     • Limita desplazamiento
+ *     • MUEVE objetos con PhysicsStepper
+ *     • Mantiene estado de contacto por eje
  *
- *   Total: ~200 líneas de lógica de colisión (340 líneas eliminadas)
+ *   CollisionsSystem (ESTE):
+ *     FASE 0   → Gravedad + fuerzas
+ *     FASE 0.5 → Reset contactState
+ *     FASE 1   → Detectar overlaps (objetos YA movidos)
+ *     FASE 2   → Calcular normales con SweptAABB (retrospectivo)
+ *     FASE 3   → Resolver penetraciones
+ *     FASE 4   → Modificar velocidad
+ *     FASE 5   → Ejecutar eventos
+ *     FASE 6   → CollisionListener enter/stay/exit
  *
- * ── INVARIANTES GARANTIZADOS ──────────────────────────────────────────────
- *   1. Todo objeto con velocity != 0 recibe CCD (SweptAABB 2D)
- *   2. La normal del impacto siempre está disponible en onCollision()
- *   3. Un par no se despacha más de una vez por frame
- *   4. Objetos destruidos no reciben eventos adicionales
- *   5. Raycast visual coincide con detección real (mismo algoritmo)
- *   6. Bullets NUNCA atraviesan muros (sub-stepping garantizado)
+ * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
- * ── CONFIGURACIÓN DE OBJETOS ──────────────────────────────────────────────
+ * CollisionsSystem SOLO:
+ *   ✅ Aplica gravedad (objetos con gravedad habilitada)
+ *   ✅ Resetea contactState antes de detección
+ *   ✅ Detecta overlaps (objetos ya movidos por RaycastMovementSystem)
+ *   ✅ Calcula normales precisas con SweptAABB
+ *   ✅ Resuelve penetraciones (separa objetos)
+ *   ✅ Modifica velocidad según normales
+ *   ✅ Actualiza ContactState (onGround, onWall, onCeiling)
+ *   ✅ Ejecuta eventos de colisión
  *
- * MURO (estático, bloquea):
- *   collider.setBlockMovement(true);   // bloquea a otros
- *   physics.setCanPush(false);          // no empuja (no tiene sentido)
+ * CollisionsSystem NO:
+ *   ❌ Mueve objetos (lo hace RaycastMovementSystem)
+ *   ❌ Evalúa raycast (lo hace RaycastMovementSystem)
+ *   ❌ Limita desplazamiento (lo hace RaycastMovementSystem)
  *
- * PLAYER (dinámico, no bloquea):
- *   collider.setBlockMovement(false);  // no bloquea a otros
- *   physics.setCanPush(true);           // puede empujar objetos pushables
+ * ── SWEPTAABB: USO RETROSPECTIVO ──────────────────────────────────────────
  *
- * BULLET (dinámico, no bloquea, no empuja):
- *   collider.setBlockMovement(false);  // no bloquea a otros
- *   physics.setCanPush(false);          // no empuja nada
+ * SweptAABB ya NO se usa para MOVER objetos.
+ * Se usa RETROSPECTIVAMENTE para calcular normales precisas:
+ *
+ *   1. RaycastMovementSystem movió objeto de A → B
+ *   2. CollisionsSystem detecta overlap en B
+ *   3. SweptAABB calcula qué normal habría tenido si hubiera movido A → B
+ *   4. Usa esa normal para resolver físicamente
+ *
+ * Esto garantiza normales correctas sin duplicar movimiento.
  *
  * ── ORDEN DE EJECUCIÓN ────────────────────────────────────────────────────
- *   1. Bullet.update() → movement.tick() + behavior.onUpdate() (NO moveByPhysics)
- *   2. CollisionsSystem.update() → integra posición con CCD garantizado
- *   3. Bullet.onCollision() recibe evento con normal correcta
+ *
+ * WorldManager.update():
+ *   1. RaycastMovementSystem.update()  → MUEVE todo
+ *   2. CollisionsSystem.update()       → DETECTA y RESUELVE
+ *
+ * ── INVARIANTES GARANTIZADOS ──────────────────────────────────────────────
+ *
+ *   1. PhysicsStepper SOLO es llamado por RaycastMovementSystem
+ *   2. Normales siempre disponibles en onCollision()
+ *   3. Sin movimiento duplicado
+ *   4. Raycast evita tunneling ANTES de mover
+ *   5. CollisionSystem resuelve contactos DESPUÉS de mover
  */
 public class CollisionsSystem {
 
@@ -116,17 +129,14 @@ public class CollisionsSystem {
     private static final double ROBUST_SEPARATION_MINIMUM = 1.0;
 
     /**
-     * Umbral de velocidad para activar SUB-STEPPING PREDICTIVO.
-     * Velocidades >50 px/frame requieren división en sub-pasos para
+     * Umbral de velocidad para activar RAYCAST ANTI-TUNNELING.
+     * Velocidades >50 px/frame requieren raycast predictivo para
      * garantizar que no atraviesen colliders pequeños.
+     * 
+     * SweptAABB SIEMPRE se ejecuta después del raycast (si aplica)
+     * para calcular la geometría precisa del contacto.
      */
     private static final double SUBSTEP_VELOCITY_THRESHOLD = 50.0;
-    
-    /**
-     * Tamaño máximo de sub-paso. Con 20px y collider mínimo 4×4px,
-     * es IMPOSIBLE atravesar sin detección.
-     */
-    private static final double MAX_STEP_SIZE = 20.0;
 
     /**
      * Contactos activos del frame anterior, por objeto.
@@ -195,10 +205,22 @@ public class CollisionsSystem {
             physComp.setContactState(ContactState.NONE);
         }
 
-        // ── FASE 1: SweptAABB 2D UNIFICADO para TODOS los dinámicos ──────
-        // Pipeline unificado: raycast + CCD + sub-stepping + resolución.
-        // Usa blockMovement para filtrar narrow phase.
-        // Usa canPush para aplicar empuje solo donde corresponde.
+        // ══════════════════════════════════════════════════════════════════
+        // FASE 1: Sistema de Colisiones Continuas (CCD)
+        // ══════════════════════════════════════════════════════════════════
+        //
+        // ARQUITECTURA LIMPIA:
+        //   1. Raycast + PhysicsStepper → Anti-tunneling (solo velocidades >50px)
+        //   2. SweptAABB → Continuous Collision Detection (SIEMPRE)
+        //
+        // RESPONSABILIDADES:
+        //   - Raycast: Detectar y limitar movimiento peligroso
+        //   - PhysicsStepper: Aplicar movimiento seguro
+        //   - SweptAABB: Calcular TOI y normales precisas de contacto
+        //
+        // NO HAY DUPLICACIÓN: Raycast NO calcula colisiones, solo limita.
+        // SweptAABB es el ÚNICO que calcula geometría de contacto.
+        // ══════════════════════════════════════════════════════════════════
 
         IdentityHashMap<GameObjects, List<ContactRecord>> frameContacts =
                 new IdentityHashMap<>();
@@ -207,8 +229,7 @@ public class CollisionsSystem {
             ColliderComponent colA = obj.getComponent(ColliderComponent.class);
             if (colA == null) continue;
             
-            // Skip objetos estáticos (blockMovement = true, velocity = 0)
-            // Estos son muros, plataformas — no necesitan detección swept
+            // Skip objetos estáticos (no se mueven)
             if (colA.blocksMovement()) continue;
             
             if (obj instanceof Destroyable d && d.isPendingDestruction()) continue;
@@ -223,184 +244,76 @@ public class CollisionsSystem {
             if (vx == 0.0 && vy == 0.0) continue;
 
             // ── Collision Culling (bullets off-screen) ────────────────────
+            // NOTA: El movimiento ahora es responsabilidad exclusiva de RaycastMovementSystem
+            // CollisionSystem SOLO detecta y resuelve overlaps, NO mueve objetos
             if (camera != null && CollisionCulling.shouldSkipCollision(obj, camera, deltaTime)) {
-                PhysicsStepper.moveWith(obj, vx, vy);
                 continue;
             }
 
-            // ── Raycast Predictivo Limitante ──────────────────────────────
-            // Detecta obstáculos y limita el movimiento ANTES de SweptAABB.
-            // Garantiza que bullets con velocidad alta NO atraviesen muros.
-            RaycastCollisionDetector.DetectionResult detection = 
-                RaycastCollisionDetector.detectAndLimitMovement(obj, vx, vy, objects);
-            
-            // Registrar raycast para visualización (si está activo)
-            if (VelocityRaycast.SHOW_RAYCASTS) {
-                double objX = obj.getTransform().getPosition().getX();
-                double objY = obj.getTransform().getPosition().getY();
-                VelocityRaycast.RaycastResult raycastVis = VelocityRaycast.calculateRaycast(vx, vy);
-                Game.Engine.Physics.Predictive.RaycastVisualizationSystem.registerRaycast(
-                    obj, objX, objY, raycastVis, detection);
-            }
-            
-            // Aplicar limitación de raycast
-            if (detection.hasObstacle && detection.movementLimitFactor < 1.0) {
-                vx *= detection.movementLimitFactor;
-                vy *= detection.movementLimitFactor;
-                
-                // Si movimiento casi nulo, detener y despachar
-                if (Math.abs(vx) < 0.1 && Math.abs(vy) < 0.1) {
-                    if (detection.nearestObject != null) {
-                        writeContactNormal(obj, physics, vx, vy);
-                        detector.markDispatched(obj, detection.nearestObject);
-                        if (!shouldFilterCollision(obj, detection.nearestObject)) {
-                            CollisionDispatcher.dispatch(obj, detection.nearestObject);
-                        }
-                    }
-                    continue; // No mover más
-                }
-            }
-            
-            // Recalcular magnitud después de limitación
             double velocityMag = Math.sqrt(vx * vx + vy * vy);
             
-            // ── Sub-stepping Adaptativo (velocidades peligrosas) ──────────
-            if (velocityMag > SUBSTEP_VELOCITY_THRESHOLD) {
-                // Velocidad PELIGROSA — dividir en sub-pasos
-                int numSteps = (int) Math.ceil(velocityMag / MAX_STEP_SIZE);
-                double stepVx = vx / numSteps;
-                double stepVy = vy / numSteps;
+            // ══════════════════════════════════════════════════════════════
+            // SWEPTAABB: DETECCIÓN DE COLISIONES POST-MOVIMIENTO
+            // ══════════════════════════════════════════════════════════════
+            // NOTA CRÍTICA: RaycastMovementSystem ya movió el objeto.
+            // 
+            // Para calcular normales correctas retrospectivamente:
+            //   1. Obtenemos bounds ACTUALES (pos + width/height)
+            //   2. Calculamos bounds PREVIOS restando el desplazamiento
+            //   3. SweptAABB usa prev → current para obtener normales
+            // 
+            // CollisionSystem NO MUEVE objetos. Solo analiza el movimiento
+            // que ya ocurrió.
+            // ══════════════════════════════════════════════════════════════
+            
+            RectangleH currentBounds = colA.getBounds();
+            
+            // Reconstruir bounds ANTES del movimiento
+            RectangleH prevBounds = new RectangleH(
+                currentBounds.getX() - vx,
+                currentBounds.getY() - vy,
+                currentBounds.getWidth(),
+                currentBounds.getHeight()
+            );
+            
+            reusableBroad2D.copyFrom(prevBounds.sweep(vx, vy));
+
+            double nearestTime = 1.0;
+            int hitNormalX = 0;
+            int hitNormalY = 0;
+            GameObjects hitObj = null;
+
+            // Narrow phase: buscar el obstáculo más cercano en el trayecto
+            for (GameObjects other : objects) {
+                if (other == obj) continue;
+                if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
                 
-                boolean hitThisFrame = false;
-                GameObjects finalHitObj = null;
-                int finalNormalX = 0;
-                int finalNormalY = 0;
+                ColliderComponent colB = other.getComponent(ColliderComponent.class);
+                if (colB == null) continue;
                 
-                for (int step = 0; step < numSteps; step++) {
-                    RectangleH bounds = colA.getBounds();
-                    reusableBroad2D.copyFrom(bounds.sweep(stepVx, stepVy));
-                    
-                    double nearestTime = 1.0;
-                    int hitNormalX = 0;
-                    int hitNormalY = 0;
-                    GameObjects hitObj = null;
-                    
-                    // Narrow phase en este sub-paso
-                    for (GameObjects other : objects) {
-                        if (other == obj) continue;
-                        if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
-                        
-                        ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                        if (colB == null) continue;
-                        
-                        // ── NUEVO: Filtro blockMovement ───────────────────
-                        // Solo colisionar contra objetos que bloquean movimiento.
-                        // Esto permite que bullets colisionen con muros pero NO
-                        // entre ellas (ni con player/enemies si así se configura).
-                        if (!colB.blocksMovement()) continue;
-                        
-                        if (!colA.canCollideWith(colB)) continue;
-                        
-                        RectangleH ob = colB.getBounds();
-                        if (!reusableBroad2D.intersects(ob)) continue;
-                        
-                        SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, stepVx, stepVy);
-                        if (!r.hasCollision()) continue;
-                        if (r.time >= nearestTime) continue;
-                        
-                        nearestTime = r.time;
-                        hitNormalX = r.normalX;
-                        hitNormalY = r.normalY;
-                        hitObj = other;
-                    }
-                    
-                    // Mover al punto de contacto (o completo si no hay hit)
-                    PhysicsStepper.moveWith(obj, stepVx * nearestTime, stepVy * nearestTime);
-                    
-                    if (hitObj != null) {
-                        // ¡COLISIÓN! — detener sub-stepping
-                        hitThisFrame = true;
-                        finalHitObj = hitObj;
-                        finalNormalX = hitNormalX;
-                        finalNormalY = hitNormalY;
-                        
-                        // Separación mínima
-                        double sepX = hitNormalX * ROBUST_SEPARATION_MINIMUM;
-                        double sepY = hitNormalY * ROBUST_SEPARATION_MINIMUM;
-                        PhysicsStepper.moveWith(obj, sepX, sepY);
-                        
-                        break; // Detener sub-stepping
-                    }
-                }
+                // Solo colisionar contra objetos que bloquean
+                if (!colB.blocksMovement()) continue;
                 
-                // Procesar la colisión detectada
-                if (hitThisFrame && finalHitObj != null) {
-                    processCollision(obj, finalHitObj, physics, finalNormalX, finalNormalY, 
-                                   vx, vy, frameContacts);
-                }
+                if (!colA.canCollideWith(colB)) continue;
                 
-            } else {
-                // ── Velocidad NORMAL — SweptAABB estándar ─────────────────
-                RectangleH bounds = colA.getBounds();
-                reusableBroad2D.copyFrom(bounds.sweep(vx, vy));
+                RectangleH ob = colB.getBounds();
+                if (!reusableBroad2D.intersects(ob)) continue;
 
-                double nearestTime = 1.0;
-                int hitNormalX = 0;
-                int hitNormalY = 0;
-                GameObjects hitObj = null;
+                // ── SweptAABB: Calcular TOI y normales retrospectivamente ──
+                SweptAABB.Result r = SweptAABB.calculate2D(prevBounds, ob, vx, vy);
+                if (!r.hasCollision()) continue;
+                if (r.time >= nearestTime) continue;
 
-                // Narrow phase
-                for (GameObjects other : objects) {
-                    if (other == obj) continue;
-                    if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
-                    
-                    ColliderComponent colB = other.getComponent(ColliderComponent.class);
-                    if (colB == null) continue;
-                    
-                    // ── NUEVO: Filtro blockMovement ───────────────────────
-                    if (!colB.blocksMovement()) continue;
-                    
-                    if (!colA.canCollideWith(colB)) continue;
-                    
-                    RectangleH ob = colB.getBounds();
-                    if (!reusableBroad2D.intersects(ob)) continue;
+                nearestTime = r.time;
+                hitNormalX = r.normalX;
+                hitNormalY = r.normalY;
+                hitObj = other;
+            }
 
-                    SweptAABB.Result r = SweptAABB.calculate2D(bounds, ob, vx, vy);
-                    if (!r.hasCollision()) continue;
-                    if (r.time >= nearestTime) continue;
-
-                    nearestTime = r.time;
-                    hitNormalX = r.normalX;
-                    hitNormalY = r.normalY;
-                    hitObj = other;
-                }
-
-                // Mover al punto de contacto
-                PhysicsStepper.moveWith(obj, vx * nearestTime, vy * nearestTime);
-
-                if (hitObj != null) {
-                    // Separación robusta
-                    double sepX, sepY;
-                    
-                    if (nearestTime > 0.0) {
-                        // Contacto CCD limpio
-                        sepX = hitNormalX * ROBUST_SEPARATION_MINIMUM;
-                        sepY = hitNormalY * ROBUST_SEPARATION_MINIMUM;
-                    } else {
-                        // Penetración preexistente — calcular MTV
-                        RectangleH currentBounds = colA.getBounds();
-                        RectangleH ob = hitObj.getComponent(ColliderComponent.class).getBounds();
-                        Point2D.Double mtv = currentBounds.minimumTranslationVector(ob, hitNormalX, hitNormalY);
-                        
-                        sepX = (mtv.x != 0.0) ? mtv.x + Math.signum(mtv.x) * ROBUST_SEPARATION_MINIMUM : 0.0;
-                        sepY = (mtv.y != 0.0) ? mtv.y + Math.signum(mtv.y) * ROBUST_SEPARATION_MINIMUM : 0.0;
-                    }
-                    
-                    PhysicsStepper.moveWith(obj, sepX, sepY);
-
-                    processCollision(obj, hitObj, physics, hitNormalX, hitNormalY, 
-                                   vx, vy, frameContacts);
-                }
+            // Si hubo colisión, procesar eventos y contactState
+            if (hitObj != null) {
+                processCollision(obj, hitObj, physics, hitNormalX, hitNormalY, 
+                               vx, vy, frameContacts);
             }
         } // FIN FASE 1
 

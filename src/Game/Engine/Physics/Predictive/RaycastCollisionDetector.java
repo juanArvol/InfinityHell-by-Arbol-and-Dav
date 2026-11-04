@@ -12,24 +12,23 @@ import java.util.List;
  * RaycastCollisionDetector — Detector de Limitación Predictiva de Movimiento
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * ── RESPONSABILIDAD ÚNICA ─────────────────────────────────────────────────
+ * ── RESPONSABILIDAD ÚNICA: ANTI-TUNNELING ─────────────────────────────────
  *
- * Detectar el PRIMER obstáculo en el path de movimiento predicho y calcular
- * el FACTOR DE LIMITACIÓN del desplazamiento.
+ * Este componente tiene UNA SOLA responsabilidad: detectar obstáculos en el
+ * path de movimiento y LIMITAR el desplazamiento para prevenir tunneling.
  *
- * RESPONSABILIDADES:
- *   1. Buscar obstáculos en el path volumétrico de movimiento
- *   2. Identificar el obstáculo más cercano
- *   3. Calcular distancia precisa al primer impacto
- *   4. Calcular factor de limitación del movimiento (0.0-1.0)
- *   5. Proporcionar información del impacto (objeto, distancia)
+ * LO QUE HACE:
+ *   ✓ Detecta si hay obstáculos en el path de movimiento
+ *   ✓ Calcula distancia al obstáculo más cercano
+ *   ✓ Calcula factor de limitación del movimiento (0.0-1.0)
+ *   ✓ Retorna información para que el caller limite el movimiento
  *
- * NO RESPONSABILIDADES (delegadas a otros componentes):
- *   - Aplicar el desplazamiento limitado → MovementSystem
- *   - Modificar velocidad → CollisionSystem
- *   - Resolver penetraciones → CollisionSystem
- *   - Ejecutar eventos de colisión → CollisionSystem
- *   - Actualizar estado físico (onGround) → CollisionSystem
+ * LO QUE NO HACE (delegado a SweptAABB):
+ *   ✗ NO calcula geometría precisa de contacto
+ *   ✗ NO calcula normales de impacto
+ *   ✗ NO mueve objetos (PhysicsStepper lo hace)
+ *   ✗ NO despacha eventos (CollisionSystem lo hace)
+ *   ✗ NO resuelve física (CollisionSystem lo hace)
  *
  * ── ALGORITMO DE LIMITACIÓN ───────────────────────────────────────────────
  *
@@ -58,23 +57,23 @@ import java.util.List;
  *   - SweptAABB.calculate2D() detecta contacto de CUALQUIER parte del bounds
  *   - Garantiza que esquinas y bordes no atraviesen obstáculos
  *
- * ── CONVIVENCIA CON SWEPTAABB ─────────────────────────────────────────────
+ * ── SEPARACIÓN CLARA CON SWEPTAABB ────────────────────────────────────────
  *
- * Este detector USA SweptAABB internamente para cálculos precisos:
+ * RaycastCollisionDetector (Sub-Fase 1A):
+ *   • Propósito: LIMITAR movimiento peligroso (anti-tunneling)
+ *   • Timing: ANTES de mover objetos
+ *   • Output: Factor de limitación (0.0-1.0)
+ *   • Acción: Ninguna (solo informa)
  *
- * RaycastCollisionDetector:
- *   - Propósito: LIMITAR desplazamiento ANTES de mover
- *   - Timing: FASE 0.6 (antes de MovementSystem)
- *   - Output: factor de limitación (0.0-1.0)
- *   - Acción: ninguna (solo informa)
+ * SweptAABB (Sub-Fase 1B):
+ *   • Propósito: DETECTAR colisiones con precisión geométrica
+ *   • Timing: DESPUÉS de raycast (si aplicó)
+ *   • Output: TOI preciso, normales, eventos
+ *   • Acción: Mueve objetos (PhysicsStepper), resuelve física
  *
- * CollisionSystem (SweptAABB):
- *   - Propósito: RESOLVER contactos DESPUÉS de mover
- *   - Timing: FASE 1 (después de MovementSystem)
- *   - Output: normales, penetraciones, eventos
- *   - Acción: modifica velocidad, dispara eventos
- *
- * NO son redundantes — tienen propósitos complementarios.
+ * NO SON REDUNDANTES:
+ *   - Raycast es una BARRERA PREVENTIVA (velocidades >50px/frame)
+ *   - SweptAABB es el SISTEMA DE COLISIONES COMPLETO (siempre)
  *
  * ── OPTIMIZACIÓN ──────────────────────────────────────────────────────────
  *

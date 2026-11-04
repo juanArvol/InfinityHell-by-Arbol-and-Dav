@@ -3,6 +3,7 @@ package Game.World.Core;
 import Game.Engine.Camera.CameraController;
 import Game.Engine.Camera.GameCamera;
 import Game.Engine.GameObjects;
+import Game.Engine.Physics.Movement.RaycastMovementSystem;
 import Game.Engine.RenderEngine.Scene.SceneRenderer;
 import Game.Engine.Systems.CollisionsSystem;
 import Game.Engine.Systems.DebugSettings;
@@ -93,6 +94,7 @@ public class WorldManager {
 
     private final SimulationRegion         simulationRegion;
     private final AISystem                 aiSystem;
+    private final Game.Engine.Physics.Movement.RaycastMovementSystem raycastMovementSystem;
     private final CollisionsSystem         collisionsSystem;
     private final StatusEffectSystem       statusEffectSystem;
     private final ChunkAffiliationSystem   affiliationSystem;
@@ -192,6 +194,7 @@ public class WorldManager {
         double simRadius = Math.max(width, height) * 1.5;
         this.simulationRegion   = new SimulationRegion(simRadius);
         this.aiSystem           = new AISystem();
+        this.raycastMovementSystem = new RaycastMovementSystem();
         this.collisionsSystem   = new CollisionsSystem();
         this.statusEffectSystem = new StatusEffectSystem();
         this.affiliationSystem  = new ChunkAffiliationSystem(width, height);
@@ -391,32 +394,39 @@ public class WorldManager {
             }
         }
 
-        // ── 7. CollisionsSystem ────────────────────────────────────────────
-        // Mini-HRFC: Pasar deltaTime para integración temporal correcta
-        // HRFC: Pasar camera para collision culling
+        // ── 7. RaycastMovementSystem ───────────────────────────────────────
+        // NUEVO: Sistema unificado de movimiento con raycast anti-tunneling.
+        // Aplica a TODO: DOD bullets + OOP enemies/player.
+        // Objetos ya están movidos cuando CollisionSystem ejecuta.
+        raycastMovementSystem.update(activeObjects, deltaTime);
+
+        // ── 8. CollisionsSystem (REFACTORIZADO) ───────────────────────────
+        // Ahora SOLO detecta overlaps, calcula normales, resuelve penetraciones.
+        // NO mueve objetos (ya movidos por RaycastMovementSystem).
         collisionsSystem.update(activeObjects, deltaTime, activeCamera);
 
-        // ── 8. ChunkAffiliationSystem ──────────────────────────────────────
+        // ── 9. ChunkAffiliationSystem ──────────────────────────────────────
         affiliationSystem.update(globalDynamicRegistry.getAll(), world.getSpatialIndex());
 
-        // ── 9. SpawnSystem ─────────────────────────────────────────────────
+        // ── 10. SpawnSystem ────────────────────────────────────────────────
         spawnSystem.update(deltaTime);
 
-        // ── 10. CameraSystem ───────────────────────────────────────────────
+        // ── 11. CameraSystem ───────────────────────────────────────────────
         cameraSystem.update(deltaTime);
 
-        // ── 11. WorldPrewarmService ────────────────────────────────────────
+        // ── 12. WorldPrewarmService ────────────────────────────────────────
         if (trackedObject != null) {
             prewarmService.update(trackedObject, logicalWidth, logicalHeight);
         }
 
-        // ── 12. TransitionService (legacy) ─────────────────────────────────
+        // ── 13. TransitionService (legacy) ─────────────────────────────────
         WorldCoordinator nextCoord = transitionService.processTransitions(
             world, currentCoord, logicalWidth, logicalHeight, deltaTime
         );
 
         if (nextCoord != null) {
             currentCoord = nextCoord;
+            raycastMovementSystem.clear();
             collisionsSystem.clearContactHistory();
         }
 

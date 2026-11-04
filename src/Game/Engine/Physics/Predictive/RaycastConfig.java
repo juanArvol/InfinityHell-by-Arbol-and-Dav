@@ -6,8 +6,55 @@ package Game.Engine.Physics.Predictive;
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * PROPÓSITO:
- *   Centralizar toda la configuración del sistema de raycast en un solo lugar.
- *   Permite ajustar parámetros y activar debug sin modificar código.
+ *   El raycast predictivo es una medida de PREVENCIÓN DE TUNNELING.
+ *   NO reemplaza ni interfiere con las colisiones normales SweptAABB.
+ *
+ * ── ARQUITECTURA DE COLISIONES ────────────────────────────────────────────
+ *
+ *   COLISIONES NORMALES (siempre activas):
+ *     → SweptAABB maneja TODAS las colisiones
+ *     → Se ejecuta para cualquier velocidad > 0
+ *     → Detecta, resuelve y despacha eventos
+ *     → Velocidades bajas/medias: proceso estándar
+ *
+ *   ANTI-TUNNELING (solo velocidades extremas):
+ *     → Raycast se activa SOLO si velocidad > 50px/frame
+ *     → Limita movimiento ANTES de SweptAABB
+ *     → Evita atravesar objetos pequeños
+ *     → NO interfiere con colisiones normales
+ *
+ * ── ¿CUÁNDO SE USA RAYCAST? ───────────────────────────────────────────────
+ *
+ *   CONDICIONES PARA ACTIVACIÓN (AMBAS deben cumplirse):
+ *     1. Velocidad > 50px/frame (SUBSTEP_VELOCITY_THRESHOLD)
+ *     2. Objeto en vuelo libre (SIN contacto previo: NOT onGround/onWall/onCeiling)
+ *
+ *   EJEMPLOS CON RAYCAST ACTIVO:
+ *     ✓ Bullet disparado en el aire a 100px/frame
+ *     ✓ Dash attack del player (sin tocar suelo) a 80px/frame
+ *     ✓ Proyectil explosivo a 200px/frame
+ *   
+ *   EJEMPLOS CON RAYCAST DESACTIVADO:
+ *     ✗ Player caminando (velocidad = 2px/frame < 50)
+ *     ✗ Player cayendo en el suelo (onGround = true, aunque velocidad > 50)
+ *     ✗ Enemy empujado contra pared (onWall = true)
+ *     ✗ Bullet estándar (velocidad = 5px/frame < 50)
+ *
+ *   PREVENCIÓN DE JITTERING:
+ *     Si el raycast se ejecutara con contacto activo, causaría vibraciones:
+ *       1. Objeto en suelo detectado por SweptAABB
+ *       2. Raycast también detecta suelo y limita movimiento
+ *       3. Separación mínima empuja hacia arriba
+ *       4. Objeto cae de nuevo → ciclo infinito = VIBRACIÓN
+ *     
+ *     Solución: Raycast se desactiva automáticamente si hay contacto previo.
+ *
+ * ── PARÁMETROS CLAVE ──────────────────────────────────────────────────────
+ *
+ *   SUBSTEP_VELOCITY_THRESHOLD (en CollisionsSystem):
+ *     - DEFAULT: 50.0 px/frame
+ *     - Debajo de este valor: raycast desactivado
+ *     - Arriba de este valor: raycast + sub-stepping activos
  *
  * USO EN CÓDIGO:
  *   // Activar visualización
@@ -48,7 +95,7 @@ public class RaycastConfig {
      * DEFAULT: 3.0
      * RANGO RECOMENDADO: 1.0 - 10.0
      */
-    public static double MIN_VELOCITY_FOR_RAYCAST = 3.0;
+    public static double MIN_VELOCITY_FOR_RAYCAST = 1;
 
     /**
      * Factor de proporcionalidad del raycast.
@@ -64,7 +111,7 @@ public class RaycastConfig {
      * DEFAULT: 2.0
      * RANGO RECOMENDADO: 1.0 - 3.0
      */
-    public static double RAYCAST_FACTOR = 2.0;
+    public static double RAYCAST_FACTOR = 2.5;
 
     /**
      * Longitud mínima del raycast cuando se activa (px).
@@ -73,7 +120,7 @@ public class RaycastConfig {
      * DEFAULT: 8.0
      * RANGO RECOMENDADO: 4.0 - 16.0
      */
-    public static double MIN_RAYCAST_LENGTH = 8.0;
+    public static double MIN_RAYCAST_LENGTH = 10;
 
     /**
      * Longitud máxima del raycast (px).
@@ -88,10 +135,14 @@ public class RaycastConfig {
      * Gap de seguridad al frenar (px).
      * El objeto se detiene a esta distancia del obstáculo.
      *
-     * DEFAULT: 0.5
-     * RANGO RECOMENDADO: 0.1 - 2.0
+     * DEFAULT: 0.0 (contacto exacto)
+     * RANGO RECOMENDADO: 0.0 - 2.0
+     * 
+     * NOTA: Con SweptAABB manejando las colisiones normales,
+     * un gap > 0 puede causar que el objeto se detenga antes
+     * de tiempo. Se recomienda 0.0 para precisión máxima.
      */
-    public static double SAFETY_GAP = 0.5;
+    public static double SAFETY_GAP = 0;
 
     // ═════════════════════════════════════════════════════════════════════
     // UTILITY METHODS
@@ -137,7 +188,7 @@ public class RaycastConfig {
         RAYCAST_FACTOR = 2.0;
         MIN_RAYCAST_LENGTH = 8.0;
         MAX_RAYCAST_LENGTH = 200.0;
-        SAFETY_GAP = 0.5;
+        SAFETY_GAP = 0.0;
         
         VelocityRaycast.SHOW_RAYCASTS = false;
         
