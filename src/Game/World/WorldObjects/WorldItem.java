@@ -64,7 +64,7 @@ public class WorldItem extends GameObjects implements Game.Engine.Destroyable {
             16, 16,
             CollisionProfile.WORLD_ITEM   // nuevo profile — ver nota abajo
         );
-        collider.setType(ColliderComponent.Type.TRIGGER);
+        collider.setBlockMovement(false); // Items no bloquean movimiento
         addComponent(collider);
     }
 

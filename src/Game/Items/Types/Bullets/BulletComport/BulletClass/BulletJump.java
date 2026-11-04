@@ -58,7 +58,7 @@ public class BulletJump extends BulletBehavior {
     private static final double MIN_BOUNCE_SPEED = 90.0;
     
     /** Factor de fricción por rebote (1.01 = pierde 1% de velocidad horizontal) */
-    private static final double FRICTION = 0.9;
+    private static final double FRICTION = 0.9999999999999;
 
     // ═════════════════════════════════════════════════════════════════════
     // SECCIÓN 3: PROPIEDADES DE GAMEPLAY

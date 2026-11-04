@@ -8,28 +8,57 @@ import Game.Engine.GameMath.Logic2D.RectangleH;
 /**
  * Define el área de colisión de un objeto y su perfil (layer/mask).
  *
- * ── Diseño limpio ──────────────────────────────────────────────────────────
- * El ColliderComponent ya NO sincroniza con HitBoxComponent automáticamente
- * en cada update(). Esa sincronización causaba que el collider se recalculara
- * cada frame incluso en objetos estáticos, y generaba offsets incorrectos
- * cuando la HitBox tenía offsets propios.
+ * ══════════════════════════════════════════════════════════════════════════
+ * REFACTORIZACIÓN ARQUITECTÓNICA — Eliminación de Type.SOLID vs Type.TRIGGER
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * Ahora el tamaño se define explícitamente al crear el collider o al llamar
- * setSize(). Si querés sincronizar con la HitBox, hacelo una vez en el
- * constructor del objeto.
+ * ANTES:
+ *   - Type.SOLID → procesado en FASE 1 (eje por eje)
+ *   - Type.TRIGGER → procesado en FASE 1B (2D)
+ *   - Complejidad innecesaria, código duplicado
+ *   - Bullets como "triggers" → física inconsistente
+ *
+ * AHORA:
+ *   - UNA SOLA FASE para TODOS los objetos dinámicos
+ *   - blockMovement flag simple: ¿este objeto bloquea a otros?
+ *   - Bullets, player, enemies → MISMA física, MISMA detección
+ *   - Solo el COMPORTAMIENTO difiere (via behaviors/components)
+ *
+ * FILOSOFÍA:
+ *   La física es UNIVERSAL. La diferencia está en la RESPUESTA a la colisión,
+ *   no en cómo se detecta. Un muro bloquea movimiento. Una bullet no bloquea
+ *   a otros pero SÍ es bloqueada por muros. Simple.
+ *
+ * ── blockMovement Flag ────────────────────────────────────────────────────
+ *
+ * ¿Este objeto impide que otros se muevan a través de él?
+ *
+ * TRUE  → Muros, plataformas, suelo (objetos estáticos del mundo)
+ * FALSE → Player, enemies, bullets, items (entidades dinámicas)
+ *
+ * Objetos con blockMovement=true suelen ser estáticos (velocity=0).
+ * Objetos con blockMovement=false son dinámicos y se mueven libremente.
  *
  * ── Cómo usarlo ────────────────────────────────────────────────────────────
- *   // Objeto con tamaño explícito y perfil de jugador:
- *   ColliderComponent col = new ColliderComponent(15, 24, CollisionProfile.PLAYER);
- *   addComponent(col);
  *
- *   // Objeto estático con tamaño del bloque:
- *   ColliderComponent col = new ColliderComponent(width, height, CollisionProfile.WORLD);
- *   addComponent(col);
+ * // Muro (bloquea, estático):
+ * ColliderComponent col = new ColliderComponent(width, height, CollisionProfile.WORLD);
+ * col.setBlockMovement(true);
+ *
+ * // Bullet (dinámico, no bloquea):
+ * ColliderComponent col = new ColliderComponent(4, 4, CollisionProfile.BULLET);
+ * col.setBlockMovement(false); // default
+ *
+ * // Player (dinámico, no bloquea):
+ * ColliderComponent col = new ColliderComponent(15, 24, CollisionProfile.PLAYER);
+ * col.setBlockMovement(false); // default
  */
 public class ColliderComponent extends Component {
 
-    public enum Type { SOLID, TRIGGER }
+    // ══════════════════════════════════════════════════════════════════════
+    // ELIMINADO: public enum Type { SOLID, TRIGGER }
+    // Ya no es necesario. Reemplazado por blockMovement flag.
+    // ══════════════════════════════════════════════════════════════════════
 
     private double width;
     private double height;
@@ -37,7 +66,16 @@ public class ColliderComponent extends Component {
     private double offsetY;
 
     private CollisionProfile profile;
-    private Type type = Type.SOLID;
+    
+    /**
+     * ¿Este objeto bloquea el movimiento de otros?
+     * 
+     * TRUE  → Muros, mundo estático (impide paso)
+     * FALSE → Entidades dinámicas (player, bullets, enemies)
+     * 
+     * DEFAULT: false (la mayoría de objetos son dinámicos)
+     */
+    private boolean blockMovement = false;
 
     // ── Constructores ──────────────────────────────────────────────────────
 
@@ -113,12 +151,24 @@ public class ColliderComponent extends Component {
     public double getOffsetX() { return offsetX; }
     public double getOffsetY() { return offsetY; }
 
-    // ── Tipo ──────────────────────────────────────────────────────────────
+    // ── Block Movement ────────────────────────────────────────────────────
 
-    public Type getType()       { return type; }
-    public void setType(Type t) { this.type = t; }
-    public boolean isTrigger()  { return type == Type.TRIGGER; }
-    public boolean isSolid()    { return type == Type.SOLID; }
+    /**
+     * ¿Este objeto bloquea el movimiento de otros objetos?
+     * 
+     * TRUE  → Muros, suelo, obstáculos estáticos
+     * FALSE → Entidades dinámicas (player, bullets, enemies, items)
+     */
+    public boolean blocksMovement() { return blockMovement; }
+    
+    /**
+     * Configura si este objeto bloquea movimiento.
+     * 
+     * Típicamente:
+     * - Mundo/muros: setBlockMovement(true)
+     * - Entidades: setBlockMovement(false)
+     */
+    public void setBlockMovement(boolean blocks) { this.blockMovement = blocks; }
 
     // ── Layer/Mask directo (compatibilidad) ───────────────────────────────
 

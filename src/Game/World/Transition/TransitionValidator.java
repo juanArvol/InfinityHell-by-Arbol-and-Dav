@@ -1,9 +1,9 @@
 package Game.World.Transition;
 
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameObjects;
 import Game.World.Core.World;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.util.List;
 
 /**
@@ -89,7 +89,7 @@ public final class TransitionValidator {
             if (other == subject) continue;
 
             ColliderComponent otherCol = other.getComponent(ColliderComponent.class);
-            if (otherCol == null || otherCol.isTrigger()) continue;
+            if (otherCol == null || !otherCol.blocksMovement()) continue;
             if (!subjectCol.canCollideWith(otherCol)) continue;
 
             if (subjectBounds.intersects(otherCol.getBounds())) {

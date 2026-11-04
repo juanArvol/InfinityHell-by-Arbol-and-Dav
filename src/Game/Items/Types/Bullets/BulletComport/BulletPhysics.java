@@ -82,6 +82,11 @@ public class BulletPhysics extends Physics2D {
         super(0.0); // gravedad base cero — la gestiona ProjectileMovement
         setMass(1);
         
+        // ── Refactorización Arquitectónica ────────────────────────────────
+        // Bullets NO empujan otros objetos físicos (canPush = false)
+        // Solo colisionan y despachan eventos, pero no aplican fuerzas de empuje.
+        setCanPush(false);
+        
         // Velocidad ya en units/s — escritura directa
         velocity.setX(xSpeed);
         velocity.setY(ySpeed);

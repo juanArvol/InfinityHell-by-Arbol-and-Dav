@@ -251,6 +251,31 @@ public class Physics2D {
     @Deprecated
     protected double mediumDensity;
 
+    // ══════════════════════════════════════════════════════════════════════
+    // REFACTORIZACIÓN ARQUITECTÓNICA — canPush Flag
+    // ══════════════════════════════════════════════════════════════════════
+    
+    /**
+     * ¿Esta entidad puede empujar a otros objetos físicos?
+     * 
+     * Determina si este objeto puede aplicar fuerzas de empuje a otros
+     * objetos pushables cuando colisiona con ellos.
+     * 
+     * TRUE  → Player, enemies (pueden empujar objetos pushables)
+     * FALSE → Bullets, proyectiles (no empujan, solo colisionan)
+     * 
+     * DEFAULT: true (la mayoría de entidades pueden empujar)
+     * 
+     * USO EN CollisionsSystem:
+     *   if (entityA.getPhysics().canPush() && entityB.isPushable()) {
+     *       applyPush(entityB, velocityA, massA);
+     *   }
+     * 
+     * NOTA: Esto NO afecta si el objeto ES empujable.
+     * Para eso, usar PushableComponent.
+     */
+    protected boolean canPush = true;
+
     protected SurfaceMaterial currentSurface = SurfaceMaterial.DEFAULT;
 
     // ── Acumulación de fuerzas por frame (HRFC-014 — GAP-5) ───────────────
@@ -771,6 +796,22 @@ public class Physics2D {
     }
 
     public double getDragCoefficient() { return dragCoefficient; }
+
+    // ── Push Capability (Refactorización Arquitectónica) ─────────────────
+
+    /**
+     * ¿Puede esta entidad empujar otros objetos físicos?
+     * 
+     * @return true si puede aplicar fuerzas de empuje a objetos pushables
+     */
+    public boolean canPush() { return canPush; }
+
+    /**
+     * Configura si esta entidad puede empujar otros objetos.
+     * 
+     * @param canPush true para habilitar empuje, false para deshabilitar
+     */
+    public void setCanPush(boolean canPush) { this.canPush = canPush; }
 
     /**
      * Establece la densidad del medio (obsoleto - no afecta física).

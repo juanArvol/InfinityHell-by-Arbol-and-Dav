@@ -121,10 +121,10 @@ public final class CollisionCulling {
         }
 
         // Solo hacer culling de triggers (bullets)
-        // Los sólidos (Player, Enemies, Walls) SIEMPRE se procesan
+        // Los objetos que bloquean (Player, Enemies, Walls) SIEMPRE se procesan
         ColliderComponent collider = obj.getComponent(ColliderComponent.class);
-        if (collider == null || !collider.isTrigger()) {
-            return false;  // No es trigger → procesar siempre
+        if (collider == null || collider.blocksMovement()) {
+            return false;  // Bloquea movimiento → procesar siempre
         }
 
         // Calcular margen dinámico basado en velocidad máxima de bullets

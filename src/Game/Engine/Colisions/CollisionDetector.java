@@ -211,12 +211,12 @@ public final class CollisionDetector {
                     RectangleH rb = colB.getBounds();
                     if (!ra.intersects(rb)) continue;
 
-                    boolean isTrigger = colA.isTrigger() || colB.isTrigger();
+                    boolean anyDynamic = !colA.blocksMovement() || !colB.blocksMovement();
 
                     // Calcular normal aproximada desde geometría relativa
                     int[] normal = computeOverlapNormal(ra, rb);
 
-                    results.add(new CollisionResult(a, b, isTrigger, normal[0], normal[1]));
+                    results.add(new CollisionResult(a, b, anyDynamic, normal[0], normal[1]));
                 }
             }
         }

@@ -327,7 +327,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
                 flyweight.width(),
                 flyweight.height(),
                 flyweight.effectiveProfile());
-        collider.setType(ColliderComponent.Type.TRIGGER);
+        collider.setBlockMovement(false); // Bullets no bloquean movimiento
         addComponent(collider);
 
         addComponent(new HitBoxComponent(Color.YELLOW));

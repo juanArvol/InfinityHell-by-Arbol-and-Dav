@@ -5,7 +5,6 @@ import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
-
 import java.util.List;
 
 /**
@@ -143,8 +142,11 @@ public class RaycastCollisionDetector {
             ColliderComponent colB = other.getComponent(ColliderComponent.class);
             if (colB == null) continue;
             
-            // Solo sólidos cuentan como obstáculos (triggers no bloquean)
-            if (colB.isTrigger()) continue;
+            // ── Refactorización Arquitectónica ────────────────────────────
+            // Solo objetos que BLOQUEAN movimiento cuentan como obstáculos.
+            // Bullets, player, enemies NO bloquean (blockMovement = false).
+            // Muros, suelo, plataformas SÍ bloquean (blockMovement = true).
+            if (!colB.blocksMovement()) continue;
             
             // Verificar colisión de capas
             if (!colA.canCollideWith(colB)) continue;

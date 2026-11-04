@@ -137,7 +137,9 @@ public class WorldObject extends GameObjects {
         getTransform().setPosition(position);
 
         // ── Collider ──────────────────────────────────────────────────────
-        addComponent(new ColliderComponent(width, height, profile));
+        ColliderComponent collider = new ColliderComponent(width, height, profile);
+        collider.setBlockMovement(true); // WorldObjects bloquean movimiento (muros, plataformas)
+        addComponent(collider);
 
         // ── Render ────────────────────────────────────────────────────────
         if (texture != null) {
