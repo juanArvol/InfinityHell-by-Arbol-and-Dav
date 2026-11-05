@@ -219,10 +219,8 @@ public class RaycastCollisionDetector {
 
         // CALCULAR FACTOR DE LIMITACIÓN
         if (nearestObj != null && nearestDistance < plannedMovement) {
-            // Hay obstáculo ANTES del destino → limitar movimiento
-            // Dejar un gap de seguridad configurable
-            double safeDistance = Math.max(0.0, nearestDistance - RaycastConfig.SAFETY_GAP);
-            double limitFactor = safeDistance / plannedMovement;
+            // Hay obstáculo ANTES del destino → limitar movimiento al punto EXACTO
+            double limitFactor = nearestDistance / plannedMovement;
             
             // Clampear entre 0.0 y 1.0
             limitFactor = Math.max(0.0, Math.min(1.0, limitFactor));

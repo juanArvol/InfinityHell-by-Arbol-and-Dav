@@ -8,6 +8,9 @@ import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.GameObjects;
 import Game.Engine.Physics.KineticPhysics.PhysicsStepper;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
+import Game.Engine.Physics.Predictive.RaycastCollisionDetector;
+import Game.Engine.Physics.Predictive.RaycastVisualizationSystem;
+import Game.Engine.Physics.Predictive.VelocityRaycast;
 import java.util.IdentityHashMap;
 import java.util.List;
 
@@ -24,16 +27,32 @@ import java.util.List;
  * RESPONSABILIDADES:
  *   1. Calcular desplazamiento previsto (velocity × deltaTime)
  *   2. Evaluar raycast anti-tunneling (si velocidad ≥ 1 en cualquier eje)
- *   3. Limitar desplazamiento si hay obstáculo en el trayecto
+ *   3. IMPACTAR: Limitar desplazamiento si hay obstáculo en el trayecto
  *   4. Aplicar desplazamiento con PhysicsStepper
- *   5. Mantener estado de raycast por objeto y eje
+ *   5. Mantener estado de raycast por objeto y eje (tracking interno)
  *
  * NO RESPONSABILIDADES:
  *   - Detectar overlaps → CollisionSystem
- *   - Calcular normales → CollisionSystem + SweptAABB
+ *   - Calcular normales de colisión → CollisionSystem + SweptAABB
  *   - Resolver penetraciones → CollisionSystem
  *   - Modificar velocidad → CollisionSystem
  *   - Ejecutar eventos → CollisionSystem
+ *
+ * ── DIFERENCIA CLAVE: IMPACTO vs COLISIÓN ────────────────────────────────
+ *
+ * IMPACTO (Este sistema):
+ *   - Ocurre ANTES de mover
+ *   - Limita DISTANCIA para prevenir tunneling
+ *   - Una evaluación por EJE (X e Y independientes)
+ *   - Normal simple (dirección del eje)
+ *   - NO ejecuta física de colisión
+ *
+ * COLISIÓN (CollisionsSystem):
+ *   - Ocurre DESPUÉS de mover
+ *   - Detecta overlaps y calcula física completa
+ *   - Usa SweptAABB para geometría precisa
+ *   - Normal compleja (TOI, eje de entrada)
+ *   - Ejecuta eventos y modifica velocidad
  *
  * ── ARQUITECTURA: UNIVERSAL ───────────────────────────────────────────────
  *
@@ -42,7 +61,7 @@ import java.util.List;
  *   - CollisionsSystem procesaba enemies/player (OOP)
  *
  * Ahora:
- *   - RaycastMovementSystem procesa TODO
+ *   - RaycastMovementSystem procesa TDO
  *   - CollisionSystem solo detecta y resuelve (no mueve)
  *
  * ── ALGORITMO DE RAYCAST POR EJE ──────────────────────────────────────────
@@ -52,20 +71,38 @@ import java.util.List;
  *   1. Calcular desplazamiento: dx = vx × dt, dy = vy × dt
  *
  *   2. Para cada eje (X, Y) INDEPENDIENTEMENTE:
+ *      
  *      a. ¿Velocidad ≥ 1 en ese eje?
- *      b. ¿NO está en contacto previo en ese eje?
- *      c. SÍ → Raycast en ese eje
+ *      b. ¿NO está en contacto previo en ese eje? (state.isContactX/Y == false)
+ *      
+ *      SÍ → Raycast en ese eje:
  *         - Buscar primer obstáculo en el trayecto
  *         - Limitar distancia al punto EXACTO de contacto
- *         - Marcar raycast activo en ese eje
- *      d. NO → Usar desplazamiento completo
+ *         - Marcar raycast activo: state.setObstacleX/Y(obstacle, normal)
+ *         - Objeto llega TOCANDO el obstáculo
+ *      
+ *      NO → Usar desplazamiento completo:
+ *         - Si contactX/Y == true: CollisionsSystem maneja el contacto
+ *         - Si velocidad < 1: No hay riesgo de tunneling
  *
  *   3. PhysicsStepper.moveWith(dx_final, dy_final)
  *
- *   4. Para cada eje con raycast activo:
- *      a. ¿Ahora está en contacto cercano? (distance < 2px)
- *      b. SÍ → Desactivar raycast en ese eje
- *      c. NO → Mantener raycast activo
+ *   4. DESPUÉS de mover → updateContactState():
+ *      
+ *      Para cada eje con obstáculo detectado:
+ *      
+ *      - ¿Hay velocidad en ese eje (cualquier dirección)?
+ *        → SÍ: clearX/Y() → REACTIVAR raycast (necesita evaluar próximo frame)
+ *      
+ *      - ¿Obstáculo fue destruido o perdió collider?
+ *        → SÍ: clearX/Y() → REACTIVAR raycast
+ *      
+ *      - ¿Ya NO hay overlap?
+ *        → SÍ: clearX/Y() → REACTIVAR raycast
+ *      
+ *      - ¿Sin velocidad Y sigue en contacto?
+ *        → SÍ: setContactX/Y(true) → Raycast INACTIVO
+ *             CollisionsSystem mantiene el contacto
  *
  * ── FILOSOFÍA: SIN TRUCOS ─────────────────────────────────────────────────
  *
@@ -78,25 +115,43 @@ import java.util.List;
  *
  * ── EJEMPLO DE FUNCIONAMIENTO ─────────────────────────────────────────────
  *
- * Frame N:
- *   Bullet en X=50, velocidad=100 px/s, deltaTime=0.016s
- *   Muro en X=55 (width=10)
+ * Frame N (Primera aproximación):
+ *   Bullet en X=50, velocidad=800 px/s, deltaTime=0.016s
+ *   Muro en X=60
  *
- *   1. Desplazamiento previsto: dx = 100 × 0.016 = 1.6 px
+ *   1. Desplazamiento previsto: dx = 800 × 0.016 = 12.8 px
  *   2. |dx| >= 1 → Evaluar raycast en X
- *   3. Raycast detecta muro a distancia 5.0 px
- *   4. Limitar: dx = 5.0 (punto exacto de contacto)
- *   5. Mover: X = 50 + 5.0 = 55.0 (tocando el muro)
- *   6. CollisionSystem detecta overlap con SweptAABB retrospectivo
+ *   3. Raycast detecta muro a distancia 10.0 px
+ *   4. Limitar: dx = 10.0 (punto exacto de contacto)
+ *   5. Mover: X = 50 + 10.0 = 60.0 (TOCANDO el muro)
+ *   6. Raycast dice: "Ya impactaste, me desactivo"
+ *      state.setObstacleX(muro, -1)
+ *      state.setContactX(true) → raycast INACTIVO
+ *   7. CollisionSystem detecta overlap con bounds.intersects
+ *      Calcula normal con SweptAABB
+ *      Ejecuta física: vSetX(0), onWall=true, eventos
  *
- * Frame N+1:
- *   Bullet en X=55.0 (ya en contacto), velocidad=100 px/s
+ * Frame N+1 (Sigue contra el muro):
+ *   Bullet en X=60.0, velocidad=800 px/s (IA vuelve a aplicar fuerza)
  *
- *   1. Desplazamiento previsto: dx = 1.6 px
- *   2. |dx| >= 1, PERO raycast desactivado en X (ya en contacto)
- *   3. NO evaluar raycast
- *   4. Mover: X = 54.7 + 0 (CollisionSystem bloqueará)
- *   5. CollisionSystem detecta overlap, resuelve, detiene velocidad
+ *   1. updateContactState() detecta: vx >= 1 → HAY velocidad en X
+ *   2. state.clearX() → Raycast se REACTIVA
+ *   3. Raycast evalúa nuevamente y limita distancia
+ *   4. CollisionsSystem detecta overlap y maneja física
+ *
+ * Frame N+2 (Sin velocidad):
+ *   Bullet en X=60.0, velocidad=0 px/s (behavior detuvo la velocidad)
+ *
+ *   1. updateContactState() detecta: vx == 0 → SIN velocidad
+ *   2. state.setContactX(true) → Raycast INACTIVO
+ *   3. Bullet permanece tocando el muro sin evaluar raycast
+ *
+ * Frame N+3 (Velocity en cualquier dirección):
+ *   Bullet en X=60.0, velocidad=-100 px/s (alejándose) o +50 px/s (hacia muro)
+ *
+ *   1. updateContactState() detecta: |vx| >= 1 → HAY velocidad
+ *   2. state.clearX() → Raycast se REACTIVA
+ *   3. Próximo frame evalúa raycast nuevamente
  *
  * ── ESTADO DE RAYCAST ─────────────────────────────────────────────────────
  *
@@ -107,8 +162,9 @@ import java.util.List;
  *   - Obstáculo actual en Y (si existe)
  *
  * El estado persiste entre frames hasta que:
- *   - Se detecta contacto (bounds.intersects)
- *   - La velocidad en ese eje se invierte (alejándose del obstáculo)
+ *   - Hay velocidad en ese eje (|v| >= 1)
+ *   - El obstáculo es destruido o pierde collider
+ *   - Ya no hay overlap físico
  *
  * ── PERFORMANCE ───────────────────────────────────────────────────────────
  *
@@ -128,8 +184,6 @@ import java.util.List;
  *   5. PhysicsStepper es el ÚNICO que modifica posición
  */
 public final class RaycastMovementSystem {
-
-
 
     /**
      * Umbral mínimo de velocidad para activar raycast.
@@ -198,10 +252,19 @@ public final class RaycastMovementSystem {
                                                          obstacleX.getComponent(ColliderComponent.class).getBounds(), 
                                                          dx);
                     
-                    // Limitar al punto exacto de contacto
+                    // Calcular normal: dirección desde la que viene el impacto
+                    int normalX = (dx > 0) ? -1 : 1;
+                    
+                    // Limitar al punto EXACTO de contacto (sin overlap artificial)
+                    // RectangleH.intersects() usa <= por lo que detectará contacto borde-a-borde
                     if (Math.abs(distanceX) < Math.abs(dx)) {
                         dx = distanceX;
-                        state.setObstacleX(obstacleX);
+                        state.setObstacleX(obstacleX, normalX);
+                        
+                        // Registrar visualización si está activa
+                        if (VelocityRaycast.SHOW_RAYCASTS) {
+                            registerVisualization(obj, collider, dx, dy, obstacleX, distanceX, normalX, 0);
+                        }
                     }
                 }
             }
@@ -215,19 +278,32 @@ public final class RaycastMovementSystem {
                                                          obstacleY.getComponent(ColliderComponent.class).getBounds(), 
                                                          dy);
                     
-                    // Limitar al punto exacto de contacto
+                    // Calcular normal: dirección desde la que viene el impacto
+                    int normalY = (dy > 0) ? -1 : 1;
+                    
+                    // Limitar al punto EXACTO de contacto (sin overlap artificial)
+                    // RectangleH.intersects() usa <= por lo que detectará contacto borde-a-borde
                     if (Math.abs(distanceY) < Math.abs(dy)) {
                         dy = distanceY;
-                        state.setObstacleY(obstacleY);
+                        state.setObstacleY(obstacleY, normalY);
+                        
+                        // Registrar visualización si está activa
+                        if (VelocityRaycast.SHOW_RAYCASTS) {
+                            registerVisualization(obj, collider, dx, dy, obstacleY, distanceY, 0, normalY);
+                        }
                     }
                 }
             }
 
             // ── APLICAR MOVIMIENTO ────────────────────────────────────────
-            // Movemos con los valores limitados por raycast.
-            // Si raycast detectó obstáculo, dx/dy ya fueron limitados al punto
-            // exacto de contacto. CollisionsSystem detectará el overlap y
-            // calculará normales retrospectivamente.
+            // Movemos con los valores limitados por raycast (punto EXACTO de contacto).
+            // 
+            // SEPARACIÓN DE RESPONSABILIDADES:
+            //   - Raycast IMPACTA: Limita dx/dy para prevenir tunneling
+            //   - CollisionsSystem COLISIONA: Detecta overlap y calcula física completa
+            //   
+            // CollisionsSystem calculará sus propias normales con SweptAABB retrospectivo.
+            // Las normales de RaycastState son para tracking interno, NO para física.
             PhysicsStepper.moveWith(obj, dx, dy);
 
             // ── ACTUALIZAR ESTADO DE CONTACTO ─────────────────────────────
@@ -332,57 +408,105 @@ public final class RaycastMovementSystem {
     }
 
     /**
+     * Registra el raycast para visualización debug.
+     */
+    private void registerVisualization(GameObjects obj, ColliderComponent collider,
+                                      double dx, double dy, GameObjects obstacle, 
+                                      double distance, int normalX, int normalY) {
+        double objX = obj.getTransform().getPosition().getX();
+        double objY = obj.getTransform().getPosition().getY();
+        
+        // Calcular raycast para visualización
+        VelocityRaycast.RaycastResult raycast = VelocityRaycast.calculateRaycast(dx, dy);
+        
+        // Crear detectionResult para visualización
+        double limitFactor = distance / Math.max(Math.abs(dx), Math.abs(dy));
+        RaycastCollisionDetector.DetectionResult detection = 
+            RaycastCollisionDetector.DetectionResult.obstacle(distance, obstacle, limitFactor);
+        
+        // Registrar en el sistema de visualización
+        RaycastVisualizationSystem.registerRaycast(obj, objX, objY, raycast, detection);
+    }
+
+    /**
      * Actualiza el estado de contacto basado en overlaps actuales.
+     * 
+     * FLUJO CORRECTO:
+     * 1. Raycast IMPACTA → objeto llega hasta obstáculo → raycast se DESACTIVA
+     * 2. CollisionsSystem COLISIONA → mantiene contacto, anula velocity
+     * 3. Raycast solo se REACTIVA si velocity cambia de dirección (alejándose)
+     * 
+     * NO se reactiva simplemente porque hay velocity hacia el obstáculo.
+     * CollisionsSystem maneja eso.
      */
     private void updateContactState(GameObjects obj, ColliderComponent collider, RaycastState state) {
         RectangleH bounds = collider.getBounds();
+        
+        // Obtener velocity actual para detectar cambio de dirección
+        Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
+        if (physComp == null) return;
+        
+        double vx = physComp.getPhysics().getVelocity().getX();
+        double vy = physComp.getPhysics().getVelocity().getY();
 
-        // Verificar contacto en X
+        // ── Verificar estado en X ─────────────────────────────────────────
         if (state.hasObstacleX()) {
             GameObjects obstacleX = state.getObstacleX();
             
-            // Si obstáculo fue destruido, limpiar estado
-            if (obstacleX instanceof Destroyable d && d.isPendingDestruction()) {
+            // REACTIVAR raycast SI:
+            // 1. Hay velocidad en X (cualquier dirección) → necesita evaluar raycast
+            // 2. Obstáculo fue destruido
+            // 3. Obstáculo perdió su collider
+            // 4. Ya no hay overlap físico
+            
+            boolean hasVelocityX = Math.abs(vx) >= VELOCITY_THRESHOLD;
+            
+            if (hasVelocityX) {
+                // Hay velocidad → REACTIVAR raycast para próximo frame
+                state.clearX();
+            } else if (obstacleX instanceof Destroyable d && d.isPendingDestruction()) {
                 state.clearX();
             } else {
                 ColliderComponent obstacleCol = obstacleX.getComponent(ColliderComponent.class);
                 
-                if (obstacleCol != null) {
+                if (obstacleCol == null) {
+                    state.clearX();
+                } else {
                     RectangleH obstacleBounds = obstacleCol.getBounds();
                     
-                    // Verificar si está en contacto
-                    if (bounds.intersects(obstacleBounds)) {
-                        state.setContactX(true);
+                    if (!bounds.intersects(obstacleBounds)) {
+                        state.clearX();
                     } else {
-                        state.clearX(); // Ya no está en contacto
+                        // Sin velocidad Y sigue en contacto → raycast INACTIVO
+                        state.setContactX(true);
                     }
-                } else {
-                    state.clearX(); // Obstáculo perdió collider
                 }
             }
         }
 
-        // Verificar contacto en Y
+        // ── Verificar estado en Y ─────────────────────────────────────────
         if (state.hasObstacleY()) {
             GameObjects obstacleY = state.getObstacleY();
             
-            // Si obstáculo fue destruido, limpiar estado
-            if (obstacleY instanceof Destroyable d && d.isPendingDestruction()) {
+            boolean hasVelocityY = Math.abs(vy) >= VELOCITY_THRESHOLD;
+            
+            if (hasVelocityY) {
+                state.clearY();
+            } else if (obstacleY instanceof Destroyable d && d.isPendingDestruction()) {
                 state.clearY();
             } else {
                 ColliderComponent obstacleCol = obstacleY.getComponent(ColliderComponent.class);
                 
-                if (obstacleCol != null) {
+                if (obstacleCol == null) {
+                    state.clearY();
+                } else {
                     RectangleH obstacleBounds = obstacleCol.getBounds();
                     
-                    // Verificar si está en contacto
-                    if (bounds.intersects(obstacleBounds)) {
-                        state.setContactY(true);
+                    if (!bounds.intersects(obstacleBounds)) {
+                        state.clearY();
                     } else {
-                        state.clearY(); // Ya no está en contacto
+                        state.setContactY(true);
                     }
-                } else {
-                    state.clearY(); // Obstáculo perdió collider
                 }
             }
         }
@@ -399,9 +523,19 @@ public final class RaycastMovementSystem {
     }
 
     /**
-     * Limpia TODO el estado. Llamar al cambiar de mundo/escena.
+     * Limpia TDO  el estado. Llamar al cambiar de mundo/escena.
      */
     public void clear() {
         raycastStates.clear();
+    }
+    
+    /**
+     * Obtiene el estado de raycast para un objeto.
+     * Retorna null si el objeto no tiene estado (nunca usó raycast).
+     * 
+     * USADO POR: CollisionsSystem para obtener normales calculadas por raycast.
+     */
+    public RaycastState getState(GameObjects obj) {
+        return raycastStates.get(obj);
     }
 }

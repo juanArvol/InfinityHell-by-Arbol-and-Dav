@@ -131,19 +131,6 @@ public class RaycastConfig {
      */
     public static double MAX_RAYCAST_LENGTH = 200.0;
 
-    /**
-     * Gap de seguridad al frenar (px).
-     * El objeto se detiene a esta distancia del obstáculo.
-     *
-     * DEFAULT: 0.0 (contacto exacto)
-     * RANGO RECOMENDADO: 0.0 - 2.0
-     * 
-     * NOTA: Con SweptAABB manejando las colisiones normales,
-     * un gap > 0 puede causar que el objeto se detenga antes
-     * de tiempo. Se recomienda 0.0 para precisión máxima.
-     */
-    public static double SAFETY_GAP = 0;
-
     // ═════════════════════════════════════════════════════════════════════
     // UTILITY METHODS
     // ═════════════════════════════════════════════════════════════════════
@@ -188,7 +175,6 @@ public class RaycastConfig {
         RAYCAST_FACTOR = 2.0;
         MIN_RAYCAST_LENGTH = 8.0;
         MAX_RAYCAST_LENGTH = 200.0;
-        SAFETY_GAP = 0.0;
         
         VelocityRaycast.SHOW_RAYCASTS = false;
         
@@ -205,14 +191,12 @@ public class RaycastConfig {
             "Min Velocity: %.1f px/frame\n" +
             "Raycast Factor: %.2f\n" +
             "Min Length: %.1f px\n" +
-            "Max Length: %.1f px\n" +
-            "Safety Gap: %.2f px",
+            "Max Length: %.1f px",
             SHOW_RAYCASTS ? "ON" : "OFF",
             MIN_VELOCITY_FOR_RAYCAST,
             RAYCAST_FACTOR,
             MIN_RAYCAST_LENGTH,
-            MAX_RAYCAST_LENGTH,
-            SAFETY_GAP
+            MAX_RAYCAST_LENGTH
         );
     }
 

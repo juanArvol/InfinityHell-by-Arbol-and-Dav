@@ -199,6 +199,9 @@ public class WorldManager {
         this.statusEffectSystem = new StatusEffectSystem();
         this.affiliationSystem  = new ChunkAffiliationSystem(width, height);
 
+        // ✅ CONFIGURAR LINK: CollisionsSystem necesita acceso a RaycastMovementSystem
+        this.collisionsSystem.setRaycastMovementSystem(this.raycastMovementSystem);
+
         regenerateInitialWorld();
     }
 
@@ -396,7 +399,7 @@ public class WorldManager {
 
         // ── 7. RaycastMovementSystem ───────────────────────────────────────
         // NUEVO: Sistema unificado de movimiento con raycast anti-tunneling.
-        // Aplica a TODO: DOD bullets + OOP enemies/player.
+        // Aplica a TDO: DOD bullets + OOP enemies/player.
         // Objetos ya están movidos cuando CollisionSystem ejecuta.
         raycastMovementSystem.update(activeObjects, deltaTime);
 

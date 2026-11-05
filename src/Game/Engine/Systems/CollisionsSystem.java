@@ -40,20 +40,19 @@ import java.util.*;
  *
  * AHORA (Separación limpia):
  *   RaycastMovementSystem:
- *     • Evalúa raycast anti-tunneling (velocidad >= 1px)
- *     • Limita desplazamiento
+ *     • Evalúa raycast anti-tunneling (velocidad >= 1px, por eje independiente)
+ *     • IMPACTA: Limita desplazamiento para prevenir tunneling
  *     • MUEVE objetos con PhysicsStepper
- *     • Mantiene estado de contacto por eje
+ *     • Mantiene estado de contacto por eje (tracking interno)
  *
  *   CollisionsSystem (ESTE):
  *     FASE 0   → Gravedad + fuerzas
  *     FASE 0.5 → Reset contactState
- *     FASE 1   → Detectar overlaps (objetos YA movidos)
- *     FASE 2   → Calcular normales con SweptAABB (retrospectivo)
- *     FASE 3   → Resolver penetraciones
- *     FASE 4   → Modificar velocidad
- *     FASE 5   → Ejecutar eventos
- *     FASE 6   → CollisionListener enter/stay/exit
+ *     FASE 1   → COLISIONA: Detectar overlaps (objetos YA movidos)
+ *     FASE 2   → Calcular normales con SweptAABB retrospectivo (SIEMPRE)
+ *     FASE 3   → Resolver física (velocidad, ContactState)
+ *     FASE 4   → Ejecutar eventos de colisión
+ *     FASE 5   → CollisionListener enter/stay/exit
  *
  * ── RESPONSABILIDADES ─────────────────────────────────────────────────────
  *
@@ -61,16 +60,34 @@ import java.util.*;
  *   ✅ Aplica gravedad (objetos con gravedad habilitada)
  *   ✅ Resetea contactState antes de detección
  *   ✅ Detecta overlaps (objetos ya movidos por RaycastMovementSystem)
- *   ✅ Calcula normales precisas con SweptAABB
- *   ✅ Resuelve penetraciones (separa objetos)
- *   ✅ Modifica velocidad según normales
+ *   ✅ Calcula normales precisas con SweptAABB (SIEMPRE, no reutiliza raycast)
  *   ✅ Actualiza ContactState (onGround, onWall, onCeiling)
- *   ✅ Ejecuta eventos de colisión
+ *   ✅ Propaga normales a BulletPhysics/Bullet
+ *   ✅ Ejecuta eventos de colisión (CollisionDispatcher.dispatch)
+ *   ✅ Aplica empuje si objeto es pushable
  *
  * CollisionsSystem NO:
  *   ❌ Mueve objetos (lo hace RaycastMovementSystem)
  *   ❌ Evalúa raycast (lo hace RaycastMovementSystem)
  *   ❌ Limita desplazamiento (lo hace RaycastMovementSystem)
+ *   ❌ Reutiliza normales de raycast (calcula sus propias normales con SweptAABB)
+ *   ❌ Anula velocity directamente (la lógica de behaviors decide qué hacer)
+ *
+ * ── DIFERENCIA CLAVE: IMPACTO vs COLISIÓN ────────────────────────────────
+ *
+ * IMPACTO (Raycast):
+ *   - Ocurre ANTES de mover
+ *   - Limita DISTANCIA (no velocidad)
+ *   - Previene tunneling
+ *   - Normal simple (eje dominante)
+ *   - NO calcula física completa
+ *
+ * COLISIÓN (CollisionsSystem):
+ *   - Ocurre DESPUÉS de mover
+ *   - Detecta OVERLAP
+ *   - Calcula física completa (normales precisas, TOI, ContactState)
+ *   - Normal calculada con SweptAABB (geometría completa)
+ *   - Ejecuta eventos y modifica velocidad
  *
  * ── SWEPTAABB: USO RETROSPECTIVO ──────────────────────────────────────────
  *
@@ -126,7 +143,7 @@ public class CollisionsSystem {
      * GARANTÍA: 1.0px es suficiente para que ANY collider (mínimo 4×4px)
      * salga completamente del bounds de otro sin intersection residual.
      */
-    private static final double ROBUST_SEPARATION_MINIMUM = 1.0;
+    private static final double ROBUST_SEPARATION_MINIMUM = 1;
 
     /**
      * Umbral de velocidad para activar RAYCAST ANTI-TUNNELING.
@@ -136,7 +153,7 @@ public class CollisionsSystem {
      * SweptAABB SIEMPRE se ejecuta después del raycast (si aplica)
      * para calcular la geometría precisa del contacto.
      */
-    private static final double SUBSTEP_VELOCITY_THRESHOLD = 50.0;
+    private static final double SUBSTEP_VELOCITY_THRESHOLD = 1.0;
 
     /**
      * Contactos activos del frame anterior, por objeto.
@@ -155,6 +172,22 @@ public class CollisionsSystem {
      * Evita allocations en hot path.
      */
     private final RectangleH reusableBroad2D = new RectangleH();
+    
+    /**
+     * RaycastMovementSystem instance para acceder al estado de raycast.
+     * Usado para obtener normales calculadas por raycast en vez de recalcular.
+     */
+    private Game.Engine.Physics.Movement.RaycastMovementSystem raycastMovementSystem;
+
+    /**
+     * Configura la referencia a RaycastMovementSystem.
+     * DEBE llamarse desde WorldManager después de crear ambos sistemas.
+     * 
+     * @param raycastSystem sistema de raycast movement
+     */
+    public void setRaycastMovementSystem(Game.Engine.Physics.Movement.RaycastMovementSystem raycastSystem) {
+        this.raycastMovementSystem = raycastSystem;
+    }
 
     // ── Profiling Infrastructure ──────────────────────────────────────────
     private final Game.Engine.Profiling.SubsystemTimer collisionTimer = 
@@ -253,37 +286,25 @@ public class CollisionsSystem {
             double velocityMag = Math.sqrt(vx * vx + vy * vy);
             
             // ══════════════════════════════════════════════════════════════
-            // SWEPTAABB: DETECCIÓN DE COLISIONES POST-MOVIMIENTO
+            // DETECCIÓN DE OVERLAPS EN POSICIÓN ACTUAL
             // ══════════════════════════════════════════════════════════════
-            // NOTA CRÍTICA: RaycastMovementSystem ya movió el objeto.
-            // 
-            // Para calcular normales correctas retrospectivamente:
-            //   1. Obtenemos bounds ACTUALES (pos + width/height)
-            //   2. Calculamos bounds PREVIOS restando el desplazamiento
-            //   3. SweptAABB usa prev → current para obtener normales
-            // 
-            // CollisionSystem NO MUEVE objetos. Solo analiza el movimiento
-            // que ya ocurrió.
+            // ARQUITECTURA CORRECTA:
+            //   RaycastMovementSystem ya movió el objeto.
+            //   CollisionsSystem detecta overlaps en la posición ACTUAL.
+            //   NO intenta reconstruir el trayecto (no lo conoce sin coupling).
+            //   
+            // ESTRATEGIA:
+            //   1. Detectar si currentBounds intersecta con obstacles
+            //   2. Calcular normal desde dirección de velocity
+            //   3. Resolver overlap y ejecutar eventos
             // ══════════════════════════════════════════════════════════════
             
             RectangleH currentBounds = colA.getBounds();
-            
-            // Reconstruir bounds ANTES del movimiento
-            RectangleH prevBounds = new RectangleH(
-                currentBounds.getX() - vx,
-                currentBounds.getY() - vy,
-                currentBounds.getWidth(),
-                currentBounds.getHeight()
-            );
-            
-            reusableBroad2D.copyFrom(prevBounds.sweep(vx, vy));
-
-            double nearestTime = 1.0;
+            GameObjects hitObj = null;
             int hitNormalX = 0;
             int hitNormalY = 0;
-            GameObjects hitObj = null;
 
-            // Narrow phase: buscar el obstáculo más cercano en el trayecto
+            // Buscar obstáculo con el que estamos overlapping
             for (GameObjects other : objects) {
                 if (other == obj) continue;
                 if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
@@ -297,17 +318,26 @@ public class CollisionsSystem {
                 if (!colA.canCollideWith(colB)) continue;
                 
                 RectangleH ob = colB.getBounds();
-                if (!reusableBroad2D.intersects(ob)) continue;
-
-                // ── SweptAABB: Calcular TOI y normales retrospectivamente ──
-                SweptAABB.Result r = SweptAABB.calculate2D(prevBounds, ob, vx, vy);
-                if (!r.hasCollision()) continue;
-                if (r.time >= nearestTime) continue;
-
-                nearestTime = r.time;
-                hitNormalX = r.normalX;
-                hitNormalY = r.normalY;
-                hitObj = other;
+                
+                // ¿Hay overlap en posición actual?
+                if (currentBounds.intersects(ob)) {
+                    hitObj = other;
+                    
+                    // ✅ CORRECCIÓN: SIEMPRE calcular normal con SweptAABB
+                    // El raycast solo IMPACTA (limita distancia).
+                    // CollisionsSystem debe COLISIONAR (calcular física completa).
+                    // NO reutilizar normales de raycast - calcular geometría precisa.
+                    SweptAABB.Result result = SweptAABB.calculate2D(
+                        currentBounds,
+                        ob,
+                        vx, vy
+                    );
+                    
+                    hitNormalX = result.normalX;
+                    hitNormalY = result.normalY;
+                    
+                    break; // Procesar solo el primer overlap
+                }
             }
 
             // Si hubo colisión, procesar eventos y contactState
@@ -437,7 +467,11 @@ public class CollisionsSystem {
 
     /**
      * Procesa una colisión detectada en FASE 1.
-     * Resuelve velocidad, aplica contactState, despacha evento, aplica empuje.
+     * Propaga normal, actualiza ContactState, despacha evento, aplica empuje.
+     * 
+     * NO anula velocity directamente - la lógica de colisión (GroundMovement,
+     * BulletBehaviors, etc.) decide qué hacer con la velocity basándose en
+     * ContactState y la normal.
      */
     private void processCollision(GameObjects obj, GameObjects hitObj, Physics2D physics,
                                   int normalX, int normalY, double vx, double vy,
@@ -451,9 +485,10 @@ public class CollisionsSystem {
             bullet.setCollisionNormal(normalX, normalY);
         }
 
-        // Resolución de velocidad (detener en eje de normal)
-        if (normalX != 0) physics.vSetX(0);
-        if (normalY != 0) physics.vSetY(0);
+        // ✅ CORRECCIÓN: NO anular velocity aquí
+        // La lógica de colisión (behaviors, movement systems) decide qué hacer
+        // basándose en ContactState y normal.
+        // Anular velocity aquí duplicaría lógica y rompería saltos/rebotes.
 
         // Registrar contacto para ContactState
         InteractionSideComponent iscHit = hitObj.getComponent(InteractionSideComponent.class);

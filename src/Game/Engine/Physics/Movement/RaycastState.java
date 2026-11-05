@@ -28,13 +28,13 @@ import Game.Engine.GameObjects;
  * Frame N+1 (en contacto):
  *   5. isContactX() == true
  *   6. Raycast NO se evalúa para X
- *   7. CollisionSystem resuelve contacto
- *   8. Si velocity.x hacia obstáculo → mantener contacto
- *   9. Si velocity.x == 0 o alejándose → clearX()
+ *   7. CollisionSystem detecta overlap y propaga info
+ *   8. Si velocity.x == 0 → mantener raycast inactivo (setContactX(true))
+ *   9. Si velocity.x != 0 (cualquier dirección) → clearX() reactiva raycast
  *
- * Frame N+2 (contacto resuelto):
- *   10. isContactX() == false
- *   11. Si velocity.x >= 1 → raycast se evalúa nuevamente
+ * Frame N+2:
+ *   10. Si clearX() fue llamado → isContactX() == false
+ *   11. Si |velocity.x| >= 1 → raycast se evalúa nuevamente
  *
  * ── DESACTIVACIÓN DE RAYCAST ──────────────────────────────────────────────
  *
@@ -62,15 +62,16 @@ import Game.Engine.GameObjects;
  *   → isContactX() = true
  *   → NO evaluar raycast
  *   → CollisionSystem detecta overlap
- *   → CollisionSystem setea vx=0
+ *   → CollisionSystem propaga info (normal, ContactState)
  *
- * Frame 2: X=54.7, vx=0
+ * Frame 2: X=54.7, vx=100 (sigue empujando)
+ *   → updateContactState() detecta: vx >= 1 → HAY velocidad
+ *   → clearX() → Raycast se REACTIVA
+ *   → Raycast vuelve a evaluar y limitar distancia
+ *
+ * Frame 3: X=54.7, vx=0 (behavior detuvo velocity)
  *   → isContactX() = true
- *   → vx == 0 → clearX()
- *   → isContactX() = false
- *
- * Frame 3: X=54.7, vx=0
- *   → No raycast (vx < 1)
+ *   → vx == 0 → setContactX(true) mantiene inactivo
  *   → Sin movimiento
  */
 public final class RaycastState {
@@ -78,10 +79,12 @@ public final class RaycastState {
     // ── Estado Eje X ──────────────────────────────────────────────────────
     private boolean contactX = false;
     private GameObjects obstacleX = null;
+    private int normalX = 0;
 
     // ── Estado Eje Y ──────────────────────────────────────────────────────
     private boolean contactY = false;
     private GameObjects obstacleY = null;
+    private int normalY = 0;
 
     // ═════════════════════════════════════════════════════════════════════
     // ══ EJE X
@@ -112,9 +115,13 @@ public final class RaycastState {
     /**
      * Registra que el raycast detectó un obstáculo en X.
      * No marca contacto todavía (eso se hace tras verificar bounds.intersects).
+     * 
+     * @param obstacle objeto detectado
+     * @param normal normal de contacto calculada por raycast (-1, 0, +1)
      */
-    public void setObstacleX(GameObjects obstacle) {
+    public void setObstacleX(GameObjects obstacle, int normal) {
         this.obstacleX = obstacle;
+        this.normalX = normal;
         this.contactX = false; // Todavía no confirmado
     }
 
@@ -133,6 +140,15 @@ public final class RaycastState {
     public void clearX() {
         this.contactX = false;
         this.obstacleX = null;
+        this.normalX = 0;
+    }
+    
+    /**
+     * Obtiene la normal calculada por raycast en X.
+     * -1 = impacto desde derecha, +1 = impacto desde izquierda, 0 = sin contacto.
+     */
+    public int getNormalX() {
+        return normalX;
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -164,9 +180,13 @@ public final class RaycastState {
     /**
      * Registra que el raycast detectó un obstáculo en Y.
      * No marca contacto todavía (eso se hace tras verificar bounds.intersects).
+     * 
+     * @param obstacle objeto detectado
+     * @param normal normal de contacto calculada por raycast (-1, 0, +1)
      */
-    public void setObstacleY(GameObjects obstacle) {
+    public void setObstacleY(GameObjects obstacle, int normal) {
         this.obstacleY = obstacle;
+        this.normalY = normal;
         this.contactY = false; // Todavía no confirmado
     }
 
@@ -185,6 +205,15 @@ public final class RaycastState {
     public void clearY() {
         this.contactY = false;
         this.obstacleY = null;
+        this.normalY = 0;
+    }
+    
+    /**
+     * Obtiene la normal calculada por raycast en Y.
+     * -1 = impacto desde abajo (suelo), +1 = impacto desde arriba (techo), 0 = sin contacto.
+     */
+    public int getNormalY() {
+        return normalY;
     }
 
     // ═════════════════════════════════════════════════════════════════════
@@ -199,7 +228,7 @@ public final class RaycastState {
     }
 
     /**
-     * Limpia TODO el estado (ambos ejes).
+     * Limpia TDO el estado (ambos ejes).
      * Llamar cuando el objeto se destruye o cambia de mundo.
      */
     public void clear() {
