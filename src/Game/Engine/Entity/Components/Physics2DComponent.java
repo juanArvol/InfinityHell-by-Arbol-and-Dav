@@ -57,9 +57,23 @@ public class Physics2DComponent extends Component {
      * Asigna el ContactState del frame actual.
      * Solo debe ser llamado por CollisionsSystem en FASE 1.
      *
+     * ✅ CRITICAL FIX: Propagar estado a Physics2D para mantener sincronización.
+     * 
+     * PROBLEMA RAÍZ:
+     *   Physics2D tiene campos onGround/onWall/onCeiling que NO se sincronizaban
+     *   con ContactState. Código legacy (como applyGravity) los lee directamente.
+     * 
+     * SOLUCIÓN:
+     *   Propagar automáticamente cuando se establece ContactState.
+     *
      * @param state estado de contacto. Si es null se asigna ContactState.NONE.
      */
     public void setContactState(ContactState state) {
         this.contactState = (state != null) ? state : ContactState.NONE;
+        
+        // ✅ Sincronizar con Physics2D para código legacy
+        physics.setOnGround(this.contactState.isOnGround());
+        physics.setOnWall(this.contactState.isOnWall());
+        physics.setOnCeiling(this.contactState.isOnCeiling());
     }
 }

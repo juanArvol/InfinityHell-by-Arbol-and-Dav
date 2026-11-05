@@ -30,7 +30,7 @@ import java.util.*;
  *
  * ── NUEVO PARADIGMA ───────────────────────────────────────────────────────
  *
- * ANTES (TODO en CollisionsSystem):
+ * ANTES (TDO en CollisionsSystem):
  *   FASE 0   → Gravedad
  *   FASE 0.5 → Reset contactState
  *   FASE 0.6 → Raycast predictivo
@@ -143,7 +143,6 @@ public class CollisionsSystem {
      * GARANTÍA: 1.0px es suficiente para que ANY collider (mínimo 4×4px)
      * salga completamente del bounds de otro sin intersection residual.
      */
-    private static final double ROBUST_SEPARATION_MINIMUM = 1;
 
     /**
      * Umbral de velocidad para activar RAYCAST ANTI-TUNNELING.
@@ -153,7 +152,6 @@ public class CollisionsSystem {
      * SweptAABB SIEMPRE se ejecuta después del raycast (si aplica)
      * para calcular la geometría precisa del contacto.
      */
-    private static final double SUBSTEP_VELOCITY_THRESHOLD = 1.0;
 
     /**
      * Contactos activos del frame anterior, por objeto.
@@ -171,7 +169,6 @@ public class CollisionsSystem {
      * RectangleH reutilizable para broadphase 2D.
      * Evita allocations en hot path.
      */
-    private final RectangleH reusableBroad2D = new RectangleH();
     
     /**
      * RaycastMovementSystem instance para acceder al estado de raycast.
@@ -203,40 +200,9 @@ public class CollisionsSystem {
     public void update(List<GameObjects> objects, double deltaTime, Game.Engine.Camera.GameCamera camera) {
         collisionTimer.start();
 
-        // ── FASE 0: Aplicar gravedad y fuerzas acumuladas ────────────────
-        // Solo objetos con gravedad NO manejada externamente.
-        // Triggers (bullets) gestionan su gravedad via ProjectileMovement.
-        for (GameObjects obj : objects) {
-            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
-            if (physComp == null) continue;
-            Physics2D physics = physComp.getPhysics();
-            if (physics.isGravityManagedExternally()) continue;
-            
-            physics.applyGravity(physics.getOnGround(), deltaTime);
-            physics.flushAccumulatedForces(deltaTime);
-        }
-
-        // ── FASE 0.5: Resetear estado de contacto ────────────────────────
-        // DESPUÉS de applyGravity (usa onGround previo).
-        // ANTES de SweptAABB (nuevos contactos parten de cero).
-        for (GameObjects obj : objects) {
-            Physics2DComponent physComp = obj.getComponent(Physics2DComponent.class);
-            if (physComp == null) continue;
-            Physics2D physics = physComp.getPhysics();
-            
-            // Reset flags de contacto
-            physics.setOnGround(false);
-            physics.setOnWall(false);
-            physics.setOnCeiling(false);
-            physics.clearSurface();
-            
-            // Reset normal de contacto (BulletPhysics)
-            if (physics instanceof BulletPhysics bp) {
-                bp.clearLastContactNormal();
-            }
-            
-            physComp.setContactState(ContactState.NONE);
-        }
+        // ✅ CORRECCIÓN: La gravedad y el reset de contactState ahora se manejan
+        // en WorldManager ANTES de RaycastMovementSystem.
+        // CollisionsSystem solo detecta colisiones y actualiza ContactState.
 
         // ══════════════════════════════════════════════════════════════════
         // FASE 1: Sistema de Colisiones Continuas (CCD)
@@ -274,6 +240,8 @@ public class CollisionsSystem {
             double vx = physics.getVelocity().getX() * deltaTime;
             double vy = physics.getVelocity().getY() * deltaTime;
             
+            // Solo procesar objetos que se mueven
+            // Los objetos estacionarios mantienen su ContactState del frame anterior
             if (vx == 0.0 && vy == 0.0) continue;
 
             // ── Collision Culling (bullets off-screen) ────────────────────
@@ -300,11 +268,11 @@ public class CollisionsSystem {
             // ══════════════════════════════════════════════════════════════
             
             RectangleH currentBounds = colA.getBounds();
-            GameObjects hitObj = null;
-            int hitNormalX = 0;
-            int hitNormalY = 0;
+            List<GameObjects> hitObjects = new ArrayList<>();
+            List<Integer> hitNormalsX = new ArrayList<>();
+            List<Integer> hitNormalsY = new ArrayList<>();
 
-            // Buscar obstáculo con el que estamos overlapping
+            // Buscar TODOS los obstáculos con los que estamos overlapping
             for (GameObjects other : objects) {
                 if (other == obj) continue;
                 if (other instanceof Destroyable d && d.isPendingDestruction()) continue;
@@ -320,29 +288,26 @@ public class CollisionsSystem {
                 RectangleH ob = colB.getBounds();
                 
                 // ¿Hay overlap en posición actual?
-                if (currentBounds.intersects(ob)) {
-                    hitObj = other;
-                    
-                    // ✅ CORRECCIÓN: SIEMPRE calcular normal con SweptAABB
-                    // El raycast solo IMPACTA (limita distancia).
-                    // CollisionsSystem debe COLISIONAR (calcular física completa).
-                    // NO reutilizar normales de raycast - calcular geometría precisa.
+                if (currentBounds.intersectsInclusive(ob)) {
+                    // Calcular normal con SweptAABB
                     SweptAABB.Result result = SweptAABB.calculate2D(
                         currentBounds,
                         ob,
                         vx, vy
                     );
                     
-                    hitNormalX = result.normalX;
-                    hitNormalY = result.normalY;
+                    hitObjects.add(other);
+                    hitNormalsX.add(result.normalX);
+                    hitNormalsY.add(result.normalY);
                     
-                    break; // Procesar solo el primer overlap
+                    // ✅ NO BREAK - procesar TODAS las colisiones
                 }
             }
 
-            // Si hubo colisión, procesar eventos y contactState
-            if (hitObj != null) {
-                processCollision(obj, hitObj, physics, hitNormalX, hitNormalY, 
+            // Procesar TODAS las colisiones detectadas
+            for (int i = 0; i < hitObjects.size(); i++) {
+                processCollision(obj, hitObjects.get(i), physics, 
+                               hitNormalsX.get(i), hitNormalsY.get(i), 
                                vx, vy, frameContacts);
             }
         } // FIN FASE 1

@@ -653,7 +653,12 @@ public class Physics2D {
      * @param deltaTime tiempo del simulation step en segundos.
      */
     public void applyGravity(boolean onGround, double deltaTime) {
-        if (onGround) return;
+        if (onGround) {
+            // ✅ CORRECCIÓN: Zeroear velocity vertical cuando está en el suelo
+            // Independientemente de la dirección (cayendo o subiendo)
+            vSetY(0);
+            return;
+        }
 
         if (!isGravityManagedExternally()) {
             // Aplicar gravedad directamente como aceleración

@@ -291,18 +291,52 @@ public final class SweptAABB {
 
             if (!overlapX || !overlapY) return Result.NONE;
 
-            // HRFC FIX: Usar RectangleH API en lugar de cálculo manual
-            double penX = vx != 0 ? moving.penetrationX(target) : Double.MAX_VALUE;
-            double penY = vy != 0 ? moving.penetrationY(target) : Double.MAX_VALUE;
-
+            // ✅ CORRECCIÓN: Usar penetraciones SIGNADAS para determinar cara correcta
+            // Penetración desde cada cara (valor positivo = hay overlap desde esa cara)
+            double penFromLeft   = (moving.x + moving.width) - target.x;    // > 0 si penetra por izq
+            double penFromRight  = (target.x + target.width) - moving.x;    // > 0 si penetra por der
+            double penFromTop    = (moving.y + moving.height) - target.y;   // > 0 si penetra por arriba
+            double penFromBottom = (target.y + target.height) - moving.y;   // > 0 si penetra por abajo
+            
+            // Todas deben ser positivas (si hay overlap real)
+            // La más PEQUEÑA indica la cara de contacto real
             int nx = 0, ny = 0;
-            if (penX <= penY && vx != 0.0) {
-                nx = (vx > 0) ? -1 : 1;
+            
+            // Determinar eje de penetración mínima
+            double minPenX = Math.min(penFromLeft, penFromRight);
+            double minPenY = Math.min(penFromTop, penFromBottom);
+            
+            if (minPenX <= minPenY && vx != 0.0) {
+                // Penetración en X es menor → colisión lateral
+                // La cara con menor penetración es la cara de contacto
+                if (penFromLeft < penFromRight) {
+                    nx = 1;  // Penetró por izquierda → normal apunta derecha
+                } else {
+                    nx = -1; // Penetró por derecha → normal apunta izquierda
+                }
             } else if (vy != 0.0) {
-                ny = (vy > 0) ? -1 : 1;
+                // Penetración en Y es menor → colisión vertical
+                if (penFromTop < penFromBottom) {
+                    ny = 1;  // Penetró por arriba → normal apunta abajo
+                } else {
+                    ny = -1; // Penetró por abajo → normal apunta arriba
+                }
             } else if (vx != 0.0) {
-                nx = (vx > 0) ? -1 : 1;
+                // Fallback: solo hay vx
+                if (penFromLeft < penFromRight) {
+                    nx = 1;
+                } else {
+                    nx = -1;
+                }
+            } else {
+                // Sin velocity → usar cara de menor penetración
+                if (minPenX <= minPenY) {
+                    nx = (penFromLeft < penFromRight) ? 1 : -1;
+                } else {
+                    ny = (penFromTop < penFromBottom) ? 1 : -1;
+                }
             }
+            
             return new Result(0.0, nx, ny);
         }
 

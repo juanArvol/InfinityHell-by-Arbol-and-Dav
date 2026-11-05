@@ -193,7 +193,14 @@ public class PlayerController {
     }
 
     private void handleJumpInput() {
-        if (KeyBoard.getState("up") && state.isEnElSuelo()) {
+        boolean upPressed = KeyBoard.getState("up");
+        boolean enElSuelo = state.isEnElSuelo();
+        
+        System.out.printf("[JUMP DEBUG] up=%b enElSuelo=%b → canJump=%b%n", 
+            upPressed, enElSuelo, upPressed && enElSuelo);
+        
+        if (upPressed && enElSuelo) {
+            System.out.println("[JUMP] Executing jump!");
             // HRFC — Motion Intent: usar JumpIntent en lugar de physics.jump(10)
             // JumpIntent calcula el impulso necesario para alcanzar la altura
             // efectiva definida en PlayerPhysics.capabilities (BASE_JUMP_HEIGHT
@@ -210,6 +217,8 @@ public class PlayerController {
             physics.setOnGround(false);
             physics.clearSurface();
             state.setEnElSuelo(false);
+            
+            System.out.printf("[JUMP] After jump: vy=%.2f%n", physics.getVelocity().getY());
         }
     }
 

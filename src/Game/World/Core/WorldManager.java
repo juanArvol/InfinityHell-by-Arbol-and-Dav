@@ -397,6 +397,45 @@ public class WorldManager {
             }
         }
 
+        // ── 6.75. NUEVA FASE: Aplicar Gravedad y Fuerzas ─────────────────
+        // Aplicar gravedad ANTES de mover, usando onGround actual
+        // 
+        // ✅ CRITICAL FIX: Fusionar AMBOS estados de contacto
+        // 
+        // PROBLEMA RAÍZ:
+        //   Hay DOS fuentes de verdad para onGround:
+        //     1. ContactState.isOnGround() → Calculado por CollisionsSystem (física)
+        //     2. Physics2D.getOnGround() → Modificado por gameplay (salto, drop-through)
+        // 
+        //   Si solo leemos ContactState, el salto NO funciona porque:
+        //     Frame N: Player.jump() → physics.setOnGround(false)
+        //     Frame N: Gravedad lee ContactState → TODAVÍA true (del frame anterior)
+        //     Frame N: Gravedad NO se aplica → salto roto
+        // 
+        // SOLUCIÓN:
+        //   onGround efectivo = ContactState.isOnGround() AND Physics2D.getOnGround()
+        //   
+        //   Ambos deben ser TRUE para NO aplicar gravedad:
+        //     - ContactState TRUE, Physics2D TRUE → En suelo, no aplicar gravedad
+        //     - ContactState TRUE, Physics2D FALSE → Saltando/cayendo, aplicar gravedad
+        //     - ContactState FALSE, Physics2D TRUE → En aire, aplicar gravedad
+        //     - ContactState FALSE, Physics2D FALSE → En aire, aplicar gravedad
+        for (GameObjects obj : activeObjects) {
+            Game.Engine.Entity.Components.Physics2DComponent physComp = 
+                obj.getComponent(Game.Engine.Entity.Components.Physics2DComponent.class);
+            if (physComp == null) continue;
+            Game.Engine.Physics.KineticPhysics.Types.Physics2D physics = physComp.getPhysics();
+            if (physics.isGravityManagedExternally()) continue;
+            
+            // ✅ Fusionar ambos estados (AND lógico)
+            boolean contactDetected = physComp.getContactState().isOnGround();
+            boolean allowedToUseGround = physics.getOnGround();
+            boolean effectiveOnGround = contactDetected && allowedToUseGround;
+            
+            physics.applyGravity(effectiveOnGround, deltaTime);
+            physics.flushAccumulatedForces(deltaTime);
+        }
+
         // ── 7. RaycastMovementSystem ───────────────────────────────────────
         // NUEVO: Sistema unificado de movimiento con raycast anti-tunneling.
         // Aplica a TDO: DOD bullets + OOP enemies/player.
