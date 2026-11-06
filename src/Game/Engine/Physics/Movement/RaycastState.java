@@ -80,11 +80,23 @@ public final class RaycastState {
     private boolean contactX = false;
     private GameObjects obstacleX = null;
     private int normalX = 0;
+    /**
+     * ✅ VELOCIDAD DE IMPACTO EN X
+     * Guarda la velocidad absoluta con la que Ray 1 impactó el obstáculo.
+     * Ray 2 solo mantiene el caché si velocity actual ≤ impactVelocityX.
+     */
+    private double impactVelocityX = 0;
 
     // ── Estado Eje Y ──────────────────────────────────────────────────────
     private boolean contactY = false;
     private GameObjects obstacleY = null;
     private int normalY = 0;
+    /**
+     * ✅ VELOCIDAD DE IMPACTO EN Y
+     * Guarda la velocidad absoluta con la que Ray 1 impactó el obstáculo.
+     * Ray 2 solo mantiene el caché si velocity actual ≤ impactVelocityY.
+     */
+    private double impactVelocityY = 0;
 
     // ═════════════════════════════════════════════════════════════════════
     // ══ EJE X
@@ -114,15 +126,24 @@ public final class RaycastState {
 
     /**
      * Registra que el raycast detectó un obstáculo en X.
-     * No marca contacto todavía (eso se hace tras verificar bounds.intersects).
+     * Guarda la velocidad de impacto para validación futura.
      * 
      * @param obstacle objeto detectado
      * @param normal normal de contacto calculada por raycast (-1, 0, +1)
+     * @param impactVelocity velocidad absoluta con la que se impactó
      */
-    public void setObstacleX(GameObjects obstacle, int normal) {
+    public void setObstacleX(GameObjects obstacle, int normal, double impactVelocity) {
         this.obstacleX = obstacle;
         this.normalX = normal;
+        this.impactVelocityX = Math.abs(impactVelocity);
         this.contactX = false; // Todavía no confirmado
+    }
+    
+    /**
+     * Obtiene la velocidad de impacto en X.
+     */
+    public double getImpactVelocityX() {
+        return impactVelocityX;
     }
 
     /**
@@ -141,6 +162,7 @@ public final class RaycastState {
         this.contactX = false;
         this.obstacleX = null;
         this.normalX = 0;
+        this.impactVelocityX = 0;
     }
     
     /**
@@ -179,15 +201,24 @@ public final class RaycastState {
 
     /**
      * Registra que el raycast detectó un obstáculo en Y.
-     * No marca contacto todavía (eso se hace tras verificar bounds.intersects).
+     * Guarda la velocidad de impacto para validación futura.
      * 
      * @param obstacle objeto detectado
      * @param normal normal de contacto calculada por raycast (-1, 0, +1)
+     * @param impactVelocity velocidad absoluta con la que se impactó
      */
-    public void setObstacleY(GameObjects obstacle, int normal) {
+    public void setObstacleY(GameObjects obstacle, int normal, double impactVelocity) {
         this.obstacleY = obstacle;
         this.normalY = normal;
+        this.impactVelocityY = Math.abs(impactVelocity);
         this.contactY = false; // Todavía no confirmado
+    }
+    
+    /**
+     * Obtiene la velocidad de impacto en Y.
+     */
+    public double getImpactVelocityY() {
+        return impactVelocityY;
     }
 
     /**
@@ -206,6 +237,7 @@ public final class RaycastState {
         this.contactY = false;
         this.obstacleY = null;
         this.normalY = 0;
+        this.impactVelocityY = 0;
     }
     
     /**
