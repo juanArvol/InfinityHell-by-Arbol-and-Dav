@@ -191,10 +191,13 @@ public final class RaycastMovementSystem {
      * Solo evaluamos raycast si la velocidad en un eje cumple:
      *   |velocity| >= VELOCITY_THRESHOLD
      * 
-     * Esto evita cálculos innecesarios para movimientos muy lentos que
-     * NO pueden causar tunneling.
+     * ✅ CORRECCIÓN: Reducido de 1.0 a 0.1 para detectar micro-movimientos.
+     * 
+     * Movimientos pequeños (<1px/frame) pueden acumularse causando penetración
+     * si no se evalúan. Con threshold 0.1, capturamos velocidades desde 6.25 px/s
+     * a 60fps, lo cual es suficientemente bajo para prevenir tunneling.
      */
-    private static final double VELOCITY_THRESHOLD = 1.0;
+    private static final double VELOCITY_THRESHOLD = 0.1;
 
     /**
      * Estado de raycast por objeto.
@@ -246,132 +249,74 @@ public final class RaycastMovementSystem {
             // Skip si no hay movimiento
             if (dx == 0.0 && dy == 0.0) continue;
 
-            // Obtener o crear estado de raycast para este objeto
-            RaycastState state = raycastStates.computeIfAbsent(obj, k -> new RaycastState());
-
             // ── RAYCAST EN EJE X ──────────────────────────────────────────
-            // ✅ FIX: Evaluar raycast si:
-            //   1. NO hay contacto (!state.isContactX()), O
-            //   2. HAY contacto PERO velocidad en dirección OPUESTA (alejándose)
-            boolean shouldEvaluateRaycastX = !state.isContactX();
-            if (!shouldEvaluateRaycastX && state.hasObstacleX()) {
-                // Hay contacto - verificar si velocity se aleja del obstáculo
-                int contactNormal = state.getNormalX();
-                // Si contactNormal = -1 (muro izquierdo), velocity negativa = alejándose
-                // Si contactNormal = 1 (muro derecho), velocity positiva = alejándose
-                boolean movingAwayFromContact = (dx < 0 && contactNormal == -1) || (dx > 0 && contactNormal == 1);
-                shouldEvaluateRaycastX = movingAwayFromContact;
-            }
-            
-            if (Math.abs(dx) >= VELOCITY_THRESHOLD && shouldEvaluateRaycastX) {
+            // ✅ CORRECCIÓN ARQUITECTÓNICA: Raycast STATELESS
+            // Evaluar SIEMPRE si hay velocidad suficiente, sin estado persistente
+            if (Math.abs(dx) >= VELOCITY_THRESHOLD) {
                 GameObjects obstacleX = findFirstObstacleX(obj, collider, dx, objects);
                 
-                double distanceX = Math.abs(dx); // Distancia por defecto (sin obstáculo)
-                int normalX = (dx > 0) ? -1 : 1;
-                
                 if (obstacleX != null) {
-                    distanceX = calculateDistanceX(collider.getBounds(), 
+                    double distX = calculateDistanceX(collider.getBounds(), 
                                                   obstacleX.getComponent(ColliderComponent.class).getBounds(), 
                                                   dx);
                     
                     // Limitar al punto EXACTO de contacto
-                    if (Math.abs(distanceX) < Math.abs(dx)) {
-                        dx = distanceX;
-                        state.setObstacleX(obstacleX, normalX);
+                    if (Math.abs(distX) < Math.abs(dx)) {
+                        dx = distX;
                     }
                 }
                 
-                // ✅ CORRECCIÓN: Registrar visualización SIEMPRE que raycast se evalúe
-                // Independientemente de si hay obstáculo o no
                 if (VelocityRaycast.SHOW_RAYCASTS) {
-                    registerVisualization(obj, collider, dx, dy, obstacleX, distanceX, normalX, 0);
-                }
-            } else if (state.hasObstacleX() && VelocityRaycast.SHOW_RAYCASTS) {
-                // Visualización de contacto persistente
-                GameObjects obstacleX = state.getObstacleX();
-                int normalX = state.getNormalX();
-                
-                ColliderComponent obstacleCol = obstacleX.getComponent(ColliderComponent.class);
-                if (obstacleCol != null) {
-                    double distanceX = calculateDistanceX(collider.getBounds(), 
-                                                         obstacleCol.getBounds(), 
-                                                         dx);
-                    registerVisualization(obj, collider, 0, dy, obstacleX, distanceX, normalX, 0);
+                    int normalX = (dx > 0) ? -1 : 1;
+                    double visualDistX = (obstacleX != null) ? Math.abs(dx) : Math.abs(dx);
+                    registerVisualization(obj, collider, dx, dy, obstacleX, visualDistX, normalX, 0);
                 }
             }
 
             // ── RAYCAST EN EJE Y ──────────────────────────────────────────
-            // ✅ FIX: Evaluar raycast si:
-            //   1. NO hay contacto (!state.isContactY()), O
-            //   2. HAY contacto PERO velocidad en dirección OPUESTA (alejándose)
-            boolean shouldEvaluateRaycastY = !state.isContactY();
-            if (!shouldEvaluateRaycastY && state.hasObstacleY()) {
-                // Hay contacto - verificar si velocity se aleja del obstáculo
-                int contactNormal = state.getNormalY();
-                // Si contactNormal = -1 (suelo), velocity negativa (hacia arriba) = alejándose
-                // Si contactNormal = 1 (techo), velocity positiva (hacia abajo) = alejándose
-                boolean movingAwayFromContact = (dy < 0 && contactNormal == -1) || (dy > 0 && contactNormal == 1);
-                shouldEvaluateRaycastY = movingAwayFromContact;
-            }
-            
-            if (Math.abs(dy) >= VELOCITY_THRESHOLD && shouldEvaluateRaycastY) {
+            // ✅ CORRECCIÓN ARQUITECTÓNICA: Raycast STATELESS
+            // Evaluar SIEMPRE si hay velocidad suficiente, sin estado persistente
+            if (Math.abs(dy) >= VELOCITY_THRESHOLD) {
                 GameObjects obstacleY = findFirstObstacleY(obj, collider, dy, objects);
                 
-                double distanceY = Math.abs(dy); // Distancia por defecto (sin obstáculo)
-                int normalY = (dy > 0) ? -1 : 1;
-                
                 if (obstacleY != null) {
-                    distanceY = calculateDistanceY(collider.getBounds(), 
-                                                  obstacleY.getComponent(ColliderComponent.class).getBounds(), 
-                                                  dy);
+                    RectangleH bounds = collider.getBounds();
+                    RectangleH obstacleBounds = obstacleY.getComponent(ColliderComponent.class).getBounds();
+                    
+                    double distY = calculateDistanceY(bounds, obstacleBounds, dy);
                     
                     // DEBUG: Log cuando se limita
-                    boolean wasLimited = Math.abs(distanceY) < Math.abs(dy);
-                    if (wasLimited && obj instanceof Game.Player.Player) {
-                        System.out.printf("[RAYCAST-Y] Player dy=%.2f limited to=%.2f (obstacle detected)%n", dy, distanceY);
+                    boolean wasLimited = Math.abs(distY) < Math.abs(dy);
+                    if (obj instanceof Game.Player.Player) {
+                        boolean alreadyTouching = bounds.intersectsInclusive(obstacleBounds);
+                        if (wasLimited) {
+                            System.out.printf("[RAYCAST-Y] Player dy=%.2f limited to=%.2f (obstacle detected, alreadyTouching=%b)%n", 
+                                dy, distY, alreadyTouching);
+                        } else {
+                            System.out.printf("[RAYCAST-Y] Player dy=%.2f NO LIMIT (distY=%.2f, alreadyTouching=%b)%n", 
+                                dy, distY, alreadyTouching);
+                        }
                     }
                     
                     // Limitar al punto EXACTO de contacto
                     if (wasLimited) {
-                        dy = distanceY;
-                        state.setObstacleY(obstacleY, normalY);
+                        dy = distY;
                     }
-                } else if (obj instanceof Game.Player.Player) {
-                    System.out.printf("[RAYCAST-Y] Player dy=%.2f NO OBSTACLE (free movement)%n", dy);
                 }
                 
-                // ✅ CORRECCIÓN: Registrar visualización SIEMPRE que raycast se evalúe
-                // Independientemente de si hay obstáculo o no
                 if (VelocityRaycast.SHOW_RAYCASTS) {
-                    registerVisualization(obj, collider, dx, dy, obstacleY, distanceY, 0, normalY);
-                }
-            } else if (state.hasObstacleY() && VelocityRaycast.SHOW_RAYCASTS) {
-                // Visualización de contacto persistente en Y
-                GameObjects obstacleY = state.getObstacleY();
-                int normalY = state.getNormalY();
-                
-                ColliderComponent obstacleCol = obstacleY.getComponent(ColliderComponent.class);
-                if (obstacleCol != null) {
-                    double distanceY = calculateDistanceY(collider.getBounds(), 
-                                                         obstacleCol.getBounds(), 
-                                                         dy);
-                    registerVisualization(obj, collider, dx, 0, obstacleY, distanceY, 0, normalY);
+                    int normalY = (dy > 0) ? -1 : 1;
+                    double visualDistY = (obstacleY != null) ? Math.abs(dy) : Math.abs(dy);
+                    registerVisualization(obj, collider, dx, dy, obstacleY, visualDistY, 0, normalY);
                 }
             }
-
             // ── APLICAR MOVIMIENTO ────────────────────────────────────────
             // Movemos con los valores limitados por raycast (punto EXACTO de contacto).
             // 
             // SEPARACIÓN DE RESPONSABILIDADES:
             //   - Raycast IMPACTA: Limita dx/dy para prevenir tunneling
             //   - CollisionsSystem COLISIONA: Detecta overlap y calcula física completa
-            //   
-            // CollisionsSystem calculará sus propias normales con SweptAABB retrospectivo.
-            // Las normales de RaycastState son para tracking interno, NO para física.
             PhysicsStepper.moveWith(obj, dx, dy);
-
-            // ── ACTUALIZAR ESTADO DE CONTACTO ─────────────────────────────
-            updateContactState(obj, collider, state);
         }
     }
 
@@ -465,6 +410,12 @@ public final class RaycastMovementSystem {
 
     /**
      * Calcula distancia al obstáculo en eje X PRESERVANDO SIGNO de velocity.
+     * 
+     * ✅ CORRECCIÓN PENETRACIÓN:
+     * Si bounds YA está penetrado (distancia negativa), retorna 0 en lugar
+     * de distancia negativa. Esto previene que penetraciones persistan.
+     * 
+     * El objeto NO puede moverse más hacia un obstáculo si ya está dentro.
      */
     private double calculateDistanceX(RectangleH bounds, RectangleH obstacle, double dx) {
         double dist;
@@ -475,12 +426,25 @@ public final class RaycastMovementSystem {
             // Moviéndose a la izquierda  
             dist = obstacle.getMaxX() - bounds.getMinX();
         }
+        
+        // ✅ CORRECCIÓN CRÍTICA: Si YA está penetrado (dist negativa),
+        // retornar 0 para bloquear movimiento hacia el obstáculo
+        if (dist < 0) {
+            return 0;
+        }
+        
         // Mantener signo de dx: si dx negativo, dist debe ser negativo también
         return (dx < 0) ? -Math.abs(dist) : Math.abs(dist);
     }
 
     /**
      * Calcula distancia al obstáculo en eje Y PRESERVANDO SIGNO de velocity.
+     * 
+     * ✅ CORRECCIÓN PENETRACIÓN:
+     * Si bounds YA está penetrado (distancia negativa), retorna 0 en lugar
+     * de distancia negativa. Esto previene que penetraciones persistan.
+     * 
+     * El objeto NO puede moverse más hacia un obstáculo si ya está dentro.
      */
     private double calculateDistanceY(RectangleH bounds, RectangleH obstacle, double dy) {
         double dist;
@@ -491,6 +455,13 @@ public final class RaycastMovementSystem {
             // Moviéndose hacia arriba
             dist = obstacle.getMaxY() - bounds.getMinY();
         }
+        
+        // ✅ CORRECCIÓN CRÍTICA: Si YA está penetrado (dist negativa),
+        // retornar 0 para bloquear movimiento hacia el obstáculo
+        if (dist < 0) {
+            return 0;
+        }
+        
         // Mantener signo de dy: si dy negativo, dist debe ser negativo también
         return (dy < 0) ? -Math.abs(dist) : Math.abs(dist);
     }
