@@ -73,12 +73,57 @@ public class ColliderComponent extends Component {
      * Rectángulo de colisión en coordenadas de mundo.
      * Se recalcula cada vez que se llama (no se cachea — el objeto puede moverse).
      * Retorna RectangleH con precisión double para física exacta.
+     * 
+     * ── HRFC — DOD Integration ────────────────────────────────────────────
+     * Lee posición directamente desde DOD storage cuando existe (Bullet, Enemy).
+     * Esto evita sincronización constante DOD ↔ Transform.
+     * 
+     * PRIORIDAD DE LECTURA:
+     *   1. DOD storage (Bullet/Enemy) - más eficiente
+     *   2. Transform (objetos legacy) - fallback
      */
     public RectangleH getBounds() {
-        var pos = gameObject.getTransform().getPosition();
+        double posX, posY;
+        
+        // Leer posición desde DOD si existe
+        if (gameObject instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+            // Bullet DOD: leer directamente de PrimitiveStorage
+            var handle = bullet.getSimulationHandle();
+            if (handle != null && handle.isValid()) {
+                var storage = bullet.getEntityStore().getStorage();
+                int idx = handle.index();
+                posX = storage.positionsX()[idx];
+                posY = storage.positionsY()[idx];
+            } else {
+                // Fallback si el handle no es válido
+                var pos = gameObject.getTransform().getPosition();
+                posX = pos.getX();
+                posY = pos.getY();
+            }
+        } else if (gameObject instanceof Game.Enemys.Core.Enemy enemy) {
+            // Enemy DOD: leer desde EntityStorage
+            var handle = enemy.getSimulationHandle();
+            if (handle != null && handle.isValid()) {
+                var storage = enemy.getEntityStore().getStorage();
+                int idx = handle.index();
+                posX = storage.positionsX()[idx];
+                posY = storage.positionsY()[idx];
+            } else {
+                // Fallback si el handle no es válido
+                var pos = gameObject.getTransform().getPosition();
+                posX = pos.getX();
+                posY = pos.getY();
+            }
+        } else {
+            // Objeto tradicional: leer desde Transform
+            var pos = gameObject.getTransform().getPosition();
+            posX = pos.getX();
+            posY = pos.getY();
+        }
+        
         return new RectangleH(
-                pos.getX() + offsetX,
-                pos.getY() + offsetY,
+                posX + offsetX,
+                posY + offsetY,
                 width,
                 height
         );

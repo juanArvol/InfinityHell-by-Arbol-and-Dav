@@ -269,12 +269,66 @@ public abstract class BulletBehavior {
     // ── Comportamiento de colisión ────────────────────────────────────────
 
     /**
-     * Reacción al contacto con cualquier objeto del mundo.
+     * Reacción al PRIMER FRAME de contacto con un objeto del mundo.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * CollisionsSystem FASE 4 invoca este callback cuando detecta un contacto
+     * NUEVO (no existía en el frame anterior).
+     *
+     * USO:
+     *   - Lógica que SOLO debe ocurrir en el primer frame de contacto
+     *   - BulletNormal: daño + destrucción (one-shot)
+     *   - BulletJump: rebote (leer normal, invertir velocidad)
+     *   - BulletExplosive: spawn explosión
+     *
+     * IMPORTANTE: Este callback se invoca ADEMÁS de onCollisionStay() en el
+     * primer frame. Si la lógica debe ocurrir CADA frame, ponerla en Stay.
      *
      * @param bullet el proyectil que colisionó
-     * @param other  el objeto con el que colisionó
+     * @param other  el objeto con el que colisionó (primer contacto)
      */
-    public void onCollision(Bullet bullet, GameObjects other) {}
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {}
+
+    /**
+     * Reacción al contacto CONTINUO con un objeto del mundo.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * CollisionsSystem FASE 4 invoca este callback CADA FRAME que hay overlap,
+     * incluyendo el PRIMER frame (después de onCollisionEnter).
+     *
+     * USO:
+     *   - Lógica que debe ocurrir CADA FRAME mientras hay contacto
+     *   - BulletLaser (futuro): daño continuo por frame
+     *   - BulletDrill (futuro): perfora mientras toca
+     *
+     * NOTA: En el primer frame de contacto, AMBOS callbacks se invocan:
+     *   Frame 1: onCollisionEnter() + onCollisionStay()
+     *   Frame 2+: onCollisionStay()
+     *
+     * @param bullet el proyectil que está en contacto
+     * @param other  el objeto con el que sigue en contacto
+     */
+    public void onCollisionStay(Bullet bullet, GameObjects other) {}
+
+    /**
+     * Reacción al FIN de contacto con un objeto del mundo.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * CollisionsSystem FASE 4 invoca este callback cuando un contacto que
+     * existía en el frame anterior YA NO existe en el frame actual.
+     *
+     * USO:
+     *   - Cleanup de efectos visuales (beam, trail)
+     *   - Remover debuffs temporales
+     *   - Track de separación
+     *
+     * @param bullet el proyectil que se separó
+     * @param other  el objeto del que se separó
+     */
+    public void onCollisionExit(Bullet bullet, GameObjects other) {}
 
     // ── UI Trajectory Prediction ──────────────────────────────────────────
 

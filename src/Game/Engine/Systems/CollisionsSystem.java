@@ -236,6 +236,11 @@ public class CollisionsSystem {
                 ColliderComponent colB = other.getComponent(ColliderComponent.class);
                 if (colB == null) continue;
                 if (colB.isSensor()) continue;  // Sensores NO bloquean movimiento
+                
+                // SKIP: Bullets NO bloquean movimiento de otras entidades
+                // (pero SÍ colisionan con terreno para permitir rebotes)
+                if (other instanceof Game.Items.Types.Bullets.Definition.Bullet) continue;
+                
                 if (!colA.canCollideWith(colB)) continue;
 
                 RectangleH otherBounds = colB.getBounds();
@@ -260,9 +265,32 @@ public class CollisionsSystem {
             }
             entityBox.move(vx, 0);
 
-            // PASO 5: Actualizar posición del Transform
-            obj.getTransform().getPosition().setX(entityBox.minX - colA.getOffsetX());
-            obj.getTransform().getPosition().setY(entityBox.minY - colA.getOffsetY());
+            // PASO 5: Actualizar posición
+            // Si el objeto usa DOD (Bullet/Enemy), actualizar su storage directamente
+            // Si no, actualizar Transform tradicional
+            if (obj instanceof Game.Items.Types.Bullets.Definition.Bullet bullet) {
+                // Bullet DOD: escribir directamente en PrimitiveStorage
+                var handle = bullet.getSimulationHandle();
+                if (handle != null && handle.isValid()) {
+                    int idx = handle.index();
+                    var storage = bullet.getEntityStore().getStorage();
+                    storage.positionsX()[idx] = (float) (entityBox.minX - colA.getOffsetX());
+                    storage.positionsY()[idx] = (float) (entityBox.minY - colA.getOffsetY());
+                }
+            } else if (obj instanceof Game.Enemys.Core.Enemy enemy) {
+                // Enemy DOD: escribir directamente en EntityStorage
+                var handle = enemy.getSimulationHandle();
+                if (handle != null && handle.isValid()) {
+                    int idx = handle.index();
+                    var storage = enemy.getEntityStore().getStorage();
+                    storage.positionsX()[idx] = (float) (entityBox.minX - colA.getOffsetX());
+                    storage.positionsY()[idx] = (float) (entityBox.minY - colA.getOffsetY());
+                }
+            } else {
+                // Objeto tradicional: actualizar Transform
+                obj.getTransform().getPosition().setX(entityBox.minX - colA.getOffsetX());
+                obj.getTransform().getPosition().setY(entityBox.minY - colA.getOffsetY());
+            }
 
             // PASO 6: Detectar colisiones y construir ContactRecords
             boolean collidedY = Math.abs(vy - originalVy) > 1e-6;
@@ -425,29 +453,47 @@ public class CollisionsSystem {
         }
 
         for (GameObjects obj : objects) {
-            List<CollisionHandler> listeners = collectListeners(obj);
-            if (listeners.isEmpty()) continue;
-
             Set<GameObjects> current  = currentContacts.getOrDefault(obj, Set.of());
             Set<GameObjects> previous = previousContacts.getOrDefault(obj, Set.of());
 
             for (GameObjects contact : current) {
                 if (!previous.contains(contact)) {
+                    // ENTER: Primer frame de contacto
+                    // 1. CollisionHandler (Components)
+                    List<CollisionHandler> listeners = collectListeners(obj);
                     for (CollisionHandler listener : listeners) {
                         listener.onCollisionEnter(contact);
                     }
+                    
+                    // 2. GameObjects directamente (3 formas)
+                    obj.onCollisionEnter(contact);           // 1 param
+                    obj.onCollisionEnter(obj, contact);      // 2 params
                 } else {
+                    // STAY: Contacto continua
+                    // 1. CollisionHandler (Components)
+                    List<CollisionHandler> listeners = collectListeners(obj);
                     for (CollisionHandler listener : listeners) {
                         listener.onCollisionStay(contact);
                     }
+                    
+                    // 2. GameObjects directamente (3 formas)
+                    obj.onCollisionStay(contact);            // 1 param
+                    obj.onCollisionStay(obj, contact);       // 2 params
                 }
             }
 
             for (GameObjects contact : previous) {
                 if (!current.contains(contact)) {
+                    // EXIT: Contacto termino
+                    // 1. CollisionHandler (Components)
+                    List<CollisionHandler> listeners = collectListeners(obj);
                     for (CollisionHandler listener : listeners) {
                         listener.onCollisionExit(contact);
                     }
+                    
+                    // 2. GameObjects directamente (3 formas)
+                    obj.onCollisionExit(contact);            // 1 param
+                    obj.onCollisionExit(obj, contact);       // 2 params
                 }
             }
         }
@@ -616,3 +662,4 @@ public class CollisionsSystem {
         return result != null ? result : List.of();
     }
 }
+

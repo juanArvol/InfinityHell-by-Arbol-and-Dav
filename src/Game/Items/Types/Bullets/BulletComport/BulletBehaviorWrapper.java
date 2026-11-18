@@ -139,8 +139,8 @@ public abstract class BulletBehaviorWrapper extends BulletBehavior {
      *   sobreescribir onCollision() completo en lugar de usar los hooks.
      */
     @Override
-    public void onCollision(Bullet bullet, GameObjects other) {
-        inner.onCollision(bullet, other);
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {
+        inner.onCollisionEnter(bullet, other);
 
         // Si el inner mató el proyectil, no ejecutar los hooks del wrapper.
         // Esto evita que comportamientos adicionales se apliquen sobre un

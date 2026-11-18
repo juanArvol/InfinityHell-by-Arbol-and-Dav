@@ -159,7 +159,7 @@ public class GameObjects {
     // ── Colisiones ────────────────────────────────────────────────────────
 
     /**
-     * Notificación genérica de colisión.
+     * Notificación genérica de colisión (legacy dispatch).
      *
      * Sobreescribir en subclases del Game para reaccionar al tipo correcto:
      *
@@ -173,4 +173,97 @@ public class GameObjects {
      * sin boilerplate.
      */
     public void onCollisionWith(GameObjects other) {}
+
+    // ── Colisiones con Estados (Enter/Stay/Exit) ──────────────────────────
+
+    /**
+     * Primer frame de contacto con otro objeto.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * Invocado por CollisionsSystem FASE 4 cuando detecta un contacto NUEVO
+     * (no existía en el frame anterior).
+     *
+     * USO: Lógica que solo debe ocurrir UNA VEZ al inicio del contacto.
+     *
+     * @param other el objeto con el que se inició contacto
+     */
+    public void onCollisionEnter(GameObjects other) {}
+
+    /**
+     * Contacto continuo con otro objeto.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * Invocado por CollisionsSystem FASE 4 CADA FRAME que hay overlap,
+     * incluyendo el PRIMER frame (después de onCollisionEnter).
+     *
+     * USO: Lógica que debe ocurrir CADA FRAME mientras hay contacto.
+     *
+     * @param other el objeto con el que se mantiene contacto
+     */
+    public void onCollisionStay(GameObjects other) {}
+
+    /**
+     * Fin de contacto con otro objeto.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * Invocado por CollisionsSystem FASE 4 cuando un contacto que existía
+     * en el frame anterior YA NO existe en el frame actual.
+     *
+     * USO: Cleanup, remover efectos temporales, tracking de separación.
+     *
+     * @param other el objeto del que se separó
+     */
+    public void onCollisionExit(GameObjects other) {}
+
+    // ── Colisiones Bidireccionales (sobrecargas con 2 parámetros) ─────────
+
+    /**
+     * Primer frame de contacto - permite afectar a AMBOS objetos.
+     *
+     * ── SOBRECARGA BIDIRECCIONAL ──────────────────────────────────────────
+     *
+     * Esta sobrecarga recibe ambos objetos explícitamente, permitiendo
+     * modificar tanto `self` como `other` sin necesidad de castear `this`.
+     *
+     * DIFERENCIA con onCollisionEnter(GameObjects other):
+     *   - 1 parámetro: modificas solo `this`
+     *   - 2 parámetros: modificas `self` Y `other`
+     *
+     * EJEMPLO:
+     *   // Explosion daña a enemy Y se destruye a sí misma:
+     *   @Override
+     *   public void onCollisionEnter(GameObjects self, GameObjects other) {
+     *       if (other instanceof Enemy e) {
+     *           e.gotDamage(explosionDamage);
+     *           ((Explosion)self).detonate();
+     *       }
+     *   }
+     *
+     * @param self este objeto (explícito para simetría)
+     * @param other el objeto con el que colisionó
+     */
+    public void onCollisionEnter(GameObjects self, GameObjects other) {}
+
+    /**
+     * Contacto continuo - permite afectar a AMBOS objetos cada frame.
+     *
+     * ── SOBRECARGA BIDIRECCIONAL ──────────────────────────────────────────
+     *
+     * @param self este objeto
+     * @param other el objeto en contacto continuo
+     */
+    public void onCollisionStay(GameObjects self, GameObjects other) {}
+
+    /**
+     * Fin de contacto - permite afectar a AMBOS objetos al separarse.
+     *
+     * ── SOBRECARGA BIDIRECCIONAL ──────────────────────────────────────────
+     *
+     * @param self este objeto
+     * @param other el objeto del que se separó
+     */
+    public void onCollisionExit(GameObjects self, GameObjects other) {}
 }

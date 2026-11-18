@@ -321,13 +321,19 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             }
         }
 
-        // ── Collider (SENSOR) — perfil del Flyweight ─────────────────────
+        // ── Collider (PHYSICAL) — perfil del Flyweight ────────────────────
         // effectiveProfile() retorna PLAYER_BULLET si collisionProfile es null.
+        //
+        // IMPORTANTE: Las bullets NO son sensores — son objetos físicos que
+        // colisionan con el terreno y rebotan (BulletJump, etc.).
+        //
+        // Sensores son para: zonas de daño estáticas, triggers, pickups.
+        // Bullets son proyectiles físicos que interactúan con AABB physics.
         ColliderComponent collider = new ColliderComponent(
                 flyweight.width(),
                 flyweight.height(),
                 flyweight.effectiveProfile());
-        collider.setSensor(true);
+        // collider.setSensor(true);  // ← ELIMINADO: bullets son físicas
         addComponent(collider);
 
         addComponent(new HitBoxComponent(Color.YELLOW));
@@ -345,7 +351,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             addComponent(new PhysicsComponent(physicalState));
         }
 
-        // ── Lifecycle: onAttached ─────────────────────────────────────────
+        // Lifecycle: onAttached
         this.behavior.onAttached(this);
     }
 
@@ -392,20 +398,50 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
 
     // ── Colisión ──────────────────────────────────────────────────────────
 
+    /**
+     * DEPRECATED: onCollisionWith() ya NO se usa.
+     *
+     * ── HRFC — Unified Collision Event System ────────────────────────────
+     *
+     * Bullet ahora usa Enter/Stay/Exit (FASE 4) en lugar de onCollisionWith
+     * (FASE 3). BulletCollisionListener delega directamente a:
+     *
+     *   behavior.onCollisionEnter(bullet, other)
+     *   behavior.onCollisionStay(bullet, other)
+     *   behavior.onCollisionExit(bullet, other)
+     *
+     * Este método legacy se mantiene SOLO para emitir eventos al bus.
+     * La lógica de behavior migró completamente a Enter/Stay/Exit.
+     */
     @Override
     public void onCollisionWith(GameObjects other) {
+        // Emitir evento al bus (observers externos)
         if (eventBus != null && eventBus.hasListeners(ProjectileEvents.OnProjectileHit.class)) {
             eventBus.post(new ProjectileEvents.OnProjectileHit(this, other));
         }
 
-        behavior.onCollision(this, other);
-
-        if (!bulletLife.isAlive()) {
-            emitDestroy();
-        }
+        // behavior.onCollision() ELIMINADO - ahora usa Enter/Stay/Exit
+        // La logica de colision se ejecuta en los metodos override abajo
     }
 
-    // ── Destroyable ────────────────────────────────────────────────────────
+    // Enter/Stay/Exit - delegacion directa al behavior
+
+    @Override
+    public void onCollisionEnter(GameObjects other) {
+        behavior.onCollisionEnter(this, other);
+    }
+
+    @Override
+    public void onCollisionStay(GameObjects other) {
+        behavior.onCollisionStay(this, other);
+    }
+
+    @Override
+    public void onCollisionExit(GameObjects other) {
+        behavior.onCollisionExit(this, other);
+    }
+
+    // Destroyable
 
     /**
      * Retorna true cuando el proyectil debe ser eliminado del mundo.
@@ -593,6 +629,14 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      */
     public SimulationHandle getSimulationHandle() {
         return simulationHandle;
+    }
+
+    /**
+     * Retorna el EntityStore para acceso directo al storage DOD.
+     * Usado por CollisionsSystem para escritura directa sin overhead de Transform.
+     */
+    public EntityStore getEntityStore() {
+        return entityStore;
     }
     
     /**

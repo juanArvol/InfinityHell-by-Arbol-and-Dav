@@ -70,7 +70,7 @@ public class FrostBullet extends BulletBehavior {
     // ══════════════════════════════════════════════════════════════════════
 
     @Override
-    public void onCollision(Bullet bullet, GameObjects other) {
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {
         // TODO: Implementar lógica de congelación
         // Ejemplo:
         // if (target instanceof Enemy) {

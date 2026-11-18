@@ -182,7 +182,7 @@ public class MetheorBullet extends BulletBehavior {
     }
 
     @Override
-    public void onCollision(Bullet bullet, GameObjects other) {
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {
         if(other instanceof AbstractEntity entity){
             entity.gotDamage((int) bullet.getBulletDamage());
         }

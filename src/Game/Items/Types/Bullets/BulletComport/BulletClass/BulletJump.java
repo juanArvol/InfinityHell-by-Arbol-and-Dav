@@ -115,7 +115,7 @@ public class BulletJump extends BulletBehavior {
     // ═════════════════════════════════════════════════════════════════════
 
     @Override
-    public void onCollision(Bullet bullet, GameObjects other) {
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {
         // Colisión con entidad → Daño + Destrucción
         if (other instanceof AbstractEntity entity) {
             entity.gotDamage((int) bullet.getBulletDamage());
@@ -159,6 +159,20 @@ public class BulletJump extends BulletBehavior {
                 physics.addVelocity(0, -MIN_BOUNCE_SPEED - vy);
             }
         }
+    }
+
+    @Override
+    public void onCollisionStay(Bullet bullet, GameObjects other) {
+        // BulletJump rebota en Enter y se separa físicamente del terreno.
+        // Stay solo ocurre si la bullet queda "atrapada" en geometría
+        // (bug de física o overlap persistente).
+        //
+        // NO volver a rebotar - el rebote ya ocurrió en Enter.
+    }
+
+    @Override
+    public void onCollisionExit(Bullet bullet, GameObjects other) {
+        // Sin lógica de cleanup para BulletJump
     }
 
     // ═════════════════════════════════════════════════════════════════════

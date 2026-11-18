@@ -91,14 +91,25 @@ public class BulletNormal extends BulletBehavior {
     // ═════════════════════════════════════════════════════════════════════
 
     @Override
-    public void onCollision(Bullet bullet, GameObjects other) {
-        // Daño a entidades vivas
+    public void onCollisionEnter(Bullet bullet, GameObjects other) {
+        // Daño a entidades vivas (solo en primer contacto)
         if (other instanceof AbstractEntity entity) {
             entity.gotDamage((int) bullet.getBulletDamage());
         }
         
         // Destruir proyectil al impactar cualquier cosa
         bullet.getBulletLife().kill();
+    }
+
+    @Override
+    public void onCollisionStay(Bullet bullet, GameObjects other) {
+        // BulletNormal se destruye en Enter, así que Stay nunca se alcanza
+        // (bullet ya está muerta cuando Stay se invocaría)
+    }
+
+    @Override
+    public void onCollisionExit(Bullet bullet, GameObjects other) {
+        // BulletNormal se destruye en Enter, así que Exit nunca se alcanza
     }
 
     // ═════════════════════════════════════════════════════════════════════

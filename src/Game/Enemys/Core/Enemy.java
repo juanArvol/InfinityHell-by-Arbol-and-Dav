@@ -534,6 +534,14 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     public SimulationHandle getSimulationHandle() {
         return simulationHandle;
     }
+
+    /**
+     * Retorna el EntityStore para acceso directo al storage DOD.
+     * Usado por CollisionsSystem para escritura directa sin overhead de Transform.
+     */
+    public EntityStore getEntityStore() {
+        return entityStore;
+    }
     
     /**
      * Sincroniza position desde Transform OOP al DOD storage.
