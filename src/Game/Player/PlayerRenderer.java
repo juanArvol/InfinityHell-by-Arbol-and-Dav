@@ -19,13 +19,22 @@ import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
  *   SpriteRenderer   → DIBUJA el frame con el TransformData activo
  *
  * ── LÓGICA DE ANIMACIÓN ───────────────────────────────────────────────────
- *   Parado        → play("idle"),  flipH = según última dirección conocida
- *   Moviendo dcha → play("walk_right"), flipH = false
- *   Moviendo izda → play("walk_right"), flipH = true   ← mismo anim, flip
+ *   En el aire cayendo → play("falling")
+ *   En el aire subiendo → play("jumping")
+ *   En el suelo parado  → play("idle"),  flipH = según última dirección conocida
+ *   En el suelo moviendose dcha → play("walk_right"), flipH = false
+ *   En el suelo moviendose izda → play("walk_right"), flipH = true   ← mismo anim, flip
  *
  * El flip se aplica sobre el SpriteRenderer vía setFlipH(). Este método
  * actualiza el TransformData internamente y propaga el cambio en el siguiente
  * render a través de SpriteDrawer → FlipStrategy.
+ *
+ * ── PRIORIDAD DE ANIMACIONES ─────────────────────────────────────────────
+ * La prioridad de las animaciones es:
+ *   1. Falling (cayendo: velocityY > 0.5 y no en el suelo)
+ *   2. Jumping (saltando: velocityY < -0.5 y no en el suelo)
+ *   3. Walk (moviéndose en el suelo: |velocityX| > 0.5 y en el suelo)
+ *   4. Idle (parado: ninguna de las anteriores)
  *
  * ── CICLO DE VIDA ─────────────────────────────────────────────────────────
  * start() cachea AnimationController, SpriteRenderer y Physics2DComponent.
@@ -64,11 +73,36 @@ public class PlayerRenderer extends Component {
     public void update(double dt) {
         if (animController == null || physicsComponent == null) return;
 
-        double velocityX = physicsComponent
-            .getPhysics()
-            .getVelocity()
-            .getX();
+        var physics = physicsComponent.getPhysics();
+        double velocityX = physics.getVelocity().getX();
+        double velocityY = physics.getVelocity().getY();
+        boolean onGround = physics.getOnGround();
 
+        // ── PRIORIDAD 1: Animaciones aéreas ──────────────────────────────
+        // Detectar si el jugador está en el aire y qué dirección vertical tiene
+        
+        if (!onGround) {
+            // Subiendo (velocidad Y negativa = hacia arriba en coordenadas de pantalla)
+            if (velocityY < -0.5) {
+                animController.play("jumping");
+            } 
+            // Cayendo (velocidad Y positiva = hacia abajo en coordenadas de pantalla)
+            else if (velocityY > 0.5) {
+                animController.play("falling");
+            }
+            // Punto exacto del apex (velocidad Y ≈ 0): mantener última animación
+            // para evitar flickering entre jumping/falling
+            
+            // Actualizar flip horizontal basado en dirección de movimiento horizontal
+            if (Math.abs(velocityX) > 0.5 && spriteRenderer != null) {
+                boolean goingRight = velocityX > 0;
+                spriteRenderer.setFlipH(!goingRight);
+            }
+            
+            return; // No procesar animaciones de suelo
+        }
+
+        // ── PRIORIDAD 2: Animaciones de suelo ────────────────────────────
         boolean isMoving = Math.abs(velocityX) > 0.5;
 
         if (isMoving) {
