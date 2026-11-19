@@ -289,36 +289,61 @@ public class Physics2D {
      * una instancia desde un pool.
      * 
      * ── REGRESIÓN FIX — ProjectilePool State Cleanup ──────────────────────
+     * ── CRITICAL FIX — Velocity Contamination in Pooled Instances ─────────
      * 
-     * PROBLEMA IDENTIFICADO:
+     * PROBLEMA IDENTIFICADO (AMPLIADO):
      *   Instancias reutilizadas del ProjectilePool conservaban estado físico
-     *   de su vida anterior: fuerzas acumuladas y modifier stacks poblados.
+     *   de su vida anterior en múltiples campos:
      *   
-     *   - accumulatedFx/Fy: Fuerzas de sistemas externos (viento, campos) que
-     *     no fueron flusheadas antes de morir. La nueva bullet recibía impulso
-     *     fantasma en el primer flushAccumulatedForces().
+     *   1. accumulatedFx/Fy: Fuerzas de sistemas externos (viento, campos) que
+     *      no fueron flusheadas antes de morir. La nueva bullet recibía impulso
+     *      fantasma en el primer flushAccumulatedForces().
      *   
-     *   - statusStack/environmentStack: Modificadores temporales (buffs, debuffs,
-     *     zonas) que persistían entre vidas, alterando el movimiento de la nueva
-     *     bullet con modificadores fantasma.
+     *   2. statusStack/environmentStack: Modificadores temporales (buffs, debuffs,
+     *      zonas) que persistían entre vidas, alterando el movimiento de la nueva
+     *      bullet con modificadores fantasma.
+     *   
+     *   3. **velocity**: CRÍTICO - La velocidad del proyectil anterior persistía
+     *      en Physics2D.velocity, causando desincronización con DOD storage.
+     *      Aunque resetState() escribe la velocidad correcta al DOD storage,
+     *      algunos sistemas legacy leen de Physics2D.velocity, resultando en
+     *      balas con velocidades inconsistentes (mezcla de velocidad anterior
+     *      y velocidad nueva).
+     *   
+     *   4. vx, accel, inputX, speedMax: Variables de control de movimiento que
+     *      retenían valores del ciclo anterior, afectando cálculos de movimiento.
+     *   
+     *   5. onGround, onWall, onCeiling, salto, running: Flags de estado físico
+     *      que persistían incorrectamente entre vidas.
      * 
-     * GARANTÍA:
+     * GARANTÍA (EXTENDIDA):
      *   Después de este método, la instancia tiene el mismo estado físico que
      *   una instancia recién construida (new Physics2D(...)).
      * 
      * USO:
-     *   Llamar desde Bullet.resetState() después de configurar velocidad y
-     *   propiedades cinemáticas básicas.
+     *   Llamar desde Bullet.resetState() DESPUÉS de configurar velocity en
+     *   DOD storage pero ANTES de cualquier sistema que pueda leer Physics2D.
      * 
-     * ALCANCE:
+     * ALCANCE COMPLETO:
+     *   - Limpia velocity → (0, 0) - CRÍTICO para evitar contaminación
      *   - Limpia accumulatedFx/Fy → 0.0
      *   - Limpia statusStack → vacío
      *   - Limpia environmentStack → vacío
-     *   - NO toca velocity, mass, gravity (responsabilidad del caller)
-     *   - NO toca onGround/onWall/onCeiling (limpiados por CollisionsSystem)
-     *   - NO toca currentSurface (limpiado por CollisionsSystem)
+     *   - Limpia flags de estado → false (onGround, onWall, onCeiling, salto, running)
+     *   - Limpia variables de movimiento → 0.0 (vx, accel, inputX, speedMax)
+     *   - NO toca mass, gravity (propiedades intrínsecas, responsabilidad del caller)
+     *   - NO toca effectiveArea, dragCoefficient (propiedades aerodinámicas configuradas por tipo)
+     *   - NO toca currentSurface (configurado por CollisionsSystem cada frame)
      */
     public void clearPooledState() {
+        // ── CRITICAL: Limpiar velocity para evitar contaminación ─────────
+        // La velocidad DEBE resetearse porque es el estado más crítico.
+        // resetState() escribe la velocidad nueva al DOD storage, pero si
+        // Physics2D.velocity retiene la velocidad anterior, sistemas legacy
+        // que lean de aquí verán datos incorrectos.
+        velocity.setX(0.0);
+        velocity.setY(0.0);
+        
         // Limpiar fuerzas acumuladas pendientes
         accumulatedFx = 0.0;
         accumulatedFy = 0.0;
@@ -327,6 +352,24 @@ public class Physics2D {
         // ModifierStack.clear() remueve todos los modificadores registrados
         statusStack.clear();
         environmentStack.clear();
+        
+        // Limpiar flags de estado físico
+        // Estos flags describen el estado de contacto y movimiento, y DEBEN
+        // resetearse para que la nueva bullet no herede el estado de la anterior.
+        onGround = false;
+        onWall = false;
+        onCeiling = false;
+        salto = false;
+        running = false;
+        
+        // Limpiar variables de control de movimiento
+        // Estas variables se calculan cada frame en moveX(), pero limpiarlas
+        // previene comportamiento indeterminado si algún sistema las lee
+        // antes del primer moveX() del nuevo ciclo.
+        vx = 0.0;
+        accel = 0.0;
+        inputX = 0.0;
+        speedMax = 0.0;
     }
 
     // ── Modificadores externos ────────────────────────────────────────────

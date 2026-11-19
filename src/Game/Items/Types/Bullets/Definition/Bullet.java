@@ -941,6 +941,24 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         
         // ── REGRESIÓN FIX — Limpiar estado físico acumulado ──────────────────
         physicsComponent.getPhysics().clearPooledState();
+        
+        // ── CRITICAL FIX — Sincronizar velocidad con Physics2D legacy ─────
+        // clearPooledState() limpia velocity en Physics2D a (0, 0).
+        // Debemos sincronizar la velocidad nueva desde DOD storage al campo
+        // legacy para que sistemas que lean de Physics2D.velocity vean el
+        // valor correcto.
+        //
+        // ORDEN CRÍTICO:
+        //   1. DOD storage escribió xSpeed/ySpeed (arriba)
+        //   2. clearPooledState() limpió Physics2D.velocity a (0, 0)
+        //   3. AHORA sincronizamos: Physics2D.velocity = DOD storage
+        //
+        // Esto garantiza que ambas fuentes de verdad (DOD y legacy) tienen
+        // el mismo valor después de resetState().
+        if (legacyPhysics != null) {
+            legacyPhysics.setXspeed(xSpeed);
+            legacyPhysics.setYspeed(ySpeed);
+        }
 
         // ── Mini-HRFC — Reset PhysicalState (declarativo) ─────────────────
         // Actualizar o remover el PhysicsComponent según el nuevo estado.

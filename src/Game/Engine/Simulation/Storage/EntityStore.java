@@ -217,23 +217,41 @@ public final class EntityStore {
      * - Periódicamente en batch (compactación diferida)
      * - Al final de cada frame de simulación
      *
+     * ── BUG FIX — Compactación desde atrás hacia adelante ─────────────────
+     * 
+     * PROBLEMA ORIGINAL:
+     *   Iterar sobre todas las muertas y compactar cada una modifica count y
+     *   denseToEntity[], invalidando los índices de las otras muertas.
+     *   
+     * SOLUCIÓN:
+     *   Compactar desde la última entidad hacia la primera. Así, cuando
+     *   hacemos swap de una entidad muerta con la última, no afectamos las
+     *   entidades muertas que aún no procesamos (que están más adelante).
+     *
      * @return número de entidades compactadas
      */
     public int compact() {
         int compacted = 0;
 
-        // Iterar sobre records y compactar entidades muertas
-        List<EntityId> toRemove = new ArrayList<>();
-
-        for (EntityRecord record : records.values()) {
-            if (!record.isAlive()) {
-                toRemove.add(record.entityId());
+        // Compactar desde atrás hacia adelante
+        // Esto evita que los swaps invaliden índices de entidades no procesadas
+        int i = count - 1;
+        while (i >= 0) {
+            EntityId entityId = denseToEntity[i];
+            if (entityId == null) {
+                i--;
+                continue;
             }
-        }
-
-        for (EntityId deadId : toRemove) {
-            compactEntity(deadId);
-            compacted++;
+            
+            EntityRecord record = records.get(entityId);
+            if (record == null || !record.isAlive()) {
+                compactEntity(entityId);
+                compacted++;
+                // NO decrementar i porque compactEntity() ya movió otra entidad a este slot
+                // La próxima iteración procesa la entidad que ahora está en slot i
+            } else {
+                i--;
+            }
         }
 
         return compacted;
@@ -269,8 +287,10 @@ public final class EntityStore {
         denseToEntity[lastIndex] = null;
         count--;
 
-        // Añadir a free list y aumentar generation
-        freeList.add(deadIndex);
+        // ── BUG FIX — Agregar lastIndex a freeList, NO deadIndex ──────────
+        // CRÍTICO: Después del swap, deadIndex está ocupado por la entidad
+        // que se movió desde lastIndex. El slot libre es lastIndex, no deadIndex.
+        freeList.add(lastIndex);
         deadRecord.incrementGeneration();
     }
 
