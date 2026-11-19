@@ -189,6 +189,11 @@ public class CollisionMatrix {
 
     /**
      * Verifica si dos categorías pueden colisionar según la matriz.
+     * 
+     * ── HRFC — Collision System Refactor ──────────────────────────────────
+     * MEJORA: Validación de bounds con fail-safe.
+     *   Si los bits están fuera de rango, retorna true (permite colisión)
+     *   en lugar de ArrayIndexOutOfBoundsException.
      *
      * @param a categoría A
      * @param b categoría B
@@ -198,6 +203,11 @@ public class CollisionMatrix {
         if (!enabled) {
             return true;  // Si está desactivado, permitir todas las colisiones
         }
+        
+        // Fail-safe: bounds check (previene ArrayIndexOutOfBoundsException)
+        if (a.bit < 0 || a.bit >= matrix.length) return true;
+        if (b.bit < 0 || b.bit >= matrix.length) return true;
+        
         return (matrix[a.bit] & b.mask()) != 0;
     }
 

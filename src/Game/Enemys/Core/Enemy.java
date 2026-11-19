@@ -345,6 +345,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      *
      * @param effect efecto a añadir.
      */
+    @Override
     public void addEffect(StatusEffectComponent.StatusEffect effect) {
         effects.add(effect);
     }
@@ -355,6 +356,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      *
      * @param type clase del tipo de efecto.
      */
+    @Override
     public <T extends StatusEffectComponent.StatusEffect> boolean hasEffect(Class<T> type) {
         return effects.hasEffect(type);
     }
@@ -364,6 +366,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      *
      * @param type clase del tipo de efecto.
      */
+    @Override
     public <T extends StatusEffectComponent.StatusEffect> void removeEffects(Class<T> type) {
         effects.removeAll(type);
     }
@@ -407,6 +410,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Usadas por Assemblers y fases para configuración inicial.
      * En combate, leer desde getRuntimeStats() para obtener valores efectivos.
      */
+    @Override
     public EntityStats      getStats()         { return stats; }
 
     /**
@@ -414,10 +418,16 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Todo el código de combate (patrones, behaviors, projectiles) debe leer de aquí.
      * Los modificadores activos (buffs, debuffs, fases) se aplican automáticamente.
      */
+    @Override
     public RuntimeStats     getRuntimeStats()  { return runtimeStats; }
 
+    @Override
     public EntityFlags      getFlags()         { return flags; }
+
+    @Override
     public EntityAttributes getAttributes()    { return attributes; }
+
+    @Override
     public AttackSources    getAttackSources() { return attackSources; }
 
     // ── Estado de animación/física ────────────────────────────────────────
@@ -451,6 +461,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
 
     public HealthComponent getHealthComponent() { return health; }
 
+    @Override
     public Game.Enemys.EnemyPhysics getPhysics() {
         Physics2DComponent pc = getComponent(Physics2DComponent.class);
         return pc != null ? (Game.Enemys.EnemyPhysics) pc.getPhysics() : null;

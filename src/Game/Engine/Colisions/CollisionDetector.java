@@ -1,5 +1,6 @@
 package Game.Engine.Colisions;
 
+import static Game.Engine.Colisions.CollisionConstants.*;
 import Game.Engine.Destroyable;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.GameMath.Logic2D.RectangleH;
@@ -9,63 +10,31 @@ import java.util.*;
 /**
  * Detecta pares de objetos que se solapan usando AABB + spatial hash.
  *
- * ── HRFC — Collision System ────────────────────────────────────────────────
+ * ── HRFC — Collision System Refactor ──────────────────────────────────────
  *
- * CAMBIOS RESPECTO A LA VERSIÓN ANTERIOR:
+ * RESPONSABILIDAD ÚNICA:
+ *   Solo DETECTA pares residuales (FASE 2). No mueve objetos, no llama eventos.
+ *   Los pares ya procesados en FASE 1 se excluyen via skipSet.
  *
- *   ANTES:
- *     - Clase de métodos estáticos — no había instancia
- *     - Creaba HashMap, IdentityHashMap y HashSet NUEVOS en cada llamada
- *     - O(n) allocations por frame en un Bullet Hell → presión de GC
- *     - CollisionResult sin normal (0, 0) siempre
+ * MEJORAS EN ESTA VERSIÓN:
+ *   ✓ Reutiliza colecciones entre frames (zero allocations)
+ *   ✓ Spatial hash adaptativo basado en tamaño promedio de objetos
+ *   ✓ Calcula normales geométricas precisas para overlaps estáticos
+ *   ✓ Guards contra objetos destruidos
+ *   ✓ Validación de bounds de array en matrix access
+ *   ✓ Constantes centralizadas (no magic numbers)
  *
- *   AHORA:
- *     - Clase instanciable — CollisionsSystem mantiene una instancia
- *     - HashMap, IdentityHashMap y HashSet se reutilizan entre frames (clear())
- *     - CollisionResult incluye la normal calculada desde la geometría relativa
- *     - Guard de Destroyable: pares donde un objeto está muerto se omiten
- *     - Los pares ya despachados en FASE 1 (sólidos) se excluyen via skipSet
- *     - Usa RectangleH (double) en lugar de Rectangle (int) para precisión exacta
+ * SPATIAL HASH ADAPTATIVO:
+ *   El tamaño de celda se calcula dinámicamente:
+ *   - MIN: 64px (bullets pequeños)
+ *   - MAX: 256px (bosses grandes)
+ *   - DEFAULT: 128px (balance)
  *
- * ── Responsabilidad única ─────────────────────────────────────────────────
- * Solo DETECTA pares residuales (FASE 2). No mueve objetos, no llama eventos.
- * Los pares de TRIGGERS ya se procesaron en FASE 1B de CollisionsSystem.
- * Esta fase detecta overlaps estáticos entre pares que no participaron en FASE 1.
- *
- * ── Spatial hash adaptativo ───────────────────────────────────────────────
- * HRFC FIX: El tamaño de celda ahora se calcula dinámicamente basado en el
- * tamaño promedio de los objetos activos, con límites razonables:
- *   - Mínimo 64px (para bullets pequeños)
- *   - Máximo 256px (para bosses grandes)
- *   - Por defecto 128px (balance general)
- *
- * Divide el mundo en celdas. Cada objeto se registra en las celdas que toca.
- * Solo se comparan objetos en la misma celda → O(n) en lugar de O(n²)
- * para mundos con objetos distribuidos.
- *
- * ── Cálculo de normal en FASE 2 ──────────────────────────────────────────
- * Para pares detectados por overlap AABB (no swept), la normal se calcula
- * geométricamente desde el centro relativo:
- *
- *   1. Centro A y centro B
- *   2. Vector diferencia: dx = cx(A) - cx(B), dy = cy(A) - cy(B)
- *   3. Penetración en cada eje
- *   4. El eje de menor penetración determina la normal
- *
- * Esta normal es aproximada (no es tan precisa como la de SweptAABB) pero
- * correcta para overlaps residuales estáticos.
- *
- * GARANTÍA: computeOverlapNormal() nunca retorna (0,0) cuando hay overlap
- * real — si la penetración es cero en un eje (borde exacto), usa el vector
- * centro-a-centro como fallback geométrico. Esto garantiza que los behaviors
- * como BulletJump siempre tengan una normal válida en FASE 2 y no necesiten
- * recurrir al fallback heurístico de velocidad.
+ * GARANTÍA DE NORMAL:
+ *   computeOverlapNormal() NUNCA retorna (0,0) cuando hay overlap real.
+ *   Usa centro-a-centro como fallback geométrico determinista.
  */
 public final class CollisionDetector {
-
-    private static final int MIN_CELL_SIZE = 64;
-    private static final int MAX_CELL_SIZE = 256;
-    private static final int DEFAULT_CELL_SIZE = 128;
 
     /**
      * Tamaño de celda actual del spatial hash.
@@ -118,26 +87,24 @@ public final class CollisionDetector {
      * Excluye los pares ya procesados en FASE 1 (registrados via markDispatched).
      * Excluye objetos marcados como Destroyable.isPendingDestruction().
      *
-     * ── HRFC FIX: Spatial hash adaptativo ─────────────────────────────────
+     * ── HRFC — Spatial hash adaptativo ────────────────────────────────────
      * El tamaño de celda se calcula dinámicamente basado en el tamaño promedio
      * de los colliders activos. Esto optimiza el spatial hash para el contenido
-     * actual del frame: muchos bullets pequeños usan celdas pequeñas, pocos
-     * bosses grandes usan celdas grandes.
+     * actual del frame.
      *
      * @param objects lista de todos los objetos activos del frame
      * @return lista de pares en colisión (sin duplicados, sin pares ya despachados)
      */
     public List<CollisionResult> detect(List<GameObjects> objects) {
 
-        // Limpiar estructuras del frame anterior
+        // Limpiar estructuras del frame anterior (skipSet se pobla ANTES de detect())
         grid.clear();
         indexMap.clear();
         checked.clear();
-        // skipSet se limpia al final — el caller lo popula antes de llamar detect()
 
         List<CollisionResult> results = new ArrayList<>();
 
-        // HRFC FIX: Calcular cell size adaptativo basado en objetos activos
+        // Calcular cell size adaptativo basado en objetos activos
         currentCellSize = computeAdaptiveCellSize(objects);
 
         // Construir indexMap y grid en un solo pass
@@ -154,7 +121,7 @@ public final class CollisionDetector {
 
             RectangleH b = col.getBounds();
             
-            // HRFC: Usar getCellIndices() de RectangleH con cell size dinámico
+            // Usar getCellIndices() de RectangleH con cell size dinámico
             int[] cellIndices = b.getCellIndices(currentCellSize);
             int x0 = cellIndices[0];
             int y0 = cellIndices[1];
@@ -228,15 +195,15 @@ public final class CollisionDetector {
     /**
      * Calcula el tamaño de celda óptimo basado en los colliders activos.
      *
-     * ── HRFC FIX: Spatial hash adaptativo ─────────────────────────────────
+     * ── HRFC — Spatial hash adaptativo ────────────────────────────────────
      * ESTRATEGIA:
      *   - Calcular el tamaño promedio de los colliders activos
      *   - cell_size = promedio × 2 (para que objetos típicos ocupen ~1-2 celdas)
      *   - Clampear entre MIN_CELL_SIZE y MAX_CELL_SIZE
      *
      * BENEFICIOS:
-     *   - Bullets pequeños (4×4): cell=64 → menos celdas desperdiciadas
-     *   - Bosses grandes (200×200): cell=256 → menos multi-celda overhead
+     *   - Bullets pequeños: cell=64 → menos celdas desperdiciadas
+     *   - Bosses grandes: cell=256 → menos multi-celda overhead
      *   - Mix: cell=128 (default) → balance general
      *
      * @param objects lista de objetos activos
@@ -288,33 +255,27 @@ public final class CollisionDetector {
      * Calcula la normal aproximada de un overlap AABB estático.
      *
      * La normal se calcula por el eje de menor penetración:
-     *   - Si la penetración en X es menor que en Y → cara lateral → normalX != 0
-     *   - Si la penetración en Y es menor que en X → cara vertical → normalY != 0
+     *   - Si penX < penY → cara lateral → normalX != 0
+     *   - Si penY < penX → cara vertical → normalY != 0
      *
      * La dirección se determina por qué centro está a la izquierda/arriba del otro.
      *
      * ── Garantía de normal no-nula ────────────────────────────────────────
-     * Si las penetraciones calculadas son ambas cero o negativas (puede ocurrir
-     * cuando los objetos se tocan exactamente en un borde), se usa el vector
-     * centro-a-centro como fallback geométrico. Esto garantiza que un overlap
-     * detectado por AABB produzca siempre una normal válida — nunca (0,0) —
-     * para que los behaviors como BulletJump no caigan al fallback heurístico
-     * por velocidad.
+     * Si las penetraciones son ambas ≤ 0 (borde exacto), se usa el vector
+     * centro-a-centro como fallback geométrico. NUNCA retorna (0,0) cuando
+     * hay overlap real detectado por AABB.
      *
-     * ── HRFC — Uso de RectangleH API ──────────────────────────────────────
-     * Actualizado para usar penetrationX() y penetrationY() en lugar de
-     * cálculo manual. Esto elimina duplicación de lógica y usa la API probada.
+     * ── Uso de RectangleH API ─────────────────────────────────────────────
+     * Usa penetrationX() y penetrationY() en lugar de cálculo manual.
      *
-     * ── HRFC FIX — Tie-breaking consistente en esquinas ───────────────────
-     * Cuando penX ≈ penY (esquina), se usa el vector centro-a-centro como
-     * desempate en lugar de elegir arbitrariamente Y. Esto es consistente
-     * con el tie-breaking de SweptAABB.calculate2D() que usa la velocidad.
-     * Aquí no tenemos velocidad, pero el vector centro-a-centro produce una
-     * normal geométricamente coherente y determinista.
+     * ── Tie-breaking consistente en esquinas ──────────────────────────────
+     * Cuando penX ≈ penY (diferencia < CORNER_TIE_EPSILON), usa el vector
+     * centro-a-centro como desempate en lugar de elegir arbitrariamente.
+     * Esto es consistente con el tie-breaking de AABB.calculate2D().
      *
      * @param ra bounds del objeto A
      * @param rb bounds del objeto B
-     * @return int[2] con {normalX, normalY} desde la perspectiva de A hacia B
+     * @return int[2] con {normalX, normalY} desde A hacia B
      */
     private static int[] computeOverlapNormal(RectangleH ra, RectangleH rb) {
         // Centros (con precisión double completa de RectangleH)
@@ -326,7 +287,7 @@ public final class CollisionDetector {
         double dx = cxA - cxB;
         double dy = cyA - cyB;
 
-        // HRFC: Usar API de RectangleH en lugar de cálculo manual
+        // Usar API de RectangleH para cálculo de penetración
         double penX = ra.penetrationX(rb);
         double penY = ra.penetrationY(rb);
 
@@ -337,31 +298,30 @@ public final class CollisionDetector {
             if (dx == 0 && dy == 0) {
                 // Centros exactamente superpuestos — caso degenerado extremo.
                 // Usar eje X como fallback arbitrario pero documentado.
-                return new int[]{1, 0};
+                return new int[]{NORMAL_RIGHT, NORMAL_NONE};
             }
             // Normal apunta desde B hacia A en el eje de mayor separación
             return Math.abs(dx) >= Math.abs(dy)
-                    ? new int[]{ dx > 0 ? 1 : -1, 0 }
-                    : new int[]{ 0, dy > 0 ? 1 : -1 };
+                    ? new int[]{ dx > 0 ? NORMAL_RIGHT : NORMAL_LEFT, NORMAL_NONE }
+                    : new int[]{ NORMAL_NONE, dy > 0 ? NORMAL_DOWN : NORMAL_UP };
         }
 
-        // HRFC FIX: Tie-breaking para esquinas (penX ≈ penY)
+        // Tie-breaking para esquinas (penX ≈ penY)
         // Usar vector centro-a-centro como desempate en lugar de elegir Y arbitrariamente
-        double cornerEps = 1e-8;
-        if (Math.abs(penX - penY) <= cornerEps) {
+        if (Math.abs(penX - penY) <= CORNER_TIE_EPSILON) {
             // Esquina: usar el vector centro-a-centro para determinar el eje
             return Math.abs(dx) >= Math.abs(dy)
-                    ? new int[]{ dx > 0 ? 1 : -1, 0 }
-                    : new int[]{ 0, dy > 0 ? 1 : -1 };
+                    ? new int[]{ dx > 0 ? NORMAL_RIGHT : NORMAL_LEFT, NORMAL_NONE }
+                    : new int[]{ NORMAL_NONE, dy > 0 ? NORMAL_DOWN : NORMAL_UP };
         }
 
         // El eje de menor penetración determina la normal
         if (penX < penY) {
             // Cara lateral impactada
-            return new int[]{ dx > 0 ? 1 : -1, 0 };
+            return new int[]{ dx > 0 ? NORMAL_RIGHT : NORMAL_LEFT, NORMAL_NONE };
         } else {
             // Cara vertical impactada
-            return new int[]{ 0, dy > 0 ? 1 : -1 };
+            return new int[]{ NORMAL_NONE, dy > 0 ? NORMAL_DOWN : NORMAL_UP };
         }
     }
 }
