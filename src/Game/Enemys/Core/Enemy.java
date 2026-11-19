@@ -9,6 +9,7 @@ import Game.Enemys.Core.Controllers.EnemyPhaseController;
 import Game.Enemys.Core.Variables.EnemyVariables;
 import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.ContextualUpdatable;
+import Game.Engine.DOD.DODEntity;
 import Game.Engine.Entity.Attributes.EntityAttributes;
 import Game.Engine.Entity.Combat.AttackSources;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
@@ -75,6 +76,12 @@ import Sprites.Core.SpriteHandle;
  *   5. AttackController actualiza patrones y dispara (solo si isAbleToAttack()).
  *   6. ComponentRegistry actualiza todos los EnemyComponents opcionales.
  *   7. super.update() — Components del engine (health, physics, renderer…).
+ *
+ * ── DOD ARCHITECTURE ──────────────────────────────────────────────────────
+ *
+ * Enemy usa composición con DODEntity para gestionar su almacenamiento DOD.
+ * No es una "clase especial" - sigue siendo MovingObjects → AbstractEntity → GameObjects.
+ * La diferencia está en CÓMO se almacena: arrays primitivos via DODEntity.
  */
 public final class Enemy extends MovingObjects implements EntityInfoProvider, Game.Engine.Destroyable, ContextualUpdatable {
 
@@ -107,10 +114,8 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     // ── Bus de eventos ────────────────────────────────────────────────────
     private final GameEventBus eventBus;
 
-    // ── DOD Storage ───────────────────────────────────────────────────────
-    private final EntityStore entityStore;
-    private final EntityId entityId;
-    private final SimulationHandle simulationHandle;
+    // ── DOD Storage (composition, not inheritance) ────────────────────────
+    private final DODEntity dod;
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────
     private boolean pendingRemoval = false;
@@ -127,7 +132,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * HealthComponent recibe EntityStats en lugar de un int.
      *
      * ── DOD Migration ─────────────────────────────────────────────────────
-     * EntityStore requerido para registrar entidad en arquitectura DOD.
+     * dod.getEntityStore() requerido para registrar entidad en arquitectura DOD.
      */
     public Enemy(Vector2D position,
                  SpriteHandle handle,
@@ -145,6 +150,9 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
                  EntityStore entityStore) {
 
         super(position, handle, physics, SizeSyncMode.NONE);
+        
+        // DOD: Registrar en EntityStore usando composición
+        this.dod = new DODEntity(entityStore, ComponentType.ENEMY_MASK);
 
         if (aiController       == null) throw new IllegalArgumentException("Enemy: aiController is required");
         if (movementController == null) throw new IllegalArgumentException("Enemy: movementController is required");
@@ -156,7 +164,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
         if (attributes         == null) throw new IllegalArgumentException("Enemy: attributes is required");
         if (attackSources      == null) throw new IllegalArgumentException("Enemy: attackSources is required");
         if (eventBus           == null) throw new IllegalArgumentException("Enemy: eventBus is required");
-        if (entityStore        == null) throw new IllegalArgumentException("Enemy: entityStore is required");
+        if (dod.getEntityStore()        == null) throw new IllegalArgumentException("Enemy: dod.getEntityStore() is required");
 
         this.aiController       = aiController;
         this.movementController = movementController;
@@ -185,32 +193,24 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
             collider.setSize(24, 30);
         }
 
-        // ── DOD Registration ──────────────────────────────────────────────
-        this.entityStore = entityStore;
-        this.entityId = entityStore.create(ComponentType.ENEMY_MASK);
-        this.simulationHandle = entityStore.getHandle(entityId);
-        
         // Initialize position in DOD storage
         float px = (float)position.getX();
         float py = (float)position.getY();
-        int idx = simulationHandle.index();
-        entityStore.getStorage().positionsX()[idx] = px;
-        entityStore.getStorage().positionsY()[idx] = py;
+        int idx = dod.index();
+        dod.getStorage().positionsX()[idx] = px;
+        dod.getStorage().positionsY()[idx] = py;
         
         // Initialize velocity in DOD storage (zero by default)
-        entityStore.getStorage().velocitiesX()[idx] = 0.0f;
-        entityStore.getStorage().velocitiesY()[idx] = 0.0f;
+        dod.getStorage().velocitiesX()[idx] = 0.0f;
+        dod.getStorage().velocitiesY()[idx] = 0.0f;
         
         // Initialize health in DOD storage
         int maxHealth = stats.health().getMaxHp();
-        entityStore.getStorage().health()[idx] = (float)maxHealth;
-        entityStore.getStorage().maxHealth()[idx] = (float)maxHealth;
+        dod.getStorage().health()[idx] = (float)maxHealth;
+        dod.getStorage().maxHealth()[idx] = (float)maxHealth;
         
         // Connect EnemyPhysics to DOD storage
-        Game.Enemys.EnemyPhysics enemyPhysics = getPhysics();
-        if (enemyPhysics != null) {
-            enemyPhysics.connectDOD(entityStore.getStorage(), simulationHandle);
-        }
+        physics.connectDOD(dod.getStorage(), dod.getSimulationHandle());
     }
 
     // ── Update ────────────────────────────────────────────────────────────
@@ -382,8 +382,8 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     public void markForRemoval() {
         pendingRemoval = true;
         // Release entity from DOD storage
-        if (entityStore != null && entityId != null) {
-            entityStore.destroy(entityId);
+        if (dod.getEntityStore() != null && dod.getEntityId() != null) {
+            dod.getEntityStore().destroy(dod.getEntityId());
         }
     }
     
@@ -482,7 +482,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Solución: antes de retornar Transform, sincronizarlo con DOD storage.
      * 
      * ── CONSTRUCTOR SAFETY ────────────────────────────────────────────────
-     * Durante construcción (antes de que simulationHandle esté inicializado),
+     * Durante construcción (antes de que dod.getSimulationHandle() esté inicializado),
      * retorna el Transform sin sincronizar. Esto es seguro porque:
      * 1. super() ya inicializó Transform con la posición correcta
      * 2. El DOD storage aún no ha modificado nada (no hay drift)
@@ -492,15 +492,15 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
     public Transform2D getTransform() {
         Transform2D t = super.getTransform();
         
-        // Durante construcción, simulationHandle es null - retornar sin sync
-        if (simulationHandle == null) {
+        // Durante construcción, dod es null - retornar sin sync
+        if (dod == null || !dod.isValid()) {
             return t;
         }
         
         // Después de construcción, siempre sincronizar con DOD storage
-        int idx = simulationHandle.index();
-        float dodX = entityStore.getStorage().positionsX()[idx];
-        float dodY = entityStore.getStorage().positionsY()[idx];
+        int idx = dod.index();
+        float dodX = dod.getStorage().positionsX()[idx];
+        float dodY = dod.getStorage().positionsY()[idx];
         t.setPosition(dodX, dodY);
         return t;
     }
@@ -510,7 +510,7 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Usado por renderers y sistemas que leen directamente DOD.
      */
     public float getPositionX() {
-        return entityStore.getStorage().positionsX()[simulationHandle.index()];
+        return dod.getStorage().positionsX()[dod.index()];
     }
 
     /**
@@ -518,21 +518,21 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Usado por renderers y sistemas que leen directamente DOD.
      */
     public float getPositionY() {
-        return entityStore.getStorage().positionsY()[simulationHandle.index()];
+        return dod.getStorage().positionsY()[dod.index()];
     }
-
+    
     /**
      * EntityId DOD para acceso directo desde sistemas.
      */
     public EntityId getEntityId() {
-        return entityId;
+        return dod.getEntityId();
     }
 
     /**
      * SimulationHandle DOD para acceso directo desde sistemas.
      */
     public SimulationHandle getSimulationHandle() {
-        return simulationHandle;
+        return dod.getSimulationHandle();
     }
 
     /**
@@ -540,28 +540,19 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * Usado por CollisionsSystem para escritura directa sin overhead de Transform.
      */
     public EntityStore getEntityStore() {
-        return entityStore;
+        return dod.getEntityStore();
     }
     
-    /**
-     * Sincroniza position desde Transform OOP al DOD storage.
-     * Llamado por PhysicsStepper después de que CollisionsSystem mueve el objeto.
-     *
-     * ── HRFC — Enemy DOD Migration ───────────────────────────────────────
-     * 
-     * Este método garantiza que DOD storage siempre tenga la position actualizada
-     * después de que CollisionsSystem aplica swept AABB y resuelve colisiones.
-     */
     /**
      * Sincroniza Transform OOP → DOD storage (después de PhysicsStepper).
      */
     public void syncPositionToDOD() {
-        if (simulationHandle == null || !simulationHandle.isValid()) return;
-        int idx = simulationHandle.index();
+        if (dod.getSimulationHandle() == null || !dod.getSimulationHandle().isValid()) return;
+        int idx = dod.index();
         float px = (float) getTransform().getX();
         float py = (float) getTransform().getY();
-        entityStore.getStorage().positionsX()[idx] = px;
-        entityStore.getStorage().positionsY()[idx] = py;
+        dod.getStorage().positionsX()[idx] = px;
+        dod.getStorage().positionsY()[idx] = py;
     }
     
     /**
@@ -572,10 +563,10 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * como bloque sólido inmóvil aunque la física DOD lo esté moviendo.
      */
     public void syncFromDOD() {
-        if (simulationHandle == null || !simulationHandle.isValid()) return;
-        int idx = simulationHandle.index();
-        float px = entityStore.getStorage().positionsX()[idx];
-        float py = entityStore.getStorage().positionsY()[idx];
+        if (dod.getSimulationHandle() == null || !dod.getSimulationHandle().isValid()) return;
+        int idx = dod.index();
+        float px = dod.getStorage().positionsX()[idx];
+        float py = dod.getStorage().positionsY()[idx];
         getTransform().getPosition().setX(px);
         getTransform().getPosition().setY(py);
     }
@@ -593,12 +584,12 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
      * @param dy desplazamiento en Y
      */
     public void moveDOD(double dx, double dy) {
-        if (simulationHandle == null || !simulationHandle.isValid()) return;
+        if (dod.getSimulationHandle() == null || !dod.getSimulationHandle().isValid()) return;
         
         // 1. Actualizar DOD storage
-        int idx = simulationHandle.index();
-        entityStore.getStorage().positionsX()[idx] += (float)dx;
-        entityStore.getStorage().positionsY()[idx] += (float)dy;
+        int idx = dod.index();
+        dod.getStorage().positionsX()[idx] += (float)dx;
+        dod.getStorage().positionsY()[idx] += (float)dy;
         
         // 2. Sincronizar Transform OOP inmediatamente
         // CRÍTICO: CollisionsSystem lee de Transform, no de DOD
@@ -607,3 +598,4 @@ public final class Enemy extends MovingObjects implements EntityInfoProvider, Ga
         position.setY(position.getY() + dy);
     }
 }
+

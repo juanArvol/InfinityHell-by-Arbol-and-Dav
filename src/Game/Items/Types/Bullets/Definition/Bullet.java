@@ -1,6 +1,7 @@
 package Game.Items.Types.Bullets.Definition;
 
 import Game.Engine.Colisions.Filter.CollisionProfile;
+import Game.Engine.DOD.DODEntity;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.PhysicsComponent;
@@ -116,18 +117,21 @@ import java.awt.Color;
  *   Engine.Resources (via BulletFlyweightCache → ResourceCache<K,V>)
  *       → Los recursos compartidos (textura, profile) usan el cache
  *         general del Engine.
+ *
+ * ── DOD ARCHITECTURE ──────────────────────────────────────────────────────
+ *
+ * Bullet usa composición con DODEntity para gestionar su almacenamiento DOD.
+ * No es una "clase especial" - sigue siendo GameObjects como todas las demás.
+ * La diferencia está en CÓMO se almacena: arrays primitivos via DODEntity.
  */
 public class Bullet extends GameObjects implements Game.Engine.Destroyable, SimulationLifecycle {
 
     // ── Mini-HRFC — Declarative PhysicalState Ownership ───────────────────
     // El estado físico NO se impone universalmente. Cada tipo de proyectil
     // declara explícitamente su PhysicalState en su comportamiento o blueprint.
-
-    // ── HRFC — Projectile DOD Migration ───────────────────────────────────
-    // DOD Bridge — identidad y handle en EntityStore
-    private EntityId entityId;
-    private SimulationHandle simulationHandle;
-    private EntityStore entityStore; // referencia al store para revalidación
+    
+    // ── DOD Storage (composition, not inheritance) ────────────────────────
+    private final DODEntity dod;
 
     private final BulletLifeDOD      bulletLife;  // DOD adapter
     private final Physics2DComponent physicsComponent;
@@ -244,7 +248,6 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * @param lifeTime      ticks de vida máximos
      * @param damage        daño que aplica al impactar
      * @param physicalState estado físico declarado (null = sin física)
-     * @param entityStore   EntityStore para registro DOD
      */
     public Bullet(
             double             posX,
@@ -259,45 +262,25 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             PhysicalState      physicalState,
             EntityStore        entityStore
     ) {
-        // NO tocar Transform — será eliminado en futura refactorización
-        // Position SOLO en PrimitiveStorage
+        super(); // GameObjects constructor normal
+        
+        // DOD: Registrar en EntityStore usando composición
+        this.dod = new DODEntity(entityStore, ComponentType.PROJECTILE_MASK);
 
         this.flyweight  = flyweight;
         this.behavior   = behavior;
         this.movement   = (movement != null) ? movement : LinearMovement.INSTANCE;
         
-        // ── HRFC — Projectile DOD Migration ───────────────────────────────
-        // 1. Registrar en EntityStore con PROJECTILE_MASK
-        this.entityStore = entityStore;
-        this.entityId = entityStore.create(ComponentType.PROJECTILE_MASK);
-        this.simulationHandle = entityStore.getHandle(entityId);
-        
-        // 2. Inicializar datos en PrimitiveStorage
-        int idx = simulationHandle.index();
-        var storage = entityStore.getStorage();
-        
-        storage.positionsX()[idx] = (float) posX;
-        storage.positionsY()[idx] = (float) posY;
-        storage.velocitiesX()[idx] = (float) xSpeed;
-        storage.velocitiesY()[idx] = (float) ySpeed;
-        storage.accelerationsX()[idx] = 0f;
-        storage.accelerationsY()[idx] = 0f;
-        storage.lifetimes()[idx] = (float) lifeTime;
-        storage.damage()[idx] = (float) damage;
-        storage.flags()[idx] = 0;
-        storage.gravityScale()[idx] = 0f; // default: sin gravedad
-        storage.mass()[idx] = 1f;
-        storage.drag()[idx] = 0f;
-        storage.rotations()[idx] = 0f; // default: sin rotación visual
-        storage.ownerEntityIds()[idx] = 0L; // sin owner por defecto
-        
         // 3. Crear adapters DOD apuntando al storage
-        this.bulletLife = new BulletLifeDOD(storage, simulationHandle);
-        this.physicsAdapter = new BulletPhysicsDOD(storage, simulationHandle);
-        this.damageAdapter = new BulletDamageDOD(storage, simulationHandle);
+        this.bulletLife = new BulletLifeDOD(dod.getStorage(), dod.getSimulationHandle());
+        this.physicsAdapter = new BulletPhysicsDOD(dod.getStorage(), dod.getSimulationHandle());
+        this.damageAdapter = new BulletDamageDOD(dod.getStorage(), dod.getSimulationHandle());
         
         // EntityContext cacheado: envuelve BulletLife sin duplicar su estado.
         this.simulationContext = bulletLife::isAlive;
+        
+        // Initialize DOD data
+        initializeDODData(posX, posY, xSpeed, ySpeed, lifeTime, damage);
 
         // ── Render ────────────────────────────────────────────────────────
         // Usar SpriteHandle del flyweight para el renderer.
@@ -511,7 +494,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
      */
     public double getPositionX() {
-        return entityStore.getStorage().positionsX()[simulationHandle.index()];
+        return dod.getStorage().positionsX()[dod.index()];
     }
     
     /**
@@ -519,7 +502,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * ÚNICA FUENTE DE VERDAD: PrimitiveStorage.
      */
     public double getPositionY() {
-        return entityStore.getStorage().positionsY()[simulationHandle.index()];
+        return dod.getStorage().positionsY()[dod.index()];
     }
     
     /**
@@ -546,11 +529,10 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Esta solución es un bridge temporal hasta que Transform legacy se elimine
      * completamente y ColliderComponent lea posiciones de una fuente unificada.
      */
-    @Override
     public Game.Engine.GameMath.Logic2D.Transform2D getTransform() {
         // Sincronizar Transform con DOD storage
-        int idx = simulationHandle.index();
-        var storage = entityStore.getStorage();
+        int idx = dod.index();
+        var storage = dod.getStorage();
         float x = storage.positionsX()[idx];
         float y = storage.positionsY()[idx];
         
@@ -578,8 +560,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * NO modifica Transform — Transform es legacy y será eliminado.
      */
     public void setPosition(double x, double y) {
-        int idx = simulationHandle.index();
-        var storage = entityStore.getStorage();
+        int idx = dod.index();
+        var storage = dod.getStorage();
         storage.positionsX()[idx] = (float) x;
         storage.positionsY()[idx] = (float) y;
     }
@@ -589,7 +571,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Usado para rendering de bullets giratorias (drills, spinning saws, etc.)
      */
     public float getRotation() {
-        return entityStore.getStorage().rotations()[simulationHandle.index()];
+        return dod.getStorage().rotations()[dod.index()];
     }
     
     /**
@@ -597,7 +579,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Usado por behaviors que necesitan rotar visualmente (DrillBullet, etc.)
      */
     public void setRotation(float radians) {
-        entityStore.getStorage().rotations()[simulationHandle.index()] = radians;
+        dod.getStorage().rotations()[dod.index()] = radians;
     }
     
     /**
@@ -610,7 +592,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * - Achievement tracking
      */
     public long getOwnerEntityId() {
-        return entityStore.getStorage().ownerEntityIds()[simulationHandle.index()];
+        return dod.getStorage().ownerEntityIds()[dod.index()];
     }
     
     /**
@@ -618,25 +600,25 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Debe llamarse en spawn para tracking correcto.
      */
     public void setOwnerEntityId(long ownerEntityId) {
-        entityStore.getStorage().ownerEntityIds()[simulationHandle.index()] = ownerEntityId;
+        dod.getStorage().ownerEntityIds()[dod.index()] = ownerEntityId;
     }
     
-    // ── HRFC — Projectile DOD Migration ───────────────────────────────────
+    // ── DOD Access (delegation to DODEntity) ──────────────────────────────
     
     /**
-     * Retorna el handle de simulación para acceso directo a PrimitiveStorage.
-     * Usado por ProjectileBehaviorSystem y otros sistemas.
+     * Retorna el SimulationHandle para acceso directo a PrimitiveStorage.
+     * Usado por sistemas externos (CollisionsSystem, ProjectileBehaviorSystem, etc.)
      */
     public SimulationHandle getSimulationHandle() {
-        return simulationHandle;
+        return dod.getSimulationHandle();
     }
-
+    
     /**
      * Retorna el EntityStore para acceso directo al storage DOD.
      * Usado por CollisionsSystem para escritura directa sin overhead de Transform.
      */
     public EntityStore getEntityStore() {
-        return entityStore;
+        return dod.getEntityStore();
     }
     
     /**
@@ -644,7 +626,31 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
      * Usado para consultas y mapeos estables.
      */
     public EntityId getEntityId() {
-        return entityId;
+        return dod.getEntityId();
+    }
+    
+    /**
+     * Inicializa los valores de la bullet en el PrimitiveStorage.
+     * Llamado internamente por el constructor con los parámetros del spawn.
+     */
+    private void initializeDODData(double posX, double posY, double xSpeed, double ySpeed, int lifeTime, double damage) {
+        int idx = dod.index();
+        var storage = dod.getStorage();
+        
+        storage.positionsX()[idx] = (float) posX;
+        storage.positionsY()[idx] = (float) posY;
+        storage.velocitiesX()[idx] = (float) xSpeed;
+        storage.velocitiesY()[idx] = (float) ySpeed;
+        storage.accelerationsX()[idx] = 0f;
+        storage.accelerationsY()[idx] = 0f;
+        storage.lifetimes()[idx] = (float) lifeTime;
+        storage.damage()[idx] = (float) damage;
+        storage.flags()[idx] = 0;
+        storage.gravityScale()[idx] = 0f; // default: sin gravedad
+        storage.mass()[idx] = 1f;
+        storage.drag()[idx] = 0f;
+        storage.rotations()[idx] = 0f; // default: sin rotación visual
+        storage.ownerEntityIds()[idx] = 0L; // sin owner por defecto
     }
 
     /**
@@ -870,8 +876,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         
         // ── HRFC — Projectile DOD Migration ───────────────────────────────
         // Resetear datos en PrimitiveStorage usando el handle existente
-        int idx = simulationHandle.index();
-        var storage = entityStore.getStorage();
+        int idx = dod.index();
+        var storage = dod.getStorage();
         
         // Position (ya actualizado en Transform, sincronizar con storage)
         storage.positionsX()[idx] = (float) x;
@@ -1134,8 +1140,8 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
             }
             
             // Marcar entidad DOD para destrucción (compact() limpiará después)
-            if (entityStore != null && entityId != null) {
-                entityStore.destroy(entityId);
+            if (dod.getEntityStore() != null && dod.getEntityId() != null) {
+                dod.getEntityStore().destroy(dod.getEntityId());
             }
         }
     }
@@ -1186,3 +1192,7 @@ public class Bullet extends GameObjects implements Game.Engine.Destroyable, Simu
         @Override public Bullet bullet()                  { return bullet; }
     }
 }
+
+
+
+
