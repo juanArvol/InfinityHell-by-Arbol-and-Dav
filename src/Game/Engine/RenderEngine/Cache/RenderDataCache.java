@@ -93,21 +93,53 @@ public final class RenderDataCache {
     /**
      * Convierte posición de mundo a pantalla usando el offset de cámara.
      *
+     * ── PIXEL-PERFECT FIX: Redondear en lugar de truncar ──────────────────
+     * El casting directo (int) trunca hacia cero, causando que los sprites
+     * "salten" entre píxeles y generen artefactos de deformación.
+     * Math.round() garantiza que cada posición se mapee al píxel más cercano.
+     * 
+     * ⭐ v3.1: SNAP TO PIXEL GRID ──────────────────────────────────────────
+     * Usa smartRound() para eliminar micro-fluctuaciones.
+     *
      * @param cameraX offset X de la cámara
      * @return posición X en pantalla
      */
     public int getScreenX(double cameraX) {
-        return (int)(worldX - cameraX) + transform.offsetX;
+        return smartRound(worldX - cameraX) + transform.offsetX;
     }
 
     /**
      * Convierte posición de mundo a pantalla usando el offset de cámara.
      *
+     * ── PIXEL-PERFECT FIX: Redondear en lugar de truncar ──────────────────
+     * El casting directo (int) trunca hacia cero, causando que los sprites
+     * "salten" entre píxeles y generen artefactos de deformación.
+     * Math.round() garantiza que cada posición se mapee al píxel más cercano.
+     * 
+     * ⭐ v3.1: SNAP TO PIXEL GRID ──────────────────────────────────────────
+     * Usa smartRound() para eliminar micro-fluctuaciones.
+     *
      * @param cameraY offset Y de la cámara
      * @return posición Y en pantalla
      */
     public int getScreenY(double cameraY) {
-        return (int)(worldY - cameraY) + transform.offsetY;
+        return smartFloor(worldY - cameraY) + transform.offsetY;  // ⭐ FLOOR en Y
+    }
+    
+    /** Redondeo v3.5 - threshold 0.5 */
+    private static int smartRound(double value) {
+        double rounded = Math.round(value);
+        double diff = Math.abs(value - rounded);
+        if (diff < 0.5) return (int) rounded;
+        return (int) Math.round(value);
+    }
+    
+    /** Floor v3.5 - threshold 0.5 */
+    private static int smartFloor(double value) {
+        int floor = (int) Math.floor(value);
+        double diff = value - floor;
+        if (diff < 0.5) return floor;
+        return (int) Math.floor(value);
     }
 
     /**

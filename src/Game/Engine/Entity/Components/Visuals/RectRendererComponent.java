@@ -47,8 +47,9 @@ public class RectRendererComponent extends Component implements Renderable {
     public void render(RenderContext ctx, RenderCamera camera) {
         var pos = gameObject.getTransform().getPosition();
 
-        int x = (int)(pos.getX() - camera.getX()) + offsetX;
-        int y = (int)(pos.getY() - camera.getY()) + offsetY;
+        // PIXEL-PERFECT FIX: Redondear en lugar de truncar
+        int x = (int)Math.round(pos.getX() - camera.getX()) + offsetX;
+        int y = (int)Math.round(pos.getY() - camera.getY()) + offsetY;
 
         ctx.setColor(color);
         ctx.fillRect(x, y, width, height);

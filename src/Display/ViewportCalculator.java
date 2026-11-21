@@ -2,7 +2,6 @@ package Display;
 
 import Display.Background.FillArea;
 import Display.Settings.ScalingMode;
-
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -120,7 +119,7 @@ public final class ViewportCalculator {
 
     /**
      * Modo FIT: escala uniforme para que el área virtual quepa en el canvas,
-     * con barras de relleno donde no cabe.
+     * con barras de relleno donde no caba.
      *
      * TRUNCAMIENTO — no Math.round — para garantizar vpW ≤ rW y vpH ≤ rH,
      * y que los fill areas cubren el canvas exactamente sin oscilaciones de 1px.

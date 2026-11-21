@@ -110,12 +110,16 @@ public final class AssetLoader {
      * Carga una SpriteSheet usando el extractor indicado.
      * Cachea la imagen fuente internamente.
      *
+     * NOTA: Para spritesheets, el downscaling está DESACTIVADO porque rompe
+     * la cuadrícula. Si necesitas redimensionar un spritesheet, hazlo ANTES
+     * de cargarlo o ajusta PlayerAssets.FRAME_WIDTH/HEIGHT para que coincidan.
+     *
      * @param path      path relativo al classpath
      * @param extractor estrategia de extracción (ej: SpriteExtractors.grid(24, 24))
      * @return SpriteSheet lista para acceder a frames, o null si falló la carga
      */
     public static SpriteSheet loadSheet(String path, SpriteExtractor extractor) {
-        BufferedImage img = loadRaw(path);
+        BufferedImage img = loadRawForSpriteSheet(path);
         if (img == null) return null;
         return SpriteSheet.load(img, extractor);
     }
@@ -149,6 +153,28 @@ public final class AssetLoader {
      * @return BufferedImage o null si falló la carga
      */
     public static BufferedImage loadRaw(String path) {
+        return loadRawInternal(path, true);
+    }
+
+    /**
+     * Carga una imagen raw SIN downscaling, para uso en spritesheets.
+     * El downscaling rompe la cuadrícula de sprites, por eso está desactivado.
+     *
+     * @param path path relativo al classpath
+     * @return BufferedImage o null si falló la carga
+     */
+    private static BufferedImage loadRawForSpriteSheet(String path) {
+        return loadRawInternal(path, false);
+    }
+
+    /**
+     * Implementación interna de carga de imágenes.
+     *
+     * @param path              path relativo al classpath
+     * @param enableDownscaling si se debe aplicar downscaling automático
+     * @return BufferedImage o null si falló la carga
+     */
+    private static BufferedImage loadRawInternal(String path, boolean enableDownscaling) {
         if (path == null || path.isBlank()) return null;
 
         // Hit en caché — retorno directo
@@ -167,8 +193,19 @@ public final class AssetLoader {
                 return null;
             }
             
-            // Optimizar imagen (downscaling, formato, etc)
+            // Optimizar imagen (controlando downscaling)
+            boolean previousDownscalingSetting = AssetOptimizer.isDownscalingEnabled();
+            if (!enableDownscaling) {
+                AssetOptimizer.setEnableDownscaling(false);
+            }
+            
             BufferedImage optimized = AssetOptimizer.optimize(original);
+            
+            // Restaurar configuración
+            if (!enableDownscaling) {
+                AssetOptimizer.setEnableDownscaling(previousDownscalingSetting);
+            }
+            
             cache.put(path, optimized);
             return optimized;
         } catch (IOException e) {

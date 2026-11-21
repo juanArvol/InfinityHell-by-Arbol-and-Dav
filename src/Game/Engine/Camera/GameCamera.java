@@ -316,6 +316,14 @@ public final class GameCamera {
 
         finalX = constrained.getX();
         finalY = constrained.getY();
+        
+        // ── PIXEL-PERFECT v7.0: Snap final coordinates ────────────────────
+        // CRÍTICO: Redondear las coordenadas finales de la cámara garantiza
+        // que TODAS las conversiones world→screen resulten en enteros exactos.
+        // Esto elimina sub-pixel positioning que causa deformación en flip.
+        finalX = Math.round(finalX);
+        finalY = Math.round(finalY);
+        
     }
 
     /**
@@ -345,6 +353,10 @@ public final class GameCamera {
 
         finalX = constrained.getX();
         finalY = constrained.getY();
+        
+        // ── PIXEL-PERFECT v7.0: Snap final coordinates ────────────────────
+        finalX = Math.round(finalX);
+        finalY = Math.round(finalY);
     }
 
     // ── Transformación de vista ───────────────────────────────────────────────

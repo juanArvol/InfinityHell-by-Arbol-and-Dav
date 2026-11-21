@@ -253,6 +253,42 @@ public final class AwtWindowBackend {
     }
 
     /**
+     * Redimensiona la ventana en modo windowed para que el canvas tenga el tamaño exacto especificado.
+     * Solo tiene efecto si estamos en modo windowed. En fullscreen no hace nada.
+     * 
+     * Esto elimina las barras de letterbox haciendo que la ventana se ajuste
+     * perfectamente a la resolución virtual deseada.
+     * 
+     * EDT únicamente.
+     * 
+     * @param width ancho deseado del canvas
+     * @param height alto deseado del canvas
+     */
+    public void requestResizeWindowedCanvas(int width, int height) {
+        assertEDT("requestResizeWindowedCanvas");
+        DisplayMode current = deriveCurrentMode();
+        
+        // Solo redimensionar si estamos en windowed mode
+        if (current.isFullscreen()) {
+            LOG.fine("AwtWindowBackend: requestResizeWindowedCanvas ignored (in fullscreen)");
+            return;
+        }
+        
+        LOG.fine("AwtWindowBackend: resizing windowed canvas to " + width + "×" + height);
+        
+        // Actualizar el preferred size del canvas
+        canvas.setPreferredSize(new Dimension(width, height));
+        
+        // Hacer pack() para que el frame se ajuste al nuevo tamaño del canvas
+        frame.pack();
+        
+        // Centrar la ventana en la pantalla
+        frame.setLocationRelativeTo(null);
+        
+        LOG.fine("AwtWindowBackend: windowed canvas resized successfully");
+    }
+
+    /**
      * Solicita focus al canvas.
      * EDT únicamente.
      */

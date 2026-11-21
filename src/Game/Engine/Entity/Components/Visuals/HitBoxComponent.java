@@ -2,11 +2,11 @@ package Game.Engine.Entity.Components.Visuals;
 
 import Game.Engine.Component;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.RenderEngine.Context.RenderCamera;
 import Game.Engine.RenderEngine.Context.RenderContext;
 import Game.Engine.RenderEngine.Contracts.DebugRenderable;
 import java.awt.Color;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 
 /**
  * Componente visual que dibuja el área de colisión en modo debug.
@@ -60,8 +60,9 @@ public class HitBoxComponent extends Component implements DebugRenderable {
         RectangleH bounds = col.getBounds();
 
         // Aplicar camera offset para que la hitbox coincida con el sprite en pantalla.
-        int x = (int)(bounds.x - camera.getX());
-        int y = (int)(bounds.y - camera.getY());
+        // PIXEL-PERFECT FIX: Redondear en lugar de truncar
+        int x = (int)Math.round(bounds.x - camera.getX());
+        int y = (int)Math.round(bounds.y - camera.getY());
 
         ctx.drawHitbox(new RectangleH(x, y, bounds.width, bounds.height), debugColor);
     }

@@ -1,7 +1,6 @@
 package Game.Engine.RenderEngine.Strategies;
 
 import java.awt.Graphics2D;
-import java.awt.geom.AffineTransform;
 
 /**
  * FlipStrategy — procesador de pipeline que configura el flip geométrico.
@@ -37,24 +36,33 @@ public final class FlipStrategy implements RenderStrategy {
      * Aplica la transformación de flip al transform activo del Graphics2D.
      * NO dibuja. El caller dibuja después de llamar este método.
      *
-     * @param g   Graphics2D cuyo transform se modificará
-     * @param ctx contexto del draw — usado solo para leer el pivot y el transform
+     * ── PIXEL-PERFECT FIX v6.0: Eliminación de scale(-1) ──────────────────
+     * PROBLEMA RAÍZ: scale(-1, 1) en AffineTransform + drawImage() causa
+     * errores de redondeo de 1 pixel durante el rasterizado en pixel-art.
+     *
+     * SOLUCIÓN: NO usar scale() en absoluto. En su lugar, modificar
+     * directamente las coordenadas de drawImage() para lograr el flip:
+     *
+     * Flip horizontal:
+     *   - Sin flip:  drawImage(img, x, y, w, h)
+     *   - Con flip:  drawImage(img, x+w, y, -w, h)
+     *
+     * Java interpreta ancho/alto negativos como flip automático, pero
+     * renderiza con coordenadas exactas de píxeles enteros, sin la capa
+     * de AffineTransform que introduce errores de redondeo en doubles.
+     *
+     * NOTA: Esta estrategia NO modifica el transform. El caller (SpriteDrawer)
+     * debe detectar flip y ajustar los parámetros de drawImage() directamente.
+     * Esta función se mantiene por compatibilidad pero no hace nada.
+     *
+     * @param g   Graphics2D (sin modificar)
+     * @param ctx contexto del draw
      */
     @Override
     public void apply(Graphics2D g, DrawContext ctx) {
-        if (!ctx.transform().hasFlip()) return;
-
-        int px = ctx.pivotScreenX();
-        int py = ctx.pivotScreenY();
-
-        AffineTransform current = g.getTransform();
-        AffineTransform at = new AffineTransform(current);
-        at.translate(px, py);
-        at.scale(
-            ctx.transform().flipH ? -1.0 : 1.0,
-            ctx.transform().flipV ? -1.0 : 1.0
-        );
-        at.translate(-px, -py);
-        g.setTransform(at);
+        // ── NUEVO APPROACH: NO modificar el transform ─────────────────────
+        // El flip se maneja en SpriteDrawer usando width/height negativos
+        // en drawImage(), que es pixel-perfect sin errores de redondeo.
+        // Esta función está vacía intencionalmente.
     }
 }

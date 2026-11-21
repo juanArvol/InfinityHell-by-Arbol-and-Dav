@@ -61,4 +61,64 @@ public final class PlayerJumpingAssets {
             .defaultDuration(TICKS_PER_FRAME)
             .build();
     }
+
+    /**
+     * Carga la animación de transición de salto a caminar.
+     * 
+     * Esta animación se usa cuando el jugador está saltando Y hay input horizontal.
+     * Combina los primeros frames de jumping con los frames de loop de walking
+     * para crear una transición visual suave.
+     * 
+     * ESTRUCTURA:
+     *   1. Reproduce los primeros frames de jumping (0-3) una vez
+     *   2. Transiciona a los frames de loop de walking (5-14)
+     * 
+     * @return Animation de jumping→walking, o null si falla la carga
+     */
+    public static Animation loadJumpingToWalkAnimation() {
+        // Cargar jumping spritesheet
+        var extractorJump = SpriteExtractors.grid(FRAME_W, FRAME_H);
+        SpriteSheet jumpSheet = AssetLoader.loadSheet(SHEET_PATH, extractorJump);
+
+        if (jumpSheet == null) {
+            System.err.println("[PlayerJumpingAssets] No se pudo cargar jumping sheet para transición");
+            return null;
+        }
+
+        // Cargar walking spritesheet para los frames de transición
+        String walkPath = "/Sprites/Source/Entity/Player/Player_Walking_Spritesheet.png";
+        var extractorWalk = SpriteExtractors.grid(FRAME_W, FRAME_H);
+        SpriteSheet walkSheet = AssetLoader.loadSheet(walkPath, extractorWalk);
+
+        if (walkSheet == null) {
+            System.err.println("[PlayerJumpingAssets] No se pudo cargar walking sheet para transición");
+            return null;
+        }
+
+        SpriteFrame[] jumpFrames = jumpSheet.getAllFrames();
+        SpriteFrame[] walkFrames = walkSheet.getAllFrames();
+
+        // Determinar cuántos frames usar de jumping (mínimo 4 o todos si hay menos)
+        int jumpFrameCount = Math.min(4, jumpFrames.length);
+
+        // Crear array combinado: frames de jumping + frames de walking loop (5-14)
+        int walkLoopStart = 5;
+        int walkLoopEnd = Math.min(14, walkFrames.length - 1);
+        int walkLoopCount = walkLoopEnd - walkLoopStart + 1;
+        
+        SpriteFrame[] combined = new SpriteFrame[jumpFrameCount + walkLoopCount];
+        
+        // Copiar frames de jumping
+        System.arraycopy(jumpFrames, 0, combined, 0, jumpFrameCount);
+        
+        // Copiar frames de walking loop
+        System.arraycopy(walkFrames, walkLoopStart, combined, jumpFrameCount, walkLoopCount);
+
+        // Construir animación: playOnce los frames de jumping, luego loop los de walking
+        return Animation.builder(combined)
+            .playOnce(0, jumpFrameCount - 1)           // Jumping frames una vez
+            .thenLoop(jumpFrameCount, combined.length - 1)  // Walking frames en loop
+            .defaultDuration(TICKS_PER_FRAME)
+            .build();
+    }
 }

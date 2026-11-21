@@ -19,20 +19,31 @@ import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
  *   SpriteRenderer   → DIBUJA el frame con el TransformData activo
  *
  * ── LÓGICA DE ANIMACIÓN ───────────────────────────────────────────────────
- *   En el aire cayendo → play("falling")
- *   En el aire subiendo → play("jumping")
- *   En el suelo parado  → play("idle"),  flipH = según última dirección conocida
- *   En el suelo moviendose dcha → play("walk_right"), flipH = false
- *   En el suelo moviendose izda → play("walk_right"), flipH = true   ← mismo anim, flip
+ *   En el aire cayendo (sin input X)   → play("falling")
+ *   En el aire cayendo (con input X)   → play("fall_to_walk")
+ *   En el aire subiendo (sin input X)  → play("jumping")
+ *   En el aire subiendo (con input X)  → play("jump_to_walk")
+ *   En el suelo parado                 → play("idle"), flipH = según última dirección
+ *   En el suelo moviendose dcha        → play("walk_right"), flipH = false
+ *   En el suelo moviendose izda        → play("walk_right"), flipH = true
  *
  * El flip se aplica sobre el SpriteRenderer vía setFlipH(). Este método
  * actualiza el TransformData internamente y propaga el cambio en el siguiente
  * render a través de SpriteDrawer → FlipStrategy.
  *
+ * ── TRANSICIONES SUAVES ───────────────────────────────────────────────────
+ * Las animaciones *_to_walk reproducen los primeros frames de jumping/falling
+ * una vez, luego transicionan a los frames de loop de walking. Esto crea una
+ * transición visual fluida cuando el jugador tiene input horizontal en el aire.
+ *
  * ── PRIORIDAD DE ANIMACIONES ─────────────────────────────────────────────
  * La prioridad de las animaciones es:
  *   1. Falling (cayendo: velocityY > 0.5 y no en el suelo)
+ *      - Sin input X: "falling" (loop puro)
+ *      - Con input X: "fall_to_walk" (transición suave)
  *   2. Jumping (saltando: velocityY < -0.5 y no en el suelo)
+ *      - Sin input X: "jumping" (loop puro)
+ *      - Con input X: "jump_to_walk" (transición suave)
  *   3. Walk (moviéndose en el suelo: |velocityX| > 0.5 y en el suelo)
  *   4. Idle (parado: ninguna de las anteriores)
  *
@@ -82,19 +93,34 @@ public class PlayerRenderer extends Component {
         // Detectar si el jugador está en el aire y qué dirección vertical tiene
         
         if (!onGround) {
+            // Detectar si hay input/movimiento horizontal
+            boolean hasHorizontalMovement = Math.abs(velocityX) > 0.5;
+            
             // Subiendo (velocidad Y negativa = hacia arriba en coordenadas de pantalla)
             if (velocityY < -0.5) {
-                animController.play("jumping");
+                // Con movimiento horizontal: usar transición suave a walking
+                if (hasHorizontalMovement) {
+                    animController.play("jump_to_walk");
+                } else {
+                    // Sin movimiento horizontal: animación de salto pura
+                    animController.play("jumping");
+                }
             } 
             // Cayendo (velocidad Y positiva = hacia abajo en coordenadas de pantalla)
             else if (velocityY > 0.5) {
-                animController.play("falling");
+                // Con movimiento horizontal: usar transición suave a walking
+                if (hasHorizontalMovement) {
+                    animController.play("fall_to_walk");
+                } else {
+                    // Sin movimiento horizontal: animación de caída pura
+                    animController.play("falling");
+                }
             }
             // Punto exacto del apex (velocidad Y ≈ 0): mantener última animación
             // para evitar flickering entre jumping/falling
             
             // Actualizar flip horizontal basado en dirección de movimiento horizontal
-            if (Math.abs(velocityX) > 0.5 && spriteRenderer != null) {
+            if (hasHorizontalMovement && spriteRenderer != null) {
                 boolean goingRight = velocityX > 0;
                 spriteRenderer.setFlipH(!goingRight);
             }

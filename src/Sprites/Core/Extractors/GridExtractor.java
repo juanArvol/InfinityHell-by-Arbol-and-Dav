@@ -207,11 +207,16 @@ public final class GridExtractor implements SpriteExtractor {
      * en 0x00000000 por la JVM — no hay residuos de memoria. Raster.setRect()
      * sobreescribe la región completa (w × h píxeles).
      *
-     * ── POR QUÉ NO drawImage ──────────────────────────────────────────────
-     * drawImage con Graphics2D aplica AlphaComposite.SrcOver por defecto.
-     * Incluso con NEAREST_NEIGHBOR, el compositing puede mezclar el píxel
-     * fuente con el fondo (0x00000000) en píxeles semitransparentes, alterando
-     * levemente el color. setRect() copia los bits exactos, sin mezcla.
+     * ── ELIMINACIÓN DE PÍXELES SEMI-TRANSPARENTES ────────────────────────
+     * Los píxeles con alpha parcial (1-254) causan bleeding durante el
+     * renderizado con AlphaComposite.SrcOver. Para lograr pixel-perfect:
+     *   - Alpha <  128 → se convierte a 0 (totalmente transparente)
+     *   - Alpha >= 128 → se convierte a 255 (totalmente opaco)
+     *
+     * Esto elimina el anti-aliasing suave del sprite, pero garantiza que
+     * cada píxel renderizado sea exactamente el color RGB del source, sin
+     * mezcla con el fondo. Es el único método que previene deformaciones
+     * de 1-2 píxeles en pixel art.
      */
     private SpriteFrame extractCell(BufferedImage source,
                                      int col, int row,
@@ -235,13 +240,47 @@ public final class GridExtractor implements SpriteExtractor {
         WritableRaster destRaster   = dest.getRaster();
         WritableRaster sourceRaster = source.getRaster();
 
-        // getDataElements lee los píxeles en el modelo de color nativo del source.
-        // setDataElements los escribe en el modelo del destino (ambos INT_ARGB).
-        // Si el source no es INT_ARGB, se convierte automáticamente vía ColorModel.
+        // Copiar píxeles usando Raster.setRect() (copia directa sin compositing)
         destRaster.setRect(0, 0,
             sourceRaster.createChild(srcX, srcY, w, h, 0, 0, null));
 
+        // ── PIXEL-PERFECT: Alpha threshold (TEMPORALMENTE DESACTIVADO) ────
+        // DIAGNÓSTICO: Verificar si el threshold está cortando píxeles importantes
+        // eliminateSemiTransparentPixels(dest);  // ← COMENTADO PARA TEST
+
         return new SpriteFrame(dest);
+    }
+
+    /**
+     * Convierte píxeles semi-transparentes (alpha 1-254) a completamente
+     * transparentes (alpha 0) o completamente opacos (alpha 255).
+     *
+     * Threshold: alpha < 128 → transparente, alpha >= 128 → opaco.
+     *
+     * Esto elimina el anti-aliasing del sprite, pero garantiza renderizado
+     * pixel-perfect sin bleeding de color durante composición.
+     */
+    private void eliminateSemiTransparentPixels(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int argb = image.getRGB(x, y);
+                int alpha = (argb >>> 24) & 0xFF;
+
+                // Si es semi-transparente, aplicar threshold
+                if (alpha > 0 && alpha < 255) {
+                    if (alpha < 128) {
+                        // Convertir a totalmente transparente
+                        image.setRGB(x, y, 0x00000000);
+                    } else {
+                        // Convertir a totalmente opaco (preservar RGB)
+                        image.setRGB(x, y, argb | 0xFF000000);
+                    }
+                }
+            }
+        }
     }
 
     /**

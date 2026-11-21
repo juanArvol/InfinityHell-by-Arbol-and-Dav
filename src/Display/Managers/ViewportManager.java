@@ -3,7 +3,6 @@ package Display.Managers;
 import Display.Settings.ScalingMode;
 import Display.ViewportCalculator;
 import Display.ViewportInfo;
-
 import java.awt.Color;
 
 /**
@@ -36,7 +35,7 @@ public final class ViewportManager {
 
     private int       virtualWidth;
     private int       virtualHeight;
-    private final ScalingMode scalingMode;
+    private ScalingMode scalingMode;
     private Color     fillColor;
 
     /** Últimas dimensiones reales conocidas. Inicializadas con la resolución virtual. */
@@ -127,6 +126,20 @@ public final class ViewportManager {
         );
     }
 
+    /**
+     * Cambia el modo de escalado y fuerza recálculo del viewport.
+     * EDT únicamente.
+     */
+    public void setScalingMode(ScalingMode mode) {
+        if (mode == null || mode == this.scalingMode) return;
+        this.scalingMode = mode;
+        currentViewport = ViewportCalculator.calculate(
+            virtualWidth, virtualHeight,
+            lastRealWidth, lastRealHeight,
+            scalingMode, fillColor
+        );
+    }
+
     /** Viewport actual. Inmutable, seguro compartir entre threads. */
     public ViewportInfo getViewport() { return currentViewport; }
 
@@ -134,4 +147,6 @@ public final class ViewportManager {
     public int getVirtualWidth()  { return virtualWidth;  }
     /** Alto virtual actual. */
     public int getVirtualHeight() { return virtualHeight; }
+    /** Modo de escalado actual. */
+    public ScalingMode getScalingMode() { return scalingMode; }
 }

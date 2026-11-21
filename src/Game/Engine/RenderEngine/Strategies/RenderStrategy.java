@@ -77,6 +77,11 @@ public interface RenderStrategy {
      * pivotScreenX/Y: coordenadas absolutas del pivot en pantalla,
      * calculadas a partir de screenX/Y + renderSize * pivotNormalized.
      * Usadas por FlipStrategy, ScaleStrategy y RotationStrategy.
+     * 
+     * ── PIXEL-PERFECT: Float pivot coordinates ────────────────────────────
+     * Los pivots se calculan como float para permitir precisión sub-pixel
+     * en el cálculo, pero luego se redondean en las Strategy para garantizar
+     * que las transformaciones se aplican en coordenadas enteras.
      */
     record DrawContext(
         /** Posición X final en pantalla (incluye offsetX del TransformData). */
@@ -95,16 +100,22 @@ public interface RenderStrategy {
         /**
          * Posición X absoluta del pivot en pantalla.
          * screenX + renderWidth * pivotX (normalizado).
+         * 
+         * ── PIXEL-PERFECT: Retorna float para permitir cálculo preciso ────
+         * Las Strategy lo redondearán a int antes de aplicar transformaciones.
          */
-        public int pivotScreenX() {
-            return screenX + (int)(renderWidth * transform.pivotX);
+        public float pivotScreenX() {
+            return screenX + (renderWidth * transform.pivotX);
         }
 
         /**
          * Posición Y absoluta del pivot en pantalla.
+         * 
+         * ── PIXEL-PERFECT: Retorna float para permitir cálculo preciso ────
+         * Las Strategy lo redondearán a int antes de aplicar transformaciones.
          */
-        public int pivotScreenY() {
-            return screenY + (int)(renderHeight * transform.pivotY);
+        public float pivotScreenY() {
+            return screenY + (renderHeight * transform.pivotY);
         }
     }
 }

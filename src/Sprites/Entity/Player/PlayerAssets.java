@@ -22,6 +22,17 @@ import Sprites.Entity.Player.Animations.PlayerWalkingAssets;
  * NO contiene paths hardcodeados. Los loaders específicos encapsulan la
  * carga de cada spritesheet con responsabilidad única.
  *
+ * ── DIMENSIONES CENTRALIZADAS ────────────────────────────────────────────
+ * TODOS los frames del jugador comparten las mismas dimensiones por defecto.
+ * Estos valores son la "fuente única de verdad" para el tamaño de los sprites.
+ *
+ * Si en el futuro cambias el tamaño de los sprites del jugador (ej: de 15×24
+ * a 32×48), SOLO necesitas cambiar estos valores aquí. Todos los loaders
+ * específicos (idle, walking, jumping, falling) los usarán automáticamente.
+ *
+ * En casos excepcionales donde un spritesheet específico tenga dimensiones
+ * diferentes, el loader individual puede sobreescribir estos valores.
+ *
  * ── LOADERS ESPECIALIZADOS ───────────────────────────────────────────────
  *   - PlayerIdleAssets.loadIdleAnimation()
  *   - PlayerWalkingAssets.loadWalkAnimation()
@@ -61,6 +72,40 @@ import Sprites.Entity.Player.Animations.PlayerWalkingAssets;
  */
 public final class PlayerAssets {
 
+    // ══════════════════════════════════════════════════════════════════════
+    // DIMENSIONES GLOBALES DEL JUGADOR
+    // ══════════════════════════════════════════════════════════════════════
+    
+    /**
+     * Ancho de cada frame del jugador en píxeles.
+     * 
+     * FUENTE ÚNICA DE VERDAD: Todos los spritesheets del jugador (idle, walking,
+     * jumping, falling) usan este valor por defecto.
+     * 
+     * Cambiar este valor actualiza automáticamente todas las animaciones.
+     * 
+     * VALOR ACTUAL: 15 px (tamaño original de los sprites)
+     * 
+     * Para cambiar el tamaño de TODOS los sprites del jugador:
+     *   1. Actualiza este valor (ej: 32)
+     *   2. Actualiza FRAME_HEIGHT si es necesario
+     *   3. Recompila
+     *   4. ¡Listo! Todas las animaciones usarán el nuevo tamaño.
+     */
+    public static final int FRAME_WIDTH = 32;
+    
+    /**
+     * Alto de cada frame del jugador en píxeles.
+     * 
+     * FUENTE ÚNICA DE VERDAD: Todos los spritesheets del jugador (idle, walking,
+     * jumping, falling) usan este valor por defecto.
+     * 
+     * Cambiar este valor actualiza automáticamente todas las animaciones.
+     * 
+     * VALOR ACTUAL: 24 px (tamaño original de los sprites)
+     */
+    public static final int FRAME_HEIGHT = 48;
+
     /**
      * Handle principal del jugador.
      * Contiene todas las animaciones: idle, walk_right
@@ -91,12 +136,20 @@ public final class PlayerAssets {
             return;
         }
 
+        // ── Crear animaciones con transición a walking ────────────────────
+        // Estas animaciones combinan los frames de jumping/falling con los
+        // frames de walking para crear transiciones suaves cuando hay input horizontal
+        Animation jumpToWalkAnim = PlayerJumpingAssets.loadJumpingToWalkAnimation();
+        Animation fallToWalkAnim = PlayerFallingAssets.loadFallingToWalkAnimation();
+
         // ── Definición completa ───────────────────────────────────────────
         SpriteDefinition def = new SpriteDefinition(defaultFrame)
-            .addAnimation("idle",       idleAnim)
-            .addAnimation("walk_right", walkAnim)
-            .addAnimation("jumping",    jumpingAnim)
-            .addAnimation("falling",    fallingAnim);
+            .addAnimation("idle",           idleAnim)
+            .addAnimation("walk_right",     walkAnim)
+            .addAnimation("jumping",        jumpingAnim)
+            .addAnimation("falling",        fallingAnim)
+            .addAnimation("jump_to_walk",   jumpToWalkAnim)
+            .addAnimation("fall_to_walk",   fallToWalkAnim);
         
         // Nota: "walk_left" no existe — PlayerRenderer aplica flipH=true
 
@@ -104,6 +157,6 @@ public final class PlayerAssets {
         handle = new SpriteHandle(def, "player");
         AssetRegistry.getInstance().register("player", handle);
 
-        System.out.println("[PlayerAssets] Carga completa: idle, walk, jump, fall");
+        System.out.println("[PlayerAssets] Carga completa: idle, walk, jump, fall (+ transiciones)");
     }
 }

@@ -15,14 +15,14 @@ public class WeaponEscopeta extends WeaponComport {
 
     public WeaponEscopeta() {
         super(new WeaponStats(
-            1.0, // cooldown en segundos
-            12, // balas por disparo
+            0, // cooldown en segundos
+            3, // balas por disparo
             35, // spread
             17, // daño
             200 // velocidad en units/s (200 × 30)
             ),
         new AutoMode(),
-        12, 
+        1200, 
         5,
         "Gun.wav");
     }

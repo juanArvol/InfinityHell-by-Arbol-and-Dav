@@ -134,7 +134,7 @@ public class Player extends MovingObjects implements EntityInfoProvider {
            Game.Gameplay.UI.Aim.AimCapabilityManager aimCapabilities,
            Game.Engine.GameEventBus eventBus) {
 
-        super(spawn, PlayerAssets.handle, physics, SizeSyncMode.NONE);
+        super(spawn, PlayerAssets.handle, physics, SizeSyncMode.COLLIDER_TO_SPRITE);
 
         this.entityStats      = entityStats;
         this.runtimeStats     = runtimeStats;

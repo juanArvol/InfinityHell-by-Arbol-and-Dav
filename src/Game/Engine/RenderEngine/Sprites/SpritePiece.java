@@ -265,9 +265,9 @@ public final class SpritePiece implements Renderable {
 
         if (rw <= 0 || rh <= 0) return;
 
-        // Posición en pantalla
-        int screenX = (int)(baseWorldX - camera.getX()) + offsetX;
-        int screenY = (int)(baseWorldY - camera.getY()) + offsetY;
+        // Posición en pantalla (PIXEL-PERFECT v3.3: Floor en Y)
+        int screenX = smartRound(baseWorldX - camera.getX()) + offsetX;
+        int screenY = smartFloor(baseWorldY - camera.getY()) + offsetY;  // ⭐ FLOOR
 
         // Aplicar offset del TransformData
         if (transform.hasOffset()) {
@@ -346,5 +346,21 @@ public final class SpritePiece implements Renderable {
     private SpriteFrame resolveFrame() {
         if (currentFrame != null && currentFrame.isValid()) return currentFrame;
         return (handle != null && handle.isValid()) ? handle.resolveDefault() : null;
+    }
+    
+    /** Redondeo v3.5 - threshold 0.5 */
+    private static int smartRound(double value) {
+        double rounded = Math.round(value);
+        double diff = Math.abs(value - rounded);
+        if (diff < 0.5) return (int) rounded;
+        return (int) Math.round(value);
+    }
+    
+    /** Floor v3.5 - threshold 0.5 */
+    private static int smartFloor(double value) {
+        int floor = (int) Math.floor(value);
+        double diff = value - floor;
+        if (diff < 0.5) return floor;
+        return (int) Math.floor(value);
     }
 }

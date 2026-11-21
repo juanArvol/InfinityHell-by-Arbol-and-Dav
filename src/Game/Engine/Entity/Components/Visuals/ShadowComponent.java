@@ -53,8 +53,9 @@ public class ShadowComponent extends Component implements Renderable {
         double shadowWorldX = t3d.getX();
         double shadowWorldY = t3d.getY(); // sin offset de perspectiva = en el suelo
 
-        int screenX = (int)(shadowWorldX - camera.getX());
-        int screenY = (int)(shadowWorldY - camera.getY());
+        // PIXEL-PERFECT FIX: Redondear en lugar de truncar
+        int screenX = (int)Math.round(shadowWorldX - camera.getX());
+        int screenY = (int)Math.round(shadowWorldY - camera.getY());
 
         // La sombra crece y se desvanece con la altura
         double heightFactor = Math.min(z / 200.0, 1.0); // normalizado a [0, 1]

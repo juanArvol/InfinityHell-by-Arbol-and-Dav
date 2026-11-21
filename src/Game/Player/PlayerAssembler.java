@@ -313,8 +313,13 @@ public final class PlayerAssembler {
         // ── 9. Collision y Rendering ──────────────────────────────────────
         ColliderComponent collider = player.getComponent(ColliderComponent.class);
         if (collider != null) {
+            // Configurar perfil de colisión del jugador
             collider.setProfile(CollisionProfile.PLAYER);
-            collider.setSize(COLLIDER_W, COLLIDER_H);
+            
+            // Configurar offset del collider
+            // NOTA: El tamaño se obtiene automáticamente del sprite porque
+            // Player usa SizeSyncMode.COLLIDER_TO_SPRITE en su constructor.
+            // El offset SÍ se puede configurar independientemente.
             collider.setOffset(COLLIDER_OX, COLLIDER_OY);
         }
 

@@ -100,8 +100,8 @@ public final class SurfacePublisher implements RenderGateway {
      */
     private final WindowReadinessGate gate = new WindowReadinessGate();
 
-    private final ScalingMode scalingMode;
-    private final boolean     useInterpolation;
+    private ScalingMode scalingMode;
+    private boolean     useInterpolation;
 
     /**
      * Callback para encolar RecreateBufferStrategy cuando el GameLoop detecta
@@ -360,5 +360,37 @@ public final class SurfacePublisher implements RenderGateway {
         } catch (Exception e) {
             LOG.warning("SurfacePublisher: onRecoveryNeeded callback threw: " + e.getMessage());
         }
+    }
+
+    // ── Public setters/getters for dynamic configuration ──────────────────────
+
+    /**
+     * Changes the scaling mode. Used when user changes settings.
+     * Requires surface rebuild to take effect.
+     */
+    public void setScalingMode(ScalingMode mode) {
+        this.scalingMode = mode;
+    }
+
+    /**
+     * Changes the interpolation setting. Used when user changes settings.
+     * Requires surface rebuild to take effect.
+     */
+    public void setUseInterpolation(boolean useInterpolation) {
+        this.useInterpolation = useInterpolation;
+    }
+
+    /**
+     * Returns the current scaling mode.
+     */
+    public ScalingMode getScalingMode() {
+        return scalingMode;
+    }
+
+    /**
+     * Returns the current interpolation setting.
+     */
+    public boolean isUseInterpolation() {
+        return useInterpolation;
     }
 }

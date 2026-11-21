@@ -3,13 +3,16 @@ package Main;
 import Display.Background.SolidColorBackground;
 import Display.Managers.DisplayManager;
 import Display.Settings.DisplaySettings;
+import Display.Settings.ResolutionManager;
 import Display.Settings.ScalingMode;
+import Display.State.Resolution;
 import Inputs.KeyBoard;
 import Inputs.Listeners.KeyActionListener;
 import Inputs.MouseInput;
 import Main.Debug.DebugGameSettings;
 import Main.States.GameState;
 import Main.States.IdleState;
+import Main.States.SettingsState;
 import Main.States.StateManager;
 import Sprites.Assets;
 import java.awt.Color;
@@ -69,9 +72,13 @@ import java.awt.Color;
  */
 public class GameOrquester {
 
-    private DisplayManager display;
-    private GameLoop       loop;
-    private StateManager   stateManager;
+    private DisplayManager     display;
+    private GameLoop           loop;
+    private StateManager       stateManager;
+    private ResolutionManager  resolutionManager;
+    private KeyBoard           keyBoard;    // For SettingsState
+    private MouseInput         mouseInput;  // For SettingsState
+    private GameState          gameState;  // Referencia para volver del SettingsState
 
     public void start() {
 
@@ -81,17 +88,30 @@ public class GameOrquester {
         // ── 2. Input ──────────────────────────────────────────────────────────
         KeyBoard   keyboard = new KeyBoard();
         MouseInput mouse    = new MouseInput();
+        this.keyBoard = keyboard;  // Store for later use
+        this.mouseInput = mouse;   // Store for later use
 
         KeyBoard.setActiveInstance(keyboard);
         MouseInput.setActiveInstance(mouse);
 
-        // ── 3. Display ────────────────────────────────────────────────────────
+        // ── 3. Resolution Manager ─────────────────────────────────────────────
+        // Crear ANTES del DisplayManager para pasarlo en el constructor
+        ResolutionManager resolutionManager = new ResolutionManager(
+            new Resolution(1280, 720),  // Resolución inicial fullscreen
+            new Resolution(1280, 720)   // Resolución inicial windowed
+        );
+
+        // ── 4. Display ────────────────────────────────────────────────────────
         DisplaySettings settings = DisplaySettings.builder()
             .virtualResolution(1280, 720)
             .windowTitle("Infinity Hell")
             .windowedSize(1280, 720)
             .startFullscreen(true)
             .monitorIndex(0)
+            // ScalingMode.FIT: Escala el juego para que quepa completamente en la ventana
+            // manteniendo el aspect ratio. Agrega barras de letterbox/pillarbox si es necesario.
+            // Cuando la ventana es más pequeña que la resolución virtual, el juego se escala
+            // proporcionalmente para mostrarse completo, no se recorta.
             .scalingMode(ScalingMode.FIT)
             .useInterpolation(false)
             .targetFps(0)
@@ -99,26 +119,27 @@ public class GameOrquester {
             .background(SolidColorBackground.WHITE)
             .build();
 
-        display = new DisplayManager(settings);
+        display = new DisplayManager(settings, resolutionManager);
+        this.resolutionManager = resolutionManager;
 
-        // ── 4. Conectar viewport al mouse ─────────────────────────────────────
+        // ── 5. Conectar viewport al mouse ─────────────────────────────────────
         display.addResizeListener((realW, realH, viewport) ->
             mouse.setViewport(viewport)
         );
 
-        // ── 5. Inicializar display ────────────────────────────────────────────
+        // ── 6. Inicializar display ────────────────────────────────────────────
         display.init(keyboard, mouse, mouse, mouse, keyboard);
 
         // Viewport inicial
         mouse.setViewport(display.getViewport());
 
-        // ── 6. Game State ─────────────────────────────────────────────────────
-        GameState gameState = new GameState(
+        // ── 7. Game State ─────────────────────────────────────────────────────
+        gameState = new GameState(
             display.getVirtualWidth(),
             display.getVirtualHeight()
         );
 
-        // ── 7. State Manager ──────────────────────────────────────────────────
+        // ── 8. State Manager ──────────────────────────────────────────────────
         // ── HRFC-DT-003: StateManager gestiona estados del juego ──────────────
         stateManager = new StateManager(mouse);
 
@@ -135,13 +156,32 @@ public class GameOrquester {
             stateManager.onVirtualDimensionsChanged(w, h)
         );
 
-        // ── 8. Listeners de teclado ───────────────────────────────────────────
+        // ── 9. Listeners de teclado ───────────────────────────────────────────
         keyboard.addKeyActionListener((KeyActionListener) action -> {
             switch (action) {
                 case "toggleFullscreen" ->
                     display.requestToggleFullscreen();
                 case "toggleFps" ->
                     DebugGameSettings.getInstance().toggleFps();
+                // ── Settings State con F4 (TOGGLE) ───────────────────────────
+                case "openSettings" -> {
+                    // F4 ahora es TOGGLE: abre O cierra el menú
+                    if (stateManager.getActiveState() instanceof SettingsState) {
+                        closeSettingsMenu();
+                    } else {
+                        openSettingsMenu();
+                    }
+                }
+                // ── ESC también es TOGGLE para settings ───────────────────────
+                case "pause" -> {
+                    // ESC también abre/cierra el menú de settings (igual que F4)
+                    if (stateManager.getActiveState() instanceof SettingsState) {
+                        closeSettingsMenu();
+                    } else if (stateManager.getActiveState() instanceof GameState) {
+                        openSettingsMenu();
+                    }
+                    // En otros estados (IdleState), no hacer nada
+                }
                 // ── HRFC-DT-003: Prueba arquitectónica de cambio de estado ───
                 case "toggleIdleState" -> {
                     // Demostración de transición entre estados
@@ -160,7 +200,7 @@ public class GameOrquester {
             }
         });
 
-        // ── 9. Game Loop ──────────────────────────────────────────────────────
+        // ── 10. Game Loop ─────────────────────────────────────────────────────
         // ── HRFC-DT-003: GameLoop recibe StateManager, no GameState ──────────
         loop = new GameLoop(
             display.getRenderGateway(),
@@ -172,7 +212,7 @@ public class GameOrquester {
 
         loop.start();
 
-        // ── 10. Shutdown al cerrar la ventana ─────────────────────────────────
+        // ── 11. Shutdown al cerrar la ventana ─────────────────────────────────
         // addWindowCloseListener encapsula el registro dentro del subsistema
         // Display, sin exponer el JFrame hacia GameOrquester.
         // El callback para el GameLoop y para disposeWindow() son la
@@ -206,5 +246,24 @@ public class GameOrquester {
         
         // Liberar recursos de assets (audio e imágenes)
         Assets.shutdown();
+    }
+    
+    // ── Settings Menu ─────────────────────────────────────────────────────
+    
+    private void openSettingsMenu() {
+        SettingsState settingsState = new SettingsState(
+            display,
+            resolutionManager,
+            keyBoard,
+            mouseInput,
+            this::closeSettingsMenu
+        );
+        
+        stateManager.setState(settingsState);
+    }
+    
+    private void closeSettingsMenu() {
+        // Volver al GameState
+        stateManager.setState(gameState);
     }
 }

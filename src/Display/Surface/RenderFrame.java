@@ -413,28 +413,53 @@ public final class RenderFrame {
     /**
      * Copia el framebuffer virtual al contexto de pantalla aplicando la
      * transformación de escala y las áreas de relleno.
+     * 
+     * ── PIXEL-PERFECT v3.0: Escalador manual para factores no-enteros ──────
+     * Usa PixelPerfectScaler en lugar de AffineTransform para garantizar
+     * que no hay interpolación de píxeles, incluso con factores no-enteros.
      */
     private void blitFramebuffer(Graphics2D screenG) {
         ViewportInfo vp = surface.getViewport();
         int vw = surface.getVirtualWidth();
         int vh = surface.getVirtualHeight();
 
+        // Pintar áreas de relleno (letterbox/pillarbox)
         for (var area : vp.fillAreas) {
             area.paint(screenG);
         }
 
-        AffineTransform saved = screenG.getTransform();
-        applyScalingHints(screenG);
-
         if (scalingMode == ScalingMode.STRETCH) {
+            // STRETCH mode: no pixel-perfect, usar scaling directo
+            AffineTransform saved = screenG.getTransform();
+            applyScalingHints(screenG);
             screenG.scale((double) vp.realWidth / vw, (double) vp.realHeight / vh);
+            screenG.drawImage(surface.getFramebuffer(), 0, 0, null);
+            screenG.setTransform(saved);
         } else {
-            screenG.translate(vp.x, vp.y);
-            screenG.scale(vp.scale, vp.scale);
+            // ⭐ PIXEL-PERFECT: Detectar si el scale es entero
+            float scale = vp.scale;
+            boolean isIntegerScale = (Math.abs(scale - Math.round(scale)) < 0.001f);
+            
+            if (isIntegerScale) {
+                // Fast path: escalado entero, usar método optimizado
+                PixelPerfectScaler.blitIntegerScale(
+                    screenG,
+                    surface.getFramebuffer(),
+                    vp.x, vp.y,
+                    Math.round(scale)
+                );
+            } else {
+                // ⭐ CRITICAL: Escalado no-entero → usar pixel-perfect scaler
+                // Esto evita completamente sub-pixel positioning y garantiza
+                // NEAREST_NEIGHBOR puro sin interpolación
+                PixelPerfectScaler.blit(
+                    screenG,
+                    surface.getFramebuffer(),
+                    vp.x, vp.y,
+                    vp.width, vp.height
+                );
+            }
         }
-
-        screenG.drawImage(surface.getFramebuffer(), 0, 0, null);
-        screenG.setTransform(saved);
     }
 
     private void applyRenderHints(Graphics2D g) {
@@ -443,9 +468,31 @@ public final class RenderFrame {
             g.setRenderingHint(RenderingHints.KEY_RENDERING,     RenderingHints.VALUE_RENDER_QUALITY);
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         } else {
+            // ── PIXEL-PERFECT v9.0: Rendering Hints Correcto ──────────────────
+            // PROBLEMA ANTERIOR:
+            //   VALUE_STROKE_NORMALIZE causaba que Java "ajustara" las coordenadas
+            //   a la grid de píxeles, pero esto puede causar desplazamientos de
+            //   sub-píxel que deforman sprites de 1-2 píxeles.
+            //
+            // SOLUCIÓN:
+            //   VALUE_STROKE_PURE garantiza que las coordenadas se usan EXACTAMENTE
+            //   como se pasan, sin ningún ajuste ni normalización.
+            //
+            // Conjunto completo de hints para rendering sin suavizado
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,  RenderingHints.VALUE_ANTIALIAS_OFF);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,     RenderingHints.VALUE_RENDER_SPEED);
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            // ⭐ CRÍTICO: PURE garantiza coordenadas exactas sin ajustes
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_SPEED);
+            // Deshabilitar dithering (puede causar patrones no deseados en pixel-art)
+            g.setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_DISABLE);
+            // Usar precision exacta de color (sin aproximaciones)
+            g.setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_SPEED);
+            // Deshabilitar text antialiasing (puede afectar sprites con texto)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
+            // Deshabilitar fractional metrics (mantener píxeles enteros)
+            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
         }
     }
 
@@ -454,8 +501,23 @@ public final class RenderFrame {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,     RenderingHints.VALUE_RENDER_QUALITY);
         } else {
+            // ── PIXEL-PERFECT v9.0: Hints CONSISTENTES con applyRenderHints() ──
+            // PROBLEMA ANTERIOR:
+            //   applyScalingHints() usaba STROKE_NORMALIZE mientras que
+            //   applyRenderHints() usaba STROKE_PURE. Esta inconsistencia
+            //   causaba que diferentes partes del pipeline tuvieran comportamiento
+            //   diferente, introduciendo artefactos de renderizado.
+            //
+            // SOLUCIÓN:
+            //   Ambos métodos ahora usan STROKE_PURE para garantizar que
+            //   TODAS las coordenadas se respeten exactamente sin ajustes.
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             g.setRenderingHint(RenderingHints.KEY_RENDERING,     RenderingHints.VALUE_RENDER_SPEED);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,  RenderingHints.VALUE_ANTIALIAS_OFF);
+            // ⭐ CRÍTICO: PURE (no NORMALIZE) para consistencia
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+            g.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_SPEED);
+            g.setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_DISABLE);
         }
     }
 }

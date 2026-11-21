@@ -153,15 +153,31 @@ public final class AssetOptimizer {
     // ══════════════════════════════════════════════════════════════════════
 
     /**
-     * Redimensiona una imagen con interpolación de alta calidad.
+     * Redimensiona una imagen con interpolación pixel-perfect.
+     * 
+     * PIXEL-PERFECT v8.0: Nearest Neighbor para preservar bordes nítidos
+     * 
+     * Para pixel art, BICUBIC y ANTIALIASING causan blur (desenfoque).
+     * NEAREST_NEIGHBOR preserva cada píxel sin suavizado.
+     * 
+     * Este método se usa cuando AssetOptimizer downscalea imágenes >512px.
+     * Actualmente solo afecta imágenes individuales, NO spritesheets.
      */
     private static BufferedImage resize(BufferedImage original, int newWidth, int newHeight) {
         BufferedImage resized = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = resized.createGraphics();
         try {
-            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            // PIXEL-PERFECT: Nearest neighbor sin suavizado
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, 
+                RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, 
+                RenderingHints.VALUE_RENDER_SPEED);
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, 
+                RenderingHints.VALUE_ANTIALIAS_OFF);
+            g.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION,
+                RenderingHints.VALUE_ALPHA_INTERPOLATION_SPEED);
+            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,
+                RenderingHints.VALUE_STROKE_PURE);
             g.drawImage(original, 0, 0, newWidth, newHeight, null);
         } finally {
             g.dispose();

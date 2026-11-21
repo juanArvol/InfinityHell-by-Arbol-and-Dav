@@ -199,10 +199,11 @@ public final class DisplayReconfigurationPipeline
     public void execute(DisplayCommand command) {
         assertEDT();
         switch (command) {
-            case DisplayCommand.ResizeCanvas rc       -> { executeResize(rc);           return; }
-            case DisplayCommand.SuspendRendering s    -> { executeSuspend(s);           return; }
-            case DisplayCommand.ResumeRendering r     -> { executeResume(r);            return; }
-            case DisplayCommand.ChangeBackground cb   -> { executeChangeBackground(cb); return; }
+            case DisplayCommand.ResizeCanvas rc        -> { executeResize(rc);              return; }
+            case DisplayCommand.SuspendRendering s     -> { executeSuspend(s);              return; }
+            case DisplayCommand.ResumeRendering r      -> { executeResume(r);               return; }
+            case DisplayCommand.ChangeBackground cb    -> { executeChangeBackground(cb);    return; }
+            case DisplayCommand.ChangeResolution cr    -> { executeChangeResolution(cr);    return; }
             default -> {}
         }
         executeFullPipeline(command);
@@ -235,6 +236,49 @@ public final class DisplayReconfigurationPipeline
         this.background = cmd.background();
         surfacePublisher.publishBackground(this.background);
         LOG.info("Pipeline: background changed to " + cmd.background());
+    }
+
+    // ── ChangeResolution ──────────────────────────────────────────────────────
+
+    /**
+     * Actualiza la resolución virtual sin reconstruir la BufferStrategy.
+     *
+     * Actualiza los campos mutables de virtualWidth/Height en SurfaceBuilder
+     * y ViewportManager para que la próxima construcción de surface use las
+     * nuevas dimensiones. La BS actual sigue funcionando con el framebuffer
+     * existente hasta que se produzca una reconstrucción por otro motivo
+     * (resize manual, toggle fullscreen, etc.).
+     *
+     * Notifica a los listeners registrados (GameCamera, WorldManager, GameState)
+     * de la nueva resolución virtual.
+     *
+     * EN MODO WINDOWED: opcionalmente redimensiona la ventana al tamaño de la
+     * nueva resolución. Esto permite que el menú de settings ofrezca tamaños
+     * predefinidos. El resize manual (arrastrar bordes) sigue funcionando
+     * independientemente y NO cambia la resolución virtual.
+     *
+     * EDT únicamente.
+     */
+    private void executeChangeResolution(DisplayCommand.ChangeResolution cmd) {
+        int newW = cmd.resolution().width;
+        int newH = cmd.resolution().height;
+
+        // Actualizar resolución virtual en SurfaceBuilder y ViewportManager
+        surfaceBuilder.onVirtualResolutionChanged(newW, newH);
+        viewportManager.onVirtualResolutionChanged(newW, newH);
+
+        // Notificar a los listeners registrados
+        onVirtualResolutionChanged.accept(newW, newH);
+
+        LOG.info("Pipeline: virtual resolution changed to " + cmd.resolution());
+
+        // En modo windowed, redimensionar la ventana para que coincida con la resolución
+        // Esto provoca un ResizeCanvas que reconstruirá la surface con las nuevas dimensiones
+        DisplayMode currentMode = getCurrentState().mode;
+        if (!currentMode.isFullscreen()) {
+            backend.requestResizeWindowedCanvas(newW, newH);
+            LOG.info("Pipeline: windowed canvas resize requested to " + newW + "x" + newH);
+        }
     }
 
     // ── ResumeRendering ───────────────────────────────────────────────────────
@@ -356,6 +400,10 @@ public final class DisplayReconfigurationPipeline
                 LOG.fine("Pipeline: ResizeCanvas — viewport unchanged, gate reopened");
                 return;
             }
+            
+            // NO cambiar la resolución virtual - permanece fija
+            // El viewport se escala para mostrar la resolución virtual en el nuevo tamaño de ventana
+            // Math.round() en ViewportCalculator hace que el escalado sea suave
 
             surfacePublisher.unpublish();
 
@@ -557,16 +605,10 @@ public final class DisplayReconfigurationPipeline
             case DisplayCommand.SetDisplayMode cmd ->
                 applySetDisplayMode(cmd.mode());
 
-            case DisplayCommand.ChangeResolution cmd -> {
-                surfaceBuilder.onVirtualResolutionChanged(
-                    cmd.resolution().width, cmd.resolution().height);
-                viewportManager.onVirtualResolutionChanged(
-                    cmd.resolution().width, cmd.resolution().height);
-                // Notificar a los listeners de resolución virtual registrados
-                // (GameCamera, WorldManager, GameState) para que actualicen
-                // sus cálculos basados en las dimensiones virtuales.
-                onVirtualResolutionChanged.accept(cmd.resolution().width, cmd.resolution().height);
-                LOG.info("Pipeline: virtual resolution changed to " + cmd.resolution());
+            case DisplayCommand.ChangeResolution ignored -> {
+                // ChangeResolution es manejado por executeChangeResolution() antes de
+                // llegar aquí. Si llega a applyRequest(), es un error de programación.
+                throw new IllegalStateException("ChangeResolution should not reach applyRequest()");
             }
 
             case DisplayCommand.ChangeMonitor cmd ->

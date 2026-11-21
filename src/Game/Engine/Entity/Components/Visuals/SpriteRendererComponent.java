@@ -151,26 +151,23 @@ public class SpriteRendererComponent extends Component implements Renderable {
 
     @Override
     public void start() {
-        if (syncMode == SizeSyncMode.NONE) return;
-
-        ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
-        if (col == null) return;
-
-        switch (syncMode) {
-            case COLLIDER_TO_SPRITE -> {
-                int w = renderWidth;
-                int h = renderHeight;
-                if (w > 0 && h > 0) col.setSize(w, h);
-            }
-            case SPRITE_TO_COLLIDER -> {
-                renderWidth  = (int) col.getWidth();
-                renderHeight = (int) col.getHeight();
-            }
-            case SPRITE_TO_COLLIDER_WITH_OFFSET -> {
-                renderWidth  = (int) col.getWidth();
-                renderHeight = (int) col.getHeight();
-                offsetX      = (int) col.getOffsetX();
-                offsetY      = (int) col.getOffsetY();
+        // La sincronización ahora la maneja ColliderComponent directamente
+        // en su método getBounds() cuando syncMode == COLLIDER_TO_SPRITE.
+        // 
+        // Para SPRITE_TO_COLLIDER, necesitamos actualizar el tamaño del renderer
+        // basado en el collider.
+        if (syncMode == SizeSyncMode.SPRITE_TO_COLLIDER || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            
+            ColliderComponent col = gameObject.getComponent(ColliderComponent.class);
+            if (col == null) return;
+            
+            renderWidth  = (int) col.getWidth();
+            renderHeight = (int) col.getHeight();
+            
+            if (syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+                offsetX = (int) col.getOffsetX();
+                offsetY = (int) col.getOffsetY();
             }
         }
     }
@@ -210,11 +207,23 @@ public class SpriteRendererComponent extends Component implements Renderable {
             worldY = pos.getY();
         }
         
-        int x = (int)(worldX - camera.getX()) + offsetX;
-        int y = (int)(worldY - camera.getY()) + offsetY;
+        double screenXDouble = worldX - camera.getX();
+        double screenYDouble = worldY - camera.getY();
+        int x = (int)Math.round(screenXDouble) + offsetX;
+        int y = (int)Math.round(screenYDouble) + offsetY;
 
-        int rw = renderWidth  > 0 ? renderWidth  : imageToDraw.getWidth();
-        int rh = renderHeight > 0 ? renderHeight : imageToDraw.getHeight();
+        SpriteFrame frame = resolveFrame();
+        
+        int rw, rh;
+        if (frame != null && frame.isValid()) {
+            rw = frame.getWidth();
+            rh = frame.getHeight();
+        } else if (imageToDraw != null) {
+            rw = imageToDraw.getWidth();
+            rh = imageToDraw.getHeight();
+        } else {
+            return;
+        }
 
         // Culling: omitir sprites completamente fuera del viewport
         if (!ViewportCuller.isVisibleOnScreen(x, y, rw, rh, virtualWidth, virtualHeight)) {
@@ -222,14 +231,11 @@ public class SpriteRendererComponent extends Component implements Renderable {
         }
 
         // ── FillMode.STRETCH (default) — path original intacto ────────────
-        // SpriteDrawer aplica TransformData completo. Un único drawImage().
         if (fillMode == FillMode.STRETCH) {
-            SpriteFrame frame = resolveFrame();
             if (frame != null && frame.isValid()) {
                 SpriteDrawer.INSTANCE.draw(
                     ctx.getGraphics2D(), frame, x, y, rw, rh, transform, shadowStrategy);
             } else if (imageToDraw != null) {
-                // Legacy: BufferedImage directa sin TransformData
                 ctx.drawImage(imageToDraw, x, y, rw, rh);
             }
             return;
@@ -238,7 +244,6 @@ public class SpriteRendererComponent extends Component implements Renderable {
         // ── FillMode no-STRETCH — FillModeRenderer gestiona la geometría ──
         var g2d = ctx.getGraphics2D();
         if (shadowStrategy != null) {
-            SpriteFrame frame = resolveFrame();
             if (frame != null && frame.isValid()) {
                 var shadowCtx = new Game.Engine.RenderEngine.Strategies.RenderStrategy.DrawContext(
                     x + transform.offsetX, y + transform.offsetY, rw, rh, frame, transform);
@@ -505,6 +510,11 @@ public class SpriteRendererComponent extends Component implements Renderable {
     public double getRotationOffset() {
         return rotationOffset;
     }
+    
+    // ── PIXEL-PERFECT v7.0: smartRound/smartFloor ELIMINADOS ──────────────
+    // Ya no son necesarios porque la cámara hace pixel snapping en commitFrame().
+    // Las conversiones world→screen ya resultan en enteros exactos.
+    // El código anterior los usaba para compensar decimales de la cámara.
 
     // ── Getters ───────────────────────────────────────────────────────────
 

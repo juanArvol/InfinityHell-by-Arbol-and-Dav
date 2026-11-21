@@ -29,13 +29,19 @@ public final class RotationStrategy implements RenderStrategy {
     /**
      * Aplica la transformación de rotación al transform activo del Graphics2D.
      * NO dibuja.
+     * 
+     * ── PIXEL-PERFECT FIX: Integer pivot coordinates ──────────────────────
+     * El pivot se redondea explícitamente para evitar sub-pixel positioning
+     * que causa artefactos de rendering en pixel-art.
      */
     @Override
     public void apply(Graphics2D g, DrawContext ctx) {
         if (!ctx.transform().hasRotation()) return;
 
-        int px = ctx.pivotScreenX();
-        int py = ctx.pivotScreenY();
+        // PIXEL-PERFECT: Redondear pivot a coordenadas enteras
+        // Sub-pixel pivots causan interpolación incluso con NEAREST_NEIGHBOR
+        int px = Math.round(ctx.pivotScreenX());
+        int py = Math.round(ctx.pivotScreenY());
 
         AffineTransform current = g.getTransform();
         AffineTransform at = new AffineTransform(current);

@@ -8,6 +8,8 @@ import Display.Commands.DisplayCommandQueue;
 import Display.Pipeline.DisplayReconfigurationPipeline;
 import Display.ResizeListener;
 import Display.Settings.DisplaySettings;
+import Display.Settings.ResolutionManager;
+import Display.Settings.ScalingMode;
 import Display.State.DisplayMode;
 import Display.State.DisplayState;
 import Display.State.Resolution;
@@ -70,11 +72,14 @@ public final class DisplayManager {
     private final DisplayTransitionMachine     transitionMachine = new DisplayTransitionMachine();
     private final DisplayCommandQueue          commandQueue      = new DisplayCommandQueue();
     private final DisplayReconfigurationPipeline pipeline;
+    private final ResolutionManager            resolutionManager;
 
+    // Resolución virtual FIJA - el viewport escala para mostrarla en cualquier tamaño de ventana
     private final int virtualWidth;
     private final int virtualHeight;
 
     private volatile DisplayState currentState;
+    private volatile ScalingMode currentScalingMode;
 
     /**
      * True una vez que disposeWindow() ha sido invocado.
@@ -93,10 +98,12 @@ public final class DisplayManager {
 
     private final List<ResizeListener> resizeListeners = new CopyOnWriteArrayList<>();
 
-    public DisplayManager(DisplaySettings settings) {
+    public DisplayManager(DisplaySettings settings, ResolutionManager resolutionManager) {
         this.settings     = settings;
         this.virtualWidth  = settings.virtualWidth;
         this.virtualHeight = settings.virtualHeight;
+        this.resolutionManager = resolutionManager;
+        this.currentScalingMode = settings.scalingMode;
 
         // ── Backend (sole AWT contact) ─────────────────────────────────────
         backend = new AwtWindowBackend(settings);
@@ -154,6 +161,7 @@ public final class DisplayManager {
             state -> {
                 currentState = state;
                 notifyResizeListenersIfNeeded(state);
+                updateResolutionManagerOnResize(state);
             },
             () -> enqueue(new DisplayCommand.RecreateBufferStrategy()),
             this::notifyVirtualResolutionChanged
@@ -333,6 +341,68 @@ public final class DisplayManager {
         enqueue(new DisplayCommand.ChangeBackground(bg));
     }
 
+    // ── Cambio de resolución ──────────────────────────────────────────────────
+
+    /**
+     * Cambia la resolución virtual del juego.
+     * 
+     * En fullscreen: aplica la nueva resolución y usa barras de relleno si no coincide
+     * con la resolución nativa del monitor.
+     * 
+     * En windowed: redimensiona la ventana al nuevo tamaño.
+     * 
+     * @param newResolution nueva resolución a aplicar
+     */
+    public void requestChangeResolution(Resolution newResolution) {
+        if (newResolution == null) {
+            LOG.warning("DisplayManager.requestChangeResolution: null resolution ignored");
+            return;
+        }
+        
+        // Actualizar en el ResolutionManager
+        resolutionManager.setResolution(currentState.mode, newResolution);
+        
+        // Encolar comando
+        enqueue(new DisplayCommand.ChangeResolution(newResolution));
+    }
+
+    /**
+     * Cambia el modo de escalado.
+     * 
+     * @param newMode nuevo modo de escalado
+     */
+    public void requestChangeScalingMode(ScalingMode newMode) {
+        if (newMode == null) {
+            LOG.warning("DisplayManager.requestChangeScalingMode: null mode ignored");
+            return;
+        }
+        
+        currentScalingMode = newMode;
+        viewportManager.setScalingMode(newMode);
+        surfacePublisher.setScalingMode(newMode);
+        
+        // Forzar reconstrucción del viewport
+        DisplaySnapshot snapshot = backend.getLastSnapshot();
+        if (snapshot != null && snapshot.hasValidDimensions()) {
+            viewportManager.onResize(snapshot.canvasWidth(), snapshot.canvasHeight());
+            enqueue(new DisplayCommand.RecreateBufferStrategy());
+        }
+    }
+
+    /**
+     * Retorna el ResolutionManager para acceso desde UI.
+     */
+    public ResolutionManager getResolutionManager() {
+        return resolutionManager;
+    }
+
+    /**
+     * Retorna el ScalingMode actual.
+     */
+    public ScalingMode getScalingMode() {
+        return currentScalingMode;
+    }
+
     // ── Estado y snapshot ─────────────────────────────────────────────────────
 
     /** Último DisplayState publicado por el pipeline. Thread-safe (volatile). */
@@ -351,8 +421,21 @@ public final class DisplayManager {
     public DisplaySnapshot getSnapshot() { return backend.getLastSnapshot(); }
 
     public ViewportInfo getViewport()   { return viewportManager.getViewport(); }
-    public int getVirtualWidth()        { return virtualWidth;  }
-    public int getVirtualHeight()       { return virtualHeight; }
+    
+    /**
+     * Retorna el ancho virtual actual desde el SurfaceBuilder.
+     * Este valor puede cambiar cuando se selecciona una resolución desde el menú settings.
+     * NO cambia al redimensionar la ventana manualmente (solo el viewport escala).
+     */
+    public int getVirtualWidth()        { return surfaceBuilder.getVirtualWidth();  }
+    
+    /**
+     * Retorna el alto virtual actual desde el SurfaceBuilder.
+     * Este valor puede cambiar cuando se selecciona una resolución desde el menú settings.
+     * NO cambia al redimensionar la ventana manualmente (solo el viewport escala).
+     */
+    public int getVirtualHeight()       { return surfaceBuilder.getVirtualHeight(); }
+    
     public boolean isFullscreen()       { return fullscreenManager.isFullscreen(); }
     public DisplayMode getMode()        { return fullscreenManager.getCurrentMode(); }
 
@@ -419,5 +502,18 @@ public final class DisplayManager {
                 LOG.warning("ResizeListener threw: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Actualiza el ResolutionManager cuando hay un resize manual de ventana.
+     * Esto permite que el sistema recuerde el tamaño personalizado.
+     */
+    private void updateResolutionManagerOnResize(DisplayState state) {
+        if (state.mode == DisplayMode.WINDOWED) {
+            resolutionManager.onWindowManualResize(state.realWidth, state.realHeight);
+        }
+        
+        // Actualizar el modo actual en el ResolutionManager
+        resolutionManager.setCurrentMode(state.mode);
     }
 }

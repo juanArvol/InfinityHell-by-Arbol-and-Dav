@@ -3,12 +3,12 @@ package Game.Engine;
 import Game.Engine.Entity.Components.Collisions.ColliderComponent;
 import Game.Engine.Entity.Components.Physics2DComponent;
 import Game.Engine.Entity.Components.Visuals.SpriteRendererComponent;
+import Game.Engine.GameMath.Logic2D.RectangleH;
 import Game.Engine.GameMath.Logic2D.Transform2D;
 import Game.Engine.GameMath.Logic2D.Vector2D;
 import Game.Engine.Physics.KineticPhysics.Types.Physics2D;
 import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 import Sprites.Core.SpriteHandle;
-import Game.Engine.GameMath.Logic2D.RectangleH;
 import java.awt.image.BufferedImage;
 
 /**
@@ -77,7 +77,21 @@ public abstract class MovingObjects extends AbstractEntity {
                          Physics2D physics,
                          SizeSyncMode syncMode) {
         getTransform().setPosition(position);
-        addComponent(new ColliderComponent());
+        
+        // Crear ColliderComponent con el modo de sincronización
+        ColliderComponent collider;
+        if (syncMode == SizeSyncMode.NONE) {
+            // Modo manual - collider independiente
+            collider = new ColliderComponent();
+        } else {
+            // Modo sincronizado - el collider conoce su modo
+            collider = new ColliderComponent(syncMode, new Game.Engine.Colisions.Filter.CollisionProfile(
+                Game.Engine.Colisions.Filter.Layer.WORLD, 
+                Game.Engine.Colisions.Filter.Layer.WORLD
+            ));
+        }
+        addComponent(collider);
+        
         addComponent(new SpriteRendererComponent(handle, syncMode));
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
@@ -97,7 +111,21 @@ public abstract class MovingObjects extends AbstractEntity {
                             SizeSyncMode syncMode) {
         super(transform);
         getTransform().setPosition(position);
-        addComponent(new ColliderComponent());
+        
+        // Crear ColliderComponent con el modo de sincronización
+        ColliderComponent collider;
+        if (syncMode == SizeSyncMode.NONE) {
+            // Modo manual - collider independiente
+            collider = new ColliderComponent();
+        } else {
+            // Modo sincronizado - el collider conoce su modo
+            collider = new ColliderComponent(syncMode, new Game.Engine.Colisions.Filter.CollisionProfile(
+                Game.Engine.Colisions.Filter.Layer.WORLD, 
+                Game.Engine.Colisions.Filter.Layer.WORLD
+            ));
+        }
+        addComponent(collider);
+        
         addComponent(new SpriteRendererComponent(handle, syncMode));
         physicsComponent = new Physics2DComponent(physics);
         addComponent(physicsComponent);
@@ -121,7 +149,20 @@ public abstract class MovingObjects extends AbstractEntity {
 
         getTransform().setPosition(position);
 
-        addComponent(new ColliderComponent());
+        // Crear ColliderComponent con el modo de sincronización
+        ColliderComponent collider;
+        if (syncMode == SizeSyncMode.NONE) {
+            // Modo manual - collider independiente
+            collider = new ColliderComponent();
+        } else {
+            // Modo sincronizado - el collider conoce su modo
+            collider = new ColliderComponent(syncMode, new Game.Engine.Colisions.Filter.CollisionProfile(
+                Game.Engine.Colisions.Filter.Layer.WORLD, 
+                Game.Engine.Colisions.Filter.Layer.WORLD
+            ));
+        }
+        addComponent(collider);
+        
         addComponent(new SpriteRendererComponent(texture, syncMode));
 
         physicsComponent = new Physics2DComponent(physics);
@@ -153,7 +194,20 @@ public abstract class MovingObjects extends AbstractEntity {
         super(transform);
         getTransform().setPosition(position);
 
-        addComponent(new ColliderComponent());
+        // Crear ColliderComponent con el modo de sincronización
+        ColliderComponent collider;
+        if (syncMode == SizeSyncMode.NONE) {
+            // Modo manual - collider independiente
+            collider = new ColliderComponent();
+        } else {
+            // Modo sincronizado - el collider conoce su modo
+            collider = new ColliderComponent(syncMode, new Game.Engine.Colisions.Filter.CollisionProfile(
+                Game.Engine.Colisions.Filter.Layer.WORLD, 
+                Game.Engine.Colisions.Filter.Layer.WORLD
+            ));
+        }
+        addComponent(collider);
+        
         addComponent(new SpriteRendererComponent(texture, syncMode));
 
         physicsComponent = new Physics2DComponent(physics);

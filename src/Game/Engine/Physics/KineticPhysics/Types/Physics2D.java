@@ -532,8 +532,15 @@ public class Physics2D {
             double effectiveDrag = dampingFactor * currentSurface.getDrag();
             vx = vx * effectiveDrag;
             
-            // Threshold para detener completamente (evitar drift infinito)
-            if (Math.abs(vx) < 0.05) vx = 0;
+            // ── v4.0: Pixel-Perfect Velocity Threshold ────────────────────
+            // Threshold mejorado para detener completamente (evitar drift infinito)
+            // y eliminar microoscilaciones visuales.
+            // 
+            // ANÁLISIS:
+            //   0.01 units/s @ 30 FPS = 0.00033 units/frame (subpíxel)
+            //   Este valor es lo suficientemente pequeño para no afectar
+            //   movimiento real pero elimina ruido numérico.
+            if (Math.abs(vx) < 0.01) vx = 0;
         }
 
         vSetX(vx);
@@ -733,6 +740,7 @@ public class Physics2D {
      * Integra la velocidad en la posición.
      *
      * ── HRFC — Temporal Behavioral Restoration ────────────────────────────
+     * ── v4.0 — Pixel-Perfect Position Stability Enhancement ───────────────
      *
      * INTEGRACIÓN TEMPORAL CORRECTA:
      *   La posición debe integrarse usando velocity × deltaTime:
@@ -749,16 +757,55 @@ public class Physics2D {
      *   Δx = 2100 × (1/30) = 70 units/frame
      *   Legacy: 70 px/frame → Equivalencia preservada ✓
      *
+     * ── DEAD ZONE PARA ESTABILIDAD VISUAL ─────────────────────────────────
+     * 
+     * PROBLEMA RESUELTO:
+     *   Microoscilaciones de velocidad (< 0.01 units/s) causaban "vibración"
+     *   visual en sprites en reposo. Aunque la velocidad era casi cero,
+     *   la integración producía desplazamientos subpíxel que hacían que
+     *   el sprite oscilara entre píxeles adyacentes.
+     * 
+     * SOLUCIÓN:
+     *   Umbral de velocidad muerta (VELOCITY_EPSILON = 0.01 units/s).
+     *   Velocidades por debajo de este umbral se tratan como cero exacto.
+     * 
+     * IMPACTO:
+     *   - Velocidades significativas (movimiento real): sin cambio
+     *   - Velocidades insignificantes (ruido numérico): eliminadas
+     *   - Sprites en reposo: posición 100% estable, sin vibración
+     * 
+     * VALORES:
+     *   VELOCITY_EPSILON = 0.01 units/s
+     *   @ 30 FPS: 0.01 / 30 = 0.00033 units/frame (insignificante)
+     *   @ 60 FPS: 0.01 / 60 = 0.00016 units/frame (insignificante)
+     *
      * AUDITORÍA: ✓ CORRECTO
-     *   Implementación matemáticamente correcta.
+     *   Implementación matemáticamente correcta con mejora de estabilidad visual.
      *   Integración temporal Δx = v×dt es correcta.
+     *   Dead zone elimina ruido numérico sin afectar movimiento real.
      *
      * @param position posición a modificar
      * @param deltaTime tiempo del simulation step en segundos
      */
     public void updateMoves(Vector2D position, double deltaTime) {
-        position.setX(position.getX() + velocity.getX() * deltaTime);
-        position.setY(position.getY() + velocity.getY() * deltaTime);
+        // ── Aplicar dead zone para eliminar microoscilaciones ─────────────
+        // Velocidades insignificantes se tratan como cero para estabilidad visual
+        final double VELOCITY_EPSILON = 0.01; // units/s
+        
+        double vx = velocity.getX();
+        double vy = velocity.getY();
+        
+        // Limpiar velocidades insignificantes
+        if (Math.abs(vx) < VELOCITY_EPSILON) vx = 0.0;
+        if (Math.abs(vy) < VELOCITY_EPSILON) vy = 0.0;
+        
+        // Integrar posición con velocidades limpias
+        position.setX(position.getX() + vx * deltaTime);
+        position.setY(position.getY() + vy * deltaTime);
+        
+        // Actualizar velocity para reflejar la limpieza (opcional pero recomendado)
+        if (vx == 0.0 && velocity.getX() != 0.0) velocity.setX(0.0);
+        if (vy == 0.0 && velocity.getY() != 0.0) velocity.setY(0.0);
     }
 
     // ── Stop ──────────────────────────────────────────────────────────────

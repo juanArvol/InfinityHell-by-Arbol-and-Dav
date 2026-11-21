@@ -4,28 +4,56 @@ import Game.Engine.Colisions.Filter.CollisionProfile;
 import Game.Engine.Colisions.Filter.Layer;
 import Game.Engine.Component;
 import Game.Engine.GameMath.Logic2D.RectangleH;
+import Game.Engine.RenderEngine.Sprites.SizeSyncMode;
 
 /**
  * Define el área de colisión de un objeto y su perfil (layer/mask).
  *
- * ── Diseño limpio ──────────────────────────────────────────────────────────
- * El ColliderComponent ya NO sincroniza con HitBoxComponent automáticamente
- * en cada update(). Esa sincronización causaba que el collider se recalculara
- * cada frame incluso en objetos estáticos, y generaba offsets incorrectos
- * cuando la HitBox tenía offsets propios.
+ * ── REFACTOR: Sistema de Sincronización Robusto ───────────────────────────
  *
- * Ahora el tamaño se define explícitamente al crear el collider o al llamar
- * setSize(). Si querés sincronizar con la HitBox, hacelo una vez en el
- * constructor del objeto.
+ * PROBLEMA ANTERIOR:
+ *   El SizeSyncMode vivía en SpriteRendererComponent y se ejecutaba una vez
+ *   en start(). Luego cualquier código podía llamar a collider.setSize() y
+ *   romper la sincronización. Era frágil y dependía del orden de llamadas.
+ *
+ * SOLUCIÓN NUEVA:
+ *   ColliderComponent ahora conoce su SizeSyncMode y lo respeta de forma
+ *   inmutable. Si está en modo COLLIDER_TO_SPRITE, el collider BLOQUEA
+ *   llamadas a setSize() y obtiene su tamaño del SpriteRenderer cuando lo
+ *   necesita.
+ *
+ * MODOS DE SINCRONIZACIÓN:
+ *
+ *   NONE:
+ *     Tamaño manual. Llamar a setSize() libremente.
+ *     El sprite y el collider son independientes.
+ *
+ *   COLLIDER_TO_SPRITE:
+ *     El collider obtiene su tamaño del sprite automáticamente.
+ *     setSize() lanza error si se intenta llamar.
+ *     El offset sí se puede configurar.
+ *
+ *   SPRITE_TO_COLLIDER:
+ *     El sprite se escala al tamaño del collider.
+ *     setSize() funciona normalmente, el sprite se adapta.
+ *
+ * BENEFICIOS:
+ *   ✅ No se puede romper la sincronización accidentalmente
+ *   ✅ El modo es explícito y validado
+ *   ✅ No depende del orden de llamadas
+ *   ✅ Mensajes de error claros si intentas usar mal la API
  *
  * ── Cómo usarlo ────────────────────────────────────────────────────────────
- *   // Objeto con tamaño explícito y perfil de jugador:
- *   ColliderComponent col = new ColliderComponent(15, 24, CollisionProfile.PLAYER);
- *   addComponent(col);
  *
- *   // Objeto estático con tamaño del bloque:
- *   ColliderComponent col = new ColliderComponent(width, height, CollisionProfile.WORLD);
- *   addComponent(col);
+ *   // Tamaño manual (modo tradicional):
+ *   ColliderComponent col = new ColliderComponent(15, 24, CollisionProfile.PLAYER);
+ *   col.setSize(20, 30);  // ✅ Funciona
+ *
+ *   // Tamaño desde sprite (modo automático):
+ *   ColliderComponent col = new ColliderComponent(SizeSyncMode.COLLIDER_TO_SPRITE, 
+ *                                                   CollisionProfile.PLAYER);
+ *   col.setSize(20, 30);  // ❌ Lanza IllegalStateException
+ *   col.setOffset(4, 0);  // ✅ El offset sí funciona
  */
 public class ColliderComponent extends Component {
 
@@ -35,6 +63,12 @@ public class ColliderComponent extends Component {
     private double offsetY;
 
     private CollisionProfile profile;
+    
+    /**
+     * Modo de sincronización de tamaño con el SpriteRenderer.
+     * Define si el tamaño es manual o se obtiene automáticamente del sprite.
+     */
+    private final SizeSyncMode syncMode;
     
     /**
      * Si true, este collider NO resuelve físicamente las colisiones (no aplica
@@ -48,23 +82,84 @@ public class ColliderComponent extends Component {
 
     // ── Constructores ──────────────────────────────────────────────────────
 
-    /** Collider sin tamaño definido (se fija con setSize antes de usar). */
+    /** 
+     * Collider sin tamaño definido (se fija con setSize antes de usar). 
+     * Modo NONE (tamaño manual).
+     */
     public ColliderComponent() {
         this(0, 0, 0, 0, new CollisionProfile(Layer.WORLD, Layer.WORLD));
     }
 
-    /** Collider con tamaño y perfil. Offset = (0,0). */
+    /** 
+     * Collider con tamaño y perfil. Offset = (0,0). 
+     * Modo NONE (tamaño manual).
+     */
     public ColliderComponent(double width, double height, CollisionProfile profile) {
         this(width, height, 0, 0, profile);
     }
 
-    /** Collider con tamaño, offset y perfil. */
+    /** 
+     * Collider con tamaño, offset y perfil. 
+     * Modo NONE (tamaño manual).
+     */
     public ColliderComponent(double width, double height, double offsetX, double offsetY, CollisionProfile profile) {
-        this.width   = width;
-        this.height  = height;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-        this.profile = profile;
+        this.width    = width;
+        this.height   = height;
+        this.offsetX  = offsetX;
+        this.offsetY  = offsetY;
+        this.profile  = profile;
+        this.syncMode = SizeSyncMode.NONE;
+    }
+
+    // ── Constructores con SizeSyncMode (NUEVO) ────────────────────────────
+
+    /**
+     * Collider con modo de sincronización automática.
+     * 
+     * COLLIDER_TO_SPRITE:
+     *   El collider obtiene su tamaño del sprite automáticamente.
+     *   NO se puede llamar a setSize() después.
+     *   
+     * SPRITE_TO_COLLIDER:
+     *   El sprite se escala al tamaño del collider.
+     *   setSize() funciona normalmente.
+     * 
+     * @param syncMode modo de sincronización
+     * @param profile perfil de colisión
+     */
+    public ColliderComponent(SizeSyncMode syncMode, CollisionProfile profile) {
+        this(syncMode, 0, 0, profile);
+    }
+
+    /**
+     * Collider con modo de sincronización y offset inicial.
+     * 
+     * @param syncMode modo de sincronización
+     * @param offsetX offset horizontal inicial
+     * @param offsetY offset vertical inicial
+     * @param profile perfil de colisión
+     */
+    public ColliderComponent(SizeSyncMode syncMode, double offsetX, double offsetY, CollisionProfile profile) {
+        if (syncMode == SizeSyncMode.COLLIDER_TO_SPRITE || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            // El tamaño se obtiene del sprite, inicializar en 0
+            this.width   = 0;
+            this.height  = 0;
+        } else if (syncMode == SizeSyncMode.SPRITE_TO_COLLIDER) {
+            // El tamaño se define manualmente, el sprite se adapta
+            // Inicializar en 0, el usuario debe llamar a setSize()
+            this.width   = 0;
+            this.height  = 0;
+        } else {
+            // NONE - inicializar en 0, el usuario debe llamar a setSize()
+            this.width   = 0;
+            this.height  = 0;
+        }
+        
+        this.offsetX  = offsetX;
+        this.offsetY  = offsetY;
+        this.profile  = profile;
+        this.syncMode = syncMode;
     }
 
     // ── Bounds ────────────────────────────────────────────────────────────
@@ -73,6 +168,12 @@ public class ColliderComponent extends Component {
      * Rectángulo de colisión en coordenadas de mundo.
      * Se recalcula cada vez que se llama (no se cachea — el objeto puede moverse).
      * Retorna RectangleH con precisión double para física exacta.
+     * 
+     * ── REFACTOR: Sincronización Automática ──────────────────────────────
+     * 
+     * Si syncMode == COLLIDER_TO_SPRITE, el tamaño se obtiene dinámicamente
+     * del SpriteRendererComponent. Esto garantiza que el collider siempre
+     * refleja el tamaño real del sprite, incluso si el sprite cambia.
      * 
      * ── HRFC — DOD Integration ────────────────────────────────────────────
      * Lee posición directamente desde DOD storage cuando existe (Bullet, Enemy).
@@ -121,11 +222,34 @@ public class ColliderComponent extends Component {
             posY = pos.getY();
         }
         
+        // Obtener tamaño según el modo de sincronización
+        double effectiveWidth = width;
+        double effectiveHeight = height;
+        
+        if (syncMode == SizeSyncMode.COLLIDER_TO_SPRITE || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            // Obtener tamaño desde el SpriteRenderer
+            var spriteRenderer = gameObject.getComponent(
+                Game.Engine.Entity.Components.Visuals.SpriteRendererComponent.class
+            );
+            if (spriteRenderer != null) {
+                effectiveWidth = spriteRenderer.getRenderWidth();
+                effectiveHeight = spriteRenderer.getRenderHeight();
+            } else {
+                // Fallback: usar el tamaño configurado manualmente (probablemente 0)
+                // Advertir en consola si esto pasa
+                if (effectiveWidth == 0 || effectiveHeight == 0) {
+                    System.err.println("[ColliderComponent] ADVERTENCIA: SizeSyncMode es " 
+                        + syncMode + " pero no hay SpriteRenderer. Usando tamaño 0×0.");
+                }
+            }
+        }
+        
         return new RectangleH(
                 posX + offsetX,
                 posY + offsetY,
-                width,
-                height
+                effectiveWidth,
+                effectiveHeight
         );
     }
 
@@ -157,13 +281,71 @@ public class ColliderComponent extends Component {
 
     // ── Tamaño y offset ───────────────────────────────────────────────────
 
-    public void setSize(double w, double h)       { this.width = w; this.height = h; }
-    public void setOffset(double ox, double oy)   { this.offsetX = ox; this.offsetY = oy; }
+    /**
+     * Configura el tamaño del collider manualmente.
+     * 
+     * VALIDACIÓN: Solo funciona si syncMode == NONE o SPRITE_TO_COLLIDER.
+     * Si syncMode == COLLIDER_TO_SPRITE, lanza IllegalStateException porque
+     * el tamaño debe venir del sprite, no configurarse manualmente.
+     * 
+     * @param w ancho del collider
+     * @param h alto del collider
+     * @throws IllegalStateException si syncMode no permite setSize manual
+     */
+    public void setSize(double w, double h) {
+        if (syncMode == SizeSyncMode.COLLIDER_TO_SPRITE || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            throw new IllegalStateException(
+                "ColliderComponent.setSize() no se puede llamar cuando syncMode=" + syncMode + ". " +
+                "El tamaño se obtiene automáticamente del sprite. " +
+                "Si necesitas control manual, usa SizeSyncMode.NONE en el constructor."
+            );
+        }
+        this.width = w;
+        this.height = h;
+    }
+    
+    public void setOffset(double ox, double oy) { this.offsetX = ox; this.offsetY = oy; }
 
-    public double getWidth()   { return width; }
-    public double getHeight()  { return height; }
+    /**
+     * Obtiene el ancho del collider.
+     * Si syncMode == COLLIDER_TO_SPRITE, retorna el tamaño actual del sprite.
+     */
+    public double getWidth() {
+        if (syncMode == SizeSyncMode.COLLIDER_TO_SPRITE || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            var spriteRenderer = gameObject.getComponent(
+                Game.Engine.Entity.Components.Visuals.SpriteRendererComponent.class
+            );
+            if (spriteRenderer != null) {
+                return spriteRenderer.getRenderWidth();
+            }
+        }
+        return width;
+    }
+    
+    /**
+     * Obtiene el alto del collider.
+     * Si syncMode == COLLIDER_TO_SPRITE, retorna el tamaño actual del sprite.
+     */
+    public double getHeight() {
+        if (syncMode == SizeSyncMode.COLLIDER_TO_SPRITE || 
+            syncMode == SizeSyncMode.SPRITE_TO_COLLIDER_WITH_OFFSET) {
+            var spriteRenderer = gameObject.getComponent(
+                Game.Engine.Entity.Components.Visuals.SpriteRendererComponent.class
+            );
+            if (spriteRenderer != null) {
+                return spriteRenderer.getRenderHeight();
+            }
+        }
+        return height;
+    }
+    
     public double getOffsetX() { return offsetX; }
     public double getOffsetY() { return offsetY; }
+    
+    /** Retorna el modo de sincronización de este collider. */
+    public SizeSyncMode getSyncMode() { return syncMode; }
 
     // ── Sensor flag ───────────────────────────────────────────────────────
 
