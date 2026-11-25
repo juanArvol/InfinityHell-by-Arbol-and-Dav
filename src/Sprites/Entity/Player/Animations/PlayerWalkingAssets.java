@@ -43,7 +43,7 @@ public final class PlayerWalkingAssets {
     // private static final int FRAME_W = 32;
     // private static final int FRAME_H = 48;
     
-    private static final int TICKS_PER_FRAME = 6;
+    private static final int TICKS_PER_FRAME = 1;
 
     private PlayerWalkingAssets() {}
 

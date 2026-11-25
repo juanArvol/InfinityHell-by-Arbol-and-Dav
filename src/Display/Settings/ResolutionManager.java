@@ -6,12 +6,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * ResolutionManager — gestiona resoluciones independientes para fullscreen y windowed.
+ * ResolutionManager — gestiona resoluciones compartidas para fullscreen y windowed.
  *
  * ── RESPONSABILIDAD ───────────────────────────────────────────────────────
- * Mantiene dos conjuntos de resoluciones independientes:
- *   - Resoluciones de fullscreen (resoluciones estándar: 720p, 1080p, 1440p, 4K)
- *   - Resoluciones de windowed (tamaños de ventana: 640x360, 1280x720, 1920x1080)
+ * Mantiene un único conjunto de resoluciones disponibles para ambos modos:
+ *   - Resoluciones: 640x360, 960x540, 1280x720, 1920x1080, 2560x1440, 3840x2160
+ *   - Tanto fullscreen como windowed pueden usar cualquiera de estas resoluciones
  *
  * Cada modo (fullscreen/windowed) recuerda su última resolución aplicada.
  * Al cambiar de modo, la ventana se abre en la resolución que tenía ese modo.
@@ -20,12 +20,10 @@ import java.util.List;
  * 
  * Escenario de uso:
  * 1. Usuario inicia en fullscreen 1920x1080
- * 2. Usuario presiona F11 → modo windowed se abre en 1920x1080
- * 3. Usuario redimensiona ventana manualmente → resolución windowed cambia dinámicamente
- * 4. Usuario abre settings (F4) y cambia a 1280x720 en windowed
- * 5. Usuario presiona F11 → fullscreen vuelve a 1920x1080 (resolución guardada)
- * 6. Usuario en settings cambia fullscreen a 2560x1440
- * 7. Usuario presiona F11 → windowed vuelve a 1280x720 (última resolución windowed)
+ * 2. Usuario en settings cambia a 640x360 en fullscreen (ahora es posible!)
+ * 3. Usuario presiona F11 → modo windowed se abre en su última resolución
+ * 4. Usuario redimensiona ventana manualmente → resolución windowed cambia dinámicamente
+ * 5. Usuario presiona F11 → fullscreen vuelve a 640x360 (resolución guardada)
  *
  * ── RESIZE DINÁMICO ───────────────────────────────────────────────────────
  * En modo windowed, si el usuario redimensiona la ventana manualmente (drag),
@@ -38,19 +36,16 @@ import java.util.List;
 public final class ResolutionManager {
 
     // ── Resoluciones predefinidas ─────────────────────────────────────────
+    // Ahora fullscreen y windowed comparten las MISMAS resoluciones disponibles
+    // para que no haya limitaciones arbitrarias en fullscreen
 
-    private static final List<Resolution> FULLSCREEN_RESOLUTIONS = List.of(
+    private static final List<Resolution> AVAILABLE_RESOLUTIONS = List.of(
+        new Resolution(640, 360),     // Pequeña
+        new Resolution(960, 540),     // Media
         new Resolution(1280, 720),    // 720p HD
         new Resolution(1920, 1080),   // 1080p Full HD
         new Resolution(2560, 1440),   // 1440p QHD
         new Resolution(3840, 2160)    // 4K UHD
-    );
-
-    private static final List<Resolution> WINDOWED_RESOLUTIONS = List.of(
-        new Resolution(640, 360),     // Pequeña
-        new Resolution(960, 540),     // Media
-        new Resolution(1280, 720),    // HD
-        new Resolution(1920, 1080)    // Full HD
     );
 
     // ── Estado actual ─────────────────────────────────────────────────────
@@ -70,10 +65,10 @@ public final class ResolutionManager {
      */
     public ResolutionManager(Resolution initialFullscreenRes, Resolution initialWindowedRes) {
         this.currentFullscreenResolution = findClosestOrDefault(
-            initialFullscreenRes, FULLSCREEN_RESOLUTIONS, FULLSCREEN_RESOLUTIONS.get(1) // 1080p default
+            initialFullscreenRes, AVAILABLE_RESOLUTIONS, AVAILABLE_RESOLUTIONS.get(2) // 720p default
         );
         this.currentWindowedResolution = findClosestOrDefault(
-            initialWindowedRes, WINDOWED_RESOLUTIONS, WINDOWED_RESOLUTIONS.get(2) // 720p default
+            initialWindowedRes, AVAILABLE_RESOLUTIONS, AVAILABLE_RESOLUTIONS.get(2) // 720p default
         );
     }
 
@@ -135,16 +130,18 @@ public final class ResolutionManager {
 
     /**
      * Retorna todas las resoluciones disponibles para fullscreen.
+     * Ahora fullscreen y windowed comparten las mismas resoluciones.
      */
     public List<Resolution> getAvailableFullscreenResolutions() {
-        return new ArrayList<>(FULLSCREEN_RESOLUTIONS);
+        return new ArrayList<>(AVAILABLE_RESOLUTIONS);
     }
 
     /**
      * Retorna todas las resoluciones disponibles para windowed.
+     * Ahora fullscreen y windowed comparten las mismas resoluciones.
      */
     public List<Resolution> getAvailableWindowedResolutions() {
-        return new ArrayList<>(WINDOWED_RESOLUTIONS);
+        return new ArrayList<>(AVAILABLE_RESOLUTIONS);
     }
 
     /**

@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * SettingsState — Menú de configuración de display con UI BIEN ESPACIADA.
+ * SettingsState — Menú de configuración responsive con selector de flechas y dropdown.
  */
 public final class SettingsState implements State {
 
@@ -29,8 +29,6 @@ public final class SettingsState implements State {
     private final Runnable onExitCallback;
     
     private boolean leftButtonWasPressed = false;
-    
-    // Flag para diferir recreación de botones hasta después del render
     private boolean needsButtonRecreation = false;
     
     private int virtualWidth;
@@ -39,8 +37,16 @@ public final class SettingsState implements State {
     private ScalingMode currentScalingMode = ScalingMode.INTEGER_SCALE;
     private DisplayMode currentDisplayMode = DisplayMode.WINDOWED;
     
-    private final List<UIButton> resolutionButtons = new ArrayList<>();
-    private final List<UIButton> scalingButtons = new ArrayList<>();
+    // Selector de resolución con flechas
+    private UIButton resolutionLeftArrow;
+    private UIButton resolutionRightArrow;
+    private int currentResolutionIndex = 0;
+    
+    // Dropdown para scaling mode
+    private UIButton scalingModeButton;
+    private boolean scalingDropdownOpen = false;
+    private List<UIButton> scalingDropdownButtons = new ArrayList<>();
+    
     private UIButton toggleFullscreenButton;
     private UIButton backButton;
     private UIButton hoveredButton = null;
@@ -70,7 +76,6 @@ public final class SettingsState implements State {
         this.virtualHeight = displayManager.getVirtualHeight();
         this.onExitCallback = onExitCallback;
         
-        // Obtener estado actual del sistema
         this.currentDisplayMode = displayManager.getMode();
         this.currentScalingMode = displayManager.getScalingMode();
         
@@ -82,12 +87,11 @@ public final class SettingsState implements State {
     public void onEnter() {
         virtualWidth = displayManager.getVirtualWidth();
         virtualHeight = displayManager.getVirtualHeight();
-        // Obtener el estado REAL del sistema, no usar cache
         currentDisplayMode = displayManager.getMode();
         currentScalingMode = displayManager.getScalingMode();
         createFonts();
         createButtons();
-        leftButtonWasPressed = false;  // Reset mouse state
+        leftButtonWasPressed = false;
     }
     
     @Override
@@ -99,42 +103,55 @@ public final class SettingsState implements State {
         keyBoard.update();
         mouseInput.flushEvents();
         
-        // Refrescar el estado actual en cada frame para sincronizar con F11 y cambios externos
+        // Actualizar dimensiones virtuales si cambiaron
+        int newVirtualWidth = displayManager.getVirtualWidth();
+        int newVirtualHeight = displayManager.getVirtualHeight();
+        
+        if (newVirtualWidth != virtualWidth || newVirtualHeight != virtualHeight) {
+            virtualWidth = newVirtualWidth;
+            virtualHeight = newVirtualHeight;
+            createFonts();
+            createButtons();
+        }
+        
+        // Refrescar el estado actual para sincronizar con F11 y cambios externos
         DisplayMode newDisplayMode = displayManager.getMode();
         ScalingMode newScalingMode = displayManager.getScalingMode();
         
-        // Si el modo o scaling cambió (por F11 o comando), marcar para recrear botones
-        // NO recrear aquí directamente para evitar ConcurrentModificationException
         if (newDisplayMode != currentDisplayMode || newScalingMode != currentScalingMode) {
             currentDisplayMode = newDisplayMode;
             currentScalingMode = newScalingMode;
             needsButtonRecreation = true;
         }
         
-        // Mouse hover - USAR COORDENADAS VIRTUALES (no raw)
-        // Los botones están definidos en espacio virtual, así que necesitamos
-        // las coordenadas del mouse también en espacio virtual
+        // Mouse hover - coordenadas virtuales
         float mouseVirtualX = mouseInput.mouseVirtualX;
         float mouseVirtualY = mouseInput.mouseVirtualY;
         
         hoveredButton = null;
         
-        for (UIButton btn : resolutionButtons) {
-            if (btn.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
-                hoveredButton = btn;
-                break;
-            }
+        // Check resolution arrows
+        if (resolutionLeftArrow != null && resolutionLeftArrow.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
+            hoveredButton = resolutionLeftArrow;
+        } else if (resolutionRightArrow != null && resolutionRightArrow.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
+            hoveredButton = resolutionRightArrow;
         }
         
+        // Check scaling mode dropdown
         if (hoveredButton == null) {
-            for (UIButton btn : scalingButtons) {
-                if (btn.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
-                    hoveredButton = btn;
-                    break;
+            if (scalingModeButton != null && scalingModeButton.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
+                hoveredButton = scalingModeButton;
+            } else if (scalingDropdownOpen) {
+                for (UIButton btn : scalingDropdownButtons) {
+                    if (btn.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
+                        hoveredButton = btn;
+                        break;
+                    }
                 }
             }
         }
         
+        // Check other buttons
         if (hoveredButton == null) {
             if (toggleFullscreenButton.bounds.contains((int)mouseVirtualX, (int)mouseVirtualY)) {
                 hoveredButton = toggleFullscreenButton;
@@ -148,11 +165,15 @@ public final class SettingsState implements State {
         if (leftButtonCurrentlyPressed && !leftButtonWasPressed) {
             if (hoveredButton != null) {
                 hoveredButton.action.run();
+            } else if (scalingDropdownOpen) {
+                // Click fuera del dropdown lo cierra
+                scalingDropdownOpen = false;
+                createButtons();
             }
         }
         leftButtonWasPressed = leftButtonCurrentlyPressed;
         
-        // Recrear botones DESPUÉS de procesar input, para evitar ConcurrentModificationException
+        // Recrear botones si es necesario
         if (needsButtonRecreation) {
             createButtons();
             needsButtonRecreation = false;
@@ -177,7 +198,7 @@ public final class SettingsState implements State {
         int titleWidth = g.getFontMetrics().stringWidth(title);
         g.drawString(title, (virtualWidth - titleWidth) / 2, (int)(virtualHeight * 0.07f));
         
-        // Current mode indicator (más abajo y con más espacio)
+        // Current mode indicator
         g.setFont(smallFont);
         g.setColor(new Color(150, 180, 220));
         String modeText = "Mode: " + (currentDisplayMode.isFullscreen() ? "FULLSCREEN" : "WINDOWED");
@@ -187,13 +208,13 @@ public final class SettingsState implements State {
         int textWidth = g.getFontMetrics().stringWidth(fullText);
         g.drawString(fullText, (virtualWidth - textWidth) / 2, (int)(virtualHeight * 0.12f));
         
-        // Resolution section
-        renderSection(g, "RESOLUTION", (int)(virtualHeight * 0.16f));
-        renderButtons(g, resolutionButtons);
+        // Resolution section con selector de flechas
+        renderSection(g, "RESOLUTION", (int)(virtualHeight * 0.20f));
+        renderResolutionSelector(g);
         
-        // Scaling mode section - MUCHO MÁS ABAJO para que no se superponga
-        renderSection(g, "SCALING MODE", (int)(virtualHeight * 0.49f));
-        renderButtons(g, scalingButtons);
+        // Scaling mode section con dropdown
+        renderSection(g, "SCALING MODE", (int)(virtualHeight * 0.40f));
+        renderScalingDropdown(g);
         
         // Special buttons
         renderButton(g, toggleFullscreenButton);
@@ -220,10 +241,13 @@ public final class SettingsState implements State {
     }
     
     private void createFonts() {
-        int titleSize = Math.max(24, (int)(virtualHeight * 0.045f));
-        int sectionSize = Math.max(18, (int)(virtualHeight * 0.032f));
-        int normalSize = Math.max(16, (int)(virtualHeight * 0.026f));
-        int smallSize = Math.max(14, (int)(virtualHeight * 0.020f));
+        // Escalado completamente dinámico basado en 720p como referencia
+        float baseScale = virtualHeight / 720f;
+        
+        int titleSize = Math.max(8, Math.round(32 * baseScale));
+        int sectionSize = Math.max(7, Math.round(24 * baseScale));
+        int normalSize = Math.max(6, Math.round(18 * baseScale));
+        int smallSize = Math.max(5, Math.round(14 * baseScale));
         
         titleFont = new Font("Arial", Font.BOLD, titleSize);
         sectionFont = new Font("Arial", Font.BOLD, sectionSize);
@@ -232,8 +256,7 @@ public final class SettingsState implements State {
     }
     
     private void createButtons() {
-        resolutionButtons.clear();
-        scalingButtons.clear();
+        scalingDropdownButtons.clear();
         
         List<Resolution> availableResolutions = currentDisplayMode.isFullscreen()
             ? resolutionManager.getAvailableFullscreenResolutions()
@@ -241,58 +264,81 @@ public final class SettingsState implements State {
         
         Resolution currentRes = resolutionManager.getCurrentResolution();
         
-        // LAYOUT CON ESPACIADO APROPIADO
-        int buttonWidth = Math.min(450, (int)(virtualWidth * 0.45f));
-        int buttonHeight = Math.max(35, (int)(virtualHeight * 0.052f));
-        int spacing = Math.max(12, (int)(virtualHeight * 0.022f));  // MÁS ESPACIO
-        int centerX = virtualWidth / 2;
-        
-        // Resolution buttons - empiezan después del título de sección
-        int startY = (int)(virtualHeight * 0.19f);
-        
+        // Encontrar el índice de la resolución actual
+        currentResolutionIndex = 0;
         for (int i = 0; i < availableResolutions.size(); i++) {
-            Resolution res = availableResolutions.get(i);
-            int y = startY + i * (buttonHeight + spacing);
-            
-            boolean isActive = res.equals(currentRes);
-            String label = res.width + " × " + res.height;
-            
-            if (res.width == 1280 && res.height == 720) label += " (720p HD)";
-            else if (res.width == 1920 && res.height == 1080) label += " (1080p Full HD)";
-            else if (res.width == 2560 && res.height == 1440) label += " (1440p QHD)";
-            else if (res.width == 3840 && res.height == 2160) label += " (4K UHD)";
-            
-            UIButton btn = new UIButton(
-                new Rectangle(centerX - buttonWidth / 2, y, buttonWidth, buttonHeight),
-                label,
-                () -> changeResolution(res),
-                isActive
-            );
-            resolutionButtons.add(btn);
+            if (availableResolutions.get(i).equals(currentRes)) {
+                currentResolutionIndex = i;
+                break;
+            }
         }
         
-        // Scaling mode buttons - MUCHO MÁS ABAJO para evitar superposición
+        // Layout responsive basado en 720p
+        float baseScale = virtualHeight / 720f;
+        
+        int buttonWidth = Math.round(400 * baseScale);
+        int buttonHeight = Math.round(45 * baseScale);
+        int centerX = virtualWidth / 2;
+        
+        // ===== RESOLUTION SELECTOR CON FLECHAS =====
+        int resolutionY = Math.round(virtualHeight * 0.26f);
+        
+        int arrowSize = buttonHeight;
+        int arrowSpacing = Math.round(12 * baseScale);
+        int labelWidth = Math.round(buttonWidth * 0.60f);
+        
+        resolutionLeftArrow = new UIButton(
+            new Rectangle(centerX - labelWidth/2 - arrowSize - arrowSpacing, resolutionY, arrowSize, buttonHeight),
+            "<",
+            this::previousResolution,
+            false
+        );
+        
+        resolutionRightArrow = new UIButton(
+            new Rectangle(centerX + labelWidth/2 + arrowSpacing, resolutionY, arrowSize, buttonHeight),
+            ">",
+            this::nextResolution,
+            false
+        );
+        
+        // ===== SCALING MODE DROPDOWN =====
+        int scalingY = Math.round(virtualHeight * 0.46f);
+        
+        scalingModeButton = new UIButton(
+            new Rectangle(centerX - buttonWidth / 2, scalingY, buttonWidth, buttonHeight),
+            getScalingModeLabel(currentScalingMode) + " ▼",
+            this::toggleScalingDropdown,
+            false
+        );
+        
+        // Crear botones del dropdown
         ScalingMode[] modes = {ScalingMode.FIT, ScalingMode.INTEGER_SCALE, ScalingMode.PIXEL_PERFECT, ScalingMode.STRETCH};
-        startY = (int)(virtualHeight * 0.52f);  // Movido más abajo (era 0.50f)
+        int dropdownItemHeight = Math.round(40 * baseScale);
         
         for (int i = 0; i < modes.length; i++) {
             ScalingMode mode = modes[i];
-            int y = startY + i * (buttonHeight + spacing);
+            int y = scalingY + buttonHeight + (i * dropdownItemHeight);
             
             boolean isActive = mode == currentScalingMode;
-            String label = mode.name().replace("_", " ");
             
             UIButton btn = new UIButton(
-                new Rectangle(centerX - buttonWidth / 2, y, buttonWidth, buttonHeight),
-                label,
-                () -> changeScalingMode(mode),
+                new Rectangle(centerX - buttonWidth / 2, y, buttonWidth, dropdownItemHeight),
+                getScalingModeLabel(mode),
+                () -> selectScalingMode(mode),
                 isActive
             );
-            scalingButtons.add(btn);
+            scalingDropdownButtons.add(btn);
         }
         
-        // Toggle fullscreen button - AL FINAL con ESPACIO
-        int toggleY = (int)(virtualHeight * 0.81f);  // Movido más abajo (era 0.78f)
+        // Calcular espacio ocupado por dropdown
+        int dropdownTotalHeight = buttonHeight + (modes.length * dropdownItemHeight);
+        
+        // ===== TOGGLE FULLSCREEN BUTTON =====
+        int dropdownGap = Math.round(30 * baseScale);
+        int toggleY = scalingDropdownOpen 
+            ? (scalingY + dropdownTotalHeight + dropdownGap)
+            : Math.round(virtualHeight * 0.60f);
+            
         String toggleLabel = currentDisplayMode.isFullscreen() ? "SWITCH TO WINDOWED" : "SWITCH TO FULLSCREEN";
         toggleFullscreenButton = new UIButton(
             new Rectangle(centerX - buttonWidth / 2, toggleY, buttonWidth, buttonHeight),
@@ -301,8 +347,12 @@ public final class SettingsState implements State {
             false
         );
         
-        // Back button - CON ESPACIO
-        int backY = (int)(virtualHeight * 0.90f);  // Movido más abajo (era 0.88f)
+        // ===== BACK BUTTON =====
+        int buttonGap = Math.round(20 * baseScale);
+        int backY = scalingDropdownOpen
+            ? (toggleY + buttonHeight + buttonGap)
+            : Math.round(virtualHeight * 0.78f);
+            
         backButton = new UIButton(
             new Rectangle(centerX - buttonWidth / 2, backY, buttonWidth, buttonHeight),
             "← BACK TO GAME",
@@ -318,16 +368,60 @@ public final class SettingsState implements State {
         g.drawString(title, (virtualWidth - titleWidth) / 2, y);
     }
     
-    private void renderButtons(Graphics2D g, List<UIButton> buttons) {
-        // Crear snapshot de la lista para evitar ConcurrentModificationException
-        // si createButtons() se llama durante la iteración
-        List<UIButton> snapshot = new ArrayList<>(buttons);
-        for (UIButton btn : snapshot) {
-            renderButton(g, btn);
+    private void renderResolutionSelector(Graphics2D g) {
+        List<Resolution> availableResolutions = currentDisplayMode.isFullscreen()
+            ? resolutionManager.getAvailableFullscreenResolutions()
+            : resolutionManager.getAvailableWindowedResolutions();
+        
+        if (currentResolutionIndex < 0 || currentResolutionIndex >= availableResolutions.size()) {
+            currentResolutionIndex = 0;
+        }
+        
+        Resolution currentRes = availableResolutions.get(currentResolutionIndex);
+        
+        // Renderizar las flechas
+        renderButton(g, resolutionLeftArrow);
+        renderButton(g, resolutionRightArrow);
+        
+        // Renderizar el texto central con la resolución
+        g.setFont(normalFont);
+        g.setColor(TEXT_COLOR);
+        
+        String resolutionText = currentRes.width + " × " + currentRes.height;
+        
+        // Añadir el label de calidad
+        if (currentRes.width == 1280 && currentRes.height == 720) resolutionText += " (720p HD)";
+        else if (currentRes.width == 1920 && currentRes.height == 1080) resolutionText += " (1080p Full HD)";
+        else if (currentRes.width == 2560 && currentRes.height == 1440) resolutionText += " (1440p QHD)";
+        else if (currentRes.width == 3840 && currentRes.height == 2160) resolutionText += " (4K UHD)";
+        
+        int textWidth = g.getFontMetrics().stringWidth(resolutionText);
+        int textHeight = g.getFontMetrics().getAscent();
+        int textX = virtualWidth / 2 - textWidth / 2;
+        int textY = resolutionLeftArrow.bounds.y + (resolutionLeftArrow.bounds.height + textHeight) / 2 - 2;
+        
+        g.drawString(resolutionText, textX, textY);
+    }
+    
+    private void renderScalingDropdown(Graphics2D g) {
+        // Renderizar el botón principal
+        renderButton(g, scalingModeButton);
+        
+        // Si el dropdown está abierto, renderizar las opciones
+        if (scalingDropdownOpen) {
+            for (UIButton btn : scalingDropdownButtons) {
+                renderButton(g, btn);
+            }
         }
     }
     
     private void renderButton(Graphics2D g, UIButton btn) {
+        // Todo escala uniformemente usando 720p como base
+        float baseScale = virtualHeight / 720f;
+        
+        int borderRadius = Math.max(4, Math.round(8 * baseScale));
+        float strokeWidth = Math.max(1f, 2f * baseScale);
+        
         // Background
         if (btn.isActive) {
             g.setColor(BUTTON_ACTIVE);
@@ -336,17 +430,17 @@ public final class SettingsState implements State {
         } else {
             g.setColor(BUTTON_COLOR);
         }
-        g.fillRoundRect(btn.bounds.x, btn.bounds.y, btn.bounds.width, btn.bounds.height, 8, 8);
+        g.fillRoundRect(btn.bounds.x, btn.bounds.y, btn.bounds.width, btn.bounds.height, borderRadius, borderRadius);
         
         // Border
         if (btn.isActive) {
             g.setColor(ACCENT_COLOR);
-            g.setStroke(new java.awt.BasicStroke(3));
+            g.setStroke(new java.awt.BasicStroke(strokeWidth * 1.5f));
         } else {
             g.setColor(new Color(100, 100, 120));
-            g.setStroke(new java.awt.BasicStroke(2));
+            g.setStroke(new java.awt.BasicStroke(strokeWidth));
         }
-        g.drawRoundRect(btn.bounds.x, btn.bounds.y, btn.bounds.width, btn.bounds.height, 8, 8);
+        g.drawRoundRect(btn.bounds.x, btn.bounds.y, btn.bounds.width, btn.bounds.height, borderRadius, borderRadius);
         
         // Text
         g.setFont(normalFont);
@@ -354,26 +448,65 @@ public final class SettingsState implements State {
         int textWidth = g.getFontMetrics().stringWidth(btn.label);
         int textHeight = g.getFontMetrics().getAscent();
         int textX = btn.bounds.x + (btn.bounds.width - textWidth) / 2;
-        int textY = btn.bounds.y + (btn.bounds.height + textHeight) / 2 - 2;
+        int textY = btn.bounds.y + (btn.bounds.height + textHeight) / 2 - Math.round(textHeight * 0.15f);
         g.drawString(btn.label, textX, textY);
     }
     
     private void changeResolution(Resolution newResolution) {
-        // Obtener el modo ACTUAL del DisplayManager (no usar cache local)
         DisplayMode actualMode = displayManager.getMode();
         resolutionManager.setResolution(actualMode, newResolution);
         displayManager.requestChangeResolution(newResolution);
-        // No necesitamos createButtons() aquí - el update() lo hará automáticamente
+    }
+    
+    private void previousResolution() {
+        List<Resolution> availableResolutions = currentDisplayMode.isFullscreen()
+            ? resolutionManager.getAvailableFullscreenResolutions()
+            : resolutionManager.getAvailableWindowedResolutions();
+        
+        if (currentResolutionIndex > 0) {
+            currentResolutionIndex--;
+            changeResolution(availableResolutions.get(currentResolutionIndex));
+        }
+    }
+    
+    private void nextResolution() {
+        List<Resolution> availableResolutions = currentDisplayMode.isFullscreen()
+            ? resolutionManager.getAvailableFullscreenResolutions()
+            : resolutionManager.getAvailableWindowedResolutions();
+        
+        if (currentResolutionIndex < availableResolutions.size() - 1) {
+            currentResolutionIndex++;
+            changeResolution(availableResolutions.get(currentResolutionIndex));
+        }
+    }
+    
+    private void toggleScalingDropdown() {
+        scalingDropdownOpen = !scalingDropdownOpen;
+        createButtons();
+    }
+    
+    private void selectScalingMode(ScalingMode mode) {
+        changeScalingMode(mode);
+        scalingDropdownOpen = false;
+        createButtons();
+    }
+    
+    private String getScalingModeLabel(ScalingMode mode) {
+        switch (mode) {
+            case FIT: return "FIT";
+            case INTEGER_SCALE: return "INTEGER SCALE";
+            case PIXEL_PERFECT: return "PIXEL PERFECT";
+            case STRETCH: return "STRETCH";
+            default: return mode.name();
+        }
     }
     
     private void changeScalingMode(ScalingMode newMode) {
         displayManager.requestChangeScalingMode(newMode);
-        // No necesitamos actualizar manualmente - el update() detecta el cambio
     }
     
     private void toggleFullscreen() {
         displayManager.requestToggleFullscreen();
-        // El update() detectará el cambio de modo y recreará la UI automáticamente
     }
     
     private void exitSettings() {
